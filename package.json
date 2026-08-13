@@ -1,0 +1,68 @@
+{
+  "name": "dsh-desktop",
+  "productName": "DeepSeek Harness Desktop",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
+  "author": "dsh-desktop",
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "smoke": "electron . --smoke",
+    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File prepare-runtime.ps1",
+    "dist": "powershell -ExecutionPolicy Bypass -File build.ps1",
+    "release": "powershell -ExecutionPolicy Bypass -File release.ps1"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "build": {
+    "appId": "com.deepseek.dshdesktop",
+    "productName": "DeepSeek Harness Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "build/*.png",
+      "build/icon.ico",
+      "build/whale-source.svg",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "yuanzhoucanxiang",
+      "repo": "dsh-desktop"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Harness"
+    }
+  }
+}

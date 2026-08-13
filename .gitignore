@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.npm-cache/
+runtime/
+*.log
+*.lnk
+build/splash-preview.png

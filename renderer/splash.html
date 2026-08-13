@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DeepSeek Harness Desktop</title>
+  <link rel="stylesheet" href="splash.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="glow glow-a"></div>
+    <div class="glow glow-b"></div>
+    <div class="grid"></div>
+
+    <div class="card">
+                  <div class="mark" aria-hidden="true">
+        <div id="markTile" class="mark-tile tile-light">
+          <img id="markImg" src="../build/icon-whale-official.png" alt="" />
+        </div>
+      </div>
+      <h1 class="title">DeepSeek Harness</h1>
+      <div class="subtitle">Desktop Shell</div>
+
+      <div class="status">
+        <span class="status-dot"></span>
+        <span id="statusText" class="status-text">正在初始化…</span>
+      </div>
+
+      <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+
+      <pre id="logTail" class="log" hidden></pre>
+
+      <div id="errorBox" class="error" hidden>
+        <div id="errorText" class="error-text"></div>
+        <div class="actions">
+          <button id="copyLogBtn" class="btn ghost">复制日志</button>
+          <button id="retryBtn" class="btn">重新启动</button>
+          <button id="quitBtn" class="btn ghost">退出</button>
+        </div>
+      </div>
+
+      <div class="footer">外壳 v0.1.0 · 内核原样运行，未做任何修改</div>
+    </div>
+  </div>
+  <script src="splash.js"></script>
+</body>
+</html>
