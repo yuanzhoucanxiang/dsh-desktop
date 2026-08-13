@@ -23,6 +23,7 @@
 - 自动更新：electron-updater；托盘「检查更新…」、启动后 8s 静默检查、下载完弹窗重启安装；更新源默认 GitHub Releases（`yuanzhoucanxiang/dsh-desktop`，可用 `updateRepo`/`updateUrl`/环境变量覆盖），未配置时静默禁用；`release.ps1` 打印发版上传命令
 - 平台中立化 + macOS 构建准备：`main.js` 按平台分支（node 二进制路径、`which`/`where`、进程组收尾、AppUserModelID 守卫）；新增 `prepare-runtime-macos.sh`、`build/icon-512.png`、`package.json` 的 `mac`(dmg) 配置
 - 修改审阅侧边栏：非 git 仓库时提供「在此目录初始化 git 仓库」按钮（`git init`），点击即可开始审阅
+- **审阅桥（会话级改动，Codex 式）**：新增 `plugin/review-bridge.js` 内核监听插件，经 `--patch` 注入桌面内核实例（内核源码零修改），订阅 `session/event` 实时采集 `edit`/`write`/`str_replace_editor` 工具调用（文件路径、old/new、轮次），写入 NDJSON 流；侧边栏新增「会话改动」视图（按轮次分组、写/改徽章、old→new 片段），与「Git 工作区」视图可切换
 
 ### 修复
 
