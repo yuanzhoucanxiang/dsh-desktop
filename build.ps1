@@ -9,8 +9,8 @@ if (-not (Test-Path "$proj\runtime\node.exe")) {
   & powershell -ExecutionPolicy Bypass -File "$proj\prepare-runtime.ps1"
 }
 
-# 2. package app (dir only -> dist/win-unpacked)
-& "$proj\node_modules\.bin\electron-builder.cmd" --dir
+# 2. package app (dir only -> dist/win-unpacked; 禁用隐式发布)
+& "$proj\node_modules\.bin\electron-builder.cmd" --dir --publish never
 
 # 3. complete the runtime: electron-builder's extraResources silently skips
 #    any directory named "node_modules", so copy it in manually.
@@ -21,6 +21,6 @@ if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
 Copy-Item $src $dst -Recurse -Force
 
 # 4. build NSIS installer from the now-complete prepackaged dir
-& "$proj\node_modules\.bin\electron-builder.cmd" --win nsis --prepackaged "$proj\dist\win-unpacked"
+& "$proj\node_modules\.bin\electron-builder.cmd" --win nsis --prepackaged "$proj\dist\win-unpacked" --publish never
 
 Write-Host "BUILD_DONE"

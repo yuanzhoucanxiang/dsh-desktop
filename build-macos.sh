@@ -25,9 +25,9 @@ if [ ! -d node_modules/electron ]; then
   npm install --no-audit --no-fund
 fi
 
-# 3. package the app (dir only)
+# 3. package the app (dir only; 显式禁用发布，避免 CI 隐式发布报 GH_TOKEN 错)
 echo "==> packaging app..."
-npx electron-builder --mac dmg --dir
+npx electron-builder --mac dmg --dir --publish never
 
 # 4. electron-builder's extraResources silently skips "node_modules";
 #    copy the kernel tree into the .app manually.
@@ -45,7 +45,7 @@ cp -R "$SRC" "$DST"
 
 # 5. build dmg from the prepackaged .app
 echo "==> building dmg..."
-npx electron-builder --mac dmg --prepackaged "$APP"
+npx electron-builder --mac dmg --prepackaged "$APP" --publish never
 
 echo ""
 echo "BUILD_DONE"
