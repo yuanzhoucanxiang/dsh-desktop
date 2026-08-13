@@ -8,3 +8,5 @@ build/splash-preview.png
 plugin/review-events.ndjson
 plugin/test-out/
 .boot-test*
+.boot*
+.hoist*

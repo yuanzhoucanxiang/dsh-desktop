@@ -1,2 +1,0 @@
-[review-bridge] loaded, out=E:/Deepseek harness/dsh-desktop/plugin/review-events.ndjson
-dsh web: http://127.0.0.1:19433
