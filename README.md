@@ -84,26 +84,23 @@ npm run dist
 
 ## macOS 构建
 
-外壳代码已平台中立（node 二进制/进程收尾/任务栏 ID 均按平台分支）。macOS 产物需**在 Mac 上构建**：
+外壳代码已平台中立。macOS 产物需**在 Mac 上构建**，一条命令出 dmg：
 
 ```bash
-# 1. 准备 darwin 版自包含运行时（全局装 dsh + 拷贝 node 二进制到 runtime/）
-bash prepare-runtime-macos.sh
-
-# 2. 安装依赖（Electron darwin + electron-builder）
-npm install
-
-# 3. 打 dmg
-npx electron-builder --mac dmg --dir      # 先看 win-unpacked 对应物 app 目录
-npx electron-builder --mac dmg
+git clone git@github.com:yuanzhoucanxiang/dsh-desktop.git
+cd dsh-desktop
+bash build-macos.sh          # 准备运行时 → 装依赖 → 打 dmg，全自动
 ```
+
+产物：`dist/dsh-desktop-0.1.0-mac.dmg`（双击 → 拖到「应用程序」即可用）。
 
 要点：
 
-- **electron-builder 的 `extraResources` 同样会跳过 `node_modules`**：mac 上也要像 Windows 一样「`--dir` 打包 → 手动补 `runtime/node_modules` → `--prepackaged` 做 dmg」（可参照 `build.ps1` 改写成 `build-macos.sh`）
-- **签名/公证**：未签名的 `.app` 会被 Gatekeeper 拦截，需右键打开或 `xattr -cr`；正式分发要 Apple Developer 证书签名 + 公证
-- **托盘图标**：macOS 惯例是 template 图标（黑 + alpha 自动反色），当前用黑/白鲸按主题切换，可用但非原生观感
-- **更新**：发布到 Releases 时加 `latest-mac.yml` + `.dmg`，electron-updater 会自动选对应平台
+- **electron-builder 的 `extraResources` 会跳过 `node_modules`**：`build-macos.sh` 已用「`--dir` 打包 → 手动补 `runtime/node_modules` → `--prepackaged` 做 dmg」绕过（与 Windows `build.ps1` 同思路）
+- **签名/公证**：未签名 `.app` 会被 Gatekeeper 拦截——自己用可右键「打开」或 `xattr -cr /Applications/DeepSeek\ Harness\ Desktop.app` 放行；要发给别人或真正双击免打扰，需 Apple Developer 证书签名 + 公证
+- **架构**：默认按当前 Mac 架构构建（Apple Silicon=arm64）；要同时支持两架构加 `--universal`
+- **托盘图标**：macOS 惯例是 template 图标（黑+alpha 自动反色），当前用黑/白鲸按主题切换，可用但非原生观感
+- **更新**：把 `dist/latest-mac.yml` + `.dmg` 一起发到 Releases，electron-updater 会自动按平台选
 
 ## 可选环境开关
 
