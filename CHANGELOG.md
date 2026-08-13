@@ -44,6 +44,7 @@
 ### 修复
 
 - 分割挤压曾被 `transition` 干扰（computed 取到动画中间值）→ 去掉 body 过渡，改为直接内联 margin
+- **自动更新下载失败**：两步构建法（`--dir`+`--prepackaged`）不生成 `app-update.yml`，electron-updater 检测到新版但下载阶段 ENOENT → 构建脚本显式生成 app-update.yml（Win `build.ps1` + mac `build-macos.sh`）
 
 ### 署名
 
