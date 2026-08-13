@@ -22,6 +22,9 @@ rm -rf "$RUNTIME"
 mkdir -p "$RUNTIME/node_modules/@deepseek-ai"
 cp -R "$DSH_SRC" "$RUNTIME/node_modules/@deepseek-ai/dsh"
 
+echo "==> pruning dev artifacts (.d.ts/.map)..."
+find "$RUNTIME/node_modules" \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.map' \) -delete 2>/dev/null || true
+
 echo "==> copying node binary..."
 NODE_BIN="$(command -v node)"
 if [ -z "$NODE_BIN" ]; then

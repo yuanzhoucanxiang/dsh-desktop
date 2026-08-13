@@ -12,6 +12,10 @@ Remove-Item $runtime -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $runtime 'node_modules\@deepseek-ai') | Out-Null
 Copy-Item $dshGlobal (Join-Path $runtime 'node_modules\@deepseek-ai\dsh') -Recurse -Force
 
+Write-Host "pruning dev artifacts (.d.ts/.map) to avoid >260-char paths..."
+# 剪掉类型声明与源码映射（运行时不需要），避免 Windows 卸载器因路径超长报错
+Get-ChildItem $runtime -Recurse -File -Include *.d.ts, *.d.ts.map, *.map -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+
 Write-Host "copying node.exe..."
 Copy-Item $nodeExe (Join-Path $runtime 'node.exe') -Force
 
