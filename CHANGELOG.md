@@ -24,6 +24,10 @@
 - 平台中立化 + macOS 构建准备：`main.js` 按平台分支（node 二进制路径、`which`/`where`、进程组收尾、AppUserModelID 守卫）；新增 `prepare-runtime-macos.sh`、`build/icon-512.png`、`package.json` 的 `mac`(dmg) 配置
 - 修改审阅侧边栏：非 git 仓库时提供「在此目录初始化 git 仓库」按钮（`git init`），点击即可开始审阅
 
+### 修复
+
+- **打包版启动即崩（无窗口）**：`autoUpdater` 误从 Electron 内置模块导入，却按 `electron-updater` 的 `{provider:'github'|'generic'}` 格式调用，`setFeedURL` 抛 TypeError 打断启动链 → 改用 `require('electron-updater')`，并对 `setupAutoUpdater`/`checkForUpdates` 加 try/catch 兜底（v0.1.1，双平台）
+
 ### 署名
 
 - deepseek-v4-pro（2026-08-13）
