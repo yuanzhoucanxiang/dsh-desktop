@@ -43,6 +43,15 @@ echo "==> copying runtime node_modules into $APP ..."
 rm -rf "$DST"
 cp -R "$SRC" "$DST"
 
+# app-update.yml: electron-updater 下载/安装阶段必需，--dir 两步法不会生成它
+cat > "$RES/app-update.yml" <<'EOF'
+provider: github
+owner: yuanzhoucanxiang
+repo: dsh-desktop
+updaterCacheDirName: dsh-desktop-updater
+EOF
+echo "==> app-update.yml written"
+
 # 5. build dmg from the prepackaged .app
 echo "==> building dmg..."
 npx electron-builder --mac dmg --prepackaged "$APP" --publish never
