@@ -21,6 +21,7 @@
   - 需工作目录为 git 仓库（与 Codex 同假设）；非仓库给出提示
 - 自包含打包（方案 B）：`prepare-runtime.ps1` 把全局 dsh 内核树（含嵌套依赖）+ node.exe 拷入 `runtime/`，经 electron-builder `extraResources` 打进安装包——装完即用，无需目标机装 Node/dsh
 - 自动更新：electron-updater；托盘「检查更新…」、启动后 8s 静默检查、下载完弹窗重启安装；更新源默认 GitHub Releases（`yuanzhoucanxiang/dsh-desktop`，可用 `updateRepo`/`updateUrl`/环境变量覆盖），未配置时静默禁用；`release.ps1` 打印发版上传命令
+- 平台中立化 + macOS 构建准备：`main.js` 按平台分支（node 二进制路径、`which`/`where`、进程组收尾、AppUserModelID 守卫）；新增 `prepare-runtime-macos.sh`、`build/icon-512.png`、`package.json` 的 `mac`(dmg) 配置
 
 ### 署名
 

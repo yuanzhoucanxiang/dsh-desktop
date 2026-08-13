@@ -82,6 +82,29 @@ npm run dist
   2. `npm run release`（= 构建 + 打印上传命令）
   3. 把 `dist/` 的安装包 + `latest.yml` + `.blockmap` 上传到 GitHub Release（tag 形如 `v0.1.0`）；`release.ps1` 会打印现成的 `gh release create ...` 命令
 
+## macOS 构建
+
+外壳代码已平台中立（node 二进制/进程收尾/任务栏 ID 均按平台分支）。macOS 产物需**在 Mac 上构建**：
+
+```bash
+# 1. 准备 darwin 版自包含运行时（全局装 dsh + 拷贝 node 二进制到 runtime/）
+bash prepare-runtime-macos.sh
+
+# 2. 安装依赖（Electron darwin + electron-builder）
+npm install
+
+# 3. 打 dmg
+npx electron-builder --mac dmg --dir      # 先看 win-unpacked 对应物 app 目录
+npx electron-builder --mac dmg
+```
+
+要点：
+
+- **electron-builder 的 `extraResources` 同样会跳过 `node_modules`**：mac 上也要像 Windows 一样「`--dir` 打包 → 手动补 `runtime/node_modules` → `--prepackaged` 做 dmg」（可参照 `build.ps1` 改写成 `build-macos.sh`）
+- **签名/公证**：未签名的 `.app` 会被 Gatekeeper 拦截，需右键打开或 `xattr -cr`；正式分发要 Apple Developer 证书签名 + 公证
+- **托盘图标**：macOS 惯例是 template 图标（黑 + alpha 自动反色），当前用黑/白鲸按主题切换，可用但非原生观感
+- **更新**：发布到 Releases 时加 `latest-mac.yml` + `.dmg`，electron-updater 会自动选对应平台
+
 ## 可选环境开关
 
 | 变量 | 作用 | 默认 |

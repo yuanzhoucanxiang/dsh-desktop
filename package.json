@@ -58,6 +58,14 @@
       ],
       "icon": "build/icon.ico"
     },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon-512.png",
+      "artifactName": "dsh-desktop-${version}-mac.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

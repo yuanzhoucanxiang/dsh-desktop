@@ -218,15 +218,20 @@ function resolveDshBin() {
   return 'dsh' // POSIX 兜底；找不到时 boot 会给出明确报错
 }
 
+/** 自带 node 二进制路径：Windows=node.exe，macOS/Linux=bin/node。 */
+function bundledNodePath() {
+  return path.join(runtimeRoot(), isWin ? 'node.exe' : path.join('bin', 'node'))
+}
+
 /** 解析 node 可执行文件：优先自带运行时，其次环境变量，最后 PATH。 */
 function resolveNodeExe() {
   if (process.env.DSH_NODE_EXE && fs.existsSync(process.env.DSH_NODE_EXE)) {
     return process.env.DSH_NODE_EXE
   }
-  const bundled = path.join(runtimeRoot(), 'node.exe')
+  const bundled = bundledNodePath()
   if (fs.existsSync(bundled)) return bundled
   try {
-    const out = execFileSync('where', ['node'], { encoding: 'utf8', windowsHide: true }).trim()
+    const out = execFileSync(isWin ? 'where' : 'which', ['node'], { encoding: 'utf8', windowsHide: true }).trim()
     const first = out.split(/\r?\n/)[0].trim()
     if (first && fs.existsSync(first)) return first
   } catch {}
@@ -276,6 +281,7 @@ async function startKernel() {
     env: kernelEnv(),
     cwd,
     windowsHide: true,
+    detached: !isWin, // POSIX：独立进程组，便于整树收尾
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   state.child = child
@@ -317,9 +323,10 @@ function killChild() {
       // 连同内核可能派生的 shell/工具子进程一起收掉
       spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
     } else {
-      child.kill('SIGTERM')
+      // POSIX：向整个进程组发信号（detached: true 使子进程为组长）
+      try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
       setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        try { process.kill(-child.pid, 'SIGKILL') } catch { child.kill('SIGKILL') }
       }, 3000).unref()
     }
   } catch (err) {
@@ -703,7 +710,7 @@ function finishBootError(err) {
 
 /* ─────────────────────────────── 生命周期 ─────────────────────────────────── */
 
-app.setAppUserModelId('com.deepseek.dshdesktop')
+if (isWin) app.setAppUserModelId('com.deepseek.dshdesktop') // Windows 任务栏分组；macOS 无此 API
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
