@@ -33,6 +33,16 @@
 
 - deepseek-v4-pro（2026-08-13）
 
+## [0.1.5] - 2026-08-13
+
+### 修复
+
+- **长路径问题根治**：0.1.4 剪枝后安装目录仍有 7 个文件超 260（`@mistralai`/`@opentelemetry` 的深层 .js）→ 运行时改用 **hoisted npm 安装**（依赖平铺在 `node_modules/@deepseek-ai/*`，不再嵌套在 dsh/node_modules 下），路径 198–226（安装目录预计 ~232）、彻底低于 260；同时确认 `dsh-base`/`dsh-web-app` 传递依赖已覆盖全部运行时组件（CLI 的 devDeps 是冗余的），hoisted 安装完整可用；剪枝扩展 `.ts`；内核 + 审阅桥启动验证通过；安装包 159.5MB（更小）
+
+### 署名
+
+- deepseek-v4-pro（2026-08-13）
+
 ## [0.1.4] - 2026-08-13
 
 ### 修复
