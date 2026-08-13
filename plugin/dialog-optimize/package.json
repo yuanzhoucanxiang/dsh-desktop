@@ -1,0 +1,24 @@
+{
+  "name": "@dsh-local/dialog-optimize",
+  "version": "1.0.0",
+  "private": true,
+  "description": "对话框优化：对话内容折叠、对话导航与消息撤回（含文件回退）",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "sessions"
+      ]
+    }
+  }
+}
