@@ -102,6 +102,19 @@ bash build-macos.sh          # 准备运行时 → 装依赖 → 打 dmg，全�
 - **托盘图标**：macOS 惯例是 template 图标（黑+alpha 自动反色），当前用黑/白鲸按主题切换，可用但非原生观感
 - **更新**：把 `dist/latest-mac.yml` + `.dmg` 一起发到 Releases，electron-updater 会自动按平台选
 
+### macOS 安装 / 更新（给 Mac 上的 agent）
+
+```bash
+# 安装（首次）：下载指定版本 dmg 并装到 /Applications
+bash update-macos.sh 0.1.1
+
+# 更新到最新 Release：自动查最新版 → 下载 → 覆盖安装 → 启动
+bash update-macos.sh
+```
+
+> 未签名版无法走 electron-updater 自动更新；`update-macos.sh` 提供等效的一键手动更新。
+> 需 Mac 上已 `gh auth login`（私有仓库）。
+
 ## 可选环境开关
 
 | 变量 | 作用 | 默认 |
