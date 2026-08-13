@@ -18,8 +18,11 @@
 
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, shell,
-  nativeImage, nativeTheme, clipboard, dialog, screen, autoUpdater,
+  nativeImage, nativeTheme, clipboard, dialog, screen,
 } = require('electron')
+// 注意：autoUpdater 来自 electron-updater 包（支持 {provider:'github'|'generic'}），
+// 不是 Electron 内置的 autoUpdater（内置只接受 {url}，二者 API 不兼容）。
+const { autoUpdater } = require('electron-updater')
 const { spawn, spawnSync, execFileSync } = require('node:child_process')
 const net = require('node:net')
 const fs = require('node:fs')
@@ -535,8 +538,8 @@ async function checkForUpdates(manual) {
     }
     return
   }
-  autoUpdater.setFeedURL(feed)
   try {
+    autoUpdater.setFeedURL(feed)
     const result = await autoUpdater.checkForUpdates()
     if (manual && !result) {
       dialog.showMessageBox(win, { type: 'info', title: '检查更新', message: '当前已是最新版本。' })
@@ -558,23 +561,27 @@ function setupAutoUpdater() {
     log('auto-update disabled: no update URL configured (set settings.updateUrl or DSH_DESKTOP_UPDATE_URL)')
     return
   }
-  autoUpdater.setFeedURL(feed)
-  autoUpdater.autoDownload = true
-  autoUpdater.on('update-available', (info) => log(`update available: ${info.version}`))
-  autoUpdater.on('update-downloaded', async (info) => {
-    const r = await dialog.showMessageBox(win, {
-      type: 'info', buttons: ['立即重启安装', '稍后'], defaultId: 0, cancelId: 1,
-      title: '更新已就绪', message: `新版本 ${info.version} 已下载完成。`, detail: '重启应用即可完成安装。',
+  try {
+    autoUpdater.setFeedURL(feed)
+    autoUpdater.autoDownload = true
+    autoUpdater.on('update-available', (info) => log(`update available: ${info.version}`))
+    autoUpdater.on('update-downloaded', async (info) => {
+      const r = await dialog.showMessageBox(win, {
+        type: 'info', buttons: ['立即重启安装', '稍后'], defaultId: 0, cancelId: 1,
+        title: '更新已就绪', message: `新版本 ${info.version} 已下载完成。`, detail: '重启应用即可完成安装。',
+      })
+      if (r.response === 0) {
+        state.quitting = true
+        killChild()
+        autoUpdater.quitAndInstall()
+      }
     })
-    if (r.response === 0) {
-      state.quitting = true
-      killChild()
-      autoUpdater.quitAndInstall()
-    }
-  })
-  autoUpdater.on('error', (err) => log(`autoUpdater error: ${err && err.message ? err.message : err}`))
-  // 启动后延迟自动检查一次（静默）
-  setTimeout(() => { checkForUpdates(false).catch(() => {}) }, 8000)
+    autoUpdater.on('error', (err) => log(`autoUpdater error: ${err && err.message ? err.message : err}`))
+    // 启动后延迟自动检查一次（静默）
+    setTimeout(() => { checkForUpdates(false).catch(() => {}) }, 8000)
+  } catch (err) {
+    log(`auto-update setup failed: ${err && err.message ? err.message : err}`)
+  }
 }
 
 async function pickWorkspace() {
@@ -731,7 +738,11 @@ if (!gotLock) {
     registerIpc()
     createWindow()
     applyAutoLaunch() // 应用持久化的开机自启设置
-    setupAutoUpdater() // 打包后生效（启动后静默检查 + 托盘手动检查）
+    try {
+      setupAutoUpdater() // 打包后生效；任何更新配置问题都不得阻断启动
+    } catch (err) {
+      log(`auto-update init failed: ${err && err.message ? err.message : err}`)
+    }
     try {
       createTray()
     } catch (err) {
