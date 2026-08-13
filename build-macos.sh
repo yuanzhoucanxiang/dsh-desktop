@@ -5,6 +5,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
+# 本地/CI 默认不签名（无证书时 electron-builder 会报错）；正式分发再配 Apple 证书
+export CSC_IDENTITY_AUTO_DISCOVERY=false
+
 # 0. prerequisites
 for c in node npm; do
   command -v "$c" >/dev/null || { echo "ERROR: $c not found (install Node.js first)" >&2; exit 1; }

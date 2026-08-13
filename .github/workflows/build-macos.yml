@@ -1,0 +1,38 @@
+name: build-macos
+
+on:
+  workflow_dispatch:        # 手动触发（GitHub 页面或 gh workflow run）
+  push:
+    tags: ['v*']            # 打 tag 也自动触发
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14       # Apple Silicon (arm64)；Intel 机器改 macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build dmg
+        run: bash build-macos.sh
+
+      - name: Publish to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          TAG="v$VER"
+          DMG=$(ls dist/*.dmg | head -1)
+          echo "dmg=$DMG tag=$TAG"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "DeepSeek Harness Desktop $VER" \
+            --notes "自动构建（macOS arm64，未签名）" >/dev/null 2>&1 || true
+          gh release upload "$TAG" "$DMG" --repo "$GITHUB_REPOSITORY" --clobber
+          if [ -f dist/latest-mac.yml ]; then
+            gh release upload "$TAG" dist/latest-mac.yml --repo "$GITHUB_REPOSITORY" --clobber
+          fi
