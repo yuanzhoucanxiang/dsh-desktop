@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.1.1",
-  "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
+  "version": "0.1.2",
+  "description": "DeepSeek Harness 妗岄潰蹇嵎鍚姩澶栧３锛氭媺璧?dsh web 鍐呮牳骞剁敤鍘熺敓绐楀彛鎵胯浇锛屼笉淇敼鍐呮牳銆?,
   "author": "dsh-desktop",
   "license": "MIT",
   "private": true,
@@ -83,3 +83,4 @@
     }
   }
 }
+

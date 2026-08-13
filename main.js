@@ -59,6 +59,7 @@ const state = {
   logStream: null,
   logPath: '',
   reviewStreamPath: '',
+  useReviewBridge: true, // 审阅桥插件；启动失败时置 false 重试（兼容保险）
 }
 
 /* ─────────────────────────────── 设置持久化 ───────────────────────────────── */
@@ -341,7 +342,7 @@ async function startKernel() {
   const isJsLauncher = bin.endsWith('.js')
   const launcher = isJsLauncher ? resolveNodeExe() : bin
   // 注入审阅桥插件（会话改动流）；插件缺失时返回 '' → 不带补丁启动
-  const patch = writeReviewPatch()
+  const patch = state.useReviewBridge ? writeReviewPatch() : ''
   const patchArgs = patch ? ['--patch', patch] : []
   const baseArgs = ['--profile', 'web', ...patchArgs, '--port', String(state.port)]
   const args = isJsLauncher ? [bin, ...baseArgs] : baseArgs
@@ -751,8 +752,23 @@ function registerIpc() {
 
 async function bootKernel() {
   const t0 = Date.now()
-  await startKernel()
-  await waitReady()
+  try {
+    await startKernel()
+    await waitReady()
+  } catch (err) {
+    // 兼容性保险：内核升级若导致审阅桥插件加载失败，去掉插件重试一次，
+    // 保证应用本体永远可用（审阅降级为仅 git 视图，而不是启动失败）。
+    if (state.useReviewBridge) {
+      log(`boot failed (${err.message}); retrying without review bridge`)
+      state.useReviewBridge = false
+      killChild()
+      state.ready = false
+      await startKernel()
+      await waitReady()
+    } else {
+      throw err
+    }
+  }
   state.elapsedMs = Date.now() - t0
   setStatus('ready', `已就绪（${(state.elapsedMs / 1000).toFixed(1)}s），正在进入工作区…`)
 
