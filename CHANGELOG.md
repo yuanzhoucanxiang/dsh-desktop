@@ -33,6 +33,16 @@
 
 - deepseek-v4-pro（2026-08-13）
 
+## [0.1.4] - 2026-08-13
+
+### 修复
+
+- **升级卸载失败（`Failed to uninstall old application files: 2`）**：运行时树里有 36 个文件路径超 Windows 260 字符上限（最深的在 `@mistralai/mistralai` 的 `.d.ts.map`），NSIS 卸载器用经典 API 删除时报"找不到文件" → `prepare-runtime` 脚本剪掉 `.d.ts`/`.d.ts.map`/`.map`（开发期产物，运行时不需要），路径 269→228、超限 0 个、体积 339→280MB；剪枝后内核 + 审阅桥启动验证通过
+
+### 署名
+
+- deepseek-v4-pro（2026-08-13）
+
 ## [0.1.3] - 2026-08-13
 
 ### 改进
