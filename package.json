@@ -51,6 +51,7 @@
       "owner": "yuanzhoucanxiang",
       "repo": "dsh-desktop"
     },
+    "artifactName": "dsh-desktop-${version}-setup.${ext}",
     "win": {
       "target": [
         "nsis"
