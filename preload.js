@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('dshShell', {
   quit: () => ipcRenderer.send('shell:quit'),
   splashReady: () => ipcRenderer.send('shell:splash-ready'),
   changes: () => ipcRenderer.invoke('shell:changes'),
+  gitInit: () => ipcRenderer.invoke('shell:git-init'),
   revert: (p, untracked) => ipcRenderer.invoke('shell:revert', p, untracked),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
 })
@@ -232,7 +233,31 @@ function injectReviewSidebar() {
     if (!data.isGit) {
       const empty = document.createElement('div')
       empty.id = `${S}-empty`
-      empty.textContent = '当前工作目录不是 git 仓库，无法审阅 diff。\n请在托盘「设置工作目录…」指向一个 git 仓库。'
+      const msg = document.createElement('div')
+      msg.textContent = '当前工作目录不是 git 仓库，无法审阅 diff。'
+      const hint = document.createElement('div')
+      hint.style.marginTop = '8px'
+      hint.style.color = '#6f7a99'
+      hint.style.fontSize = '12px'
+      hint.textContent = '可用托盘「设置工作目录…」指向一个 git 仓库，或直接：'
+      const initBtn = document.createElement('button')
+      initBtn.style.marginTop = '12px'
+      initBtn.style.padding = '7px 16px'
+      initBtn.style.borderRadius = '8px'
+      initBtn.style.border = '1px solid #5d6dff'
+      initBtn.style.background = '#2b2f4d'
+      initBtn.style.color = '#e6e9ff'
+      initBtn.style.cursor = 'pointer'
+      initBtn.style.font = 'inherit'
+      initBtn.textContent = '在此目录初始化 git 仓库'
+      initBtn.title = `git init（${data.workspace}）`
+      initBtn.addEventListener('click', async () => {
+        initBtn.textContent = '初始化中…'
+        initBtn.disabled = true
+        await ipcRenderer.invoke('shell:git-init')
+        refresh()
+      })
+      empty.append(msg, hint, initBtn)
       body.appendChild(empty)
       footCount.textContent = ''
       return

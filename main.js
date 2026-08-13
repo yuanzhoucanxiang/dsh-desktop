@@ -120,6 +120,13 @@ function isGitRepo() {
   return !!r && r.trim() === 'true'
 }
 
+/** 在当前工作目录初始化 git 仓库（仅当还不是仓库时）。 */
+function gitInit() {
+  if (isGitRepo()) return { ok: true, already: true }
+  const r = git(['init', '-q'])
+  return { ok: r !== null, already: false }
+}
+
 /** 解析 git status --porcelain=v1：XY <path>（重命名为 XY <old> -> <new>）。 */
 function parseStatus(out) {
   const files = []
@@ -637,6 +644,7 @@ function registerIpc() {
     logTail: state.logTail.join('\n'),
   }))
   ipcMain.handle('shell:changes', () => collectChanges())
+  ipcMain.handle('shell:git-init', () => gitInit())
   ipcMain.handle('shell:open-file', (_e, p) => {
     const fp = path.join(kernelCwd(), String(p))
     return shell.openPath(fp)
