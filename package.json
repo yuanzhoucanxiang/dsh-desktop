@@ -44,6 +44,14 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "plugin",
+        "to": "plugin",
+        "filter": [
+          "review-bridge.js",
+          "review-bridge.patch.yml"
+        ]
       }
     ],
     "publish": {

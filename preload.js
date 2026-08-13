@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('dshShell', {
   quit: () => ipcRenderer.send('shell:quit'),
   splashReady: () => ipcRenderer.send('shell:splash-ready'),
   changes: () => ipcRenderer.invoke('shell:changes'),
+  sessionChanges: () => ipcRenderer.invoke('shell:session-changes'),
   gitInit: () => ipcRenderer.invoke('shell:git-init'),
   revert: (p, untracked) => ipcRenderer.invoke('shell:revert', p, untracked),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
@@ -131,6 +132,15 @@ function injectReviewSidebar() {
     #${S}-diff .ln-meta{color:#6f7a99;}
     #${S}-diff .ln-ctx{color:#7a8398;}
     #${S}-foot{flex:none;padding:10px 16px;border-top:1px solid rgba(120,140,210,.14);font-size:12px;color:#6f7a99;display:flex;justify-content:space-between;}
+    #${S}-mode{display:flex;gap:6px;margin:10px 0 2px;flex:none;}
+    #${S}-mode button{flex:1;padding:5px 8px;border-radius:7px;border:1px solid rgba(120,140,210,.22);background:transparent;color:#8b93ad;cursor:pointer;font:inherit;font-size:12px;}
+    #${S}-mode button:hover{color:#e6e9ff;border-color:#5d6dff;}
+    #${S}-turn{border-bottom:1px solid rgba(120,140,210,.08);}
+    #${S}-turn-head{padding:8px 14px;font-size:11px;color:#5d6dff;letter-spacing:.1em;font-weight:600;background:rgba(120,140,210,.05);}
+    #${S}-sitem{padding:8px 14px 6px;border-bottom:1px solid rgba(120,140,210,.05);}
+    #${S}-snippet{margin-top:5px;font:11px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;word-break:break-all;}
+    #${S}-snippet .sn-old{color:#ff9a9a;}
+    #${S}-snippet .sn-new{color:#8ee6b0;}
   `
   document.head.appendChild(style)
 
@@ -161,10 +171,20 @@ function injectReviewSidebar() {
   closeBtn.title = '收起'
   headBtns.append(refreshBtn, closeBtn)
   titleRow.append(titleText, headBtns)
+  // 视图切换：会话改动（本次会话 agent 的文件修改）| Git 工作区（未提交改动）
+  const modeRow = document.createElement('div')
+  modeRow.id = `${S}-mode`
+  const modeSession = document.createElement('button')
+  modeSession.textContent = '会话改动'
+  modeSession.title = '本次会话 agent 的文件修改（审阅桥实时采集）'
+  const modeGit = document.createElement('button')
+  modeGit.textContent = 'Git 工作区'
+  modeGit.title = '工作区未提交改动'
+  modeRow.append(modeSession, modeGit)
   const ws = document.createElement('div')
   ws.id = `${S}-ws`
   ws.textContent = '…'
-  head.append(titleRow, ws)
+  head.append(titleRow, modeRow, ws)
 
   const body = document.createElement('div')
   body.id = `${S}-body`
@@ -182,7 +202,9 @@ function injectReviewSidebar() {
   root.append(tab, panel)
   document.body.appendChild(root)
 
+  let mode = 'session' // 'session' | 'git'
   let data = { isGit: false, workspace: '', files: [] }
+  let sessionData = { ok: false, entries: [] }
   let expanded = {}
   let timer = null
 
@@ -201,6 +223,16 @@ function injectReviewSidebar() {
   tab.addEventListener('click', () => setOpen(true))
   closeBtn.addEventListener('click', () => setOpen(false))
   refreshBtn.addEventListener('click', refresh)
+  modeSession.addEventListener('click', () => { mode = 'session'; syncMode(); refresh() })
+  modeGit.addEventListener('click', () => { mode = 'git'; syncMode(); refresh() })
+
+  function syncMode() {
+    modeSession.style.background = mode === 'session' ? '#2b2f4d' : 'transparent'
+    modeSession.style.color = mode === 'session' ? '#e6e9ff' : '#8b93ad'
+    modeGit.style.background = mode === 'git' ? '#2b2f4d' : 'transparent'
+    modeGit.style.color = mode === 'git' ? '#e6e9ff' : '#8b93ad'
+  }
+  syncMode()
 
   function statusLabel(st) {
     if (st === '??') return { label: '新', cls: 'st-??' }
@@ -227,7 +259,7 @@ function injectReviewSidebar() {
     return wrap
   }
 
-  function render() {
+  function renderGit() {
     ws.textContent = data.workspace || '（未知工作目录）'
     body.textContent = ''
     if (!data.isGit) {
@@ -329,9 +361,86 @@ function injectReviewSidebar() {
     }
   }
 
+  // ── 会话改动视图（审阅桥实时采集） ────────────────────────────────────────
+  function renderSession() {
+    body.textContent = ''
+    const calls = (sessionData.entries || []).filter((e) => e.kind === 'tool-call')
+    if (calls.length === 0) {
+      const empty = document.createElement('div')
+      empty.id = `${S}-empty`
+      empty.textContent = '本次会话还没有文件修改。\nagent 开始改文件后，这里会实时出现。'
+      body.appendChild(empty)
+      footCount.textContent = ''
+      return
+    }
+    footCount.textContent = `${calls.length} 个修改`
+
+    // 按 turn 分组
+    const turns = []
+    let cur = null
+    for (const e of sessionData.entries || []) {
+      if (e.kind === 'turn-end') { cur = null; continue }
+      if (!cur || cur.turn !== e.turn) {
+        cur = { turn: e.turn, items: [] }
+        turns.push(cur)
+      }
+      cur.items.push(e)
+    }
+
+    for (const t of turns) {
+      const turnBox = document.createElement('div')
+      turnBox.id = `${S}-turn`
+      const turnHead = document.createElement('div')
+      turnHead.id = `${S}-turn-head`
+      turnHead.textContent = `第 ${t.turn} 轮`
+      turnBox.appendChild(turnHead)
+      for (const item of t.items) turnBox.appendChild(sessionItem(item))
+      body.appendChild(turnBox)
+    }
+  }
+
+  function sessionItem(item) {
+    const row = document.createElement('div')
+    row.id = `${S}-sitem`
+    const badge = document.createElement('span')
+    badge.id = `${S}-badge`
+    const isWrite = item.name === 'write'
+    badge.className = isWrite ? 'st-A' : 'st-M'
+    badge.textContent = isWrite ? '写' : (item.name === 'str_replace_editor' ? '替' : '改')
+    const pathEl = document.createElement('span')
+    pathEl.id = `${S}-path`
+    pathEl.textContent = item.file || '(未知文件)'
+    pathEl.title = item.file || ''
+    row.append(badge, pathEl)
+
+    const snippet = document.createElement('div')
+    snippet.id = `${S}-snippet`
+    if (!isWrite) {
+      const oldP = document.createElement('div')
+      oldP.className = 'sn-old'
+      oldP.textContent = '− ' + ((item.old || '(空)').split('\n')[0] || ' ')
+      snippet.appendChild(oldP)
+    }
+    const newP = document.createElement('div')
+    newP.className = 'sn-new'
+    newP.textContent = '+ ' + ((item.new || '(空)').split('\n')[0] || ' ')
+    snippet.appendChild(newP)
+    row.appendChild(snippet)
+    return row
+  }
+
+  function render() {
+    if (mode === 'session') renderSession()
+    else renderGit()
+  }
+
   async function refresh() {
     try {
-      data = await ipcRenderer.invoke('shell:changes')
+      if (mode === 'session') {
+        sessionData = await ipcRenderer.invoke('shell:session-changes')
+      } else {
+        data = await ipcRenderer.invoke('shell:changes')
+      }
       render()
     } catch (err) {
       body.textContent = ''

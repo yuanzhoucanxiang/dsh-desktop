@@ -1,0 +1,7 @@
+# 审阅桥插件行（外壳经 --patch 注入桌面实例）
+# name 必须是 file:// URL（Node ESM 在 Windows 上不接受裸绝对路径）
+- insert:
+    - id: review-bridge
+      name: 'file:///E:/Deepseek%20harness/dsh-desktop/plugin/review-bridge.js'
+      config:
+        out: 'E:/Deepseek harness/dsh-desktop/plugin/review-events.ndjson'

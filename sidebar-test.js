@@ -1,12 +1,22 @@
 'use strict'
-// 测试：验证"修改审阅"侧边栏 —— 非 git 仓库时显示初始化按钮，点击后刷新出文件列表
+// 测试：验证"修改审阅"侧边栏 —— 会话改动视图（默认）+ Git 视图切换
 // 运行：electron sidebar-test.js
 const { app, BrowserWindow, ipcMain } = require('electron')
 const http = require('node:http')
 const path = require('node:path')
 
-let isGit = false
-const FILES = [{ path: 'src/a.js', status: ' M', untracked: false, diff: 'diff --git a/a b/a\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-old\n+new\n' }]
+const SESSION = {
+  ok: true,
+  entries: [
+    { kind: 'tool-call', ts: 1, session: 's1', turn: 1, step: 1, callId: 'c1', name: 'write', file: 'src/new.js', old: null, new: 'console.log("hi")' },
+    { kind: 'tool-call', ts: 2, session: 's1', turn: 1, step: 3, callId: 'c2', name: 'edit', file: 'src/a.js', old: 'old line', new: 'new line' },
+    { kind: 'turn-end', ts: 3, session: 's1', turn: 1 },
+  ],
+}
+const GIT = {
+  isGit: true, workspace: 'C:/fake/repo',
+  files: [{ path: 'src/gitfile.js', status: ' M', untracked: false, diff: 'diff --git a/gitfile b/gitfile\n--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n' }],
+}
 
 app.disableHardwareAcceleration()
 
@@ -26,10 +36,9 @@ app.whenReady().then(async () => {
     const port = server.address().port
 
     ipcMain.handle('shell:get-state', () => ({ workspace: 'C:/fake/repo', phase: 'ready' }))
-    ipcMain.handle('shell:changes', () => (isGit
-      ? { isGit: true, workspace: 'C:/fake/repo', files: FILES }
-      : { isGit: false, workspace: 'C:/fake/repo', files: [] }))
-    ipcMain.handle('shell:git-init', () => { isGit = true; return { ok: true, already: false } })
+    ipcMain.handle('shell:changes', () => GIT)
+    ipcMain.handle('shell:session-changes', () => SESSION)
+    ipcMain.handle('shell:git-init', () => ({ ok: true }))
     ipcMain.handle('shell:revert', () => ({ ok: true, canceled: false }))
     ipcMain.handle('shell:open-file', () => '')
 
@@ -50,21 +59,26 @@ app.whenReady().then(async () => {
         tab.click()
         await new Promise(r => setTimeout(r, 600))
         const body = document.getElementById('dsh-review-body')
-        const hasInitBtn = body.textContent.includes('在此目录初始化 git 仓库')
-        const initBtn = document.querySelector('#dsh-review-empty button')
-        if (!initBtn) return { ok: false, why: 'no init button', hasInitBtn }
-        initBtn.click()
-        await new Promise(r => setTimeout(r, 700))
-        const bodyAfter = document.getElementById('dsh-review-body').textContent
-        const hasFile = bodyAfter.includes('src/a.js')
-        return { ok: true, hasInitBtn, hasFile }
+        const sessionBody = body.textContent
+        const hasNewJs = sessionBody.includes('src/new.js')
+        const hasAJs = sessionBody.includes('src/a.js')
+        const hasTurn = sessionBody.includes('第 1 轮')
+        const hasOldNew = sessionBody.includes('old line') && sessionBody.includes('new line')
+        // 切到 Git 视图
+        const modeBtns = document.querySelectorAll('#dsh-review-mode button')
+        if (modeBtns.length !== 2) return { ok: false, why: 'mode buttons missing: ' + modeBtns.length }
+        modeBtns[1].click()
+        await new Promise(r => setTimeout(r, 600))
+        const gitBody = document.getElementById('dsh-review-body').textContent
+        const hasGitFile = gitBody.includes('src/gitfile.js')
+        return { ok: true, hasNewJs, hasAJs, hasTurn, hasOldNew, hasGitFile }
       } catch (e) { return { ok: false, why: 'eval threw: ' + e.message } }
     })()`)
 
     win.destroy()
     server.close()
-    const pass = result.ok && result.hasInitBtn && result.hasFile
-    finish(pass ? 0 : 1, 'SIDEBAR_INIT_TEST ' + JSON.stringify(result))
+    const pass = result.ok && result.hasNewJs && result.hasAJs && result.hasTurn && result.hasOldNew && result.hasGitFile
+    finish(pass ? 0 : 1, 'SIDEBAR_SESSION_TEST ' + JSON.stringify(result))
   } catch (err) {
     try { server.close() } catch {}
     finish(1, 'SIDEBAR_TEST_ERR ' + (err && err.stack ? err.stack : String(err)))
