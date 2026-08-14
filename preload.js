@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('dshShell', {
   sessionChanges: () => ipcRenderer.invoke('shell:session-changes'),
   gitInit: () => ipcRenderer.invoke('shell:git-init'),
   revert: (p, untracked) => ipcRenderer.invoke('shell:revert', p, untracked),
+  revertChange: (sessionId, callId) => ipcRenderer.invoke('shell:revert-change', sessionId, callId),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
 })
 
@@ -85,7 +86,7 @@ ipcRenderer.on('shell:kernel-status', (_e, s) => {
   else showOverlay(s.message)
 })
 
-/* ── 右侧"修改审阅"侧边栏（外壳级覆盖层） ─────────────────────────────────── */
+/* ── 右侧"修改审阅"侧边栏（外壳级覆盖层，Codex 式） ──────────────────────── */
 
 function injectReviewSidebar() {
   if (location.protocol === 'file:') return // splash 不注入
@@ -142,12 +143,39 @@ function injectReviewSidebar() {
     #${S}-mode button{flex:1;padding:5px 8px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,transparent);background:transparent;color:var(--dsw-alias-label-secondary,#8b93ad);cursor:pointer;font:inherit;font-size:12px;}
     #${S}-mode button:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
     #${S}-mode button.dsh-active{background:var(--dsw-alias-button-primary-fill,transparent);color:var(--dsw-alias-label-primary-foreground,#e6e9ff);border-color:transparent;}
-    #${S}-turn{border-bottom:1px solid var(--dsw-alias-border-l1,transparent);}
-    #${S}-turn-head{padding:8px 14px;font-size:11px;color:var(--dsw-alias-brand-primary,#5d6dff);letter-spacing:.1em;font-weight:600;background:var(--dsw-alias-interactive-bg-hover,transparent);}
-    #${S}-sitem{padding:8px 14px 6px;border-bottom:1px solid var(--dsw-alias-border-l1,transparent);}
-    #${S}-snippet{margin-top:5px;font:11px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;word-break:break-all;}
-    #${S}-snippet .sn-old{color:var(--dsw-alias-state-error-primary,#ff9a9a);}
-    #${S}-snippet .sn-new{color:var(--dsw-alias-state-success-primary,#8ee6b0);}
+    /* ── 会话改动视图（Codex 式：按轮次带提问分组 → 按文件分组 → 逐条改动）── */
+    #${S}-turn{border-bottom:1px solid var(--dsw-alias-border-l2,transparent);}
+    #${S}-turn-head{padding:10px 14px 6px;background:var(--dsw-alias-interactive-bg-hover,transparent);}
+    #${S}-turn-label{font-size:11px;color:var(--dsw-alias-brand-primary,#5d6dff);letter-spacing:.08em;font-weight:600;}
+    #${S}-turn-prompt{margin-top:4px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-primary,#e6e9ff);
+      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;}
+    #${S}-fgroup{border-bottom:1px solid var(--dsw-alias-border-l1,transparent);}
+    #${S}-fhead{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;flex-wrap:wrap;}
+    #${S}-fhead:hover{background:var(--dsw-alias-interactive-bg-hover,transparent);}
+    #${S}-fcount{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,#6f7a99);border:1px solid var(--dsw-alias-border-l2,transparent);border-radius:8px;padding:0 6px;}
+    #${S}-fchev{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,#6f7a99);transition:transform .12s;}
+    #${S}-fhead.dsh-closed #${S}-fchev{transform:rotate(-90deg);}
+    #${S}-citem{padding:6px 14px 8px 26px;border-top:1px dashed var(--dsw-alias-border-l1,transparent);}
+    #${S}-crow{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;}
+    #${S}-crow .dsh-cbadge{flex:none;font-size:10px;padding:1px 6px;border-radius:5px;font-weight:600;}
+    #${S}-crow .dsh-cbadge.w{background:var(--dsw-alias-state-success-secondary,transparent);color:var(--dsw-alias-state-success-primary,#7fe0a8);}
+    #${S}-crow .dsh-cbadge.e{background:var(--dsw-alias-state-warn-secondary,transparent);color:var(--dsw-alias-state-warn-primary,#ffd97a);}
+    #${S}-crow .dsh-cbadge.s{background:var(--dsw-alias-interactive-bg-hover-accent,transparent);color:var(--dsw-alias-brand-primary,#c3b4ff);}
+    #${S}-cnote{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);}
+    #${S}-cops{margin-left:auto;flex:none;display:flex;gap:6px;}
+    #${S}-cops button{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b93ad);background:none;border:1px solid var(--dsw-alias-border-l2,transparent);border-radius:6px;padding:1px 8px;cursor:pointer;}
+    #${S}-cops button:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
+    #${S}-cops button:disabled{opacity:.5;cursor:default;}
+    #${S}-cdiff{margin-top:6px;font:11.5px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;word-break:break-all;
+      background:var(--dsw-alias-bg-layer-1,transparent);border:1px solid var(--dsw-alias-border-l1,transparent);border-radius:8px;overflow:hidden;}
+    #${S}-cdiff .cd-old{color:var(--dsw-alias-state-error-primary,#ff9a9a);background:var(--dsw-alias-state-error-secondary,transparent);padding:6px 10px;white-space:pre-wrap;}
+    #${S}-cdiff .cd-new{color:var(--dsw-alias-state-success-primary,#8ee6b0);background:var(--dsw-alias-state-success-tertiary,transparent);padding:6px 10px;white-space:pre-wrap;}
+    #${S}-cdiff .cd-more{display:block;width:100%;text-align:center;font:11px/1 inherit;color:var(--dsw-alias-label-tertiary,#6f7a99);background:none;border:none;border-top:1px solid var(--dsw-alias-border-l1,transparent);padding:3px 0;cursor:pointer;}
+    #${S}-cdiff .cd-more:hover{color:var(--dsw-alias-label-primary,#e6e9ff);}
+    #${S}-toast{position:fixed;right:376px;bottom:24px;z-index:2147483000;max-width:300px;padding:10px 14px;border-radius:10px;
+      font-size:12px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.35);display:none;}
+    #${S}-toast.dsh-ok{background:var(--dsw-alias-state-success-secondary,rgba(32,64,48,.95));color:var(--dsw-alias-state-success-primary,#7fe0a8);border:1px solid var(--dsw-alias-state-success-primary,transparent);}
+    #${S}-toast.dsh-err{background:var(--dsw-alias-state-error-secondary,rgba(64,28,36,.95));color:var(--dsw-alias-state-error-primary,#ff9a9a);border:1px solid var(--dsw-alias-state-error-primary,transparent);}
   `
   document.head.appendChild(style)
 
@@ -183,7 +211,7 @@ function injectReviewSidebar() {
   modeRow.id = `${S}-mode`
   const modeSession = document.createElement('button')
   modeSession.textContent = '会话改动'
-  modeSession.title = '本次会话 agent 的文件修改（审阅桥实时采集）'
+  modeSession.title = '本次会话 agent 的文件修改（审阅桥实时采集，可逐条撤销）'
   const modeGit = document.createElement('button')
   modeGit.textContent = 'Git 工作区'
   modeGit.title = '工作区未提交改动'
@@ -201,19 +229,32 @@ function injectReviewSidebar() {
   const footCount = document.createElement('span')
   footCount.id = `${S}-count`
   const footHint = document.createElement('span')
-  footHint.textContent = '还原 = git restore'
+  footHint.textContent = '撤销 = 精确逆序回退该次改动'
 
   foot.append(footCount, footHint)
 
+  const toast = document.createElement('div')
+  toast.id = `${S}-toast`
+
   panel.append(head, body, foot)
-  root.append(tab, panel)
+  root.append(tab, panel, toast)
   document.body.appendChild(root)
 
   let mode = 'session' // 'session' | 'git'
   let data = { isGit: false, workspace: '', files: [] }
   let sessionData = { ok: false, entries: [] }
   let expanded = {}
+  let lastSig = ''
   let timer = null
+  let toastTimer = null
+
+  function showToast(msg, isErr) {
+    toast.textContent = msg
+    toast.className = isErr ? 'dsh-err' : 'dsh-ok'
+    toast.style.display = ''
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => { toast.style.display = 'none' }, 4200)
+  }
 
   function setOpen(open) {
     panel.classList.toggle('dsh-hidden', !open)
@@ -232,8 +273,8 @@ function injectReviewSidebar() {
   tab.addEventListener('click', () => setOpen(true))
   closeBtn.addEventListener('click', () => setOpen(false))
   refreshBtn.addEventListener('click', refresh)
-  modeSession.addEventListener('click', () => { mode = 'session'; syncMode(); refresh() })
-  modeGit.addEventListener('click', () => { mode = 'git'; syncMode(); refresh() })
+  modeSession.addEventListener('click', () => { mode = 'session'; lastSig = ''; syncMode(); refresh() })
+  modeGit.addEventListener('click', () => { mode = 'git'; lastSig = ''; syncMode(); refresh() })
 
   function syncMode() {
     modeSession.classList.toggle('dsh-active', mode === 'session')
@@ -264,6 +305,17 @@ function injectReviewSidebar() {
       wrap.appendChild(line)
     }
     return wrap
+  }
+
+  function openFileBtn(file) {
+    const b = document.createElement('button')
+    b.textContent = '打开'
+    b.title = '在系统编辑器中打开该文件'
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      await window.dshShell.openFile(file)
+    })
+    return b
   }
 
   function renderGit() {
@@ -339,7 +391,7 @@ function injectReviewSidebar() {
         refresh()
       })
 
-      row.append(badge, pathEl, act)
+      row.append(badge, pathEl, openFileBtn(f.path), act)
       row.addEventListener('click', () => {
         expanded[f.path] = !expanded[f.path]
         render()
@@ -368,11 +420,120 @@ function injectReviewSidebar() {
     }
   }
 
-  // ── 会话改动视图（审阅桥实时采集） ────────────────────────────────────────
+  // ── 会话改动视图（Codex 式：轮次带提问 → 文件分组 → 逐条改动+撤销） ────
+
+  const LINE_CAP = 12
+
+  function changeBadge(name) {
+    const b = document.createElement('span')
+    b.className = 'dsh-cbadge ' + (name === 'write' ? 'w' : name === 'edit' ? 'e' : 's')
+    b.textContent = name === 'write' ? '写' : name === 'edit' ? '改' : '替'
+    return b
+  }
+
+  // old→new 迷你 diff；超过 LINE_CAP 行折叠，可点开
+  function changeDiff(ch, results) {
+    const box = document.createElement('div')
+    box.id = `${S}-cdiff`
+    const res = results.get(ch.callId)
+
+    const makeBlock = (cls, prefix, text, isOld) => {
+      if (text === null || text === undefined || text === '') return
+      const div = document.createElement('div')
+      div.className = cls
+      const lines = String(text).split('\n')
+      let show = lines
+      let rest = 0
+      if (lines.length > LINE_CAP) {
+        show = lines.slice(0, LINE_CAP)
+        rest = lines.length - LINE_CAP
+      }
+      for (const l of show) {
+        const lineEl = document.createElement('div')
+        lineEl.textContent = prefix + (l === '' ? ' ' : l)
+        div.appendChild(lineEl)
+      }
+      box.appendChild(div)
+      if (rest > 0) {
+        const more = document.createElement('button')
+        more.className = 'cd-more'
+        more.textContent = `▾ 展开全部（还有 ${rest} 行）`
+        more.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const all = document.createElement('div')
+          all.className = cls
+          for (const l of lines) {
+            const lineEl = document.createElement('div')
+            lineEl.textContent = prefix + (l === '' ? ' ' : l)
+            all.appendChild(lineEl)
+          }
+          div.replaceWith(all)
+          const less = document.createElement('button')
+          less.className = 'cd-more'
+          less.textContent = '▴ 收起'
+          less.addEventListener('click', () => { box.replaceWith(changeDiff(ch, results)) })
+          box.appendChild(less)
+        })
+        box.appendChild(more)
+      }
+    }
+
+    makeBlock('cd-old', '− ', ch.old, true)
+    makeBlock('cd-new', '+ ', ch.new, false)
+
+    if (res && res.created) {
+      const note = document.createElement('div')
+      note.className = 'cd-more'
+      note.textContent = '＊ 该次写入创建了此文件（撤销 = 删除文件）'
+      note.style.cursor = 'default'
+      box.appendChild(note)
+    } else if (res && res.failed) {
+      const note = document.createElement('div')
+      note.className = 'cd-more'
+      note.textContent = '＊ 该次调用未成功（无需撤销）'
+      note.style.cursor = 'default'
+      box.appendChild(note)
+    }
+    return box
+  }
+
+  function sessionModel(entries) {
+    const prompts = new Map()   // turn -> { text, count }
+    const reverted = new Map()  // callId -> { file }
+    const results = new Map()   // callId -> { created, failed }
+    const changes = []          // tool-call 条目（流顺序）
+    for (const e of entries || []) {
+      if (e.kind === 'prompt' && e.turn !== undefined && e.turn !== null) {
+        const p = prompts.get(e.turn)
+        if (p) p.count++
+        else prompts.set(e.turn, { text: e.text, count: 1 })
+      } else if (e.kind === 'tool-call') {
+        changes.push(e)
+      } else if (e.kind === 'tool-result') {
+        results.set(e.callId, e)
+      } else if (e.kind === 'revert') {
+        if (e.ok) reverted.set(e.callId, e)
+      }
+    }
+    return { prompts, reverted, results, changes }
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return ''
+    try {
+      const d = new Date(ts)
+      const p = (n) => String(n).padStart(2, '0')
+      return `${p(d.getHours())}:${p(d.getMinutes())}`
+    } catch {
+      return ''
+    }
+  }
+
   function renderSession() {
     body.textContent = ''
-    const calls = (sessionData.entries || []).filter((e) => e.kind === 'tool-call')
-    if (calls.length === 0) {
+    const { prompts, reverted, results, changes } = sessionModel(sessionData.entries || [])
+
+    if (changes.length === 0) {
       const empty = document.createElement('div')
       empty.id = `${S}-empty`
       empty.textContent = '本次会话还没有文件修改。\nagent 开始改文件后，这里会实时出现。'
@@ -380,60 +541,135 @@ function injectReviewSidebar() {
       footCount.textContent = ''
       return
     }
-    footCount.textContent = `${calls.length} 个修改`
 
-    // 按 turn 分组
+    const active = changes.filter((c) => !reverted.has(c.callId))
+    if (active.length === 0) {
+      const empty = document.createElement('div')
+      empty.id = `${S}-empty`
+      empty.textContent = '所有改动均已撤销 ✓'
+      body.appendChild(empty)
+      footCount.textContent = '0 个未撤销改动'
+      return
+    }
+
+    // 按 turn 分组（流已按时间序）
     const turns = []
     let cur = null
-    for (const e of sessionData.entries || []) {
-      if (e.kind === 'turn-end') { cur = null; continue }
-      if (!cur || cur.turn !== e.turn) {
-        cur = { turn: e.turn, items: [] }
-        turns.push(cur)
+    for (const ch of changes) {
+      if (!reverted.has(ch.callId)) {
+        const turn = ch.turn
+        if (!cur || cur.turn !== turn) {
+          cur = { turn, items: [] }
+          turns.push(cur)
+        }
+        cur.items.push(ch)
       }
-      cur.items.push(e)
     }
+
+    const fileCount = new Set(active.map((c) => c.file || c.callId)).size
+    footCount.textContent = `${active.length} 处改动 · ${fileCount} 个文件`
+
+    const collapsed = {} // file group 展开状态（默认展开）
 
     for (const t of turns) {
       const turnBox = document.createElement('div')
       turnBox.id = `${S}-turn`
-      const turnHead = document.createElement('div')
-      turnHead.id = `${S}-turn-head`
-      turnHead.textContent = `第 ${t.turn} 轮`
-      turnBox.appendChild(turnHead)
-      for (const item of t.items) turnBox.appendChild(sessionItem(item))
+
+      const headEl = document.createElement('div')
+      headEl.id = `${S}-turn-head`
+      const label = document.createElement('div')
+      label.id = `${S}-turn-label`
+      const time = fmtTime(t.items[0] && t.items[0].ts)
+      label.textContent = `第 ${t.turn} 轮${time ? ' · ' + time : ''}`
+      headEl.appendChild(label)
+      const prompt = prompts.get(t.turn)
+      if (prompt && prompt.text) {
+        const pEl = document.createElement('div')
+        pEl.id = `${S}-turn-prompt`
+        pEl.textContent = (prompt.count > 1 ? `（共 ${prompt.count} 条提问）` : '') + prompt.text
+        pEl.title = prompt.text
+        headEl.appendChild(pEl)
+      }
+      turnBox.appendChild(headEl)
+
+      // 按文件分组
+      const byFile = []
+      let fcur = null
+      for (const ch of t.items) {
+        const fkey = ch.file || '(未知文件)'
+        if (!fcur || fcur.file !== fkey) {
+          fcur = { file: fkey, items: [] }
+          byFile.push(fcur)
+        }
+        fcur.items.push(ch)
+      }
+
+      for (const g of byFile) {
+        const fg = document.createElement('div')
+        fg.id = `${S}-fgroup`
+        const fh = document.createElement('div')
+        fh.id = `${S}-fhead`
+        const chev = document.createElement('span')
+        chev.id = `${S}-fchev`
+        chev.textContent = '▾'
+        const pathEl = document.createElement('span')
+        pathEl.id = `${S}-path`
+        pathEl.textContent = g.file
+        pathEl.title = g.file
+        const count = document.createElement('span')
+        count.id = `${S}-fcount`
+        count.textContent = `${g.items.length} 处`
+        fh.append(chev, pathEl, count, openFileBtn(g.file))
+        fh.addEventListener('click', () => {
+          collapsed[g.file + '@' + t.turn] = !collapsed[g.file + '@' + t.turn]
+          fh.classList.toggle('dsh-closed', !!collapsed[g.file + '@' + t.turn])
+          for (const el of fg.querySelectorAll(`#${S}-citem`)) {
+            el.style.display = collapsed[g.file + '@' + t.turn] ? 'none' : ''
+          }
+        })
+        fg.appendChild(fh)
+
+        for (const ch of g.items) {
+          const item = document.createElement('div')
+          item.id = `${S}-citem`
+          const row = document.createElement('div')
+          row.id = `${S}-crow`
+          row.append(changeBadge(ch.name))
+          const note = document.createElement('span')
+          note.id = `${S}-cnote`
+          if (ch.name === 'write') note.textContent = '写入'
+          else if (ch.name === 'str_replace_editor') note.textContent = ch.command === 'str_replace' ? '替换' : (ch.command || '操作')
+          else note.textContent = ch.replaceAll ? '全局替换' : '编辑'
+          row.append(note)
+
+          const ops = document.createElement('span')
+          ops.id = `${S}-cops`
+          const undo = document.createElement('button')
+          undo.textContent = '撤销'
+          undo.title = '精确回退这一次改动（Codex 式 Undo）'
+          undo.addEventListener('click', async (e) => {
+            e.stopPropagation()
+            undo.disabled = true
+            undo.textContent = '回退中…'
+            const r = await window.dshShell.revertChange(ch.session, ch.callId)
+            if (r && r.ok) {
+              showToast('已撤销：' + (r.file || ch.file || ''))
+              refresh()
+            } else {
+              undo.disabled = false
+              undo.textContent = '撤销'
+              showToast('撤销失败：' + (r && r.error ? r.error : '未知错误'), true)
+            }
+          })
+          ops.append(undo)
+          row.append(ops)
+          item.append(row, changeDiff(ch, results))
+          fg.appendChild(item)
+        }
+        turnBox.appendChild(fg)
+      }
       body.appendChild(turnBox)
     }
-  }
-
-  function sessionItem(item) {
-    const row = document.createElement('div')
-    row.id = `${S}-sitem`
-    const badge = document.createElement('span')
-    badge.id = `${S}-badge`
-    const isWrite = item.name === 'write'
-    badge.className = isWrite ? 'st-A' : 'st-M'
-    badge.textContent = isWrite ? '写' : (item.name === 'str_replace_editor' ? '替' : '改')
-    const pathEl = document.createElement('span')
-    pathEl.id = `${S}-path`
-    pathEl.textContent = item.file || '(未知文件)'
-    pathEl.title = item.file || ''
-    row.append(badge, pathEl)
-
-    const snippet = document.createElement('div')
-    snippet.id = `${S}-snippet`
-    if (!isWrite) {
-      const oldP = document.createElement('div')
-      oldP.className = 'sn-old'
-      oldP.textContent = '− ' + ((item.old || '(空)').split('\n')[0] || ' ')
-      snippet.appendChild(oldP)
-    }
-    const newP = document.createElement('div')
-    newP.className = 'sn-new'
-    newP.textContent = '+ ' + ((item.new || '(空)').split('\n')[0] || ' ')
-    snippet.appendChild(newP)
-    row.appendChild(snippet)
-    return row
   }
 
   function render() {
@@ -444,7 +680,13 @@ function injectReviewSidebar() {
   async function refresh() {
     try {
       if (mode === 'session') {
-        sessionData = await ipcRenderer.invoke('shell:session-changes')
+        const res = await ipcRenderer.invoke('shell:session-changes')
+        sessionData = res
+        const entries = sessionData.entries || []
+        const last = entries.length ? entries[entries.length - 1] : null
+        const sig = entries.length + ':' + (last ? last.kind + ':' + (last.seq !== undefined ? last.seq : last.ts) : '')
+        if (sig === lastSig) return // 无新事件，跳过重渲染
+        lastSig = sig
       } else {
         data = await ipcRenderer.invoke('shell:changes')
       }

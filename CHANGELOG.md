@@ -2,6 +2,27 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
+## [0.1.7] - 2026-08-14
+
+### 改进
+
+- **「会话改动」视图对齐 Codex（完整重做）**：
+  - 按轮次分组，组头显示**你的提问文字**（审阅桥新增采集 `user/message`）+ 轮次 + 时间
+  - 轮次内**按文件分组**（同一文件的多次改动收进一张文件卡，显示处数、可折叠）
+  - 每条改动显示**完整 old→new 着色 diff**（超 12 行折叠、可展开全部），str_replace_editor 正确显示 old_str/new_str
+  - **逐条撤销（Codex 式 Undo）**：每条改动一个「撤销」按钮，通过审阅桥新增的 `/api/review-bridge/revert` 端点做精确逆序回退——edit 按 new→old 反向替换（含 replace_all）、str_replace 反向替换、write 恢复写入前状态（从会话日志的完整 read/write 记录重建；Created file 则直接删除文件）；会话运行中拒绝撤销；失败给出明确原因
+  - 撤销成功后该条从列表移除（写入 revert 事件流，刷新后保持一致）；操作反馈用 Toast
+  - 两个视图的文件行都加「打开」按钮（顺带修复绝对路径被错误拼进工作目录的问题）
+- 审阅桥同步采集 `tool/result`（识别 Created file / 失败调用）
+
+### 修复
+
+- `shell:open-file` 用 `path.join` 拼接导致绝对路径（`E:\…`）被拼进工作目录下 → 改 `path.resolve`
+
+### 署名
+
+- deepseek-v4-pro（2026-08-14）
+
 ## [0.1.6] - 2026-08-14
 
 ### 新增

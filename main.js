@@ -789,8 +789,24 @@ function registerIpc() {
   ipcMain.handle('shell:git-init', () => gitInit())
   ipcMain.handle('shell:session-changes', () => readSessionChanges())
   ipcMain.handle('shell:open-file', (_e, p) => {
-    const fp = path.join(kernelCwd(), String(p))
+    // 审阅流里的路径多为绝对路径：path.resolve 保证绝对路径原样通过，相对路径按工作目录解析
+    const fp = path.resolve(kernelCwd(), String(p))
     return shell.openPath(fp)
+  })
+  // 会话改动的单条撤销：代理到内核的审阅桥回退端点（Codex 式 Undo）
+  ipcMain.handle('shell:revert-change', async (_e, sessionId, callId) => {
+    if (!state.ready || !state.url) return { ok: false, error: '内核未就绪' }
+    try {
+      const res = await fetch(`${state.url}/api/review-bridge/revert`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId, callId }),
+        signal: AbortSignal.timeout(30000),
+      })
+      return await res.json()
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) }
+    }
   })
   ipcMain.handle('shell:revert', async (_e, p, untracked) => {
     const r = await dialog.showMessageBox(win, {
