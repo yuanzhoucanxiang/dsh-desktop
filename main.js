@@ -960,18 +960,19 @@ async function runUiSmoke(win) {
   await wait(6000) // 页面 + React + 侧边栏注入
 
   check('sidebar root', await js(`document.getElementById('dsh-review-root') !== null`))
-  check('tab present', await js(`document.getElementById('dsh-review-tab') !== null`))
+  check('rail present', await js(`document.getElementById('dsh-review-rail') !== null`))
+  check('toggle present', await js(`document.getElementById('dsh-review-toggle') !== null`))
 
-  // 1) 点标签 → 面板展开
-  await js(`document.getElementById('dsh-review-tab').click()`)
+  // 1) 点开关 → 面板展开
+  await js(`document.getElementById('dsh-review-toggle').click()`)
   await wait(400)
-  check('panel opens on tab click', await js(`!document.getElementById('dsh-review-panel').classList.contains('dsh-hidden')`))
+  check('panel opens on toggle click', await js(`!document.getElementById('dsh-review-panel').classList.contains('dsh-hidden')`))
   check('split margin applied', await js(`document.body.style.marginRight === '360px'`))
 
-  // 2) 拖拽把手 → 加宽 + 持久化
+  // 2) 拖拽竖条 → 面板左缘跟随鼠标加宽 + 持久化
   const before = await js(`document.body.style.marginRight`)
   await js(`(function(){
-    const h = document.getElementById('dsh-review-resize')
+    const h = document.getElementById('dsh-review-rail')
     const r = h.getBoundingClientRect()
     const cx = r.left + 3, cy = r.top + 300
     const ev = (t, x) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: cy, pointerId: 1 })
@@ -988,6 +989,15 @@ async function runUiSmoke(win) {
     else await wait(300)
   }
   check('width persisted to settings', savedW !== null && savedW > 360)
+
+  // 3) 双击竖条 → 恢复默认 360px
+  await js(`(function(){
+    const h = document.getElementById('dsh-review-rail')
+    const r = h.getBoundingClientRect()
+    h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: r.left + 3, clientY: r.top + 300 }))
+  })()`)
+  await wait(500)
+  check('dblclick resets to 360px', await js(`document.body.style.marginRight === '360px'`))
 
   // 3) Git 视图 + 面板内文件查看器（临时仓库有 1 个改动文件）
   await js(`[...document.querySelectorAll('#dsh-review-mode button')].find(b => b.textContent === 'Git 工作区').click()`)

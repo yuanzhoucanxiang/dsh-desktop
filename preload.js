@@ -102,21 +102,24 @@ function injectReviewSidebar() {
     #${S}-root,#${S}-root *{box-sizing:border-box;margin:0;padding:0;}
     #${S}-root{font:13px/1.5 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
       color:var(--dsw-alias-label-primary,#e8e6f2);}
-    /* 分割式布局：挤压用内联 margin 实现（不加 transition，避免 computed 取到动画中间值） */
-    #${S}-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:2147482800;
-      writing-mode:vertical-rl;padding:14px 6px;background:var(--dsw-alias-bg-layer-1,transparent);
-      color:var(--dsw-alias-label-secondary,#aeb8d8);border:1px solid var(--dsw-alias-border-l2,transparent);
-      border-right:none;border-radius:10px 0 0 10px;cursor:pointer;font-size:12px;letter-spacing:.2em;user-select:none;}
-    #${S}-tab:hover{background:var(--dsw-alias-interactive-bg-hover,transparent);
-      color:var(--dsw-alias-label-primary,#e6e9ff);}
+    /* 分割式布局：挤压用内联 margin 实现（不加 transition，避免 computed 取到动画中间值）
+       右侧竖条 rail = 开关按钮 + 拖拽把手 的统一控件（Codex/VSCode 式分隔条）：
+       面板关闭时贴在窗口右边缘；打开时成为页面与面板之间的分界条。 */
+    #${S}-rail{position:fixed;top:0;bottom:0;right:0;width:7px;z-index:2147482950;cursor:col-resize;background:transparent;}
+    #${S}-rail:hover,#${S}-rail.dsh-drag{background:var(--dsw-alias-interactive-bg-hover-accent,rgba(93,109,255,.28));}
+    #${S}-grip{position:absolute;top:50%;transform:translateY(-50%);left:0;width:7px;text-align:center;
+      font-size:13px;line-height:1;color:var(--dsw-alias-label-tertiary,#6f7a99);user-select:none;pointer-events:none;}
+    #${S}-toggle{position:absolute;top:6px;right:0;height:24px;min-width:56px;padding:0 7px 0 9px;
+      display:inline-flex;align-items:center;justify-content:center;gap:4px;
+      background:var(--dsw-alias-bg-layer-1,rgba(30,34,54,.95));color:var(--dsw-alias-label-secondary,#aeb8d8);
+      border:1px solid var(--dsw-alias-border-l2,transparent);border-right:none;border-radius:9px 0 0 9px;
+      cursor:pointer;font:inherit;font-size:12px;white-space:nowrap;user-select:none;}
+    #${S}-toggle:hover{color:var(--dsw-alias-label-primary,#e6e9ff);background:var(--dsw-alias-interactive-bg-hover,transparent);border-color:var(--dsw-alias-brand-primary,transparent);}
     #${S}-panel{position:fixed;top:0;right:0;bottom:0;width:360px;z-index:2147482900;
       background:var(--dsw-alias-bg-base,transparent);
       border-left:1px solid var(--dsw-alias-border-l2,transparent);
       display:flex;flex-direction:column;}
     #${S}-panel.dsh-hidden{display:none;}
-    /* 拖拽调宽把手（面板左缘，Codex 式自由调宽） */
-    #${S}-resize{position:fixed;top:0;bottom:0;width:7px;z-index:2147482950;cursor:col-resize;background:transparent;display:none;}
-    #${S}-resize:hover,#${S}-resize.dsh-drag{background:var(--dsw-alias-interactive-bg-hover-accent,rgba(93,109,255,.28));}
     #${S}-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,transparent);flex:none;}
     #${S}-title{font-size:15px;font-weight:650;letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;}
     #${S}-ws{font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -216,10 +219,20 @@ function injectReviewSidebar() {
   const root = document.createElement('div')
   root.id = `${S}-root`
 
-  const tab = document.createElement('div')
-  tab.id = `${S}-tab`
-  tab.textContent = '修改审阅'
-  tab.title = '展开修改审阅侧边栏'
+  // 右侧竖条：开关按钮 + 拖拽把手 的统一控件
+  const rail = document.createElement('div')
+  rail.id = `${S}-rail`
+  rail.title = '拖动调宽（双击恢复默认宽度）'
+  const toggle = document.createElement('button')
+  toggle.id = `${S}-toggle`
+  toggle.type = 'button'
+  toggle.textContent = '❮ 审阅'
+  toggle.title = '展开修改审阅侧边栏'
+  const grip = document.createElement('div')
+  grip.id = `${S}-grip`
+  grip.textContent = '⋮'
+  grip.title = ''
+  rail.append(toggle, grip)
 
   const panel = document.createElement('div')
   panel.id = `${S}-panel`
@@ -270,13 +283,8 @@ function injectReviewSidebar() {
   const toast = document.createElement('div')
   toast.id = `${S}-toast`
 
-  // 拖拽调宽把手
-  const resize = document.createElement('div')
-  resize.id = `${S}-resize`
-  resize.title = '拖动调整侧边栏宽度'
-
   panel.append(head, body, foot)
-  root.append(tab, panel, resize, toast)
+  root.append(rail, panel, toast)
   document.body.appendChild(root)
 
   let mode = 'session' // 'session' | 'git'
@@ -288,7 +296,7 @@ function injectReviewSidebar() {
   let toastTimer = null
   let view = null // 文件查看器状态：null=列表；否则 { path, content, truncated, size, error }
   let panelWidth = 360 // 侧边栏宽度（可从设置读回，拖拽调整后持久化）
-  let dragging = null // 拖拽会话：{ x, w }
+  let dragging = null // 拖拽会话：null | { openAtStart }（宽度直接由鼠标 X 决定）
 
   function showToast(msg, isErr) {
     toast.textContent = msg
@@ -301,14 +309,14 @@ function injectReviewSidebar() {
   function applyPanelWidth() {
     panel.style.width = panelWidth + 'px'
     document.body.style.marginRight = panelWidth + 'px'
-    resize.style.right = (panelWidth - 3) + 'px'
+    rail.style.right = (panelWidth - 4) + 'px'
     toast.style.right = (panelWidth + 16) + 'px'
   }
 
   function setOpen(open) {
     panel.classList.toggle('dsh-hidden', !open)
-    tab.style.display = open ? 'none' : ''
-    resize.style.display = open ? '' : 'none'
+    toggle.textContent = open ? '审阅 ❯' : '❮ 审阅'
+    toggle.title = open ? '收起修改审阅侧边栏' : '展开修改审阅侧边栏'
     if (open) {
       // 分割式布局：内联 margin 把内核页面向左挤开（样式表规则会被应用覆盖，必须内联）
       applyPanelWidth()
@@ -316,6 +324,7 @@ function injectReviewSidebar() {
       timer = setInterval(refresh, 5000)
     } else {
       document.body.style.marginRight = ''
+      rail.style.right = '0px'
       if (timer) {
         clearInterval(timer)
         timer = null
@@ -323,17 +332,25 @@ function injectReviewSidebar() {
     }
   }
 
-  // 拖拽调宽：向左拖=加宽，范围 320px ~ min(800, 窗口宽-420)
-  resize.addEventListener('pointerdown', (e) => {
-    dragging = { x: e.clientX, w: panelWidth }
-    resize.setPointerCapture(e.pointerId)
-    resize.classList.add('dsh-drag')
+  // 拖拽调宽：面板左缘跟随鼠标（关闭状态下拖动 = 直接拉出面板），
+  // 范围 320px ~ min(800, 窗口宽-420)；双击恢复默认 360px。
+  rail.addEventListener('pointerdown', (e) => {
+    if (e.target === toggle) return // 开关按钮不参与拖拽
+    dragging = { openAtStart: !panel.classList.contains('dsh-hidden') }
+    rail.setPointerCapture(e.pointerId)
+    rail.classList.add('dsh-drag')
     e.preventDefault()
   })
-  resize.addEventListener('pointermove', (e) => {
+  rail.addEventListener('pointermove', (e) => {
     if (!dragging) return
+    if (!dragging.openAtStart && panel.classList.contains('dsh-hidden')) {
+      // 关闭状态下拖动：仅当向左移动足够距离才拉出面板，避免误触
+      const dx = window.innerWidth - e.clientX
+      if (dx < 40) return
+      setOpen(true)
+    }
     const maxW = Math.min(800, window.innerWidth - 420)
-    const next = Math.max(320, Math.min(maxW, dragging.w + (dragging.x - e.clientX)))
+    const next = Math.max(320, Math.min(maxW, window.innerWidth - e.clientX))
     if (next === panelWidth) return
     panelWidth = next
     applyPanelWidth()
@@ -341,18 +358,24 @@ function injectReviewSidebar() {
   const endDrag = () => {
     if (!dragging) return
     dragging = null
-    resize.classList.remove('dsh-drag')
+    rail.classList.remove('dsh-drag')
     ipcRenderer.invoke('shell:set-panel-width', panelWidth)
   }
-  resize.addEventListener('pointerup', endDrag)
-  resize.addEventListener('pointercancel', endDrag)
+  rail.addEventListener('pointerup', endDrag)
+  rail.addEventListener('pointercancel', endDrag)
+  rail.addEventListener('dblclick', (e) => {
+    if (e.target === toggle) return
+    panelWidth = 360
+    applyPanelWidth()
+    ipcRenderer.invoke('shell:set-panel-width', panelWidth)
+  })
 
   // 启动时读回持久化宽度（preload 隔离世界里没有 window.dshShell，必须直连 ipcRenderer）
   ipcRenderer.invoke('shell:get-panel-width').then((w) => {
     if (typeof w === 'number' && w >= 320 && w <= 800) panelWidth = w
   }).catch(() => {})
 
-  tab.addEventListener('click', () => setOpen(true))
+  toggle.addEventListener('click', () => setOpen(panel.classList.contains('dsh-hidden')))
   closeBtn.addEventListener('click', () => setOpen(false))
   refreshBtn.addEventListener('click', refresh)
   modeSession.addEventListener('click', () => { mode = 'session'; view = null; lastSig = ''; syncMode(); refresh() })
