@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('dshShell', {
   revert: (p, untracked) => ipcRenderer.invoke('shell:revert', p, untracked),
   revertChange: (sessionId, callId) => ipcRenderer.invoke('shell:revert-change', sessionId, callId),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
+  readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
+  getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),
+  setPanelWidth: (w) => ipcRenderer.invoke('shell:set-panel-width', w),
 })
 
 /* ── 内核断连浮层（仅注入到内核页面，splash 自己渲染状态） ────────────────── */
@@ -111,6 +114,9 @@ function injectReviewSidebar() {
       border-left:1px solid var(--dsw-alias-border-l2,transparent);
       display:flex;flex-direction:column;}
     #${S}-panel.dsh-hidden{display:none;}
+    /* 拖拽调宽把手（面板左缘，Codex 式自由调宽） */
+    #${S}-resize{position:fixed;top:0;bottom:0;width:7px;z-index:2147482950;cursor:col-resize;background:transparent;display:none;}
+    #${S}-resize:hover,#${S}-resize.dsh-drag{background:var(--dsw-alias-interactive-bg-hover-accent,rgba(93,109,255,.28));}
     #${S}-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,transparent);flex:none;}
     #${S}-title{font-size:15px;font-weight:650;letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;}
     #${S}-ws{font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -176,6 +182,34 @@ function injectReviewSidebar() {
       font-size:12px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.35);display:none;}
     #${S}-toast.dsh-ok{background:var(--dsw-alias-state-success-secondary,rgba(32,64,48,.95));color:var(--dsw-alias-state-success-primary,#7fe0a8);border:1px solid var(--dsw-alias-state-success-primary,transparent);}
     #${S}-toast.dsh-err{background:var(--dsw-alias-state-error-secondary,rgba(64,28,36,.95));color:var(--dsw-alias-state-error-primary,#ff9a9a);border:1px solid var(--dsw-alias-state-error-primary,transparent);}
+    /* ── 文件查看器（面板内读取/渲染，Codex/VSCode 式） ── */
+    #${S}-view{display:flex;flex-direction:column;flex:1;min-height:0;}
+    #${S}-vhead{flex:none;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,transparent);}
+    #${S}-vhead button{font-size:12px;color:var(--dsw-alias-label-secondary,#8b93ad);background:none;border:1px solid var(--dsw-alias-border-l2,transparent);border-radius:6px;padding:3px 10px;cursor:pointer;flex:none;}
+    #${S}-vhead button:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
+    #${S}-vpath{flex:1;font:11px/1.4 Consolas,"Cascadia Mono",monospace;color:var(--dsw-alias-label-secondary,#cfd6ea);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left;}
+    #${S}-vmeta{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,#6f7a99);}
+    #${S}-vbody{flex:1;overflow-y:auto;padding:12px 14px 24px;}
+    #${S}-vbody pre{background:var(--dsw-alias-bg-layer-1,transparent);border:1px solid var(--dsw-alias-border-l1,transparent);border-radius:8px;
+      padding:10px 12px;margin:10px 0;overflow-x:auto;font:11.5px/1.6 Consolas,"Cascadia Mono",monospace;color:var(--dsw-alias-label-secondary,#cfd6ea);white-space:pre;}
+    #${S}-vbody pre .md-lang{display:block;font-size:10px;color:var(--dsw-alias-label-tertiary,#6f7a99);margin-bottom:4px;}
+    #${S}-vbody h1,#${S}-vbody h2,#${S}-vbody h3,#${S}-vbody h4{margin:14px 0 6px;line-height:1.35;color:var(--dsw-alias-label-primary,#e6e9ff);}
+    #${S}-vbody h1{font-size:18px;font-weight:700;border-bottom:1px solid var(--dsw-alias-border-l2,transparent);padding-bottom:6px;}
+    #${S}-vbody h2{font-size:15px;font-weight:650;}
+    #${S}-vbody h3{font-size:13.5px;font-weight:600;}
+    #${S}-vbody h4{font-size:13px;font-weight:600;}
+    #${S}-vbody p{margin:6px 0;line-height:1.6;}
+    #${S}-vbody ul,#${S}-vbody ol{margin:6px 0;padding-left:22px;line-height:1.6;}
+    #${S}-vbody blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--dsw-alias-brand-primary,#5d6dff);
+      color:var(--dsw-alias-label-secondary,#cfd6ea);background:var(--dsw-alias-interactive-bg-hover,transparent);border-radius:0 6px 6px 0;}
+    #${S}-vbody hr{border:none;border-top:1px solid var(--dsw-alias-border-l2,transparent);margin:12px 0;}
+    #${S}-vbody code{font:11px/1.5 Consolas,"Cascadia Mono",monospace;background:var(--dsw-alias-interactive-bg-hover,transparent);
+      padding:1px 5px;border-radius:4px;color:var(--dsw-alias-brand-primary,#c3b4ff);}
+    #${S}-vbody pre code{background:none;padding:0;color:inherit;}
+    #${S}-vbody a{color:var(--dsw-alias-brand-primary,#8ecbff);text-decoration:none;}
+    #${S}-vbody a:hover{text-decoration:underline;}
+    #${S}-vbody .v-note{font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);margin-bottom:8px;}
+    #${S}-vbody .v-code{font:11.5px/1.6 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-secondary,#cfd6ea);}
   `
   document.head.appendChild(style)
 
@@ -236,8 +270,13 @@ function injectReviewSidebar() {
   const toast = document.createElement('div')
   toast.id = `${S}-toast`
 
+  // 拖拽调宽把手
+  const resize = document.createElement('div')
+  resize.id = `${S}-resize`
+  resize.title = '拖动调整侧边栏宽度'
+
   panel.append(head, body, foot)
-  root.append(tab, panel, toast)
+  root.append(tab, panel, resize, toast)
   document.body.appendChild(root)
 
   let mode = 'session' // 'session' | 'git'
@@ -247,6 +286,9 @@ function injectReviewSidebar() {
   let lastSig = ''
   let timer = null
   let toastTimer = null
+  let view = null // 文件查看器状态：null=列表；否则 { path, content, truncated, size, error }
+  let panelWidth = 360 // 侧边栏宽度（可从设置读回，拖拽调整后持久化）
+  let dragging = null // 拖拽会话：{ x, w }
 
   function showToast(msg, isErr) {
     toast.textContent = msg
@@ -256,25 +298,65 @@ function injectReviewSidebar() {
     toastTimer = setTimeout(() => { toast.style.display = 'none' }, 4200)
   }
 
+  function applyPanelWidth() {
+    panel.style.width = panelWidth + 'px'
+    document.body.style.marginRight = panelWidth + 'px'
+    resize.style.right = (panelWidth - 3) + 'px'
+    toast.style.right = (panelWidth + 16) + 'px'
+  }
+
   function setOpen(open) {
     panel.classList.toggle('dsh-hidden', !open)
     tab.style.display = open ? 'none' : ''
-    // 分割式布局：内联 margin 把内核页面向左挤开 360px（样式表规则会被应用覆盖，必须内联）
-    document.body.style.marginRight = open ? '360px' : ''
+    resize.style.display = open ? '' : 'none'
     if (open) {
+      // 分割式布局：内联 margin 把内核页面向左挤开（样式表规则会被应用覆盖，必须内联）
+      applyPanelWidth()
       refresh()
       timer = setInterval(refresh, 5000)
-    } else if (timer) {
-      clearInterval(timer)
-      timer = null
+    } else {
+      document.body.style.marginRight = ''
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
     }
   }
+
+  // 拖拽调宽：向左拖=加宽，范围 320px ~ min(800, 窗口宽-420)
+  resize.addEventListener('pointerdown', (e) => {
+    dragging = { x: e.clientX, w: panelWidth }
+    resize.setPointerCapture(e.pointerId)
+    resize.classList.add('dsh-drag')
+    e.preventDefault()
+  })
+  resize.addEventListener('pointermove', (e) => {
+    if (!dragging) return
+    const maxW = Math.min(800, window.innerWidth - 420)
+    const next = Math.max(320, Math.min(maxW, dragging.w + (dragging.x - e.clientX)))
+    if (next === panelWidth) return
+    panelWidth = next
+    applyPanelWidth()
+  })
+  const endDrag = () => {
+    if (!dragging) return
+    dragging = null
+    resize.classList.remove('dsh-drag')
+    window.dshShell.setPanelWidth(panelWidth)
+  }
+  resize.addEventListener('pointerup', endDrag)
+  resize.addEventListener('pointercancel', endDrag)
+
+  // 启动时读回持久化宽度
+  window.dshShell.getPanelWidth().then((w) => {
+    if (typeof w === 'number' && w >= 320 && w <= 800) panelWidth = w
+  })
 
   tab.addEventListener('click', () => setOpen(true))
   closeBtn.addEventListener('click', () => setOpen(false))
   refreshBtn.addEventListener('click', refresh)
-  modeSession.addEventListener('click', () => { mode = 'session'; lastSig = ''; syncMode(); refresh() })
-  modeGit.addEventListener('click', () => { mode = 'git'; lastSig = ''; syncMode(); refresh() })
+  modeSession.addEventListener('click', () => { mode = 'session'; view = null; lastSig = ''; syncMode(); refresh() })
+  modeGit.addEventListener('click', () => { mode = 'git'; view = null; lastSig = ''; syncMode(); refresh() })
 
   function syncMode() {
     modeSession.classList.toggle('dsh-active', mode === 'session')
@@ -316,6 +398,184 @@ function injectReviewSidebar() {
       await window.dshShell.openFile(file)
     })
     return b
+  }
+
+  function viewFileBtn(file) {
+    const b = document.createElement('button')
+    b.textContent = '查看'
+    b.title = '在面板内查看文件内容（.md 渲染为 Markdown）'
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      await viewFile(file)
+    })
+    return b
+  }
+
+  async function viewFile(file) {
+    const r = await window.dshShell.readFile(file)
+    view = { file, ...(r || {}) }
+    render()
+  }
+
+  /* ── 最小 Markdown 渲染器（纯 DOM 构建，textContent 填充，无 innerHTML） ── */
+
+  function mdInline(text) {
+    const out = []
+    const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)\s]+\))/g
+    let last = 0
+    let m
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) out.push(document.createTextNode(text.slice(last, m.index)))
+      const tok = m[0]
+      if (tok.startsWith('`')) {
+        const el = document.createElement('code')
+        el.textContent = tok.slice(1, -1)
+        out.push(el)
+      } else if (tok.startsWith('**')) {
+        const el = document.createElement('strong')
+        el.textContent = tok.slice(2, -2)
+        out.push(el)
+      } else if (tok.startsWith('*')) {
+        const el = document.createElement('em')
+        el.textContent = tok.slice(1, -1)
+        out.push(el)
+      } else {
+        const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)
+        const a = document.createElement('a')
+        a.textContent = lm[1]
+        a.href = lm[2]
+        a.target = '_blank'
+        a.rel = 'noreferrer'
+        out.push(a)
+      }
+      last = m.index + tok.length
+    }
+    if (last < text.length) out.push(document.createTextNode(text.slice(last)))
+    return out
+  }
+
+  function renderMarkdown(md) {
+    const frag = document.createDocumentFragment()
+    const lines = md.split('\n')
+    let i = 0
+    const append = (el, nodes) => {
+      for (const n of nodes) el.appendChild(n)
+      return el
+    }
+    while (i < lines.length) {
+      const line = lines[i]
+      if (/^```/.test(line)) {
+        const lang = line.slice(3).trim()
+        const buf = []
+        i++
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          buf.push(lines[i])
+          i++
+        }
+        i++ // 跳过收尾围栏
+        const pre = document.createElement('pre')
+        const code = document.createElement('code')
+        if (lang) {
+          const tag = document.createElement('span')
+          tag.className = 'md-lang'
+          tag.textContent = lang
+          pre.appendChild(tag)
+        }
+        code.textContent = buf.join('\n') || ' '
+        pre.appendChild(code)
+        frag.appendChild(pre)
+        continue
+      }
+      if (line.trim() === '') { i++; continue }
+      let m = /^(#{1,4})\s+(.*)$/.exec(line)
+      if (m) {
+        frag.appendChild(append(document.createElement('h' + m[1].length), mdInline(m[2])))
+        i++
+        continue
+      }
+      if (/^\s*(---|\*\*\*)\s*$/.test(line)) { frag.appendChild(document.createElement('hr')); i++; continue }
+      m = /^>\s?(.*)$/.exec(line)
+      if (m) {
+        frag.appendChild(append(document.createElement('blockquote'), mdInline(m[1])))
+        i++
+        continue
+      }
+      m = /^\s*[-*+]\s+(.*)$/.exec(line)
+      if (m) {
+        const ul = document.createElement('ul')
+        while (m) {
+          ul.appendChild(append(document.createElement('li'), mdInline(m[1])))
+          i++
+          if (i >= lines.length) break
+          m = /^\s*[-*+]\s+(.*)$/.exec(lines[i])
+        }
+        frag.appendChild(ul)
+        continue
+      }
+      m = /^\s*\d+[.)]\s+(.*)$/.exec(line)
+      if (m) {
+        const ol = document.createElement('ol')
+        while (m) {
+          ol.appendChild(append(document.createElement('li'), mdInline(m[1])))
+          i++
+          if (i >= lines.length) break
+          m = /^\s*\d+[.)]\s+(.*)$/.exec(lines[i])
+        }
+        frag.appendChild(ol)
+        continue
+      }
+      frag.appendChild(append(document.createElement('p'), mdInline(line)))
+      i++
+    }
+    return frag
+  }
+
+  function renderViewer() {
+    ws.textContent = ''
+    body.textContent = ''
+    const v = document.createElement('div')
+    v.id = `${S}-view`
+
+    const vhead = document.createElement('div')
+    vhead.id = `${S}-vhead`
+    const back = document.createElement('button')
+    back.textContent = '⟵ 返回'
+    back.title = '返回改动列表'
+    back.addEventListener('click', () => { view = null; render() })
+    const vpath = document.createElement('span')
+    vpath.id = `${S}-vpath`
+    vpath.textContent = view.file
+    vpath.title = view.file
+    const vmeta = document.createElement('span')
+    vmeta.id = `${S}-vmeta`
+    vhead.append(back, vpath, vmeta, openFileBtn(view.file))
+    v.appendChild(vhead)
+
+    const vbody = document.createElement('div')
+    vbody.id = `${S}-vbody`
+
+    if (view.ok !== true) {
+      const err = document.createElement('div')
+      err.id = `${S}-empty`
+      err.textContent = '读取失败：' + (view.error || '未知错误')
+      vbody.appendChild(err)
+    } else if (/\.(md|markdown|mdown|mkd)$/i.test(view.file)) {
+      vbody.appendChild(renderMarkdown(view.content))
+    } else {
+      const code = document.createElement('div')
+      code.className = 'v-code'
+      code.textContent = view.content
+      vbody.appendChild(code)
+    }
+    v.appendChild(vbody)
+    body.appendChild(v)
+
+    const sizeTxt = view.size !== undefined
+      ? (view.size >= 1024 * 1024 ? (view.size / 1024 / 1024).toFixed(2) + ' MB' : (view.size / 1024).toFixed(1) + ' KB')
+      : ''
+    const md = /\.(md|markdown|mdown|mkd)$/i.test(view.file) ? ' · Markdown 预览' : ' · 纯文本'
+    vmeta.textContent = (sizeTxt ? sizeTxt + ' · ' : '') + (view.truncated ? '已截断（>512KB）' : '') + md
+    footCount.textContent = view.truncated ? '内容已截断' : ''
   }
 
   function renderGit() {
@@ -391,7 +651,7 @@ function injectReviewSidebar() {
         refresh()
       })
 
-      row.append(badge, pathEl, openFileBtn(f.path), act)
+      row.append(badge, pathEl, viewFileBtn(f.path), openFileBtn(f.path), act)
       row.addEventListener('click', () => {
         expanded[f.path] = !expanded[f.path]
         render()
@@ -619,7 +879,7 @@ function injectReviewSidebar() {
         const count = document.createElement('span')
         count.id = `${S}-fcount`
         count.textContent = `${g.items.length} 处`
-        fh.append(chev, pathEl, count, openFileBtn(g.file))
+        fh.append(chev, pathEl, count, viewFileBtn(g.file), openFileBtn(g.file))
         fh.addEventListener('click', () => {
           collapsed[g.file + '@' + t.turn] = !collapsed[g.file + '@' + t.turn]
           fh.classList.toggle('dsh-closed', !!collapsed[g.file + '@' + t.turn])
@@ -673,6 +933,7 @@ function injectReviewSidebar() {
   }
 
   function render() {
+    if (view) { renderViewer(); return }
     if (mode === 'session') renderSession()
     else renderGit()
   }
@@ -690,6 +951,7 @@ function injectReviewSidebar() {
       } else {
         data = await ipcRenderer.invoke('shell:changes')
       }
+      if (view) return // 查看器打开时不重渲染列表（内容每 5s 重解析太浪费）
       render()
     } catch (err) {
       body.textContent = ''

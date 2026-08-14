@@ -6,12 +6,13 @@ const fs = require('fs')
 const crypto = require('crypto')
 const path = require('path')
 
-const exe = process.argv[2]
-if (!exe || !fs.existsSync(exe)) {
-  console.error('usage: node gen-update-manifest.js <installer.exe>')
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'))
+// 无参调用时按 package.json 版本自动推导安装包路径（避免 PowerShell 5.1 变量/编码差异）
+const exe = process.argv[2] || path.join(__dirname, 'dist', `dsh-desktop-${pkg.version}-setup.exe`)
+if (!fs.existsSync(exe)) {
+  console.error('installer not found: ' + exe)
   process.exit(1)
 }
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'))
 const buf = fs.readFileSync(exe)
 const sha512 = crypto.createHash('sha512').update(buf).digest('base64')
 const fileName = path.basename(exe)

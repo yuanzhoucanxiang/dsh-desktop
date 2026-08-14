@@ -35,9 +35,7 @@ Write-Host "app-update.yml written"
 
 # 5. latest.yml（Windows 自动更新清单）——`--publish never` 不会生成它，这里手动补齐，
 #    否则 electron-updater 检查更新时会报 "Cannot find latest.yml ... 404"。
-$ver = (Get-Content "$proj\package.json" | ConvertFrom-Json).version
-$setup = Join-Path $proj "dist\dsh-desktop-$ver-setup.exe"
-if (-not (Test-Path $setup)) { throw "installer not found: $setup" }
-& node "$proj\gen-update-manifest.js" $setup
+#    版本号由 node 脚本内部读 package.json 推导，不经过 PowerShell 变量（PS5.1 管道/编码有坑）。
+& node "$proj\gen-update-manifest.js"
 
 Write-Host "BUILD_DONE"

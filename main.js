@@ -73,6 +73,7 @@ const DEFAULT_SETTINGS = {
   windowBounds: null,     // { x, y, width, height, maximized }
   updateRepo: '',         // GitHub 更新源 owner/repo（空 = 用 DEFAULT_UPDATE_REPO）
   updateUrl: '',          // generic 更新源 URL（优先级低于 updateRepo）
+  panelWidth: 360,        // 审阅侧边栏宽度（用户拖拽调整后持久化）
 }
 
 let settings = loadSettings()
@@ -788,10 +789,41 @@ function registerIpc() {
   ipcMain.handle('shell:changes', () => collectChanges())
   ipcMain.handle('shell:git-init', () => gitInit())
   ipcMain.handle('shell:session-changes', () => readSessionChanges())
+  ipcMain.handle('shell:get-panel-width', () => settings.panelWidth || 360)
+  ipcMain.handle('shell:set-panel-width', (_e, w) => {
+    const n = Math.max(320, Math.min(800, Number(w) || 360))
+    settings.panelWidth = n
+    saveSettings()
+    return n
+  })
   ipcMain.handle('shell:open-file', (_e, p) => {
     // 审阅流里的路径多为绝对路径：path.resolve 保证绝对路径原样通过，相对路径按工作目录解析
     const fp = path.resolve(kernelCwd(), String(p))
     return shell.openPath(fp)
+  })
+  // 面板内文件查看器：读文件内容（UTF-8，上限 512KB，二进制拒绝）
+  ipcMain.handle('shell:read-file', (_e, p) => {
+    const fp = path.resolve(kernelCwd(), String(p))
+    try {
+      const stat = fs.statSync(fp)
+      if (stat.isDirectory()) return { ok: false, error: '这是一个目录' }
+      const MAX = 512 * 1024
+      const fd = fs.openSync(fp, 'r')
+      const buf = Buffer.alloc(Math.min(stat.size, MAX))
+      fs.readSync(fd, buf, 0, buf.length, 0)
+      fs.closeSync(fd)
+      const head = buf.subarray(0, Math.min(buf.length, 8192))
+      if (head.includes(0)) return { ok: false, error: '二进制文件，无法预览' }
+      return {
+        ok: true,
+        path: fp,
+        content: buf.toString('utf8'),
+        size: stat.size,
+        truncated: stat.size > MAX,
+      }
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) }
+    }
   })
   // 会话改动的单条撤销：代理到内核的审阅桥回退端点（Codex 式 Undo）
   ipcMain.handle('shell:revert-change', async (_e, sessionId, callId) => {
