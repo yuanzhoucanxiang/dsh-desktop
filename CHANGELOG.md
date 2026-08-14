@@ -2,6 +2,17 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
+## [0.1.9] - 2026-08-14
+
+### 修复
+
+- **侧边栏「修改审阅」点击无反应（0.1.8 引入的严重回归）**：preload 隔离世界里 `window.dshShell` 并不存在（`contextBridge.exposeInMainWorld` 只暴露给页面主世界），0.1.8 在侧边栏注入流程中途调用 `window.dshShell.getPanelWidth()` 抛异常，导致「修改审阅」标签的点击监听没挂上、面板完全打不开；0.1.7 起「打开/撤销/查看」按钮也有同样隐患 → 全部改回 preload 直连 `ipcRenderer.invoke`
+- **新增 `--ui-smoke` 真实 UI 回归测试**：真实内核 + 真实窗口 + 真实 preload，自动验证侧边栏注入、标签开关、拖拽调宽与持久化、Git 视图、面板内查看器（Markdown h1/粗体渲染）、返回列表——13 项检查全过；`npm run ui-smoke` 可随时重跑，此类回归从此有测试兜底
+
+### 署名
+
+- deepseek-v4-pro（2026-08-14）
+
 ## [0.1.8] - 2026-08-14
 
 ### 新增

@@ -342,15 +342,15 @@ function injectReviewSidebar() {
     if (!dragging) return
     dragging = null
     resize.classList.remove('dsh-drag')
-    window.dshShell.setPanelWidth(panelWidth)
+    ipcRenderer.invoke('shell:set-panel-width', panelWidth)
   }
   resize.addEventListener('pointerup', endDrag)
   resize.addEventListener('pointercancel', endDrag)
 
-  // 启动时读回持久化宽度
-  window.dshShell.getPanelWidth().then((w) => {
+  // 启动时读回持久化宽度（preload 隔离世界里没有 window.dshShell，必须直连 ipcRenderer）
+  ipcRenderer.invoke('shell:get-panel-width').then((w) => {
     if (typeof w === 'number' && w >= 320 && w <= 800) panelWidth = w
-  })
+  }).catch(() => {})
 
   tab.addEventListener('click', () => setOpen(true))
   closeBtn.addEventListener('click', () => setOpen(false))
@@ -395,7 +395,7 @@ function injectReviewSidebar() {
     b.title = '在系统编辑器中打开该文件'
     b.addEventListener('click', async (e) => {
       e.stopPropagation()
-      await window.dshShell.openFile(file)
+      await ipcRenderer.invoke('shell:open-file', file)
     })
     return b
   }
@@ -412,7 +412,7 @@ function injectReviewSidebar() {
   }
 
   async function viewFile(file) {
-    const r = await window.dshShell.readFile(file)
+    const r = await ipcRenderer.invoke('shell:read-file', file)
     view = { file, ...(r || {}) }
     render()
   }
@@ -911,7 +911,7 @@ function injectReviewSidebar() {
             e.stopPropagation()
             undo.disabled = true
             undo.textContent = '回退中…'
-            const r = await window.dshShell.revertChange(ch.session, ch.callId)
+            const r = await ipcRenderer.invoke('shell:revert-change', ch.session, ch.callId)
             if (r && r.ok) {
               showToast('已撤销：' + (r.file || ch.file || ''))
               refresh()

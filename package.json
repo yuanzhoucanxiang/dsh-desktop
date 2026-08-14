@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
   "author": "dsh-desktop",
   "license": "MIT",
@@ -13,7 +13,8 @@
     "smoke": "electron . --smoke",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File prepare-runtime.ps1",
     "dist": "powershell -ExecutionPolicy Bypass -File build.ps1",
-    "release": "powershell -ExecutionPolicy Bypass -File release.ps1"
+    "release": "powershell -ExecutionPolicy Bypass -File release.ps1",
+    "ui-smoke": "electron . --ui-smoke"
   },
   "devDependencies": {
     "electron": "^43.4.0",

@@ -32,6 +32,7 @@ const { pathToFileURL } = require('node:url')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
+const UI_SMOKE = process.argv.includes('--ui-smoke') // UI 冒烟：真实窗口验证侧边栏注入/开关/拖拽/查看器
 const DEV = process.argv.includes('--dev')
 
 const APP_NAME = 'DeepSeek Harness Desktop'
@@ -909,8 +910,114 @@ async function bootKernel() {
   }
 
   await win.loadURL(state.url)
+
+  if (UI_SMOKE) {
+    const results = await runUiSmoke(win)
+    const fails = results.filter((r) => !r[1]).map((r) => r[0])
+    console.log(fails.length === 0 ? 'UI_SMOKE_OK' : 'UI_SMOKE_FAIL: ' + fails.join(' | '))
+    state.quitting = true
+    killChild()
+    await sleep(800)
+    app.exit(fails.length === 0 ? 0 : 1)
+    return
+  }
+
   showMainWindow()
   log(`ready at ${state.url}`)
+}
+
+/* ─────────────────────────────── UI 冒烟（真实窗口回归测试） ───────────────── */
+
+/** 准备一个含 1 个改动文件（md）的临时 git 仓库，供 Git 视图与查看器测试。 */
+function prepareUiSmokeRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-uis-'))
+  const run = (args) => execFileSync('git', args, { cwd: dir, windowsHide: true, stdio: 'ignore' })
+  try {
+    run(['init', '-q'])
+    run(['config', 'user.email', 't@t'])
+    run(['config', 'user.name', 't'])
+    fs.writeFileSync(path.join(dir, 'a.md'), '# 标题\n\n这是**初始内容**。\n')
+    run(['add', '.'])
+    run(['commit', '-q', '-m', 'init'])
+    fs.writeFileSync(path.join(dir, 'a.md'), '# 标题\n\n这是**改动后内容**。\n')
+    return dir
+  } catch (err) {
+    log(`prepareUiSmokeRepo failed: ${err.message}`)
+    return null
+  }
+}
+
+/** 在真实内核页面上跑侧边栏交互检查，返回 [名称, 通过] 列表。 */
+async function runUiSmoke(win) {
+  const js = (code) => win.webContents.executeJavaScript(code, true)
+  const results = []
+  const check = (name, ok) => {
+    results.push([name, !!ok])
+    log(`ui-smoke: ${name} = ${!!ok}`)
+  }
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+  await wait(6000) // 页面 + React + 侧边栏注入
+
+  check('sidebar root', await js(`document.getElementById('dsh-review-root') !== null`))
+  check('tab present', await js(`document.getElementById('dsh-review-tab') !== null`))
+
+  // 1) 点标签 → 面板展开
+  await js(`document.getElementById('dsh-review-tab').click()`)
+  await wait(400)
+  check('panel opens on tab click', await js(`!document.getElementById('dsh-review-panel').classList.contains('dsh-hidden')`))
+  check('split margin applied', await js(`document.body.style.marginRight === '360px'`))
+
+  // 2) 拖拽把手 → 加宽 + 持久化
+  const before = await js(`document.body.style.marginRight`)
+  await js(`(function(){
+    const h = document.getElementById('dsh-review-resize')
+    const r = h.getBoundingClientRect()
+    const cx = r.left + 3, cy = r.top + 300
+    const ev = (t, x) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: cy, pointerId: 1 })
+    h.dispatchEvent(ev('pointerdown', cx))
+    h.dispatchEvent(ev('pointermove', cx - 120))
+    h.dispatchEvent(ev('pointerup', cx - 120))
+  })()`)
+  await wait(500)
+  const after = await js(`document.body.style.marginRight`)
+  check(`drag widens panel (${before} -> ${after})`, before !== after)
+  let savedW = null
+  for (let i = 0; i < 10 && savedW === null; i++) {
+    if (settings.panelWidth !== 360) savedW = settings.panelWidth
+    else await wait(300)
+  }
+  check('width persisted to settings', savedW !== null && savedW > 360)
+
+  // 3) Git 视图 + 面板内文件查看器（临时仓库有 1 个改动文件）
+  await js(`[...document.querySelectorAll('#dsh-review-mode button')].find(b => b.textContent === 'Git 工作区').click()`)
+  let hasRow = false
+  for (let i = 0; i < 10 && !hasRow; i++) {
+    hasRow = await js(`document.querySelectorAll('#dsh-review-item').length > 0`)
+    if (!hasRow) await wait(500)
+  }
+  check('git view shows changed file', hasRow)
+  if (hasRow) {
+    await js(`(function(){
+      const b = [...document.querySelectorAll('#dsh-review-item-row button')].find(x => x.textContent === '查看')
+      if (b) b.click()
+    })()`)
+    let viewOpen = false
+    for (let i = 0; i < 10 && !viewOpen; i++) {
+      viewOpen = await js(`document.getElementById('dsh-review-view') !== null`)
+      if (!viewOpen) await wait(400)
+    }
+    check('viewer opens', viewOpen)
+    check('markdown h1 rendered', await js(`document.querySelector('#dsh-review-vbody h1') !== null`))
+    check('markdown strong rendered', await js(`document.querySelector('#dsh-review-vbody strong') !== null`))
+    await js(`(function(){
+      const b = [...document.querySelectorAll('#dsh-review-vhead button')].find(x => x.textContent.indexOf('返回') >= 0)
+      if (b) b.click()
+    })()`)
+    await wait(400)
+    check('viewer back to list', await js(`document.getElementById('dsh-review-view') === null`))
+  }
+  return results
 }
 
 function finishBootError(err) {
@@ -941,6 +1048,11 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null)
+    if (UI_SMOKE) {
+      // UI 冒烟用临时 git 仓库作为内核工作目录（Git 视图/查看器测试）
+      const repo = prepareUiSmokeRepo()
+      if (repo) process.env.DSH_DESKTOP_CWD = repo
+    }
     registerIpc()
     createWindow()
     applyAutoLaunch() // 应用持久化的开机自启设置
@@ -956,7 +1068,7 @@ if (!gotLock) {
     }
     // 先加载 splash，等渲染侧确认订阅完成后才开始拉内核，避免丢状态事件
     win.once('ready-to-show', () => {
-      if (!SMOKE) win.show()
+      if (!SMOKE && !UI_SMOKE) win.show()
     })
     await win.loadFile(SPLASH_PATH)
   })
