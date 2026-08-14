@@ -33,14 +33,25 @@ const ERROR_MARK = { src: '../build/icon-whale-tile-dark.png', cls: '' }
 const ROTATE_MS = 900
 
 let rotateTimer = null
+let markToken = 0
 
 function showMark(mark) {
-  markImg.src = mark.src
-  markTile.className = 'mark-tile' + (mark.cls ? ' ' + mark.cls : '')
-  // 重触发换场动画
-  markTile.classList.remove('mark-pop')
-  void markTile.offsetWidth
-  markTile.classList.add('mark-pop')
+  // 同图同样式则跳过，避免重复触发闪烁（比较时忽略临时换场类 mark-pop）
+  const nextCls = 'mark-tile' + (mark.cls ? ' ' + mark.cls : '')
+  const curCls = markTile.className.replace(/mark-pop/g, '').trim()
+  if (markImg.getAttribute('src') === mark.src && curCls === nextCls) return
+  // 先淡出旧图，再换图淡入，避免生硬跳变；token 防止快速切换时旧定时器覆盖新状态
+  const token = ++markToken
+  markImg.style.opacity = '0'
+  setTimeout(() => {
+    if (token !== markToken) return
+    markImg.src = mark.src
+    markTile.className = nextCls
+    markImg.style.opacity = ''
+    // 重触发换场动画
+    void markTile.offsetWidth
+    markTile.classList.add('mark-pop')
+  }, 160)
 }
 
 function startRotation() {
@@ -83,7 +94,13 @@ function applyStatus(s) {
   if (s.phase === 'ready' && s.elapsedMs) {
     text = `已就绪（${(s.elapsedMs / 1000).toFixed(1)}s），正在进入工作区…`
   }
-  statusText.textContent = text
+  if (statusText.textContent !== text) {
+    statusText.textContent = text
+    // 重触发淡入动画，让状态切换更平滑
+    statusText.classList.remove('text-swap')
+    void statusText.offsetWidth
+    statusText.classList.add('text-swap')
+  }
 
   if (s.phase === 'ready') {
     progress.classList.add('done')

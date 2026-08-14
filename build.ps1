@@ -33,4 +33,9 @@ Write-Host "app-update.yml written"
 # 4. build NSIS installer from the now-complete prepackaged dir
 & "$proj\node_modules\.bin\electron-builder.cmd" --win nsis --prepackaged "$proj\dist\win-unpacked" --publish never
 
+# 5. latest.yml（Windows 自动更新清单）——`--publish never` 不会生成它，这里手动补齐，
+#    否则 electron-updater 检查更新时会报 "Cannot find latest.yml ... 404"。
+$ver = node -p "require('./package.json').version"
+& node "$proj\gen-update-manifest.js" "$proj\dist\dsh-desktop-$ver-setup.exe"
+
 Write-Host "BUILD_DONE"

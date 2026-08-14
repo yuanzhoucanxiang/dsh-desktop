@@ -31,13 +31,14 @@ html, body {
   overflow: hidden;
 }
 
-/* 背景呼吸光斑 */
+/* 背景呼吸光斑（仅动 transform/opacity，走 GPU 合成） */
 .glow {
   position: absolute;
   border-radius: 50%;
   filter: blur(90px);
   opacity: .35;
   animation: breathe 7s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 .glow-a { width: 520px; height: 520px; background: #16307c; top: -180px; left: -120px; }
 .glow-b { width: 420px; height: 420px; background: #2b1a63; bottom: -160px; right: -100px; animation-delay: -3.5s; }
@@ -66,6 +67,19 @@ html, body {
   z-index: 1;
 }
 
+.card > * {
+  animation: fadeUp .6s cubic-bezier(.22, .9, .3, 1) both;
+}
+.card > *:nth-child(1) { animation-delay: .05s; }
+.card > *:nth-child(2) { animation-delay: .13s; }
+.card > *:nth-child(3) { animation-delay: .2s; }
+.card > *:nth-child(4) { animation-delay: .28s; }
+.card > *:nth-child(5) { animation-delay: .36s; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .mark { display: inline-block; margin-bottom: 22px; }
 
 .mark-tile {
@@ -82,6 +96,7 @@ html, body {
   height: 104px;
   display: block;
   animation: whaleFloat 4.5s ease-in-out infinite;
+  transition: opacity .18s ease;
 }
 /* 黑鲸透明底 → 浅色光面底衬，保证暗背景可见 */
 .mark-tile.tile-light {
@@ -97,10 +112,10 @@ html, body {
   filter: drop-shadow(0 0 14px rgba(150, 170, 255, .55));
 }
 .mark-tile.mark-pop {
-  animation: markPop .45s ease;
+  animation: markPop .5s cubic-bezier(.3, .7, .3, 1);
 }
 @keyframes markPop {
-  from { transform: scale(.88); opacity: .3; }
+  from { transform: scale(.96); opacity: .35; }
   to { transform: scale(1); opacity: 1; }
 }
 @keyframes whaleFloat {
@@ -148,27 +163,49 @@ html, body {
 }
 .status.error .status-dot { background: var(--danger); box-shadow: 0 0 12px var(--danger); animation: none; }
 .status-text { font-size: 13px; color: #c6cde2; }
+.status-text.text-swap { animation: textFade .35s ease; }
+@keyframes textFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 .progress {
-  width: 240px;
-  height: 3px;
+  width: 260px;
+  height: 4px;
   margin: 0 auto;
   border-radius: 2px;
   background: rgba(255, 255, 255, .08);
   overflow: hidden;
 }
 .progress-bar {
+  position: relative;
   height: 100%;
   width: 40%;
   border-radius: 2px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   box-shadow: 0 0 14px rgba(110, 130, 255, .8);
   animation: slide 1.6s ease-in-out infinite;
+  transition: width .35s ease;
+  will-change: transform;
 }
-.progress.done .progress-bar { width: 100%; animation: none; }
+/* 流光高光扫过 */
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, .45) 50%, transparent 80%);
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.progress.done .progress-bar { width: 100%; animation: none; transform: none; }
+.progress.done .progress-bar::after { animation: none; opacity: 0; transition: opacity .3s; }
 @keyframes slide {
   0% { transform: translateX(-110%); }
   100% { transform: translateX(340%); }
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .log {
@@ -224,4 +261,14 @@ html, body {
   font-size: 11px;
   color: #4d5570;
   letter-spacing: .05em;
+}
+
+/* 用户偏好减少动态效果：停掉装饰性循环动画，仅保留必要状态 */
+@media (prefers-reduced-motion: reduce) {
+  .glow,
+  .mark-tile img,
+  .status-dot,
+  .progress-bar,
+  .progress-bar::after { animation: none !important; }
+  .card > * { animation-duration: .01s !important; }
 }

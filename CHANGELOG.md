@@ -14,7 +14,7 @@
 
 ### 修复
 
-- 无（本版本无修复项）
+- **Windows 自动更新缺 `latest.yml`（检查更新报 404）**：build.ps1 用 `--publish never` 构建，导致更新清单 `latest.yml` 从不生成、未上传到 Release → electron-updater 检查更新报 `Cannot find latest.yml ... 404`。新增 `gen-update-manifest.js`（按 electron-builder 官方格式生成 base64 sha512 清单），build.ps1 构建时自动生成，release.ps1 上传命令补上该文件；v0.1.6 的 `latest.yml` 已补传
 
 ### 署名
 
