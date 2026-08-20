@@ -72,6 +72,7 @@ const state = {
   turnTimer: null,   // 回合完成通知的轮询定时器
   turnOffset: 0,     // 已消费的审阅事件流字节数
   turnPrimed: false, // 是否已跳过"首次扫描的历史事件"
+  updateReady: null, // 已下载待安装的更新信息（{version,...}）；有值时托盘/菜单出现安装入口
   patchMode: 'full', // 内核补丁模式：full=审阅桥+内置插件 / bridge=仅审阅桥 / none=无补丁
 }
 
@@ -880,6 +881,12 @@ function buildAppMenu() {
         },
         { label: '复制启动日志', click: () => clipboard.writeText(state.logTail.join('\n')) },
         { type: 'separator' },
+        ...(state.updateReady
+          ? [{
+            label: `重启并安装更新 ${state.updateReady.version}`,
+            click: () => installUpdateNow(),
+          }]
+          : []),
         { label: '检查更新…', click: () => checkForUpdates(true) },
       ],
     },
@@ -1037,6 +1044,88 @@ function updateFeed() {
   return null
 }
 
+/**
+ * 执行更新安装。这里的每一步都是为了避免"应用没有完全关闭"那类提示：
+ *   1. 标记 quitting，先自己把内核子进程收掉（它跑在安装目录里，不死就锁文件）
+ *   2. 销毁托盘、关掉附加窗口，让本进程没有残留 UI 资源
+ *   3. quitAndInstall(isSilent=true, isForceRunAfter=true)：
+ *      · isSilent=true  → 安装器静默执行，不再出现任何"请先关闭应用"的交互
+ *      · isForceRunAfter=true → 装完自动把应用重新拉起来（就是"点一下重启就好"）
+ *   另外安装器侧还有 build/installer.nsh 的 customCheckAppRunning 兜底：
+ *   即便用户是手动双击安装包，也会自动收掉本应用与安装目录内的内核进程。
+ */
+function installUpdateNow() {
+  if (!state.updateReady) return
+  log(`installing update ${state.updateReady.version}`)
+  state.quitting = true
+  try {
+    killChild()
+  } catch (err) {
+    log(`killChild before install failed: ${err.message}`)
+  }
+  try {
+    if (tray) {
+      tray.destroy()
+      tray = null
+    }
+  } catch {}
+  for (const w of extraWins) {
+    if (!w.isDestroyed()) w.destroy()
+  }
+  if (previewWin && !previewWin.isDestroyed()) previewWin.destroy()
+  // 给 taskkill 一点时间真正释放安装目录里的文件句柄，再交给安装器
+  setTimeout(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true)
+    } catch (err) {
+      log(`quitAndInstall failed: ${err.message}`)
+      dialog.showMessageBox({
+        type: 'error',
+        title: '安装更新失败',
+        message: '自动安装没能启动',
+        detail: `${err.message}\n\n可以到 GitHub Releases 手动下载安装包。`,
+        buttons: ['好'],
+        noLink: true,
+      })
+    }
+  }, 600)
+}
+
+/** 更新已下载：用系统通知 + 托盘/菜单入口告知（窗口可能正藏在托盘里，模态框看不见）。 */
+function announceUpdateReady(info) {
+  state.updateReady = info
+  refreshMenus() // 让「重启并安装更新」项出现在托盘与菜单里
+  const version = (info && info.version) || ''
+  try {
+    if (Notification.isSupported()) {
+      const n = new Notification({
+        title: `更新已就绪 · ${version}`,
+        body: '点此立即重启并安装（约几秒，装完自动打开）',
+      })
+      n.on('click', () => installUpdateNow())
+      n.show()
+    }
+  } catch (err) {
+    log(`update notify failed: ${err.message}`)
+  }
+  // 窗口可见时再补一个明确的选择框；隐藏在托盘时不打扰，靠通知/托盘入口
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['立即重启并安装', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: '更新已就绪',
+      message: `新版本 ${version} 已下载完成。`,
+      detail: '点「立即重启并安装」后全自动完成：静默安装并自动重新打开，不会再让你手动关闭应用。\n'
+        + '选「稍后」也不用重新下载 —— 托盘菜单和「内核」菜单里会一直留着「重启并安装更新」。',
+    }).then((r) => {
+      if (r.response === 0) installUpdateNow()
+    })
+  }
+}
+
 async function checkForUpdates(manual) {
   if (!app.isPackaged) {
     if (manual) {
@@ -1083,17 +1172,12 @@ function setupAutoUpdater() {
   try {
     autoUpdater.setFeedURL(feed)
     autoUpdater.autoDownload = true
+    // 退出时自动安装：即便用户从不点"立即重启"，下次正常退出也能装上
+    autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('update-available', (info) => log(`update available: ${info.version}`))
-    autoUpdater.on('update-downloaded', async (info) => {
-      const r = await dialog.showMessageBox(win, {
-        type: 'info', buttons: ['立即重启安装', '稍后'], defaultId: 0, cancelId: 1,
-        title: '更新已就绪', message: `新版本 ${info.version} 已下载完成。`, detail: '重启应用即可完成安装。',
-      })
-      if (r.response === 0) {
-        state.quitting = true
-        killChild()
-        autoUpdater.quitAndInstall()
-      }
+    autoUpdater.on('update-downloaded', (info) => {
+      log(`update downloaded: ${info.version}`)
+      announceUpdateReady(info)
     })
     autoUpdater.on('error', (err) => log(`autoUpdater error: ${err && err.message ? err.message : err}`))
     // 启动后延迟自动检查一次（静默）
@@ -1119,6 +1203,12 @@ async function pickWorkspace() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: '显示主窗口', click: () => showMainWindow() },
+    ...(state.updateReady
+      ? [{
+        label: `⬆ 重启并安装更新 ${state.updateReady.version}`,
+        click: () => installUpdateNow(),
+      }]
+      : []),
     { type: 'separator' },
     { label: '重启内核', click: () => restartKernel() },
     { label: '设置工作目录…', click: () => pickWorkspace() },
