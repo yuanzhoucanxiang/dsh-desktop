@@ -11,7 +11,11 @@ echo "==> installing dsh (hoisted) into runtime..."
 rm -rf "$RUNTIME"
 mkdir -p "$RUNTIME"
 printf '{"dependencies":{"@deepseek-ai/dsh":"%s"}}\n' "$DSH_VERSION" > "$RUNTIME/package.json"
-(cd "$RUNTIME" && npm install --no-audit --no-fund)
+# 内核运行时有 ~450 个包，npm 在 GitHub macos runner 上会撞 Node 默认 ~2GB 老生代上限：
+#   FATAL ERROR: Ineffective mark-compacts near heap limit → Abort trap: 6（exit 134）
+# 实测 v0.1.11 的 mac 构建就是这样挂的，所以这里显式抬高堆上限（runner 有 7GB+ 内存）。
+NPM_HEAP_MB="${NPM_HEAP_MB:-4096}"
+(cd "$RUNTIME" && NODE_OPTIONS="--max-old-space-size=$NPM_HEAP_MB ${NODE_OPTIONS:-}" npm install --no-audit --no-fund)
 
 echo "==> pruning dev artifacts (.d.ts/.map/.ts)..."
 find "$RUNTIME/node_modules" \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.map' -o -name '*.ts' \) -delete 2>/dev/null || true
