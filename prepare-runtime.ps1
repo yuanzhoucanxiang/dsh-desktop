@@ -1,4 +1,4 @@
-# Prepare self-contained kernel runtime: hoisted npm install (short paths) + node.exe
+﻿# Prepare self-contained kernel runtime: hoisted npm install (short paths) + node.exe
 # Usage: powershell -ExecutionPolicy Bypass -File prepare-runtime.ps1
 $ErrorActionPreference = 'Stop'
 $proj = Split-Path -Parent $MyInvocation.MyCommand.Path

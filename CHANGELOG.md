@@ -6,6 +6,34 @@
 
 （暂无）
 
+## [0.1.13] - 2026-08-21
+
+### 修复
+
+- **修掉 0.1.12 自己引入的回归：安装时报 `Failed to uninstall old application files … : 2`**。
+  0.1.12 的进程清理有两处不到位（都是写错了，不是 electron-builder 的问题）：
+  1. **只杀了一次**。Electron 是多进程，主进程 + GPU/渲染 helper 共 4~5 个同名进程，
+     单次 `nsProcess::KillProcess` 杀不干净 → 旧版本自带的老卸载器（不含本修复）自我中断、
+     退出码 2 → 就是那句提示（`: 2` 正是老卸载器的退出码）。
+     现在改为 `taskkill /F /T /IM` 一次干掉所有同名进程，并**循环校验直到一个都不剩**（最多 10 轮）
+  2. **内核 node.exe 只按 `$INSTDIR` 过滤**。但 `uninstallOldVersion` 用的是注册表里的
+     `InstallLocation`（`installUtil.nsh:169`），两者可能不是同一个目录 → 过滤可能整个空转。
+     现在同时清理 `$INSTDIR` 与 HKCU/HKLM `InstallLocation` 三个候选目录
+- **安装器现在会自证清理结果**：每步写进安装日志（`DSH: taskkill app -> …`、
+  `DSH: app closed after N attempt(s)`、`DSH: kernel cleanup under … -> …`），
+  并用「能否重命名 node.exe」探测文件锁，输出 `kernel node.exe is free` 或 `still locked`。
+  以后再出问题，把安装器详情日志贴出来就能直接定位。
+
+### 修复（构建脚本，也是被自己坑到才发现）
+
+- **`build.ps1` 以前会"假成功"**：PowerShell 不会因原生命令返回非零而停止，NSIS 步骤失败后脚本
+  照样跑到底并打印 `BUILD_DONE`，而 `dist/` 里留着**上一次的旧安装包** —— 看起来像构建成功。
+  现在每步检查 `$LASTEXITCODE`、构建前先删同版本旧产物、结束打印 `BUILD_OK version=… installer=…`
+- **`build.ps1` 改为纯 ASCII**：PS 5.1 读无 BOM 的 .ps1 会按 ANSI/GBK 解码，中文注释可能吞掉行尾
+  导致 `Unexpected token`；而编辑器/agent 保存时又常把 BOM 去掉 —— 唯一稳的办法是此文件不含非 ASCII
+- 版本号一律用 `node -p` 读：PS 5.1 的 `ConvertFrom-Json` 解析不了带中文 description 的 package.json
+- `release.ps1` / `prepare-runtime.ps1` 补上 UTF-8 BOM（它们同样含中文）
+
 ## [0.1.12] - 2026-08-21
 
 ### 修复

@@ -1,4 +1,4 @@
-# Build installer and print GitHub Release upload commands.
+﻿# Build installer and print GitHub Release upload commands.
 # Usage: powershell -ExecutionPolicy Bypass -File release.ps1
 $ErrorActionPreference = 'Stop'
 $proj = Split-Path -Parent $MyInvocation.MyCommand.Path
