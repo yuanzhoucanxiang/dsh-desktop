@@ -417,15 +417,48 @@ window.__ModuleLoader__.load({
       }
       return first
     }
+    // ── 内核私有 hash 类名集中处（技术债，见 docs/dsh-ecosystem.md 4.1）─────────
+    // 这些类名是内核前端的编译产物，内核升级时可能改变。四处调用点本来就都有降级
+    // 路径（文本兜底 / 正则兜底 / 直接跳过），所以不会崩；但"静默降级"会让人查不出
+    // 问题 —— 于是统一走 pick()：**从未命中过**且已错过很多次时告警一次。
+    // 注意不能"一没找到就告警"：例如 older 在没有分页历史时本来就不存在。
+    // 打包门禁 `npm run selector-check` 会在这些选择器从内核里消失时直接让 dist 失败。
+    const HASH_SEL = {
+      bubble: ".gdEzaW_bubble",
+      timeStart: ".p-xYUq_timeStart",
+      older: ".Md3f7G_older button",
+      actions: ".p-xYUq_actions",
+    }
+    const selSeen = {}
+    const selMiss = {}
+    const SEL_MISS_ALARM = 30
+    function pick(scope, key) {
+      if (scope === null || scope === undefined) return null
+      const el = scope.querySelector(HASH_SEL[key])
+      if (el !== null) {
+        selSeen[key] = 1
+        return el
+      }
+      selMiss[key] = (selMiss[key] || 0) + 1
+      if (selSeen[key] !== 1 && selMiss[key] === SEL_MISS_ALARM) {
+        console.warn(
+          "[dialog-optimize] 内核私有选择器疑似失效：" + HASH_SEL[key]
+          + "（试了 " + SEL_MISS_ALARM + " 次从未命中，内核前端可能已升级）—— "
+          + "相关功能已降级运行；请更新选择器，或改走官方 Slots 契约。"
+        )
+      }
+      return null
+    }
+
     function fullTextOf(questionEl) {
       if (questionEl === null) return ""
-      const bubble = questionEl.querySelector(".gdEzaW_bubble")
+      const bubble = pick(questionEl, "bubble")
       const text = (bubble ? bubble.textContent : questionEl.textContent || "").trim()
       return text.replace(/\s+/g, " ").trim()
     }
     function timeTextOf(questionEl) {
       if (questionEl === null) return ""
-      const clock = questionEl.querySelector(".p-xYUq_timeStart")
+      const clock = pick(questionEl, "timeStart")
       if (clock !== null && clock.textContent && clock.textContent.trim() !== "") return clock.textContent.trim()
       const m = (questionEl.textContent || "").match(/\d{1,2}:\d{2}/)
       return m ? m[0] : ""
@@ -457,7 +490,7 @@ window.__ModuleLoader__.load({
         navListEl.innerHTML = ""
         // display-only hint that more history is paged out (the dialog's own
         // "load earlier" button handles the loading)
-        if (root.querySelector(".Md3f7G_older button") !== null) {
+        if (pick(root, "older") !== null) {
           const olderItem = document.createElement("div")
           olderItem.className = "dshNavItem dshNavOlder"
           olderItem.textContent = "加载更早"
@@ -580,7 +613,7 @@ window.__ModuleLoader__.load({
         if (!RECALLABLE_KINDS.has(item.dataset.chatFlowKind)) continue
         let btn = item._dshRecallBtn
         if (btn !== undefined && btn.isConnected) continue
-        const row = item.querySelector(".p-xYUq_actions")
+        const row = pick(item, "actions")
         if (row === null) continue
         btn = recallButton("\u21A9", () => recallFlowItem(item))
         btn.classList.add("dshFlowRecall")
