@@ -26,6 +26,20 @@ contextBridge.exposeInMainWorld('dshShell', {
     ipcRenderer.on('shell:boot-error', h)
     return () => ipcRenderer.removeListener('shell:boot-error', h)
   },
+  // 启动画面淡出交接：主进程在 loadURL 之前发 shell:splash-exit，
+  // 渲染侧播完淡出回 shell:splash-exit-done，避免"硬切"进工作区。
+  onSplashExit: (cb) => {
+    const h = () => cb()
+    ipcRenderer.on('shell:splash-exit', h)
+    return () => ipcRenderer.removeListener('shell:splash-exit', h)
+  },
+  splashExitDone: () => ipcRenderer.send('shell:splash-exit-done'),
+  // 皮肤：托盘里切换主题时即时推给启动画面/预览窗口
+  onTheme: (cb) => {
+    const h = (_e, id) => cb(id)
+    ipcRenderer.on('shell:theme', h)
+    return () => ipcRenderer.removeListener('shell:theme', h)
+  },
   restartKernel: () => ipcRenderer.send('shell:restart-kernel'),
   copyLog: () => ipcRenderer.send('shell:copy-log'),
   quit: () => ipcRenderer.send('shell:quit'),
@@ -35,11 +49,71 @@ contextBridge.exposeInMainWorld('dshShell', {
   gitInit: () => ipcRenderer.invoke('shell:git-init'),
   revert: (p, untracked) => ipcRenderer.invoke('shell:revert', p, untracked),
   revertChange: (sessionId, callId) => ipcRenderer.invoke('shell:revert-change', sessionId, callId),
+  // 改动审阅信任闭环（逐文件/逐块）：hunk 传 null = 整个文件
+  gitStage: (p, hunk) => ipcRenderer.invoke('shell:git-stage', p, hunk),
+  gitUnstage: (p, hunk) => ipcRenderer.invoke('shell:git-unstage', p, hunk),
+  gitRevertHunk: (p, hunk) => ipcRenderer.invoke('shell:git-revert-hunk', p, hunk),
+  gitCommit: (message) => ipcRenderer.invoke('shell:git-commit', message),
+  gitPush: () => ipcRenderer.invoke('shell:git-push'),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),
   setPanelWidth: (w) => ipcRenderer.invoke('shell:set-panel-width', w),
 })
+
+/* ── 外壳皮肤（跟随托盘「皮肤」设置） ─────────────────────────────────────────
+ * 做法：只在 <html> 上打一个 data-dsh-skin 标记，再把注入 UI 用到的
+ * --dsw-alias-* 设计令牌**重定义在外壳自己的根元素上**（自定义属性只向下继承，
+ * 绝不外泄到内核页面）。因此：
+ *   deep（默认）    = 一个字都不覆盖，侧边栏继续跟随内核主题（原行为）
+ *   seascape        = 覆盖成单色银盐，和海景启动画面同一套调子
+ */
+const SKIN_ATTR = 'dshSkin'
+let pendingSkin = null
+
+function applySkin(id) {
+  const skin = id === 'seascape' ? 'seascape' : 'deep'
+  pendingSkin = skin
+  const el = document.documentElement
+  if (el) {
+    el.dataset[SKIN_ATTR] = skin
+    return
+  }
+  // preload 可能早于 <html> 存在：等 DOM 就绪再补上
+  document.addEventListener('DOMContentLoaded', () => {
+    if (document.documentElement && pendingSkin) document.documentElement.dataset[SKIN_ATTR] = pendingSkin
+  }, { once: true })
+}
+
+/** 海景皮肤下注入 UI 的令牌覆盖（作用域限定在外壳自己的根元素内）。 */
+const SKIN_TOKENS = `
+  html[data-dsh-skin="seascape"] #dsh-review-root,
+  html[data-dsh-skin="seascape"] #dsh-shell-kernel-overlay {
+    --dsw-alias-bg-base: #0e1012;
+    --dsw-alias-bg-layer-1: #14171a;
+    --dsw-alias-label-primary: #e7ecee;
+    --dsw-alias-label-secondary: #aeb5b9;
+    --dsw-alias-label-tertiary: #6d7478;
+    --dsw-alias-label-dimmed: #5a6165;
+    --dsw-alias-label-primary-foreground: #e7ecee;
+    --dsw-alias-border-l1: rgba(230, 236, 238, .07);
+    --dsw-alias-border-l2: rgba(230, 236, 238, .14);
+    --dsw-alias-interactive-bg-hover: rgba(230, 236, 238, .05);
+    --dsw-alias-interactive-bg-hover-accent: rgba(230, 236, 238, .12);
+    --dsw-alias-brand-primary: #cdd5d8;
+    --dsw-alias-button-primary-fill: #2b3134;
+    /* 调色像"调过色的银盐"：加为冷调、删为暖调，够分辨但不跳出单色 */
+    --dsw-alias-state-success-primary: #a9c2b6;
+    --dsw-alias-state-success-secondary: rgba(169, 194, 182, .13);
+    --dsw-alias-state-success-tertiary: rgba(169, 194, 182, .09);
+    --dsw-alias-state-error-primary: #c9adad;
+    --dsw-alias-state-error-secondary: rgba(201, 173, 173, .15);
+    --dsw-alias-state-warn-primary: #c6bda6;
+    --dsw-alias-state-warn-secondary: rgba(198, 189, 166, .13);
+    --dsw-alias-state-business-primary: #b0bcc3;
+    --dsw-alias-state-business-tertiary: rgba(176, 188, 195, .13);
+  }
+`
 
 /* ── 内核断连浮层（仅注入到内核页面，splash 自己渲染状态） ────────────────── */
 
@@ -54,15 +128,19 @@ function showOverlay(message) {
   if (location.protocol === 'file:' || document.getElementById(OVERLAY_ID)) return
   const style = document.createElement('style')
   style.textContent = [
+    SKIN_TOKENS,
     `#${OVERLAY_ID}{position:fixed;right:18px;bottom:18px;z-index:2147483000;display:flex;align-items:center;gap:12px;`,
-    'padding:12px 16px;border-radius:12px;background:rgba(20,16,28,.92);border:1px solid rgba(255,107,107,.45);',
-    'box-shadow:0 8px 32px rgba(0,0,0,.5);color:#e8e6f2;font:13px/1.5 "Segoe UI",system-ui,sans-serif;max-width:420px;}',
-    `#${OVERLAY_ID} .dsh-dot{width:9px;height:9px;border-radius:50%;background:#ff5d5d;box-shadow:0 0 10px #ff5d5d;flex:none;animation:dshPulse 1.4s infinite;}`,
-    `#${OVERLAY_ID} .dsh-msg{flex:1;color:#cfc9dd;}`,
-    `#${OVERLAY_ID} button{flex:none;padding:6px 12px;border-radius:8px;border:1px solid #5d6dff;background:#2b2f4d;color:#e6e9ff;cursor:pointer;font:inherit;}`,
-    `#${OVERLAY_ID} button:hover{background:#383d63;}`,
+    'padding:12px 16px;border-radius:12px;background:var(--dsh-ov-bg,rgba(20,16,28,.92));border:1px solid var(--dsh-ov-line,rgba(255,107,107,.45));',
+    'box-shadow:0 8px 32px rgba(0,0,0,.5);color:var(--dsw-alias-label-primary,#e8e6f2);font:13px/1.5 "Segoe UI",system-ui,sans-serif;max-width:420px;}',
+    `#${OVERLAY_ID} .dsh-dot{width:9px;height:9px;border-radius:50%;background:var(--dsh-ov-dot,#ff5d5d);box-shadow:0 0 10px var(--dsh-ov-dot,#ff5d5d);flex:none;animation:dshPulse 1.4s infinite;}`,
+    `#${OVERLAY_ID} .dsh-msg{flex:1;color:var(--dsw-alias-label-secondary,#cfc9dd);}`,
+    `#${OVERLAY_ID} button{flex:none;padding:6px 12px;border-radius:8px;border:1px solid var(--dsh-ov-btn-line,#5d6dff);background:var(--dsh-ov-btn,#2b2f4d);color:var(--dsw-alias-label-primary,#e6e9ff);cursor:pointer;font:inherit;}`,
+    `#${OVERLAY_ID} button:hover{background:var(--dsh-ov-btn-hover,#383d63);}`,
     `#${OVERLAY_ID}.dsh-busy button{opacity:.55;pointer-events:none;}`,
     '@keyframes dshPulse{0%,100%{opacity:1}50%{opacity:.35}}',
+    // 海景：浮层也变成单色（暖调银盐的警戒色，不跳出画面）
+    `html[data-dsh-skin="seascape"] #${OVERLAY_ID}{--dsh-ov-bg:rgba(14,16,18,.94);--dsh-ov-line:rgba(201,173,173,.4);`,
+    '--dsh-ov-dot:#c9adad;--dsh-ov-btn:#2b3134;--dsh-ov-btn-line:rgba(230,236,238,.18);--dsh-ov-btn-hover:#363d41;}',
   ].join('')
   document.head.appendChild(style)
 
@@ -97,8 +175,9 @@ function injectReviewSidebar() {
 
   const S = 'dsh-review'
   const style = document.createElement('style')
-  // 主题：直接复用内核页面的 --dsw-alias-* 设计变量，自动跟随明暗主题
-  style.textContent = `
+  // 主题：直接复用内核页面的 --dsw-alias-* 设计变量，自动跟随明暗主题；
+  // 海景皮肤下由 SKIN_TOKENS 把这些令牌在外壳根元素上重定义成单色银盐。
+  style.textContent = SKIN_TOKENS + `
     #${S}-root,#${S}-root *{box-sizing:border-box;margin:0;padding:0;}
     #${S}-root{font:13px/1.5 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
       color:var(--dsw-alias-label-primary,#e8e6f2);}
@@ -147,6 +226,33 @@ function injectReviewSidebar() {
     #${S}-diff .ln-hunk{color:var(--dsw-alias-brand-primary,#8ecbff);}
     #${S}-diff .ln-meta{color:var(--dsw-alias-label-tertiary,#6f7a99);}
     #${S}-diff .ln-ctx{color:var(--dsw-alias-label-dimmed,#7a8398);}
+    /* ── 逐 hunk 操作（信任闭环：每一块都能单独暂存/丢弃） ── */
+    #${S}-sect{padding:7px 14px 3px;font-size:11px;letter-spacing:.1em;color:var(--dsw-alias-label-tertiary,#6f7a99);}
+    #${S}-hunk{border-top:1px solid var(--dsw-alias-border-l1,transparent);}
+    #${S}-hunkbar{display:flex;align-items:center;gap:6px;padding:3px 10px;background:var(--dsw-alias-interactive-bg-hover,transparent);}
+    #${S}-hunkbar .h-label{flex:1;font:11px/1.5 Consolas,"Cascadia Mono",monospace;color:var(--dsw-alias-brand-primary,#8ecbff);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #${S}-hunkbar button{flex:none;font:inherit;font-size:11px;padding:1px 8px;border-radius:6px;cursor:pointer;background:none;
+      border:1px solid var(--dsw-alias-border-l2,transparent);color:var(--dsw-alias-label-tertiary,#8b93ad);}
+    #${S}-hunkbar button:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
+    #${S}-hunkbar button:disabled{opacity:.5;cursor:default;}
+    /* ── 提交条（提交只作用于已暂存内容） ── */
+    #${S}-commit{flex:none;display:none;flex-direction:column;gap:7px;padding:10px 14px;
+      border-top:1px solid var(--dsw-alias-border-l2,transparent);}
+    #${S}-commit.dsh-on{display:flex;}
+    #${S}-commit textarea{width:100%;min-height:44px;max-height:120px;resize:vertical;font:inherit;font-size:12px;padding:6px 8px;
+      border-radius:8px;background:var(--dsw-alias-bg-layer-1,rgba(0,0,0,.22));color:var(--dsw-alias-label-primary,#e6e9ff);
+      border:1px solid var(--dsw-alias-border-l2,transparent);}
+    #${S}-commit .c-row{display:flex;gap:8px;align-items:center;}
+    #${S}-commit .c-meta{flex:1;font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #${S}-commit button{flex:none;font:inherit;font-size:12px;padding:5px 14px;border-radius:8px;cursor:pointer;
+      border:1px solid var(--dsw-alias-border-l2,transparent);background:transparent;color:var(--dsw-alias-label-secondary,#aeb8d8);}
+    #${S}-commit button.primary{background:var(--dsw-alias-button-primary-fill,#4f63d8);
+      color:var(--dsw-alias-label-primary-foreground,#f2f4ff);border-color:transparent;}
+    #${S}-commit button:disabled{opacity:.5;cursor:default;}
+    /* ── 共存模式：内核侧已有右侧栏（如 dsh-better-sidebar）时不抢屏幕右缘 ── */
+    #${S}-root.dsh-coexist #${S}-rail{display:none;}
+    #${S}-root.dsh-coexist #${S}-panel{box-shadow:0 0 0 1px var(--dsw-alias-border-l2,transparent),-18px 0 48px -12px rgba(0,0,0,.55);}
     #${S}-foot{flex:none;padding:10px 16px;border-top:1px solid var(--dsw-alias-border-l2,transparent);font-size:12px;color:var(--dsw-alias-label-tertiary,#6f7a99);display:flex;justify-content:space-between;}
     #${S}-mode{display:flex;gap:6px;margin:10px 0 2px;flex:none;}
     #${S}-mode button{flex:1;padding:5px 8px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,transparent);background:transparent;color:var(--dsw-alias-label-secondary,#8b93ad);cursor:pointer;font:inherit;font-size:12px;}
@@ -280,12 +386,61 @@ function injectReviewSidebar() {
 
   foot.append(footCount, footHint)
 
+  // 提交条（Git 视图专用）：提交只作用于已暂存内容，推送前主进程会二次确认
+  const commitRow = document.createElement('div')
+  commitRow.id = `${S}-commit`
+  const commitMsg = document.createElement('textarea')
+  commitMsg.placeholder = '提交信息（只提交已暂存的改动）'
+  commitMsg.spellcheck = false
+  const cRow = document.createElement('div')
+  cRow.className = 'c-row'
+  const commitMeta = document.createElement('span')
+  commitMeta.className = 'c-meta'
+  const commitBtn = document.createElement('button')
+  commitBtn.className = 'primary'
+  commitBtn.textContent = '提交'
+  const pushBtn = document.createElement('button')
+  pushBtn.textContent = '推送'
+  cRow.append(commitMeta, commitBtn, pushBtn)
+  commitRow.append(commitMsg, cRow)
+
   const toast = document.createElement('div')
   toast.id = `${S}-toast`
 
-  panel.append(head, body, foot)
+  panel.append(head, body, commitRow, foot)
   root.append(rail, panel, toast)
   document.body.appendChild(root)
+
+  /**
+   * 共存检测：内核侧若已经有右侧栏插件（如 dsh-better-sidebar），就不去抢屏幕右缘 ——
+   * 隐藏我们的 rail、面板改为浮层（不挤压页面），入口只留菜单/快捷键 Ctrl+Shift+B。
+   * 判据用网络资源里的插件 id（client bundle 走 /plugins/<id>/client.js），不刮 DOM。
+   */
+  function detectCoexist() {
+    const RIVALS = /better-sidebar|dsh-workbench|dsh-web-shell/i
+    try {
+      const hit = performance.getEntriesByType('resource').some((e) => RIVALS.test(e.name || ''))
+      if (hit) return true
+    } catch {}
+    return !!document.querySelector('[id*="better-sidebar"],[class*="better-sidebar"]')
+  }
+
+  let coexist = detectCoexist()
+  root.classList.toggle('dsh-coexist', coexist)
+  // 插件是异步加载的，晚到也要认：再探几次（探到就定，不反复抖动）
+  let coexistProbes = 0
+  const coexistTimer = setInterval(() => {
+    coexistProbes++
+    if (!coexist && detectCoexist()) {
+      coexist = true
+      root.classList.add('dsh-coexist')
+      if (!panel.classList.contains('dsh-hidden')) {
+        document.body.style.marginRight = '' // 让位：立刻停止挤压页面
+        rail.style.right = '0px'
+      }
+    }
+    if (coexist || coexistProbes > 10) clearInterval(coexistTimer)
+  }, 1500)
 
   let mode = 'session' // 'session' | 'git'
   let data = { isGit: false, workspace: '', files: [] }
@@ -308,7 +463,8 @@ function injectReviewSidebar() {
 
   function applyPanelWidth() {
     panel.style.width = panelWidth + 'px'
-    document.body.style.marginRight = panelWidth + 'px'
+    // 共存模式下不挤压页面（内核侧右侧栏已经占了布局），面板以浮层形式盖在上面
+    document.body.style.marginRight = coexist ? '' : panelWidth + 'px'
     rail.style.right = (panelWidth - 4) + 'px'
     toast.style.right = (panelWidth + 16) + 'px'
   }
@@ -376,6 +532,15 @@ function injectReviewSidebar() {
   }).catch(() => {})
 
   toggle.addEventListener('click', () => setOpen(panel.classList.contains('dsh-hidden')))
+  // 外壳快捷键 / 菜单驱动：切换审阅面板（Ctrl+Shift+B）与手动刷新
+  ipcRenderer.on('shell:toggle-review', () => setOpen(panel.classList.contains('dsh-hidden')))
+  ipcRenderer.on('shell:open-review', () => {
+    if (panel.classList.contains('dsh-hidden')) setOpen(true)
+    else refresh()
+  })
+  ipcRenderer.on('shell:refresh-review', () => {
+    if (!panel.classList.contains('dsh-hidden')) refresh()
+  })
   closeBtn.addEventListener('click', () => setOpen(false))
   refreshBtn.addEventListener('click', refresh)
   modeSession.addEventListener('click', () => { mode = 'session'; view = null; lastSig = ''; syncMode(); refresh() })
@@ -601,6 +766,101 @@ function injectReviewSidebar() {
     footCount.textContent = view.truncated ? '内容已截断' : ''
   }
 
+  /**
+   * 把一段 diff 切成 hunk（**必须与主进程 lib/git-review.js 的 splitDiff 规则完全一致**，
+   * 否则"第几块"的编号会错位：从第一个 @@ 开始、遇 @@ 起新块、遇 `diff --git ` 停）。
+   * 这里只用于显示与编号；真正的补丁由主进程现读现切。
+   */
+  function splitHunks(text) {
+    const lines = String(text || '').split('\n')
+    const first = lines.findIndex((l) => l.startsWith('@@'))
+    if (first < 0) return []
+    const out = []
+    let cur = null
+    for (let i = first; i < lines.length; i++) {
+      const l = lines[i]
+      if (l.startsWith('@@')) {
+        if (cur) out.push(cur)
+        cur = [l]
+        continue
+      }
+      if (!cur) continue
+      if (l.startsWith('diff --git ')) break
+      cur.push(l)
+    }
+    if (cur) out.push(cur)
+    return out
+  }
+
+  /** 逐块渲染：块头一排按钮（暂存这块 / 丢弃这块 / 取消暂存这块），块体复用 diff 着色。 */
+  function hunkBlocks(file, text, staged) {
+    const frag = document.createDocumentFragment()
+    const hunks = splitHunks(text)
+    hunks.forEach((lines, idx) => {
+      const box = document.createElement('div')
+      box.id = `${S}-hunk`
+      const bar = document.createElement('div')
+      bar.id = `${S}-hunkbar`
+      const label = document.createElement('span')
+      label.className = 'h-label'
+      label.textContent = `第 ${idx + 1}/${hunks.length} 块 · ${lines[0]}`
+      label.title = lines[0]
+      bar.appendChild(label)
+
+      const act = async (btn, busyText, fn) => {
+        const old = btn.textContent
+        btn.disabled = true
+        btn.textContent = busyText
+        const r = await fn()
+        btn.disabled = false
+        btn.textContent = old
+        if (r && r.canceled) return
+        if (r && r.ok) showToast('已完成')
+        else showToast((r && r.error) || '操作失败', true)
+        refresh()
+      }
+
+      if (staged) {
+        const un = document.createElement('button')
+        un.textContent = '取消暂存这块'
+        un.title = 'git apply --cached --reverse（只退这一块）'
+        un.addEventListener('click', (e) => {
+          e.stopPropagation()
+          act(un, '…', () => ipcRenderer.invoke('shell:git-unstage', file, idx))
+        })
+        bar.appendChild(un)
+      } else {
+        const st = document.createElement('button')
+        st.textContent = '暂存这块'
+        st.title = 'git apply --cached（只暂存这一块）'
+        st.addEventListener('click', (e) => {
+          e.stopPropagation()
+          act(st, '…', () => ipcRenderer.invoke('shell:git-stage', file, idx))
+        })
+        const rv = document.createElement('button')
+        rv.textContent = '丢弃这块'
+        rv.title = '丢弃这一块改动（会先弹确认；同文件其它块保留）'
+        rv.addEventListener('click', (e) => {
+          e.stopPropagation()
+          act(rv, '…', () => ipcRenderer.invoke('shell:git-revert-hunk', file, idx))
+        })
+        bar.append(st, rv)
+      }
+
+      box.appendChild(bar)
+      box.appendChild(diffLines(lines.join('\n')))
+      frag.appendChild(box)
+    })
+    return frag
+  }
+
+  function sectionLabel(text) {
+    const el = document.createElement('div')
+    el.id = `${S}-sect`
+    el.textContent = text
+    return el
+  }
+
   function renderGit() {
     ws.textContent = data.workspace || '（未知工作目录）'
     body.textContent = ''
@@ -636,6 +896,15 @@ function injectReviewSidebar() {
       footCount.textContent = ''
       return
     }
+    // 提交条：只在 Git 视图出现；有已暂存内容才能提交，有远端才能推送
+    const stagedCount = data.stagedCount || 0
+    commitRow.classList.add('dsh-on')
+    commitMeta.textContent = (stagedCount ? `已暂存 ${stagedCount} 个文件` : '暂存区为空')
+      + (data.branch ? ` · ${data.branch}` : '')
+      + (data.hasRemote ? '' : ' · 无远端')
+    commitBtn.disabled = stagedCount === 0
+    pushBtn.disabled = !data.hasRemote
+
     if (data.files.length === 0) {
       const empty = document.createElement('div')
       empty.id = `${S}-empty`
@@ -663,10 +932,38 @@ function injectReviewSidebar() {
       pathEl.textContent = f.path
       pathEl.title = f.path
 
+      // 文件级：暂存 / 取消暂存（可逆，不弹确认）
+      const fileBtn = (text, title, fn) => {
+        const b = document.createElement('button')
+        b.id = `${S}-act`
+        b.style.opacity = '1' // 文件级操作常用，不做 hover 才显形
+        b.textContent = text
+        b.title = title
+        b.addEventListener('click', async (e) => {
+          e.stopPropagation()
+          b.disabled = true
+          b.textContent = '…'
+          const r = await fn()
+          if (r && !r.ok && !r.canceled) showToast(r.error || '操作失败', true)
+          refresh()
+        })
+        return b
+      }
+
+      const ops = []
+      if (f.untracked || f.diffUnstaged) {
+        ops.push(fileBtn('暂存', 'git add（整个文件）',
+          () => ipcRenderer.invoke('shell:git-stage', f.path, null)))
+      }
+      if (f.diffStaged) {
+        ops.push(fileBtn('取消暂存', 'git reset HEAD（整个文件）',
+          () => ipcRenderer.invoke('shell:git-unstage', f.path, null)))
+      }
+
       const act = document.createElement('button')
       act.id = `${S}-act`
       act.textContent = f.untracked ? '删除' : '还原'
-      act.title = f.untracked ? '删除未跟踪的新文件' : 'git restore（恢复到最后一次提交）'
+      act.title = f.untracked ? '删除未跟踪的新文件' : '还原整个文件（会先弹确认）'
       act.addEventListener('click', async (e) => {
         e.stopPropagation()
         act.textContent = '…'
@@ -674,7 +971,7 @@ function injectReviewSidebar() {
         refresh()
       })
 
-      row.append(badge, pathEl, viewFileBtn(f.path), openFileBtn(f.path), act)
+      row.append(badge, pathEl, viewFileBtn(f.path), openFileBtn(f.path), ...ops, act)
       row.addEventListener('click', () => {
         expanded[f.path] = !expanded[f.path]
         render()
@@ -687,10 +984,20 @@ function injectReviewSidebar() {
         if (f.untracked) {
           const note = document.createElement('div')
           note.className = 'ln-meta'
-          note.textContent = '（未跟踪的新文件，无 diff）'
+          note.textContent = '（未跟踪的新文件，无 diff；可用上面的「暂存」把它纳入版本控制）'
           diffBox.appendChild(note)
+        } else if (f.diffStaged || f.diffUnstaged) {
+          // 分档展示：已暂存在上（即将被提交），未暂存在下（还没纳入）
+          if (f.diffStaged) {
+            diffBox.appendChild(sectionLabel(`已暂存 · ${f.hunksStaged} 块（提交时会带上）`))
+            diffBox.appendChild(hunkBlocks(f.path, f.diffStaged, true))
+          }
+          if (f.diffUnstaged) {
+            diffBox.appendChild(sectionLabel(`未暂存 · ${f.hunksUnstaged} 块`))
+            diffBox.appendChild(hunkBlocks(f.path, f.diffUnstaged, false))
+          }
         } else if (f.diff) {
-          diffBox.appendChild(diffLines(f.diff))
+          diffBox.appendChild(diffLines(f.diff)) // 兜底：拿不到分档数据时按老样子整块显示
         } else {
           const note = document.createElement('div')
           note.className = 'ln-meta'
@@ -955,7 +1262,42 @@ function injectReviewSidebar() {
     }
   }
 
+  /* ── 提交 / 推送（都只作用于已暂存内容；推送由主进程二次确认） ────────────── */
+
+  commitBtn.addEventListener('click', async () => {
+    const msg = commitMsg.value.trim()
+    if (!msg) {
+      showToast('请先写提交信息', true)
+      commitMsg.focus()
+      return
+    }
+    commitBtn.disabled = true
+    commitBtn.textContent = '提交中…'
+    const r = await ipcRenderer.invoke('shell:git-commit', msg)
+    commitBtn.textContent = '提交'
+    if (r && r.ok) {
+      commitMsg.value = ''
+      showToast(`已提交 ${r.hash || ''}`)
+    } else {
+      showToast((r && r.error) || '提交失败', true)
+    }
+    refresh()
+  })
+
+  pushBtn.addEventListener('click', async () => {
+    pushBtn.disabled = true
+    pushBtn.textContent = '推送中…'
+    const r = await ipcRenderer.invoke('shell:git-push')
+    pushBtn.textContent = '推送'
+    pushBtn.disabled = false
+    if (r && r.canceled) return
+    if (r && r.ok) showToast(`已推送 ${r.branch || ''}`)
+    else showToast((r && r.error) || '推送失败', true)
+    refresh()
+  })
+
   function render() {
+    commitRow.classList.remove('dsh-on') // 只有 Git 视图会把它打开
     if (view) { renderViewer(); return }
     if (mode === 'session') renderSession()
     else renderGit()
@@ -985,11 +1327,16 @@ function injectReviewSidebar() {
     }
   }
 
-  // 打开侧边栏时顺便取一次工作目录（用于展示）
+  // 打开侧边栏时顺便取一次工作目录（用于展示）与当前皮肤
   ipcRenderer.invoke('shell:get-state').then((s) => {
     if (s && s.workspace) ws.textContent = s.workspace
+    if (s && s.theme) applySkin(s.theme)
   })
 }
+
+// 皮肤：先按当前设置落一次，之后跟随托盘切换即时变（内核页面与浮层都吃这一层）
+ipcRenderer.invoke('shell:get-state').then((s) => applySkin(s && s.theme)).catch(() => {})
+ipcRenderer.on('shell:theme', (_e, id) => applySkin(id))
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', injectReviewSidebar)

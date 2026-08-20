@@ -22,7 +22,10 @@ app.disableHardwareAcceleration()
 
 function finish(code, msg) {
   console.log(msg)
-  setTimeout(() => app.exit(code), 100)
+  try { server.close() } catch {}
+  // 同步退出：先 destroy 窗口再延时 exit 会被 Electron 默认的 window-all-closed（code 0）抢跑，
+  // 失败也会"通过"—— 这个坑真实发生过。
+  app.exit(code)
 }
 
 const server = http.createServer((_req, res) => {
@@ -54,8 +57,9 @@ app.whenReady().then(async () => {
 
     const result = await win.webContents.executeJavaScript(`(async () => {
       try {
-        const tab = document.getElementById('dsh-review-tab')
-        if (!tab) return { ok: false, why: 'missing tab' }
+        // 0.1.10 起右侧标签改成了 rail 上的开关按钮（#dsh-review-toggle），旧 id dsh-review-tab 已不存在
+        const tab = document.getElementById('dsh-review-toggle')
+        if (!tab) return { ok: false, why: 'missing toggle' }
         tab.click()
         await new Promise(r => setTimeout(r, 600))
         const body = document.getElementById('dsh-review-body')
@@ -78,8 +82,7 @@ app.whenReady().then(async () => {
     win.destroy()
     server.close()
     const pass = result.ok && result.hasNewJs && result.hasAJs && result.hasTurn && result.hasOldNew && result.hasGitFile
-    finish(pass ? 0 : 1, 'SIDEBAR_SESSION_TEST ' + JSON.stringify(result))
-  } catch (err) {
+    finish(pass ? 0 : 1, 'SIDEBAR_SESSION_TEST ' + JSON.stringify(result))  } catch (err) {
     try { server.close() } catch {}
     finish(1, 'SIDEBAR_TEST_ERR ' + (err && err.stack ? err.stack : String(err)))
   }

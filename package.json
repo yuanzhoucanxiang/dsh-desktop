@@ -12,9 +12,16 @@
     "dev": "electron . --dev",
     "smoke": "electron . --smoke",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File prepare-runtime.ps1",
-    "dist": "powershell -ExecutionPolicy Bypass -File build.ps1",
+    "dist": "node plugin-selector-check.js && powershell -ExecutionPolicy Bypass -File build.ps1",
     "release": "powershell -ExecutionPolicy Bypass -File release.ps1",
-    "ui-smoke": "electron . --ui-smoke"
+    "ui-smoke": "electron . --ui-smoke",
+    "splash-check": "electron splash-check.js",
+    "splash-shot": "electron splash-shot.js",
+    "splash-preview": "electron splash-preview.js",
+    "sidebar-skin-check": "electron sidebar-skin-check.js",
+    "review-ui-check": "electron review-ui-check.js",
+    "git-review-test": "node lib/git-review.test.js",
+    "selector-check": "node plugin-selector-check.js"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -32,6 +39,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "lib/git-review.js",
       "renderer/**/*",
       "build/*.png",
       "build/icon.ico",

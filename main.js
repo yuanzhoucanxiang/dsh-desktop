@@ -19,6 +19,7 @@
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, shell,
   nativeImage, nativeTheme, clipboard, dialog, screen,
+  globalShortcut, Notification,
 } = require('electron')
 // 注意：autoUpdater 来自 electron-updater 包（支持 {provider:'github'|'generic'}），
 // 不是 Electron 内置的 autoUpdater（内置只接受 {url}，二者 API 不兼容）。
@@ -29,6 +30,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
+const { createGitReview } = require('./lib/git-review')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
@@ -39,9 +41,15 @@ const APP_NAME = 'DeepSeek Harness Desktop'
 const SPLASH_PATH = path.join(__dirname, 'renderer', 'splash.html')
 const ICON_PATH = path.join(__dirname, 'build', 'icon.png')
 const READY_TIMEOUT_MS = 120000
+// 启动画面交接编排（只影响观感，不影响内核拉起时序）：
+const MIN_SPLASH_MS = 1250 // 最短展示时长：内核秒起时也不把开场动画剪断
+const READY_HOLD_MS = 420  // 就绪后停顿：让进度光环可见地合上再走
+const SPLASH_EXIT_MS = 520 // 淡出等待上限：渲染侧 ack 会提前返回
 
 /** @type {BrowserWindow | null} */
 let win = null
+/** @type {BrowserWindow | null} 托盘「预览启动画面」用的独立窗口 */
+let previewWin = null
 /** @type {Tray | null} */
 let tray = null
 
@@ -56,10 +64,14 @@ const state = {
   message: '正在初始化…',
   lastError: '',
   elapsedMs: 0,
+  splashAt: 0, // 启动画面开始动画的时刻（渲染侧订阅完成时），用于最短展示时长
   logTail: [],
   logStream: null,
   logPath: '',
   reviewStreamPath: '',
+  turnTimer: null,   // 回合完成通知的轮询定时器
+  turnOffset: 0,     // 已消费的审阅事件流字节数
+  turnPrimed: false, // 是否已跳过"首次扫描的历史事件"
   patchMode: 'full', // 内核补丁模式：full=审阅桥+内置插件 / bridge=仅审阅桥 / none=无补丁
 }
 
@@ -75,6 +87,24 @@ const DEFAULT_SETTINGS = {
   updateRepo: '',         // GitHub 更新源 owner/repo（空 = 用 DEFAULT_UPDATE_REPO）
   updateUrl: '',          // generic 更新源 URL（优先级低于 updateRepo）
   panelWidth: 360,        // 审阅侧边栏宽度（用户拖拽调整后持久化）
+  theme: 'deep',          // 外壳皮肤：deep=深海·单光环 / seascape=海景·Seascape
+  notifyOnTurnEnd: true,  // 回合完成时发系统通知（仅在主窗口失焦时）
+  globalHotkey: 'Control+Alt+D', // 全局唤起热键（空字符串 = 关闭）
+}
+
+/**
+ * 外壳皮肤（只作用于外壳自己拥有的界面：启动画面 + 窗口底色 + 预览窗口）。
+ * 内核页面与注入的审阅侧边栏一律跟随内核自己的设计令牌（--dsw-alias-*），
+ * 不在这里改色 —— 那是"内核零修改"的一部分。
+ */
+const THEMES = {
+  deep: { label: '深海 · 单光环', bg: '#05070f' },
+  seascape: { label: '海景 · Seascape（致敬杉本博司）', bg: '#0a0b0c' },
+}
+
+/** 当前皮肤 id（脏数据一律回落到 deep）。 */
+function themeId() {
+  return THEMES[settings.theme] ? settings.theme : 'deep'
 }
 
 let settings = loadSettings()
@@ -107,9 +137,14 @@ function kernelCwd() {
   return os.homedir()
 }
 
-/* ─────────────────────────────── 修改审阅（git） ───────────────────────────── */
+/* ─────────────────────────────── 修改审阅（git） ─────────────────────────────
+ * 具体 git 逻辑在 lib/git-review.js（纯 Node，可用 `node lib/git-review.test.js`
+ * 直接单测）。这里只保留"外壳职责"：确认对话框、IPC、把结果回给渲染侧。
+ */
 
-/** 在工作目录里跑 git；失败返回 null（如"不是仓库"）。 */
+const review = createGitReview(kernelCwd)
+
+/** 在工作目录里跑 git；失败返回 null（老调用点沿用这个宽松签名）。 */
 function git(args) {
   try {
     return execFileSync('git', args, {
@@ -123,58 +158,10 @@ function git(args) {
   }
 }
 
-function isGitRepo() {
-  const r = git(['rev-parse', '--is-inside-work-tree'])
-  return !!r && r.trim() === 'true'
-}
-
-/** 在当前工作目录初始化 git 仓库（仅当还不是仓库时）。 */
-function gitInit() {
-  if (isGitRepo()) return { ok: true, already: true }
-  const r = git(['init', '-q'])
-  return { ok: r !== null, already: false }
-}
-
-/** 解析 git status --porcelain=v1：XY <path>（重命名为 XY <old> -> <new>）。 */
-function parseStatus(out) {
-  const files = []
-  for (const line of String(out).split(/\r?\n/)) {
-    if (!line) continue
-    const xy = line.slice(0, 2)
-    const rest = line.slice(3)
-    const p = rest.includes(' -> ') ? rest.split(' -> ')[1] : rest
-    files.push({ status: xy, path: p })
-  }
-  return files
-}
-
-function fileDiff(p) {
-  const unstaged = git(['diff', '--', p]) || ''
-  const staged = git(['diff', '--cached', '--', p]) || ''
-  return unstaged + (staged && staged !== unstaged ? staged : '')
-}
-
-function collectChanges() {
-  const workspace = kernelCwd()
-  if (!isGitRepo()) return { isGit: false, workspace, files: [] }
-  const statusOut = git(['status', '--porcelain=v1']) || ''
-  const files = parseStatus(statusOut).map((f) => ({
-    path: f.path,
-    status: f.status,
-    untracked: f.status === '??',
-    diff: f.status === '??' ? '' : fileDiff(f.path),
-  }))
-  return { isGit: true, workspace, files }
-}
-
-function revertFile(p, untracked) {
-  if (untracked) {
-    const fp = path.join(kernelCwd(), p)
-    try { fs.rmSync(fp, { force: true }); return true } catch { return false }
-  }
-  const r = git(['restore', '--staged', '--worktree', '--', p])
-  return r !== null
-}
+const isGitRepo = () => review.isRepo()
+const gitInit = () => review.init()
+const collectChanges = () => review.changes()
+const revertFile = (p, untracked) => review.revertFile(p, untracked).ok
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -339,6 +326,75 @@ function readSessionChanges() {
     return { ok: true, entries }
   } catch (err) {
     return { ok: false, entries: [], error: err.message }
+  }
+}
+
+/* ───────────────────── 回合完成通知（后台感知：失焦时才提醒） ─────────────────
+ * 数据来自审阅桥写的 review-events.ndjson（内核零修改，外壳只读）。
+ * 只在"主窗口没有焦点"时弹系统通知 —— 盯着屏幕时不打扰，这是 Codex 的 notify 思路。
+ */
+function startTurnWatcher() {
+  if (SMOKE || UI_SMOKE) return // 冒烟不弹系统通知
+  if (state.turnTimer) clearInterval(state.turnTimer)
+  state.turnTimer = setInterval(() => {
+    if (!settings.notifyOnTurnEnd || !state.reviewStreamPath) return
+    let size = 0
+    try {
+      size = fs.statSync(state.reviewStreamPath).size
+    } catch {
+      return // 流文件还没出现（无补丁模式）：静默跳过
+    }
+    if (size === state.turnOffset) return
+    if (size < state.turnOffset) state.turnOffset = 0 // 内核重启后流被重置
+    let chunk = ''
+    try {
+      const fd = fs.openSync(state.reviewStreamPath, 'r')
+      const len = size - state.turnOffset
+      const buf = Buffer.alloc(len)
+      fs.readSync(fd, buf, 0, len, state.turnOffset)
+      fs.closeSync(fd)
+      chunk = buf.toString('utf8')
+    } catch (err) {
+      return
+    }
+    state.turnOffset = size
+    let ended = 0
+    let files = 0
+    for (const line of chunk.split('\n')) {
+      if (!line.trim()) continue
+      let e = null
+      try { e = JSON.parse(line) } catch { continue }
+      if (!e) continue
+      if (e.kind === 'tool-call' && e.file) files++
+      if (e.kind === 'turn-end') ended++
+    }
+    if (!ended) return
+    // 首次扫描（外壳刚起来时读到历史事件）不提醒，避免"补课式"轰炸
+    if (!state.turnPrimed) {
+      state.turnPrimed = true
+      return
+    }
+    const focused = !!win && !win.isDestroyed() && win.isFocused()
+    if (focused) return
+    notifyTurnEnd(files)
+  }, 2000)
+}
+
+function notifyTurnEnd(files) {
+  try {
+    if (!Notification.isSupported()) return
+    const n = new Notification({
+      title: 'DeepSeek Harness · 本轮完成',
+      body: files > 0 ? `改动了 ${files} 处文件，点此查看审阅面板` : '任务已结束，点此回到工作区',
+      silent: false,
+    })
+    n.on('click', () => {
+      showMainWindow()
+      if (win && !win.isDestroyed() && files > 0) win.webContents.send('shell:open-review')
+    })
+    n.show()
+  } catch (err) {
+    log(`notify failed: ${err.message}`)
   }
 }
 
@@ -521,7 +577,12 @@ async function restartKernel() {
     if (win && !win.isDestroyed()) {
       win.webContents.send('shell:kernel-status', { alive: true })
       if (win.webContents.getURL().startsWith('http')) win.webContents.reload()
-      else await win.loadURL(state.url)
+      else {
+        // 错误态重启成功：同样走"合环 → 淡出 → 交接"，不硬切
+        await sleep(READY_HOLD_MS)
+        await playSplashExit()
+        await win.loadURL(state.url)
+      }
     }
   } catch (err) {
     log(`restart failed: ${err.message}`)
@@ -530,6 +591,327 @@ async function restartKernel() {
   } finally {
     state.restarting = false
   }
+}
+
+/* ─────────────────────────────── 启动画面交接 ──────────────────────────────── */
+
+/** 当前窗口是否还停在启动画面（file:// 页面）。 */
+function onSplash() {
+  return !!win && !win.isDestroyed() && win.webContents.getURL().startsWith('file:')
+}
+
+/**
+ * 切工作区之前先播启动画面淡出，避免"硬切"：
+ * 通知渲染侧淡出 → 等它 ack（最多 SPLASH_EXIT_MS 兜底）→ 调用方再 loadURL。
+ * 窗口背景色与启动画面同色，所以淡出结束到新页面首帧之间是无缝黑场。
+ * @returns {Promise<boolean>} 渲染侧是否在预算内确认（false = 走了兜底超时）
+ */
+function playSplashExit() {
+  if (!onSplash()) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (acked) => {
+      if (settled) return
+      settled = true
+      ipcMain.removeListener('shell:splash-exit-done', ack)
+      resolve(acked)
+    }
+    const ack = () => finish(true)
+    ipcMain.once('shell:splash-exit-done', ack)
+    setTimeout(() => finish(false), SPLASH_EXIT_MS)
+    win.webContents.send('shell:splash-exit')
+  })
+}
+
+/** 就绪 → 工作区的完整交接：补足最短展示时长 + 就绪停顿 + 淡出。 */
+async function handoffFromSplash() {
+  if (!onSplash()) return
+  const shown = state.splashAt ? Date.now() - state.splashAt : MIN_SPLASH_MS
+  await sleep(Math.max(READY_HOLD_MS, MIN_SPLASH_MS - shown))
+  if (!(await playSplashExit())) log('splash exit ack timed out; handing off anyway')
+}
+
+/* ─────────────────────────────── 皮肤（外壳级） ────────────────────────────── */
+
+/**
+ * 切换外壳皮肤：持久化 + 窗口底色 + 广播给启动画面/预览窗口 + 刷新托盘勾选。
+ * 作用范围只有外壳自己的界面（启动画面、窗口底色、预览窗口）；内核页面与注入的
+ * 审阅侧边栏继续跟随内核的设计令牌，不在这里染色。
+ */
+function applyTheme(id) {
+  const next = THEMES[id] ? id : 'deep'
+  settings.theme = next
+  saveSettings()
+  for (const w of [win, previewWin]) {
+    if (!w || w.isDestroyed()) continue
+    try {
+      w.setBackgroundColor(THEMES[next].bg)
+    } catch (err) {
+      log(`setBackgroundColor failed: ${err.message}`)
+    }
+    w.webContents.send('shell:theme', next)
+  }
+  if (previewWin && !previewWin.isDestroyed()) {
+    previewWin.setTitle(`预览启动画面 · ${THEMES[next].label}`)
+  }
+  for (const w of extraWins) {
+    if (!w.isDestroyed()) {
+      try { w.setBackgroundColor(THEMES[next].bg) } catch {}
+      w.webContents.send('shell:theme', next)
+    }
+  }
+  refreshMenus()
+  log(`theme -> ${next}`)
+}
+
+/** 托盘「预览启动画面」：独立窗口自驱动播一遍启动节奏，不碰内核、不影响主窗口。 */
+function openSplashPreview(withError) {
+  if (previewWin && !previewWin.isDestroyed()) {
+    previewWin.focus()
+    previewWin.webContents.send('shell:theme', themeId())
+    return
+  }
+  previewWin = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    minWidth: 620,
+    minHeight: 440,
+    title: `预览启动画面 · ${THEMES[themeId()].label}`,
+    backgroundColor: THEMES[themeId()].bg,
+    icon: ICON_PATH,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  previewWin.on('closed', () => { previewWin = null })
+  // 注意：不能用 loadFile(path, { query })—— 路径含空格/反斜杠时它拼出的 URL 会加载失败
+  // （实测 ERR_FAILED）。一律 pathToFileURL 生成合法 file:// URL 再挂查询串。
+  const url = pathToFileURL(SPLASH_PATH)
+  url.searchParams.set('preview', '1')
+  url.searchParams.set('theme', themeId())
+  if (withError) url.searchParams.set('error', '1')
+  previewWin.loadURL(url.toString()).catch((err) => log(`preview failed: ${err.message}`))
+}
+
+/* ──────────────── 应用菜单 / 快捷键 / 多窗口 / 全局唤起 / 深链接 ────────────────
+ * 设计取向（对标 Codex，见 docs/codex-benchmark.md 的 P0）：
+ *   · 命令走原生菜单 + accelerator：菜单栏默认隐藏（Alt 唤出），但快捷键始终生效，
+ *     既保持干净外观，又让每个能力"可发现、可键盘直达"
+ *   · 设置留在托盘（开机自启/皮肤/通知/热键），命令留在菜单，两边不混
+ *   · 全部只用外壳能力（窗口/菜单/通知/热键/协议），内核零修改
+ */
+
+/** @type {Set<BrowserWindow>} 附加窗口（同一内核，多会话并行） */
+const extraWins = new Set()
+
+/** 把命令发给当前聚焦的窗口（没有就发主窗口）。 */
+function sendToFocused(channel, payload) {
+  const target = BrowserWindow.getFocusedWindow() || win
+  if (target && !target.isDestroyed() && target.webContents.getURL().startsWith('http')) {
+    target.webContents.send(channel, payload)
+  }
+}
+
+/** 新窗口：承载同一个内核，用于并行看多个会话。 */
+function openExtraWindow() {
+  if (!state.ready || !state.url) return null
+  const w = new BrowserWindow({
+    width: 1180,
+    height: 820,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: THEMES[themeId()].bg,
+    icon: ICON_PATH,
+    title: APP_NAME,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  extraWins.add(w)
+  w.on('closed', () => extraWins.delete(w))
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  w.loadURL(state.url).catch((err) => log(`extra window failed: ${err.message}`))
+  return w
+}
+
+/** 全局热键：按一次唤起并聚焦，再按一次收起（不打断当前应用的心智）。 */
+function applyGlobalHotkey() {
+  try {
+    globalShortcut.unregisterAll()
+  } catch {}
+  const acc = settings.globalHotkey
+  if (!acc || SMOKE || UI_SMOKE) return
+  try {
+    const ok = globalShortcut.register(acc, () => {
+      if (win && !win.isDestroyed() && win.isFocused()) win.hide()
+      else showMainWindow()
+    })
+    log(ok ? `global hotkey: ${acc}` : `global hotkey rejected (被占用?): ${acc}`)
+  } catch (err) {
+    log(`global hotkey failed: ${err.message}`)
+  }
+}
+
+/** 深链接：dsh://open | dsh://review | dsh://restart（外部工具/浏览器可直接唤起）。 */
+function handleDeepLink(url) {
+  if (!url || !/^dsh:/i.test(url)) return
+  let action = ''
+  try {
+    const u = new URL(url)
+    action = (u.hostname || u.pathname.replace(/^\/+/, '')).toLowerCase()
+  } catch {
+    return
+  }
+  log(`deep link: ${url}`)
+  showMainWindow()
+  if (action === 'review') sendToFocused('shell:open-review')
+  else if (action === 'restart') restartKernel()
+}
+
+function showShortcutHelp() {
+  const rows = [
+    ['Ctrl+Shift+B', '切换「修改审阅」侧边栏'],
+    ['Ctrl+Shift+N', '新窗口（同一内核，多会话并行）'],
+    ['Ctrl+Shift+K', '重启内核'],
+    ['Ctrl+Shift+O', '设置工作目录…'],
+    ['Ctrl+R', '重载页面'],
+    ['Ctrl+Shift+F5', '强制重载'],
+    ['Ctrl+0 / Ctrl+= / Ctrl+-', '缩放复位 / 放大 / 缩小'],
+    ['F11', '全屏'],
+    ['Ctrl+/', '这份快捷键一览'],
+    ['Alt', '临时显示菜单栏'],
+    [settings.globalHotkey || '（已关闭）', '全局唤起/收起主窗口（任何应用里都能按）'],
+  ]
+  dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+    type: 'info',
+    title: '快捷键一览',
+    message: 'DeepSeek Harness Desktop · 快捷键',
+    detail: rows.map(([k, v]) => `${k}\n    ${v}`).join('\n'),
+    buttons: ['好'],
+    noLink: true,
+  })
+}
+
+function themeMenuItems() {
+  return [
+    ...Object.keys(THEMES).map((id) => ({
+      label: THEMES[id].label,
+      type: 'radio',
+      checked: themeId() === id,
+      click: () => applyTheme(id),
+    })),
+    { type: 'separator' },
+    { label: '预览启动画面…', click: () => openSplashPreview(false) },
+    { label: '预览启动失败画面…', click: () => openSplashPreview(true) },
+  ]
+}
+
+function buildAppMenu() {
+  const ready = !!(state.ready && state.url)
+  return Menu.buildFromTemplate([
+    {
+      label: '会话',
+      submenu: [
+        { label: '新窗口', accelerator: 'CmdOrCtrl+Shift+N', enabled: ready, click: () => openExtraWindow() },
+        { type: 'separator' },
+        { label: '设置工作目录…', accelerator: 'CmdOrCtrl+Shift+O', click: () => pickWorkspace() },
+        {
+          label: '在文件管理器中打开工作目录',
+          click: () => { const ws = kernelCwd(); if (ws) shell.openPath(ws) },
+        },
+        { type: 'separator' },
+        { role: 'close', label: '关闭窗口' },
+        { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => { state.quitting = true; app.quit() } },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重载页面' },
+        { role: 'forceReload', label: '强制重载', accelerator: 'CmdOrCtrl+Shift+F5' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全屏' },
+        ...(DEV ? [{ role: 'toggleDevTools', label: '开发者工具' }] : []),
+      ],
+    },
+    {
+      label: '审阅',
+      submenu: [
+        { label: '切换审阅侧边栏', accelerator: 'CmdOrCtrl+Shift+B', click: () => sendToFocused('shell:toggle-review') },
+        { label: '刷新改动', click: () => sendToFocused('shell:refresh-review') },
+      ],
+    },
+    {
+      label: '内核',
+      submenu: [
+        { label: '重启内核', accelerator: 'CmdOrCtrl+Shift+K', click: () => restartKernel() },
+        {
+          label: '打开日志',
+          click: () => shell.openPath(state.logPath || path.join(app.getPath('userData'), 'kernel.log')),
+        },
+        { label: '复制启动日志', click: () => clipboard.writeText(state.logTail.join('\n')) },
+        { type: 'separator' },
+        { label: '检查更新…', click: () => checkForUpdates(true) },
+      ],
+    },
+    { label: '皮肤', submenu: themeMenuItems() },
+    {
+      label: '帮助',
+      submenu: [
+        { label: '快捷键一览', accelerator: 'CmdOrCtrl+/', click: () => showShortcutHelp() },
+        { type: 'separator' },
+        {
+          label: '关于',
+          click: () => dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+            type: 'info',
+            title: '关于',
+            message: `${APP_NAME} v${app.getVersion()}`,
+            detail: '外壳只负责拉起 dsh web 并承载页面，内核原样运行、未做任何修改。',
+            buttons: ['好'],
+            noLink: true,
+          }),
+        },
+      ],
+    },
+  ])
+}
+
+/** 菜单里有勾选项/可用性会随状态变，改动后统一重建菜单与托盘。 */
+function refreshMenus() {
+  // 注意：模板非法（错误的 role/accelerator）会在 buildFromTemplate 抛错 ——
+  // 所以冒烟模式也要构建一次（只是不挂上去），让菜单模板始终有测试兜底。
+  const menu = buildAppMenu()
+  if (!SMOKE && !UI_SMOKE) Menu.setApplicationMenu(menu)
+  refreshTray()
 }
 
 /* ─────────────────────────────── 窗口 / 托盘 ──────────────────────────────── */
@@ -562,7 +944,7 @@ function createWindow() {
     y: bounds?.y,
     minWidth: 980,
     minHeight: 640,
-    backgroundColor: '#070b16', // 与 splash 同色，避免任何白闪
+    backgroundColor: THEMES[themeId()].bg, // 与启动画面同色，避免任何白闪
     icon: ICON_PATH,
     title: APP_NAME,
     autoHideMenuBar: true,
@@ -744,6 +1126,37 @@ function buildTrayMenu() {
     { label: '检查更新…', click: () => checkForUpdates(true) },
     { type: 'separator' },
     {
+      label: '皮肤',
+      submenu: [
+        ...Object.keys(THEMES).map((id) => ({
+          label: THEMES[id].label,
+          type: 'radio',
+          checked: themeId() === id,
+          click: () => applyTheme(id),
+        })),
+        { type: 'separator' },
+        { label: '预览启动画面…', click: () => openSplashPreview(false) },
+        { label: '预览启动失败画面…', click: () => openSplashPreview(true) },
+        { type: 'separator' },
+        { label: '只影响外壳（启动画面/窗口底色）', enabled: false },
+        { label: '内核页面沿用内核自身主题', enabled: false },
+      ],
+    },
+    { type: 'separator' },
+    {
+      label: '回合完成时通知（失焦才提醒）', type: 'checkbox', checked: settings.notifyOnTurnEnd,
+      click: (mi) => { settings.notifyOnTurnEnd = mi.checked; saveSettings(); refreshMenus() },
+    },
+    {
+      label: `全局唤起热键（${settings.globalHotkey || '已关闭'}）`, type: 'checkbox', checked: !!settings.globalHotkey,
+      click: (mi) => {
+        settings.globalHotkey = mi.checked ? (settings.globalHotkey || 'Control+Alt+D') : ''
+        saveSettings()
+        applyGlobalHotkey()
+        refreshMenus()
+      },
+    },
+    {
       label: '开机自启', type: 'checkbox', checked: settings.autoLaunch,
       click: (mi) => { settings.autoLaunch = mi.checked; saveSettings(); applyAutoLaunch() },
     },
@@ -778,6 +1191,8 @@ function createTray() {
 
 function registerIpc() {
   ipcMain.handle('shell:get-state', () => ({
+    version: app.getVersion(),
+    theme: themeId(),
     phase: state.phase,
     message: state.message,
     port: state.port,
@@ -854,7 +1269,53 @@ function registerIpc() {
     if (r.response !== 0) return { ok: false, canceled: true }
     return { ok: revertFile(p, !!untracked), canceled: false }
   })
+
+  /* ── 改动审阅的信任闭环：暂存 / 取消暂存 / 逐块丢弃 / 提交 / 推送 ──────────
+   * 分寸：可逆的操作（暂存、取消暂存）不打扰用户；破坏性（丢弃）与对外发布
+   * （推送）必须二次确认。git 细节全在 lib/git-review.js，有单测兜底。 */
+  const confirm = (opts) => dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+    type: 'warning',
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    ...opts,
+  })
+
+  ipcMain.handle('shell:git-stage', (_e, p, hunk) => review.stage(p, hunk ?? null))
+  ipcMain.handle('shell:git-unstage', (_e, p, hunk) => review.unstage(p, hunk ?? null))
+  ipcMain.handle('shell:git-revert-hunk', async (_e, p, hunk) => {
+    const r = await confirm({
+      buttons: ['丢弃这一块', '取消'],
+      title: '丢弃这一块改动',
+      message: `确定丢弃「${p}」里的第 ${Number(hunk) + 1} 块改动吗？`,
+      detail: '只影响这一块，同文件的其它改动会保留。丢弃后无法撤销。',
+    })
+    if (r.response !== 0) return { ok: false, canceled: true }
+    return review.revertHunk(p, hunk)
+  })
+  ipcMain.handle('shell:git-commit', (_e, message) => {
+    const r = review.commit(message)
+    if (r.ok) log(`commit ${r.hash}: ${String(message).split('\n')[0]}`)
+    return r
+  })
+  ipcMain.handle('shell:git-push', async () => {
+    const c = review.changes()
+    const r = await confirm({
+      type: 'question',
+      buttons: ['推送', '取消'],
+      title: '推送到远端',
+      message: `把 ${c.branch || '当前分支'} 推送到远端？`,
+      detail: '这会把已提交的内容发布到远端仓库。',
+    })
+    if (r.response !== 0) return { ok: false, canceled: true }
+    const out = review.push()
+    log(out.ok ? `push ok (${out.branch})` : `push failed: ${out.error}`)
+    return out
+  })
   ipcMain.on('shell:splash-ready', () => {
+    // 只认一次：预览窗口不会发这个事件，但内核已在跑时也绝不重复拉起
+    if (state.child || state.ready) return
+    state.splashAt = Date.now() // 渲染侧已订阅并开始播开场动画
     setStatus('boot', '正在初始化…')
     bootKernel().catch((err) => {
       log(`boot failed: ${err.stack || err.message}`)
@@ -901,6 +1362,9 @@ async function bootKernel() {
 
   if (SMOKE) {
     const ok = await probeReady()
+    // 顺带验证淡出交接握手（不参与就绪判定，只把结果打进冒烟输出）
+    const acked = await playSplashExit()
+    console.log(`SMOKE_HANDOFF acked=${acked}`)
     console.log(ok ? `SMOKE_OK url=${state.url}` : 'SMOKE_FAIL probe-after-ready')
     state.quitting = true
     killChild()
@@ -908,6 +1372,8 @@ async function bootKernel() {
     app.exit(ok ? 0 : 1)
     return
   }
+
+  if (!UI_SMOKE) await handoffFromSplash() // 观感交接：最短展示 + 合环停顿 + 淡出
 
   await win.loadURL(state.url)
 
@@ -924,6 +1390,7 @@ async function bootKernel() {
 
   showMainWindow()
   log(`ready at ${state.url}`)
+  refreshMenus() // 就绪后"新窗口"等依赖内核的菜单项才可用
 }
 
 /* ─────────────────────────────── UI 冒烟（真实窗口回归测试） ───────────────── */
@@ -1054,10 +1521,21 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => showMainWindow())
+  app.on('second-instance', (_e, argv) => {
+    const link = Array.isArray(argv) ? argv.find((a) => typeof a === 'string' && /^dsh:/i.test(a)) : null
+    if (link) handleDeepLink(link)
+    else showMainWindow()
+  })
+
+  // macOS 深链接
+  app.on('open-url', (e, url) => {
+    e.preventDefault()
+    handleDeepLink(url)
+  })
 
   app.whenReady().then(async () => {
-    Menu.setApplicationMenu(null)
+    // 命令走原生菜单（菜单栏默认隐藏，accelerator 始终有效）；冒烟下不挂菜单
+    refreshMenus()
     if (UI_SMOKE) {
       // UI 冒烟用临时 git 仓库作为内核工作目录（Git 视图/查看器测试）
       const repo = prepareUiSmokeRepo()
@@ -1065,7 +1543,18 @@ if (!gotLock) {
     }
     registerIpc()
     createWindow()
-    applyAutoLaunch() // 应用持久化的开机自启设置
+    // 冒烟/UI 冒烟不碰开机自启：那会改到真实用户的注册表项（Run 值按 AppUserModelId 命名），
+    // 测试实例的默认设置会把用户真开着的自启项抹掉。
+    if (!SMOKE && !UI_SMOKE) applyAutoLaunch() // 应用持久化的开机自启设置
+    // 全局唤起热键 + 深链接注册（冒烟与开发态都不写注册表，避免污染真实环境）
+    applyGlobalHotkey()
+    if (app.isPackaged && !SMOKE && !UI_SMOKE) {
+      try {
+        app.setAsDefaultProtocolClient('dsh')
+      } catch (err) {
+        log(`protocol client failed: ${err.message}`)
+      }
+    }
     try {
       setupAutoUpdater() // 打包后生效；任何更新配置问题都不得阻断启动
     } catch (err) {
@@ -1076,11 +1565,22 @@ if (!gotLock) {
     } catch (err) {
       log(`tray unavailable: ${err.message}`)
     }
+    startTurnWatcher() // 回合完成通知（失焦才提醒；无审阅流时自动静默）
+    // 首次启动就带 dsh:// 参数时也认（Windows 从浏览器点链接会走这里）
+    const bootLink = process.argv.find((a) => typeof a === 'string' && /^dsh:/i.test(a))
+    if (bootLink) setTimeout(() => handleDeepLink(bootLink), 1500)
     // 先加载 splash，等渲染侧确认订阅完成后才开始拉内核，避免丢状态事件
     win.once('ready-to-show', () => {
       if (!SMOKE && !UI_SMOKE) win.show()
     })
     await win.loadFile(SPLASH_PATH)
+  })
+
+  app.on('will-quit', () => {
+    try {
+      globalShortcut.unregisterAll()
+    } catch {}
+    if (state.turnTimer) clearInterval(state.turnTimer)
   })
 
   app.on('before-quit', () => {
