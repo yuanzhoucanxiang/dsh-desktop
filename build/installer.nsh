@@ -13,7 +13,9 @@
 ;   · 只调用了**一次** nsProcess::KillProcess。Electron 是多进程，4~5 个同名进程
 ;     一次杀不干净 → 老卸载器（旧版本自带、不含本修复）自我中断、退出码 2 →
 ;     安装器报 "Failed to uninstall old application files ... : 2"。
-;     ⇒ 改成 taskkill /F /T /IM（一次干掉所有同名进程）+ 循环校验直到没有。
+;     ⇒ 改成 taskkill /F /IM（一次干掉所有同名进程）+ 循环校验直到没有。
+;     ⚠ 注意是 /F /IM，**不能带 /T**：v0.1.13 带了 /T，而应用内更新时安装器是应用的
+;       子进程，/T 把安装器自己也杀了 → 用户报"还是无法正常安装"。见第 2 步注释。
 ;   · 只按 $INSTDIR 过滤内核 node.exe。但 uninstallOldVersion 用的是注册表里的
 ;     InstallLocation（installUtil.nsh 行 169），两者可能不同 ⇒ 过滤可能整个 no-op。
 ;     ⇒ 改成同时覆盖 $INSTDIR 与 HKCU/HKLM 的 InstallLocation。
@@ -46,9 +48,12 @@
   ${nsProcess::CloseProcess} "${APP_EXECUTABLE_FILENAME}" $R0
   Sleep 1200
 
-  ; ── 2. taskkill 一次干掉所有同名进程（主进程 + GPU/渲染 helper）───────────
-  ;      /T 连子进程一起收，顺带带走作为子进程的内核 node.exe
-  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+  ; ── 2. 干掉所有同名进程（Electron 主进程 + GPU/渲染 helper）────────────────
+  ;      ⚠ 绝对不要加 /T ！应用内点「重启并安装更新」时，安装器是**应用的子进程**，
+  ;        /T 会连子进程一起杀 —— 等于安装器把自己杀了，安装当场中断。
+  ;        v0.1.13 犯过这个错（用户报"还是无法正常安装"）。内核 node.exe 不靠 /T 收，
+  ;        第 4 步按可执行路径专门清理。
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /IM "${APP_EXECUTABLE_FILENAME}"'
   Pop $R1
   DetailPrint "DSH: taskkill app -> $R1"
   Sleep 900
@@ -60,7 +65,7 @@
     ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
     ${If} $R0 == 0                      ; 0 = 还找得到
       ${If} $R2 < 10
-        nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+        nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /IM "${APP_EXECUTABLE_FILENAME}"'
         Pop $R1
         Sleep 700
         Goto dsh_kill_loop
