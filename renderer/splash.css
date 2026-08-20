@@ -1,274 +1,715 @@
+/* ════════════════════════════════════════════════════════════════════════
+   DeepSeek Harness Desktop · 启动画面
+   设计语言：极简克制 · 单一主视觉（进度光环 + 白鲸）
+   三条硬规矩：
+     1. 一个焦点：所有运动都发生在徽标那一圈，背景只做一层极缓的柔光呼吸；
+     2. 不撒谎：光环反映真实相位（拉起/等待/就绪），单调递增、永不回退；
+     3. 不硬切：就绪后整幕淡出，再由主进程 loadURL 交接工作区。
+   性能约定：只动 transform / opacity / stroke-dashoffset；模糊一律用径向渐变
+             替代（不用 filter: blur）；prefers-reduced-motion 下全部静止。
+   ════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --bg: #070b16;
-  --text: #e8e6f2;
-  --text-dim: #8b93ad;
-  --accent: #5d8bff;
-  --accent-2: #8a5dff;
-  --danger: #ff5d5d;
+  --bg: #05070f;
+  --bg-deep: #03040a;
+  --text: #f0f2fb;
+  --text-2: #aab3cd;
+  --text-dim: #7d87a4;
+  --text-faint: #555f7a;
+  --accent: #5b8cff;
+  --ok: #34d8a6;
+  --danger: #ff5f6d;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-soft: cubic-bezier(.4, 0, .2, 1);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
   user-select: none;
   cursor: default;
 }
+
+/* ─────────────────────────────── 舞台 ───────────────────────────────
+   一层渐变搞定纵深 + 暗角：中心微亮、四角沉黑，把视线收到徽标上。 */
 
 .stage {
   position: relative;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(1200px 800px at 50% -20%, #101a38 0%, transparent 60%),
-    linear-gradient(180deg, #0a101f 0%, var(--bg) 55%, #05070e 100%);
+  padding: clamp(32px, 7vh, 88px) clamp(16px, 4vw, 64px) clamp(56px, 9vh, 96px);
   overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(115% 95% at 50% 40%, #0d1428 0%, #080c1a 44%, var(--bg) 72%, var(--bg-deep) 100%);
+  transition: opacity .32s var(--ease-soft);
 }
 
-/* 背景呼吸光斑（仅动 transform/opacity，走 GPU 合成） */
+/* 唯一的背景装饰：徽标背后一团柔光，极缓呼吸（10s） */
 .glow {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: .35;
-  animation: breathe 7s ease-in-out infinite;
+  left: 50%;
+  top: 40%;
+  z-index: 0;
+  width: min(760px, 120vw);
+  height: min(760px, 120vw);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background:
+    radial-gradient(circle,
+      rgba(72, 116, 255, .20) 0%,
+      rgba(96, 86, 220, .11) 34%,
+      rgba(34, 211, 238, .045) 56%,
+      transparent 72%);
+  animation: glowBreathe 10s var(--ease-soft) infinite;
   will-change: transform, opacity;
-}
-.glow-a { width: 520px; height: 520px; background: #16307c; top: -180px; left: -120px; }
-.glow-b { width: 420px; height: 420px; background: #2b1a63; bottom: -160px; right: -100px; animation-delay: -3.5s; }
-
-@keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: .3; }
-  50% { transform: scale(1.15); opacity: .5; }
+  transition: background .6s ease;
 }
 
-/* 细网格 */
-.grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(120, 140, 210, .05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 140, 210, .05) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 30%, transparent 75%);
+@keyframes glowBreathe {
+  0%, 100% { opacity: .78; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.05); }
 }
+
+/* ─────────────────────────────── 卡片与入场 ───────────────────────────────
+   入场只有一种运动：轻轻上浮 + 淡入，按 mark → 字标 → 副标 → 状态依次登场。 */
 
 .card {
   position: relative;
-  width: min(480px, 86vw);
-  text-align: center;
-  z-index: 1;
-}
-
-.card > * {
-  animation: fadeUp .6s cubic-bezier(.22, .9, .3, 1) both;
-}
-.card > *:nth-child(1) { animation-delay: .05s; }
-.card > *:nth-child(2) { animation-delay: .13s; }
-.card > *:nth-child(3) { animation-delay: .2s; }
-.card > *:nth-child(4) { animation-delay: .28s; }
-.card > *:nth-child(5) { animation-delay: .36s; }
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.mark { display: inline-block; margin-bottom: 22px; }
-
-.mark-tile {
-  width: 112px;
-  height: 112px;
-  border-radius: 24%;
+  z-index: 2;
+  width: min(520px, 92vw);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  transition: background .45s ease;
+  text-align: center;
 }
-.mark-tile img {
-  width: 104px;
-  height: 104px;
-  display: block;
-  animation: whaleFloat 4.5s ease-in-out infinite;
-  transition: opacity .18s ease;
+
+.card > .mark,
+.card > .error,
+.plate > * { animation: rise .8s var(--ease-out) both; }
+.card > .mark      { animation-delay: .04s; }
+.plate > .title    { animation: titleIn .9s var(--ease-out) .22s both; }
+.plate > .subtitle { animation-delay: .34s; }
+.plate > .status   { animation-delay: .46s; }
+.card > .error     { animation-delay: 0s; animation-duration: .5s; }
+
+/* 文字组：字标 + 副标 + 状态行 —— 两套皮肤共用的版心 */
+.plate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-/* 黑鲸透明底 → 浅色光面底衬，保证暗背景可见 */
-.mark-tile.tile-light {
-  background: linear-gradient(160deg, #f2f4fa, #dbe0f0);
-  box-shadow: 0 6px 28px rgba(150, 165, 230, .28);
+
+/* 入场闸门：窗口真正可见（body.is-live）后才从第 0 帧开始，
+   避免"隐藏加载期间动画已播完/卡在第 0 帧"的平台差异。 */
+body:not(.is-live) .card > *,
+body:not(.is-live) .plate > *,
+body:not(.is-live) .glow,
+body:not(.is-live) .print > *,
+body:not(.is-live) .mark-whale,
+body:not(.is-live) .ring-arc {
+  animation-play-state: paused !important;
 }
-/* 白鲸透明底 → 深色微光底衬，避免浅色环境下发飘 */
-.mark-tile.tile-dark {
-  background: rgba(8, 12, 24, .55);
-  box-shadow: 0 6px 28px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(140, 160, 255, .18);
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.mark-tile.glow-white img {
-  filter: drop-shadow(0 0 14px rgba(150, 170, 255, .55));
+
+/* 字标入场：淡入上浮 + 字距收紧，一次性、克制、有质感 */
+@keyframes titleIn {
+  from { opacity: 0; transform: translateY(10px); letter-spacing: .1em; }
+  to   { opacity: 1; transform: translateY(0); letter-spacing: -.008em; }
 }
-.mark-tile.mark-pop {
-  animation: markPop .5s cubic-bezier(.3, .7, .3, 1);
+
+/* ─────────────────────────────── 主视觉：进度光环 + 白鲸 ─────────────────────────────── */
+
+.mark {
+  position: relative;
+  width: clamp(148px, 26vh, 184px);
+  height: clamp(148px, 26vh, 184px);
+  margin-bottom: clamp(22px, 3.6vh, 32px);
+  flex: none;
+  pointer-events: none; /* 纯装饰：不吃点击（错误面板的按钮才需要交互） */
 }
-@keyframes markPop {
-  from { transform: scale(.96); opacity: .35; }
-  to { transform: scale(1); opacity: 1; }
+
+.ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(-90deg); /* 把弧起点从 3 点钟转到 12 点钟 */
+  fill: none;
 }
+
+/* 轨道：极细一圈底衬，暗示"整程" */
+.ring-track {
+  stroke: rgba(255, 255, 255, .07);
+  stroke-width: 1.4;
+}
+
+/* 进度弧：dashoffset 由 JS 按真实相位推进（见 splash.js 的 PHASE 里程碑） */
+.ring-arc {
+  stroke: url(#arcRun);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 345.575;   /* 2π × r(55) */
+  stroke-dashoffset: 345.575;  /* 初始 0%，JS 只会让它变小 */
+  transition: stroke-dashoffset .62s var(--ease-out), stroke .45s ease;
+}
+
+/* 弧尖光点：与进度同一个数值驱动，跟着弧头走 */
+.ring-tip {
+  transform-box: view-box;
+  transform-origin: 60px 60px;
+  transform: rotate(0deg);
+  opacity: 0;
+  transition: transform .62s var(--ease-out), opacity .4s ease;
+}
+.tip-core { fill: #dfe8ff; }
+.tip-halo { fill: rgba(126, 158, 255, .38); }
+
+/* 鲸鱼：白鲸直接落在深色场里 —— 不要底板、不要塑料光泽 */
+.mark-whale {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48%;   /* 鲸鱼图形自带上下留白，48% 才能在光环里占到约一半直径 */
+  height: 48%;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 26px rgba(118, 156, 255, .34));
+  animation: whaleFloat 7s var(--ease-soft) infinite;
+  transition: filter .5s ease;
+}
+
+/* 只有 ±3px 的极轻浮动：有呼吸，但不抢戏 */
 @keyframes whaleFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  0%, 100% { transform: translate(-50%, calc(-50% - 2.5px)); }
+  50%      { transform: translate(-50%, calc(-50% + 2.5px)); }
 }
-@keyframes nodePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .35; }
+
+/* 就绪：光环转青绿，一次性能量绽放（不循环） */
+.mark.is-ready .ring-arc { stroke: url(#arcOk); }
+.mark.is-ready .tip-core { fill: #d6fff3; }
+.mark.is-ready .tip-halo { fill: rgba(52, 216, 166, .42); }
+.mark.is-ready .mark-whale { filter: drop-shadow(0 0 30px rgba(52, 216, 166, .40)); }
+
+/* 错误：光环转红并原地冻结（不假装跑完） */
+.mark.is-error .ring-arc { stroke: url(#arcErr); }
+.mark.is-error .tip-core { fill: #ffdada; }
+.mark.is-error .tip-halo { fill: rgba(255, 95, 109, .40); }
+.mark.is-error .mark-whale { filter: drop-shadow(0 0 26px rgba(255, 95, 109, .34)); }
+
+/* 相位切换时的一次绽放：由 JS 加 .bloom 触发 */
+.mark.bloom::after {
+  content: '';
+  position: absolute;
+  inset: -14%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(150, 190, 255, .26) 0%, transparent 62%);
+  animation: bloom .82s var(--ease-out) both;
 }
+.mark.is-ready.bloom::after {
+  background: radial-gradient(circle, rgba(52, 216, 166, .26) 0%, transparent 62%);
+}
+.mark.is-error.bloom::after {
+  background: radial-gradient(circle, rgba(255, 95, 109, .24) 0%, transparent 62%);
+}
+
+@keyframes bloom {
+  0%   { opacity: 0; transform: scale(.82); }
+  38%  { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 0; transform: scale(1.16); }
+}
+
+/* 就绪 / 错误时背景柔光同步换色 */
+.stage.ready .glow {
+  background: radial-gradient(circle,
+    rgba(52, 216, 166, .17) 0%, rgba(34, 211, 238, .09) 36%, transparent 70%);
+}
+.stage.failed .glow {
+  background: radial-gradient(circle,
+    rgba(255, 95, 109, .16) 0%, rgba(255, 120, 90, .07) 38%, transparent 70%);
+}
+
+/* ─────────────────────────────── 字标 / 副标题 / 状态 ─────────────────────────────── */
 
 .title {
-  font-size: 30px;
-  font-weight: 650;
-  letter-spacing: .02em;
-  background: linear-gradient(90deg, #cfd8ff, #ffffff 45%, #c9b8ff);
+  font-size: clamp(25px, 4.4vh, 31px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -.008em;
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 42%, #cdd6f2 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
+
 .subtitle {
-  margin-top: 4px;
-  font-size: 13px;
-  letter-spacing: .34em;
+  margin-top: clamp(8px, 1.5vh, 12px);
+  font-size: clamp(9.5px, 1.5vh, 11px);
+  font-weight: 500;
+  letter-spacing: .42em;
+  text-indent: .42em; /* 抵消末字符字距，视觉居中 */
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .status {
-  margin: 30px auto 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .045);
-  border: 1px solid rgba(255, 255, 255, .08);
-}
-.status-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
-  animation: nodePulse 1.6s ease-in-out infinite;
-  flex: none;
-}
-.status.error .status-dot { background: var(--danger); box-shadow: 0 0 12px var(--danger); animation: none; }
-.status-text { font-size: 13px; color: #c6cde2; }
-.status-text.text-swap { animation: textFade .35s ease; }
-@keyframes textFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  margin-top: clamp(20px, 3.6vh, 30px);
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: .01em;
+  color: var(--text-dim);
+  transition: color .4s ease;
 }
 
-.progress {
-  width: 260px;
-  height: 4px;
-  margin: 0 auto;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, .08);
-  overflow: hidden;
+.status-text { display: inline-block; }
+.status-text.text-swap { animation: textSwap .4s var(--ease-out); }
+
+@keyframes textSwap {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.progress-bar {
-  position: relative;
-  height: 100%;
-  width: 40%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  box-shadow: 0 0 14px rgba(110, 130, 255, .8);
-  animation: slide 1.6s ease-in-out infinite;
-  transition: width .35s ease;
-  will-change: transform;
+
+.status.is-ready { color: #8fe6c9; }
+.status.is-error { color: #ffb3ba; }
+
+/* ════════════════════ 主题二 · 海景 Seascape（致敬杉本博司） ════════════════════
+   规矩直接来自《海景》系列（1980– ）：
+     · 地平线永远在画面正中 —— 天与海各占一半，不多不少
+     · 单色银盐：只有灰度层次，一丝彩色都不许有
+     · 无事件、无时间：除了那条线，画面里什么都不发生（长曝光的静止）
+   进度表达：地平线从正中向两侧铺开，铺满 = 就绪；失败 = 就地停住不再延伸。
+   实现约定：除地平线（transform）与两处极缓呼吸外没有动画；胶片颗粒是静态图层。
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+body[data-theme="seascape"] {
+  --ink: #0a0b0c;
+  --silver-1: #e7ecee;
+  --silver-2: #9ba2a6;
+  --silver-3: #6d7478;
+  --silver-4: #4a5054;
 }
-/* 流光高光扫过 */
-.progress-bar::after {
-  content: '';
+
+/* 满幅印相：不留装裱边，天海各半，视线只落在正中那条线上 */
+.print { display: none; pointer-events: none; }
+
+body[data-theme="seascape"] .glow { display: none; }
+body[data-theme="seascape"] .ring { display: none; }
+
+body[data-theme="seascape"] .stage {
+  padding: 0;
+  background: var(--ink);
+}
+
+body[data-theme="seascape"] .print {
+  display: block;
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, .45) 50%, transparent 80%);
-  animation: shimmer 1.6s ease-in-out infinite;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity .6s ease;
 }
-.progress.done .progress-bar { width: 100%; animation: none; transform: none; }
-.progress.done .progress-bar::after { animation: none; opacity: 0; transition: opacity .3s; }
-@keyframes slide {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(340%); }
+
+/* 天：越靠近地平线越亮（暮色收束在水平线上） */
+.sky {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+  background: linear-gradient(180deg, #101315 0%, #171b1e 42%, #23282c 78%, #313739 100%);
 }
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+
+/* 海：紧贴地平线有一道反光，往下迅速沉入墨黑 */
+.sea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  bottom: 0;
+  background: linear-gradient(180deg, #262b2e 0%, #171a1d 26%, #0d0f11 68%, #090a0c 100%);
+}
+
+/* 长曝光的浪：几乎不可见的横向条纹，48s 漂移一个周期（9px = 条纹间距，无缝循环） */
+.swell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  bottom: 0;
+  background: repeating-linear-gradient(180deg,
+    rgba(255, 255, 255, .020) 0px, rgba(255, 255, 255, .020) 1px,
+    transparent 1px, transparent 9px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, .95) 0%, rgba(0, 0, 0, .32) 34%, transparent 76%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, .95) 0%, rgba(0, 0, 0, .32) 34%, transparent 76%);
+  animation: swellDrift 48s linear infinite;
+  will-change: transform;
+}
+
+@keyframes swellDrift {
+  from { transform: translateY(0); }
+  to   { transform: translateY(9px); }
+}
+
+/* 水平线上的聚光：一条极宽的软光带，16s 极缓呼吸 */
+.halo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 34vh;
+  transform: translateY(-50%);
+  background: radial-gradient(58% 100% at 50% 50%,
+    rgba(220, 227, 230, .15) 0%,
+    rgba(220, 227, 230, .05) 42%,
+    transparent 72%);
+  animation: haloBreathe 16s var(--ease-soft) infinite;
+  will-change: opacity;
+}
+
+@keyframes haloBreathe {
+  0%, 100% { opacity: .72; }
+  50%      { opacity: .96; }
+}
+
+/* 地平线：画面正中那一根 1px —— 同时是本主题的进度条 */
+.horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -.5px;
+  overflow: hidden;
+}
+
+.horizon-line {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(232, 239, 242, .55) 6%,
+    #f0f5f7 50%,
+    rgba(232, 239, 242, .55) 94%,
+    transparent 100%);
+  box-shadow: 0 0 9px rgba(214, 228, 234, .34);
+  transform: scaleX(0); /* JS 按真实相位推进：从正中向两侧铺开 */
+  transform-origin: 50% 50%;
+  transition: transform .72s var(--ease-out), opacity .5s ease, box-shadow .5s ease;
+}
+
+/* 银盐颗粒：静态图层（长曝光的胶片质感，不做动画）。
+   feTurbulence 默认生成的是彩色噪点 —— 银盐不许有颜色，用 feColorMatrix
+   把 RGB 压成同一个灰度值并把 alpha 固定为 1，得到纯灰颗粒。 */
+.grain {
+  position: absolute;
+  inset: 0;
+  opacity: .04;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 240px 240px;
+}
+
+/* 版心落在下半幅（海里），上半幅（天）永远空着 —— 这是《海景》的呼吸 */
+body[data-theme="seascape"] .card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  bottom: clamp(52px, 8vh, 78px);
+  width: auto;
+  padding: 0 clamp(20px, 5vw, 72px);
+  justify-content: center;
+}
+
+/* 鲸鱼：银灰剪影，在海面下极缓漂移（22s） */
+body[data-theme="seascape"] .mark {
+  width: clamp(74px, 11.5vh, 96px);
+  height: clamp(74px, 11.5vh, 96px);
+  margin-bottom: clamp(16px, 2.6vh, 24px);
+}
+
+body[data-theme="seascape"] .mark-whale {
+  width: 100%;
+  height: 100%;
+  opacity: .9;
+  filter: drop-shadow(0 0 18px rgba(214, 220, 222, .18)); /* 中性灰光，别带蓝 */
+  animation: whaleDrift 22s var(--ease-soft) infinite;
+}
+
+@keyframes whaleDrift {
+  0%, 100% { transform: translate(-50%, calc(-50% - 1.5px)); }
+  50%      { transform: translate(-50%, calc(-50% + 1.5px)); }
+}
+
+/* 字标：衬线 + 宽字距，像展签上的作品名 */
+body[data-theme="seascape"] .title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-size: clamp(21px, 3.5vh, 26px);
+  font-weight: 400;
+  letter-spacing: .1em;
+  text-indent: .1em;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--silver-1);
+}
+
+body[data-theme="seascape"] .plate > .title { animation-name: titleInSea; }
+
+@keyframes titleInSea {
+  from { opacity: 0; transform: translateY(8px); letter-spacing: .22em; }
+  to   { opacity: 1; transform: translateY(0); letter-spacing: .1em; }
+}
+
+body[data-theme="seascape"] .subtitle {
+  margin-top: clamp(9px, 1.6vh, 13px);
+  letter-spacing: .46em;
+  text-indent: .46em;
+  color: var(--silver-4);
+}
+
+body[data-theme="seascape"] .status {
+  margin-top: clamp(16px, 2.8vh, 24px);
+  font-size: 12.5px;
+  letter-spacing: .06em;
+  color: var(--silver-2);
+}
+body[data-theme="seascape"] .status.is-ready { color: var(--silver-1); }
+body[data-theme="seascape"] .status.is-error { color: #dfc7c7; }
+
+body[data-theme="seascape"] .footer { color: var(--silver-4); }
+
+/* 就绪：地平线铺满，水平线上的光一次性涨起来（不循环） */
+body[data-theme="seascape"] .stage.ready .halo { animation: seaBloom 1.7s var(--ease-out) both; }
+body[data-theme="seascape"] .stage.ready .horizon-line { box-shadow: 0 0 16px rgba(226, 238, 244, .5); }
+body[data-theme="seascape"] .mark.bloom::after { display: none; } /* 海景不在鲸鱼上炸光 */
+
+@keyframes seaBloom {
+  0%   { opacity: .72; transform: translateY(-50%) scaleY(1); }
+  34%  { opacity: 1;   transform: translateY(-50%) scaleY(1.34); }
+  100% { opacity: .9;  transform: translateY(-50%) scaleY(1.12); }
+}
+
+/* 失败：整幅印相退到后面，地平线停在原处并暗下去（不假装铺满） */
+body[data-theme="seascape"] .stage.failed .print { opacity: .5; }
+body[data-theme="seascape"] .stage.failed .horizon-line { opacity: .45; box-shadow: none; }
+/* 失败时构图本就被打断：版心让出下半幅的限制，改为上探留出面板空间，副标让位 */
+body[data-theme="seascape"] .stage.failed .card { top: 30%; }
+body[data-theme="seascape"] .stage.failed .subtitle { display: none; }
+
+/* 错误面板：像贴在照片上的一枚封条 —— 平、薄、只有一道暗红竖线 */
+body[data-theme="seascape"] .error {
+  background: rgba(12, 13, 14, .74);
+  border: 1px solid rgba(226, 230, 232, .13);
+  box-shadow: inset 3px 0 0 -1px #b3565e;
+}
+body[data-theme="seascape"] .error-kicker { color: #cf9096; letter-spacing: .26em; }
+body[data-theme="seascape"] .error-text { color: #dcd6d6; }
+body[data-theme="seascape"] .log {
+  background: rgba(6, 7, 8, .72);
+  border-color: rgba(255, 255, 255, .06);
+  color: #8d9396;
+}
+body[data-theme="seascape"] .btn {
+  background: #2b3134;
+  color: var(--silver-1);
+  border-color: rgba(255, 255, 255, .1);
+}
+body[data-theme="seascape"] .btn:hover { background: #363d41; }
+body[data-theme="seascape"] .btn.ghost { background: transparent; color: var(--silver-3); }
+body[data-theme="seascape"] .btn.ghost:hover { background: rgba(255, 255, 255, .04); color: var(--silver-1); }
+body[data-theme="seascape"] .btn:focus-visible { outline-color: var(--silver-2); }
+
+/* 淡出：照片式退场 —— 版心先走，地平线最后消失（多留 .1s） */
+body[data-theme="seascape"] .stage.is-leaving { opacity: 1; }
+body[data-theme="seascape"] .stage.is-leaving .card {
+  transform: none;
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+body[data-theme="seascape"] .stage.is-leaving .print { opacity: 0; transition: opacity .4s ease; }
+body[data-theme="seascape"] .stage.is-leaving .horizon-line {
+  opacity: 0;
+  transition: opacity .3s ease .12s;
+}
+
+/* ─────────────────────────────── 错误面板（仅异常时出现） ─────────────────────────────── */
+
+.error {
+  margin-top: clamp(18px, 3vh, 28px);
+  width: min(500px, 92vw);
+  padding: 14px 16px 15px;
+  border-radius: 14px;
+  text-align: left;
+  background: rgba(255, 95, 109, .055);
+  border: 1px solid rgba(255, 95, 109, .22);
+  box-shadow: inset 3px 0 0 -1px var(--danger);
+}
+
+.error-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+
+.error-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #ffc3c9;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .log {
-  margin: 26px auto 0;
-  max-width: 620px;
-  max-height: 132px;
-  overflow: hidden;
-  text-align: left;
-  font: 11px/1.7 Consolas, "Cascadia Mono", monospace;
-  color: #6f7a99;
-  background: rgba(0, 0, 0, .3);
+  margin-top: 10px;
+  max-height: 82px;
+  overflow: auto;
+  font: 11px/1.7 "Cascadia Mono", Consolas, "Courier New", monospace;
+  color: #8290b4;
+  background: rgba(2, 5, 12, .55);
   border: 1px solid rgba(255, 255, 255, .05);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
-.error {
-  margin-top: 26px;
-  padding: 16px 18px;
-  border-radius: 12px;
-  background: rgba(255, 93, 93, .08);
-  border: 1px solid rgba(255, 93, 93, .35);
+.actions {
+  margin-top: 13px;
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
 }
-.error-text {
-  font-size: 13px;
-  color: #ffb3b3;
-  white-space: pre-wrap;
-  word-break: break-all;
-  text-align: left;
-}
-.actions { margin-top: 14px; display: flex; gap: 10px; justify-content: center; }
+
 .btn {
-  padding: 8px 20px;
+  padding: 7px 18px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: .02em;
   border-radius: 9px;
-  border: 1px solid #5d6dff;
-  background: #2b2f4d;
-  color: #e6e9ff;
+  border: 1px solid transparent;
+  background: #4f63d8;
+  color: #f2f4ff;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
 }
-.btn:hover { background: #383d63; }
-.btn.ghost { border-color: rgba(255, 255, 255, .18); background: transparent; color: var(--text-dim); }
-.btn.ghost:hover { color: var(--text); }
+.btn:hover { background: #5a6ee6; }
+.btn:active { transform: scale(.985); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.btn.ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, .14);
+  color: var(--text-dim);
+}
+.btn.ghost:hover { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .26); color: var(--text); }
+
+/* ─────────────────────────────── 页脚 ─────────────────────────────── */
 
 .footer {
   position: absolute;
-  left: 0; right: 0; bottom: 26px;
-  text-align: center;
-  font-size: 11px;
-  color: #4d5570;
-  letter-spacing: .05em;
+  left: 0;
+  right: 0;
+  bottom: clamp(14px, 2.6vh, 22px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: .06em;
+  pointer-events: none;
+  opacity: 0;
+  animation: fadeIn .9s var(--ease-out) .6s both;
 }
 
-/* 用户偏好减少动态效果：停掉装饰性循环动画，仅保留必要状态 */
+body:not(.is-live) .footer { animation-play-state: paused !important; }
+
+@keyframes fadeIn { to { opacity: 1; } }
+
+.footer i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .13);
+  flex: none;
+}
+
+/* ─────────────────────────────── 淡出交接 ───────────────────────────────
+   就绪后主进程发 shell:splash-exit → 整幕轻微前推淡出 → 再 loadURL，
+   视觉上是"推门进入工作区"，而不是硬切黑一下。 */
+
+.stage.is-leaving { opacity: 0; }
+.stage.is-leaving .card {
+  transition: transform .34s var(--ease-soft), opacity .28s var(--ease-soft);
+  transform: scale(1.035);
+  opacity: 0;
+}
+.stage.is-leaving .glow {
+  animation: none;
+  transition: transform .34s var(--ease-soft), opacity .34s ease;
+  transform: translate(-50%, -50%) scale(1.18);
+  opacity: 0;
+}
+.stage.is-leaving .footer { opacity: 0; transition: opacity .2s ease; animation: none; }
+
+/* ─────────────────────────────── 响应式与可访问性 ─────────────────────────────── */
+
+@media (max-width: 620px) {
+  .subtitle { letter-spacing: .28em; text-indent: .28em; }
+  body[data-theme="seascape"] .subtitle { letter-spacing: .32em; text-indent: .32em; }
+  .footer { flex-direction: column; gap: 3px; bottom: 10px; }
+}
+
+@media (max-height: 700px) {
+  .mark { width: clamp(118px, 21vh, 148px); height: clamp(118px, 21vh, 148px); margin-bottom: 16px; }
+  .status { margin-top: 16px; }
+  .error { margin-top: 14px; padding: 12px 14px 13px; }
+  .log { max-height: 66px; }
+  body[data-theme="seascape"] .mark {
+    width: clamp(58px, 9.5vh, 76px);
+    height: clamp(58px, 9.5vh, 76px);
+    margin-bottom: 12px;
+  }
+  body[data-theme="seascape"] .card { bottom: clamp(40px, 6.5vh, 56px); }
+  .halo { height: 26vh; }
+}
+
+/* 用户偏好减少动态效果：装饰动画全关，只留即时的状态变化 */
 @media (prefers-reduced-motion: reduce) {
-  .glow,
-  .mark-tile img,
-  .status-dot,
-  .progress-bar,
-  .progress-bar::after { animation: none !important; }
-  .card > * { animation-duration: .01s !important; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  .glow { opacity: .85; }
+  .footer { opacity: 1; }
+  .stage.is-leaving { opacity: 0; }
+  body[data-theme="seascape"] .halo { opacity: .85; }
+  body[data-theme="seascape"] .swell { transform: none; }
+  body[data-theme="seascape"] .stage.is-leaving { opacity: 0; }
 }

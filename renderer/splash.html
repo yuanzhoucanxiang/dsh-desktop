@@ -6,41 +6,81 @@
   <title>DeepSeek Harness Desktop</title>
   <link rel="stylesheet" href="splash.css" />
 </head>
-<body>
-  <div class="stage">
-    <div class="glow glow-a"></div>
-    <div class="glow glow-b"></div>
-    <div class="grid"></div>
+<body data-theme="deep">
+  <!-- 启动画面 · 两套皮肤共用一套 DOM（body[data-theme] 切换）：
+       deep     = 深海 · 单光环：进度是绕徽标的一道弧
+       seascape = 海景 · Seascape（致敬杉本博司）：天与海各占一半，
+                  进度是那条从正中向两侧铺开的地平线 -->
+  <div id="stage" class="stage">
+    <!-- 深海：徽标背后一团柔光 -->
+    <div class="glow" aria-hidden="true"></div>
 
-    <div class="card">
-                  <div class="mark" aria-hidden="true">
-        <div id="markTile" class="mark-tile tile-light">
-          <img id="markImg" src="../build/icon-whale-official.png" alt="" />
-        </div>
-      </div>
-      <h1 class="title">DeepSeek Harness</h1>
-      <div class="subtitle">Desktop Shell</div>
-
-      <div class="status">
-        <span class="status-dot"></span>
-        <span id="statusText" class="status-text">正在初始化…</span>
-      </div>
-
-      <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
-
-      <pre id="logTail" class="log" hidden></pre>
-
-      <div id="errorBox" class="error" hidden>
-        <div id="errorText" class="error-text"></div>
-        <div class="actions">
-          <button id="copyLogBtn" class="btn ghost">复制日志</button>
-          <button id="retryBtn" class="btn">重新启动</button>
-          <button id="quitBtn" class="btn ghost">退出</button>
-        </div>
-      </div>
-
-      <div class="footer">外壳 v0.1.0 · 内核原样运行，未做任何修改</div>
+    <!-- 海景：一张满幅"印相"，除地平线外一切静止 -->
+    <div class="print" aria-hidden="true">
+      <div class="sky"></div>
+      <div class="sea"></div>
+      <div class="swell"></div>
+      <div class="halo"></div>
+      <div class="horizon"><i id="horizonLine" class="horizon-line"></i></div>
+      <div class="grain"></div>
     </div>
+
+    <main class="card">
+      <div id="mark" class="mark">
+        <svg id="ring" class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="arcRun" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#3f6dff" />
+              <stop offset="52%" stop-color="#7c74ff" />
+              <stop offset="100%" stop-color="#28d7f0" />
+            </linearGradient>
+            <linearGradient id="arcOk" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#28d7f0" />
+              <stop offset="100%" stop-color="#34d8a6" />
+            </linearGradient>
+            <linearGradient id="arcErr" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#ff5f6d" />
+              <stop offset="100%" stop-color="#ff9a5f" />
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="60" cy="60" r="55" />
+          <!-- 进度弧：dashoffset 由 splash.js 按真实相位推进（起点 3 点钟，整个 svg 旋转 -90° 到 12 点钟） -->
+          <circle id="ringArc" class="ring-arc" cx="60" cy="60" r="55" />
+          <!-- 弧尖光点：与进度弧同源同步旋转，画面里唯一的"运行中"信号 -->
+          <g id="ringTip" class="ring-tip">
+            <circle class="tip-halo" cx="115" cy="60" r="5.4" />
+            <circle class="tip-core" cx="115" cy="60" r="2.1" />
+          </g>
+        </svg>
+        <img id="markImg" class="mark-whale" src="../build/icon-whale-white.png" alt="" draggable="false" />
+      </div>
+
+      <div class="plate">
+        <h1 id="title" class="title">DeepSeek Harness</h1>
+        <p class="subtitle" aria-hidden="true">Desktop Shell</p>
+        <p id="statusPill" class="status" role="status" aria-live="polite">
+          <span id="statusText" class="status-text">正在初始化…</span>
+        </p>
+      </div>
+
+      <!-- 错误态才出现：诊断信息与恢复入口（正常启动零打扰） -->
+      <div id="errorBox" class="error" hidden role="alert">
+        <p class="error-kicker">启动失败</p>
+        <p id="errorText" class="error-text"></p>
+        <pre id="logTail" class="log" hidden></pre>
+        <div class="actions">
+          <button id="retryBtn" class="btn" type="button">重新启动</button>
+          <button id="copyLogBtn" class="btn ghost" type="button">复制日志</button>
+          <button id="quitBtn" class="btn ghost" type="button">退出</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span id="versionText">外壳</span>
+      <i aria-hidden="true"></i>
+      <span id="footerNote">内核零修改</span>
+    </footer>
   </div>
   <script src="splash.js"></script>
 </body>

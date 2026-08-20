@@ -4,7 +4,7 @@ dist/
 runtime/
 *.log
 *.lnk
-build/splash-preview.png
+build/splash-preview*.png
 plugin/review-events.ndjson
 plugin/test-out/
 .boot-test*
