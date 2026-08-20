@@ -27,6 +27,17 @@
 #   powershell -ExecutionPolicy Bypass -File install-update.ps1 -Installer "C:\path\to\setup.exe"
 #   Extra switches: -NoLaunch (do not start the app afterwards)
 #                   -Interactive (show the installer UI instead of silent /S)
+#                   -UninstallFirst (skip the in-place upgrade; uninstall then install)
+#                   -KeepCache (do not clear %LOCALAPPDATA%\dsh-desktop-updater)
+#
+# FIELD NOTES (why the extra steps exist - all of these actually happened):
+#   * Upgrading over 0.1.10 kept failing with installer exit code 2. That comes from
+#     the OLD build's own uninstaller aborting mid-upgrade. Uninstall-then-install
+#     works, so this script now falls back to that automatically.
+#   * The in-app updater had left a STUCK "setup.exe --updated /S" running from
+#     %LOCALAPPDATA%\dsh-desktop-updater; NSIS then refuses to run. Now killed first.
+#   * User data lives in %APPDATA%\DeepSeek Harness Desktop and is never touched,
+#     not even by the uninstall-first path.
 
 param(
   [string]$Installer = '',
@@ -34,6 +45,8 @@ param(
   [switch]$DryRun,
   [switch]$NoLaunch,
   [switch]$Interactive,
+  [switch]$UninstallFirst,
+  [switch]$KeepCache,
   [int]$LockTimeoutSec = 40
 )
 
@@ -161,6 +174,78 @@ function Test-FileUnlocked([string]$path) {
   } catch { return $false }
 }
 
+# ------------------------------------------------- electron-updater leftovers
+# The in-app updater downloads to %LOCALAPPDATA%\dsh-desktop-updater and can
+# leave a STUCK "setup.exe --updated /S" behind. NSIS then sees another copy of
+# the same installer running and aborts. Verified in the field.
+function Get-UpdaterCacheDir { Join-Path $env:LOCALAPPDATA 'dsh-desktop-updater' }
+
+function Get-StuckInstallers {
+  $cache = Get-UpdaterCacheDir
+  $roots = @($cache, $env:TEMP) | Where-Object { $_ }
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.ExecutablePath -and ($_.Name -like '*setup*.exe' -or $_.Name -eq 'installer.exe') -and
+      ($roots | Where-Object { $_ -and $_.ExecutablePath.StartsWith($_.TrimEnd('\'), 'OrdinalIgnoreCase') })
+    }
+}
+
+function Stop-StuckInstallers {
+  $cache = (Get-UpdaterCacheDir).TrimEnd('\')
+  $hits = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($cache, 'OrdinalIgnoreCase') }
+  foreach ($p in @($hits)) {
+    Note ("stuck updater process: pid {0}  {1}" -f $p.ProcessId, $p.ExecutablePath)
+    if (-not $DryRun) { try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
+  }
+  return @($hits).Count
+}
+
+function Clear-UpdaterCache {
+  $cache = Get-UpdaterCacheDir
+  if (-not (Test-Path $cache)) { Note 'updater cache: already clean'; return }
+  $size = 0
+  try { $size = (Get-ChildItem $cache -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum } catch {}
+  try {
+    Remove-Item $cache -Recurse -Force -ErrorAction Stop
+    Note ("updater cache cleared ({0} MB freed)" -f [math]::Round($size / 1MB, 1))
+  } catch {
+    Note "could not clear updater cache: $($_.Exception.Message)"
+  }
+}
+
+# -------------------------------------------------------------- run installer
+function Invoke-Installer([string]$pkg) {
+  $a = @()
+  if (-not $Interactive) { $a += '/S' }
+  Note ("command : `"{0}`" {1}" -f $pkg, ($a -join ' '))
+  $p = Start-Process -FilePath $pkg -ArgumentList $a -Wait -PassThru
+  Note ("installer exit code : {0}" -f $p.ExitCode)
+  return $p.ExitCode
+}
+
+# Proven-in-the-field fallback: upgrading over an old build can fail because the
+# OLD uninstaller (shipped with that old build) aborts mid-upgrade -> exit code 2.
+# Uninstalling first and then installing fresh works. User data lives in
+# %APPDATA%\DeepSeek Harness Desktop and is NOT touched by this.
+function Invoke-Uninstall($info) {
+  if (-not $info -or -not $info.Uninstaller) { Note 'no uninstaller recorded; skipping'; return $false }
+  $u = ($info.Uninstaller -replace '"', '').Trim()
+  $u = ($u -split '\s+/')[0]
+  if (-not (Test-Path $u)) { Note "uninstaller missing: $u"; return $false }
+  Note ("command : `"{0}`" /currentuser /S" -f $u)
+  $p = Start-Process -FilePath $u -ArgumentList '/currentuser', '/S' -Wait -PassThru
+  Note ("uninstaller exit code : {0}" -f $p.ExitCode)
+  Start-Sleep -Seconds 2
+  $still = Get-InstallInfo
+  if ($still -and $still.Version -eq $info.Version) {
+    Note "registry still reports $($still.Version) - uninstall did not complete"
+    return $false
+  }
+  Note 'old version removed'
+  return $true
+}
+
 # ================================================================ main
 Write-Host ""
 Write-Host "=== $APP_NAME - update helper ==="
@@ -201,6 +286,10 @@ $lockPath = if ($info) { Join-Path $info.Dir 'resources\runtime\node.exe' } else
 if ($lockPath) {
   Note ("file lock on runtime node.exe : {0}" -f $(if (Test-FileUnlocked $lockPath) { 'free' } else { 'LOCKED' }))
 }
+
+Say "checking for stuck in-app-updater installers..."
+$stuck = Stop-StuckInstallers
+if ($stuck -eq 0) { Note 'none (good)' }
 
 if ($DryRun) {
   Write-Host ""
@@ -245,15 +334,32 @@ if (-not $free) {
 }
 Note "no file lock"
 
-Say "running the installer..."
-$args = @()
-if (-not $Interactive) { $args += '/S' }
-Note ("command : `"{0}`" {1}" -f $pkg, ($args -join ' '))
-$proc = Start-Process -FilePath $pkg -ArgumentList $args -Wait -PassThru
-Note ("installer exit code : {0}" -f $proc.ExitCode)
-if ($proc.ExitCode -ne 0) {
-  Note "non-zero exit. Re-run with -Interactive to watch the installer UI and read its details pane."
-  Fail "installer returned $($proc.ExitCode)"
+$code = 1
+if ($UninstallFirst) {
+  Say "uninstalling the old version first (-UninstallFirst)..."
+  if (-not (Invoke-Uninstall $info)) { Fail 'uninstall failed; nothing was installed' }
+  Say "installing fresh..."
+  $code = Invoke-Installer $pkg
+} else {
+  Say "running the installer (in-place upgrade)..."
+  $code = Invoke-Installer $pkg
+  if ($code -ne 0) {
+    Write-Host ""
+    Note "in-place upgrade returned $code."
+    Note "Known cause: the OLD build's uninstaller aborts mid-upgrade (that is where exit code 2"
+    Note "comes from). Falling back to the path proven to work: uninstall old, then install fresh."
+    Note "Your data in %APPDATA%\$APP_NAME is NOT touched."
+    Write-Host ""
+    Say "uninstalling the old version..."
+    if (-not (Invoke-Uninstall $info)) { Fail "uninstall failed after the upgrade attempt (installer exit $code)" }
+    Say "installing fresh..."
+    $code = Invoke-Installer $pkg
+  }
+}
+if ($code -ne 0) {
+  Note "still failing. Re-run with -Interactive to watch the installer UI and read its details pane,"
+  Note "then report the lines starting with 'DSH:' from that pane."
+  Fail "installer returned $code"
 }
 
 Say "verifying the installed version..."
@@ -268,6 +374,11 @@ $fileVer = (Get-Item $exe).VersionInfo.ProductVersion
 Note "exe ProductVersion : $fileVer"
 if ($info -and $info.Version -eq $after.Version) {
   Note "WARNING: registry version did not change ($($after.Version)) - the package may be the same build"
+}
+
+if (-not $KeepCache) {
+  Say "clearing the in-app-updater cache (stale downloads cause repeat update prompts)..."
+  Clear-UpdaterCache
 }
 
 if (-not $NoLaunch) {
