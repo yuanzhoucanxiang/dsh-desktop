@@ -1483,73 +1483,8 @@ function injectReviewSidebar() {
 ipcRenderer.invoke('shell:get-state').then((s) => applySkin(s && s.theme)).catch(() => {})
 ipcRenderer.on('shell:theme', (_e, id) => applySkin(id))
 
-/* ── 主界面左下角「设置」入口（外壳级覆盖层，与审阅栏同一套路） ────────────────
- * 点击打开「设置」面板（插件体检 / 软件更新）；红点在两种情况亮起：
- * 插件体检发现异常，或应用更新已下载待安装（主进程推送，打开页面时也主动拉一次）。 */
-function injectSettingsEntry() {
-  if (location.protocol === 'file:') return // splash 与设置面板自身不注入
-  if (document.getElementById('dsh-settings-entry')) return
-
-  const S = 'dsh-settings-entry'
-  const style = document.createElement('style')
-  // 令牌复用内核页面的 --dsw-alias-*（皮肤层会重定义），自动跟随明暗主题
-  style.textContent = `
-    #${S}{position:fixed;left:0;bottom:120px;z-index:2147482940;height:26px;
-      display:inline-flex;align-items:center;gap:6px;padding:0 11px 0 10px;cursor:pointer;user-select:none;
-      font:12px/1 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-      color:var(--dsw-alias-label-secondary,#aeb8d8);
-      background:var(--dsw-alias-bg-layer-1,rgba(30,34,54,.92));
-      border:1px solid var(--dsw-alias-border-l2,transparent);border-left:none;border-radius:0 13px 13px 0;}
-    #${S}:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
-    #${S} .dot{display:none;width:7px;height:7px;border-radius:50%;flex:none;
-      background:var(--dsw-alias-state-error-primary,#ff8080);}
-    #${S}.dsh-warn .dot{display:inline-block;}`
-  document.head.appendChild(style)
-
-  const el = document.createElement('div')
-  el.id = S
-  el.title = '设置（插件体检 / 软件更新）'
-  el.textContent = '⚙ 设置'
-  const dot = document.createElement('span')
-  dot.className = 'dot'
-  el.insertBefore(dot, el.firstChild)
-  el.addEventListener('click', () => { try { window.dshShell && window.dshShell.openSettings() } catch {} })
-  document.body.appendChild(el)
-
-  const mark = (on) => { el.classList.toggle('dsh-warn', !!on) }
-  const pluginBad = (n) => Number(n) > 0
-  const updateReady = () => window.__dshUpdateDownloaded === true
-  window.__dshUpdateDownloaded = false
-  const refreshDot = () => mark(pluginBad(window.__dshPluginProblems) || updateReady())
-  window.__dshPluginProblems = 0
-
-  if (window.dshShell) {
-    if (window.dshShell.pluginsReport) {
-      window.dshShell.pluginsReport().then((r) => {
-        window.__dshPluginProblems = (r && !r.error && r.problems) ? r.problems.length : 0
-        refreshDot()
-      }).catch(() => {})
-    }
-    if (window.dshShell.updateGet) {
-      window.dshShell.updateGet().then((s) => {
-        window.__dshUpdateDownloaded = !!(s && s.state === 'downloaded')
-        refreshDot()
-      }).catch(() => {})
-    }
-  }
-  ipcRenderer.on('shell:plugin-health', (_e, s) => {
-    window.__dshPluginProblems = (s && s.problems) || 0
-    refreshDot()
-  })
-  ipcRenderer.on('shell:update-status', (_e, s) => {
-    window.__dshUpdateDownloaded = !!(s && s.state === 'downloaded')
-    refreshDot()
-  })
-}
-
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { injectReviewSidebar(); injectSettingsEntry() })
+  document.addEventListener('DOMContentLoaded', injectReviewSidebar)
 } else {
   injectReviewSidebar()
-  injectSettingsEntry()
 }

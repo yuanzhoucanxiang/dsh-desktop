@@ -45,7 +45,13 @@ const PHASE_P = {
 const THEMES = {
   deep: { note: '内核零修改', title: 'DeepSeek Harness' },
   seascape: { note: '海景 · after Hiroshi Sugimoto', title: 'DeepSeek Harness' },
-  palis: { note: 'PALIS // NODE 09A', title: 'DEEPSEEK HARNESS ARCHIVE' },
+  palis: { note: 'PALIS // NODE 09A', title: 'DSH TERMINAL' },
+}
+
+/** palis 大标题带外壳版本号（终端开机风）：版本从主进程状态来，未取到时不带 v 段 */
+let appVersion = ''
+function palisTitle() {
+  return appVersion ? `${THEMES.palis.title} v${appVersion}` : THEMES.palis.title
 }
 
 const RING_CIRC = 345.575 // 2π × r(55)，与 splash.css 的 stroke-dasharray 一致
@@ -92,7 +98,7 @@ function armIntro() {
 let typeTimer = 0
 function typePalisTitle() {
   const titleEl = $('title')
-  const full = THEMES.palis.title
+  const full = palisTitle()
   if (typeTimer) clearInterval(typeTimer)
   if (reducedMotion.matches) {
     titleEl.textContent = full
@@ -128,7 +134,7 @@ function applyTheme(id) {
     if (typeTimer) { clearInterval(typeTimer); typeTimer = 0 }
     titleEl.textContent = THEMES[theme].title
   }
-  titleEl.setAttribute('aria-label', THEMES[theme].title)
+  titleEl.setAttribute('aria-label', theme === 'palis' ? palisTitle() : THEMES[theme].title)
   $('footerNote').textContent = THEMES[theme].note
   paintProgress() // 换皮肤后立刻按当前进度重画（弧/地平线/日志各归各位）
   renderBootLog() // palis 的日志面板按当前状态立即重画
@@ -354,6 +360,7 @@ async function boot() {
     if (window.dshShell) {
       try {
         const s = await window.dshShell.status()
+        appVersion = s.version || ''
         setVersionText(s.version)
         if (!themeFromQuery) applyTheme(s.theme)
       } catch (err) {
@@ -384,6 +391,7 @@ async function boot() {
 
   try {
     const initial = await window.dshShell.status()
+    appVersion = initial.version || ''
     if (!themeFromQuery) applyTheme(initial.theme)
     applyStatus(initial)
     setVersionText(initial.version)
