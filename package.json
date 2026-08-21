@@ -73,15 +73,24 @@
           "client.js"
         ]
       },
-      {
-        "from": "plugin/palis-theme",
-        "to": "plugin/palis-theme",
-        "filter": [
-          "package.json",
-          "index.js",
-          "client.js"
-        ]
-      }
+    {
+      "from": "plugin/dialog-optimize",
+      "to": "plugin/dialog-optimize",
+      "filter": [
+        "package.json",
+        "index.js",
+        "client.js"
+      ]
+    },
+    {
+      "from": "plugin/shell-settings",
+      "to": "plugin/shell-settings",
+      "filter": [
+        "package.json",
+        "index.js",
+        "client.js"
+      ]
+    }
     ],
     "publish": {
       "provider": "github",

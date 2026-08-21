@@ -326,7 +326,7 @@ function dshHome() {
  * 锚点读 dsh.client 声明，所以 host/client 两半都从这里加载。
  * 内容相同则跳过（不扰动 mtime）；返回插件文件是否可用。
  */
-const BUILTIN_PLUGINS = ['dialog-optimize', 'palis-theme']
+const BUILTIN_PLUGINS = ['dialog-optimize', 'palis-theme', 'shell-settings']
 
 function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)
