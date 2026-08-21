@@ -15,7 +15,7 @@
 
 - deepseek-v4-pro（2026-08-21）
 
-## [Unreleased]
+## [0.1.16] - 2026-08-21
 
 ### 工具改进（不改应用本体，`install-update.ps1` 已同步更新到 v0.1.14 的 Release 附件）
 
