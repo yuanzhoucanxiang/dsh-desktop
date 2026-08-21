@@ -2,6 +2,19 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
+## [0.1.15] - 2026-08-21
+
+### 改进
+
+- **内置内核升级 `@deepseek-ai/dsh` 0.1.0-rc.7 → 0.1.1-rc.1（next 预览线）**：
+  `prepare-runtime.ps1` / `prepare-runtime-macos.sh` 版本锁定同步，自包含运行时重新生成（452 包）；
+  打包版冒烟 `SMOKE_OK` 验证新内核带审阅桥与内置对话插件（dialog-optimize）补丁完整拉起。
+  注：`0.1.1-rc.1` 属 npm `next` 预览线，`latest` 仍为 `0.1.0-rc.7`。
+
+### 署名
+
+- deepseek-v4-pro（2026-08-21）
+
 ## [Unreleased]
 
 ### 工具改进（不改应用本体，`install-update.ps1` 已同步更新到 v0.1.14 的 Release 附件）
@@ -21,6 +34,33 @@
 
 > 已知问题（写给还在 0.1.10 的人）：直接双击安装包升级会失败，请用 `install-update.cmd`，
 > 或手动"先卸载 0.1.10 再装新版"。0.1.11 及以后的版本之间升级不受此问题影响。
+
+### 更新架构：内核运行时迁出安装目录（让应用内更新回归"正常软件"体验）
+
+根因：内核从安装目录内的 `resources/runtime` 直接启动，更新时安装器必须覆盖正在执行的
+文件（历史 0.1.11~0.1.14 的安装失败都源于此）。本次改动把运行时搬到
+`%LOCALAPPDATA%\DeepSeek Harness Desktop\runtime`：
+
+- **首次启动（或内置运行时版本变化时）自动同步**：从 `resources/runtime` 复制到用户目录，
+  先写临时目录再原子替换，避免中断留下半成品；标记（`runtime.json`）一致则跳过，纯外壳更新不重拷
+- **内核永远从安装目录之外执行** → 更新时安装器只需覆盖外壳，不再需要"杀内核/等文件锁/先卸载"
+  那套强杀逻辑
+
+### 移除
+
+- **删除 `build/installer.nsh` 的强杀逻辑**（`nsis.include` 一并去掉）：内核已不锁安装目录文件，
+  手动装包时由安装器默认的「请先关闭应用」提示兜底，恢复正常软件的安装体验
+- **`installUpdateNow` 去掉固定 600ms 竞态**：改为等内核进程真正退出（`exit` 事件 + 短暂缓冲）
+  再静默安装
+
+### 发布自动化
+
+- **`release.ps1` 支持自动发版**：检测到已登录的 `gh`（`GH_TOKEN` 或 `gh auth login`）时，
+  构建后直接 `gh release create/upload`（安装包 + latest.yml + blockmap）；未登录则照旧打印手动命令
+
+### 署名
+
+- deepseek-v4-flash（2026-08-21）
 
 ## [0.1.14] - 2026-08-21
 

@@ -194,9 +194,56 @@ function setStatus(phase, message) {
 
 /* ─────────────────────────────── 内核进程管理 ─────────────────────────────── */
 
-/** 自包含运行时根目录：打包后=resources/runtime，开发=项目下 runtime/。 */
+/**
+ * 自包含运行时根目录：打包后=用户目录下的外部副本，开发=项目下 runtime/。
+ *
+ * 内核运行时的落盘位置是关键设计：让它永远从「安装目录之外」执行，更新时安装器
+ * 只需覆盖外壳，不再需要去杀正在运行的内核、等它释放安装目录里的文件锁。
+ * 这正是"能像正常软件一样更新"的前提（历史上 0.1.11~0.1.14 的安装失败都源于
+ * 内核从 resources/runtime 里执行导致安装器撞上活文件）。
+ */
+function externalRuntimeDir() {
+  const base = isWin
+    ? (process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'))
+    : path.join(os.homedir(), 'Library', 'Application Support')
+  return path.join(base, APP_NAME, 'runtime')
+}
+
+/** 读 dir 下 runtime.json 的原文（无则 null）；用于判定"本地副本是否等于本次内置运行时"。 */
+function runtimeMarker(dir) {
+  try {
+    const p = path.join(dir, 'runtime.json')
+    if (!fs.existsSync(p)) return null
+    return fs.readFileSync(p, 'utf8').trim()
+  } catch { return null }
+}
+
+/**
+ * 打包后：首次启动（或内置运行时变了）把 resources/runtime 同步到用户目录。
+ * 先写临时目录再整体替换，避免中断留下半成品；标记一致则跳过（纯外壳更新不重拷）。
+ */
+async function ensureExternalRuntime() {
+  if (!app.isPackaged) return
+  const bundled = path.join(process.resourcesPath, 'runtime')
+  if (!fs.existsSync(bundled)) return // 理论不该发生；缺内置运行时交给 resolveDshBin 兜底
+  const local = externalRuntimeDir()
+  const bMark = runtimeMarker(bundled)
+  const lMark = runtimeMarker(local)
+  if (bMark !== null && lMark === bMark) return // 已同步且与内置一致
+  if (bMark === null && lMark === null && fs.existsSync(local)) return // 无标记可比对但本地已存在
+  setStatus('kernel', '正在同步内核运行时…')
+  log(`syncing kernel runtime -> ${local}`)
+  const tmp = local + '.sync.tmp'
+  await fs.promises.rm(tmp, { recursive: true, force: true })
+  await fs.promises.mkdir(path.dirname(local), { recursive: true })
+  await fs.promises.cp(bundled, tmp, { recursive: true })
+  await fs.promises.rm(local, { recursive: true, force: true })
+  await fs.promises.rename(tmp, local)
+  log(`kernel runtime ready at ${local}`)
+}
+
 function runtimeRoot() {
-  if (app.isPackaged) return path.join(process.resourcesPath, 'runtime')
+  if (app.isPackaged) return externalRuntimeDir()
   return path.join(__dirname, 'runtime')
 }
 
@@ -466,6 +513,7 @@ function kernelEnv() {
 }
 
 async function startKernel() {
+  await ensureExternalRuntime() // 打包后：保证内核从外部副本启动（见 ensureExternalRuntime 注释）
   state.port = await freePort()
   state.url = `http://127.0.0.1:${state.port}`
   const bin = resolveDshBin()
@@ -536,6 +584,15 @@ function killChild() {
   } catch (err) {
     log(`kill kernel failed: ${err.message}`)
   }
+}
+
+/** 等内核进程真正退出（最多 maxMs）。用于"安装更新前确认没有残留进程"。 */
+function waitChildExit(child, maxMs) {
+  return new Promise((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return resolve()
+    const t = setTimeout(resolve, maxMs)
+    child.once('exit', () => { clearTimeout(t); resolve() })
+  })
 }
 
 /* ─────────────────────────────── 就绪探测 ─────────────────────────────────── */
@@ -1046,18 +1103,19 @@ function updateFeed() {
 
 /**
  * 执行更新安装。这里的每一步都是为了避免"应用没有完全关闭"那类提示：
- *   1. 标记 quitting，先自己把内核子进程收掉（它跑在安装目录里，不死就锁文件）
+ *   1. 标记 quitting，先自己把内核子进程收掉（它跑在用户目录的运行时副本里，但进程必须退出）
  *   2. 销毁托盘、关掉附加窗口，让本进程没有残留 UI 资源
- *   3. quitAndInstall(isSilent=true, isForceRunAfter=true)：
+ *   3. 等内核进程真正退出后 quitAndInstall(isSilent=true, isForceRunAfter=true)：
  *      · isSilent=true  → 安装器静默执行，不再出现任何"请先关闭应用"的交互
  *      · isForceRunAfter=true → 装完自动把应用重新拉起来（就是"点一下重启就好"）
- *   另外安装器侧还有 build/installer.nsh 的 customCheckAppRunning 兜底：
- *   即便用户是手动双击安装包，也会自动收掉本应用与安装目录内的内核进程。
+ *   运行时已迁出安装目录（见 externalRuntimeDir），安装器更新时只需覆盖外壳，
+ *   不再需要安装器侧强杀逻辑，手动装包时由安装器默认的"请先关闭应用"提示兜底。
  */
 function installUpdateNow() {
   if (!state.updateReady) return
   log(`installing update ${state.updateReady.version}`)
   state.quitting = true
+  const child = state.child
   try {
     killChild()
   } catch (err) {
@@ -1073,8 +1131,11 @@ function installUpdateNow() {
     if (!w.isDestroyed()) w.destroy()
   }
   if (previewWin && !previewWin.isDestroyed()) previewWin.destroy()
-  // 给 taskkill 一点时间真正释放安装目录里的文件句柄，再交给安装器
-  setTimeout(() => {
+  // 等内核进程真正退出（taskkill 是异步生效的），再交给安装器，避免它撞上还在跑的进程；
+  // 之后内核不再锁安装目录文件，安装器覆盖外壳即可（见 externalRuntimeDir 的设计说明）。
+  setTimeout(async () => {
+    await waitChildExit(child, 8000)
+    await sleep(300) // 让 /T 子树里的残余句柄一并释放
     try {
       autoUpdater.quitAndInstall(true, true)
     } catch (err) {
@@ -1088,7 +1149,7 @@ function installUpdateNow() {
         noLink: true,
       })
     }
-  }, 600)
+  }, 200)
 }
 
 /** 更新已下载：用系统通知 + 托盘/菜单入口告知（窗口可能正藏在托盘里，模态框看不见）。 */
