@@ -74,6 +74,7 @@ const state = {
   turnPrimed: false, // 是否已跳过"首次扫描的历史事件"
   updateReady: null, // 已下载待安装的更新信息（{version,...}）；有值时托盘/菜单出现安装入口
   patchMode: 'full', // 内核补丁模式：full=审阅桥+内置插件 / bridge=仅审阅桥 / none=无补丁
+  quarantined: [],   // 本次会话被自动隔离的坏插件名（用于汇总提示）
 }
 
 /* ─────────────────────────────── 设置持久化 ───────────────────────────────── */
@@ -245,18 +246,49 @@ async function ensureExternalRuntime() {
     : 'tar'
   const r = spawnSync(tarExe, ['-xf', archive, '-C', stage], { windowsHide: true })
   const extracted = path.join(stage, 'runtime')
-  if (r.status !== 0 || !fs.existsSync(path.join(extracted, 'runtime.json'))) {
+  const complete = (dir) =>
+    fs.existsSync(path.join(dir, 'runtime.json')) &&
+    fs.existsSync(path.join(dir, isWin ? 'node.exe' : path.join('bin', 'node'))) &&
+    fs.existsSync(path.join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+  if (r.status !== 0 || !complete(extracted)) {
+    // 解压不完整时绝不碰现有运行时——宁可继续用旧版，也不把应用搞成无内核可用
     await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
-    throw new Error(`内核运行时解压失败（tar exit ${r.status}）`)
+    throw new Error(`内核运行时解压不完整（tar exit ${r.status}），已保留现有运行时`)
   }
-  await fs.promises.rm(local, { recursive: true, force: true })
-  await fs.promises.rename(extracted, local)
+  // 原子交换 + 保留上一版：旧 runtime 先改名为 .prev 备份，新运行时就位后才算完成；
+  // 交换中途任何失败自动回滚；.prev 留作运行时损坏时的回退（见 runtimeRoot）。
+  const backup = local + '.prev'
+  await fs.promises.rm(backup, { recursive: true, force: true }).catch(() => {})
+  if (fs.existsSync(local)) {
+    try { await fs.promises.rename(local, backup) } catch {}
+  }
+  try {
+    await fs.promises.rename(extracted, local)
+  } catch (err) {
+    if (fs.existsSync(backup) && !fs.existsSync(local)) {
+      await fs.promises.rename(backup, local).catch(() => {})
+    }
+    await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
+    throw new Error(`内核运行时切换失败：${err.message}`)
+  }
   await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
-  log(`kernel runtime ready at ${local}`)
+  log(`kernel runtime ready at ${local}（上一版备份于 ${backup}）`)
 }
 
 function runtimeRoot() {
-  if (app.isPackaged) return externalRuntimeDir()
+  if (app.isPackaged) {
+    const local = externalRuntimeDir()
+    const ok = (dir) => fs.existsSync(path.join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+    // 主运行时不完整（更新中途断电/被杀等）时回退到上一版备份，不至于无内核可用
+    if (!ok(local)) {
+      const prev = local + '.prev'
+      if (ok(prev)) {
+        log(`runtime fallback: ${local} incomplete, using ${prev}`)
+        return prev
+      }
+    }
+    return local
+  }
   return path.join(__dirname, 'runtime')
 }
 
@@ -535,6 +567,179 @@ function kernelEnv() {
   return env
 }
 
+/* ─────────────────────── 插件故障隔离（内容更新防砖） ───────────────────────
+ * 内核对 profile bundle 是"任一失败即整体退出"：历史上 PALIS 缺 dsh.bundle、
+ * 工作区插件依赖解析失败，都把整个应用搞挂（内核起不来 = 应用不可用）。
+ * 这组函数在启动失败时自动找出报错点名的坏 bundle，从 profile 的
+ * dsh.profile.bundles 里摘除并重试，把"插件更新搞崩内核"降级为
+ * "禁用一个插件 + 通知用户（托盘可一键恢复）"。
+ */
+
+/** 内核核心 bundle，永不隔离（摘了也救不回来，反而必挂）。 */
+const CORE_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+
+function quarantineFile() {
+  return path.join(app.getPath('userData'), 'disabled-bundles.json')
+}
+
+function readQuarantine() {
+  try {
+    const list = readJsonStripBom(quarantineFile())
+    return Array.isArray(list) ? list : []
+  } catch { return [] }
+}
+
+/** 读 JSON 并剥掉可能的 UTF-8 BOM：Windows PowerShell 5.1 的 `Set-Content -Encoding UTF8`
+ *  会写 BOM，而内核与本应用对带 BOM 的 profile manifest 都会 JSON.parse 直接失败。 */
+function readJsonStripBom(file) {
+  const raw = fs.readFileSync(file, 'utf8')
+  return JSON.parse(raw.replace(/^\uFEFF/, ''))
+}
+
+function profileWebManifest() {
+  return path.join(dshHome(), 'profiles', 'web', 'package.json')
+}
+
+/** 从日志文本里提取报错点名的 bundle 包名（排除内核自身的 cordis:* 内部条目）。 */
+function detectBrokenBundles(text) {
+  const names = new Set()
+  const push = (n) => {
+    n = (n || '').trim()
+    if (n && !n.includes(':') && !CORE_BUNDLES.has(n)) names.add(n)
+  }
+  for (const m of text.matchAll(/(?:failed to import|failed to apply) loader entry [^(]*?\(([^)]+)\)/g)) push(m[1])
+  for (const m of text.matchAll(/profile bundle "([^"]+)" declares/g)) push(m[1])
+  return [...names]
+}
+
+/** 把坏 bundle 从 profile 的 bundles 列表摘除（仅在确有变化时写回，不扰动其余字段）。 */
+function quarantineBundles(names, reason) {
+  const file = profileWebManifest()
+  let manifest
+  try {
+    manifest = readJsonStripBom(file)
+  } catch (err) {
+    log(`quarantine: cannot read profile manifest (${err.message})`)
+    return []
+  }
+  const bundles = manifest?.dsh?.profile?.bundles
+  if (!Array.isArray(bundles)) return []
+  const removed = names.filter((n) => bundles.includes(n))
+  if (!removed.length) return []
+  manifest.dsh.profile.bundles = bundles.filter((n) => !removed.includes(n))
+  try {
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+  } catch (err) {
+    log(`quarantine: cannot write profile manifest (${err.message})`)
+    return []
+  }
+  const list = readQuarantine()
+  const at = new Date().toISOString()
+  for (const n of removed) {
+    if (!list.some((e) => e.name === n)) list.push({ name: n, reason, at })
+  }
+  try { fs.writeFileSync(quarantineFile(), JSON.stringify(list, null, 2), 'utf8') } catch {}
+  refreshMenus() // 托盘出现「重新启用被隔离的插件」入口
+  for (const n of removed) log(`quarantined broken bundle: ${n} (${reason})`)
+  return removed
+}
+
+/** 一键恢复：把隔离过的 bundle 加回 profile（依赖仍存在的才加），然后重启内核。 */
+function restoreQuarantinedBundles() {
+  const list = readQuarantine()
+  if (!list.length) return
+  try {
+    const file = profileWebManifest()
+    const manifest = readJsonStripBom(file)
+    const deps = manifest?.dependencies ?? {}
+    const bundles = manifest?.dsh?.profile?.bundles ?? []
+    let restored = 0
+    for (const e of list) {
+      if (deps[e.name] && !bundles.includes(e.name)) { bundles.push(e.name); restored++ }
+    }
+    manifest.dsh.profile.bundles = bundles
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+    try { fs.rmSync(quarantineFile(), { force: true }) } catch {}
+    log(`restored ${restored} quarantined bundle(s); restarting kernel`)
+    refreshMenus()
+    restartKernel()
+  } catch (err) {
+    log(`restore quarantine failed: ${err.message}`)
+  }
+}
+
+/** 内核输出在 Windows 上是 OEM/GBK，而本应用日志是 UTF-8：直接 toString 会得到乱码，
+ *  排查全靠猜。按"含替换符即非合法 UTF-8"判定后用 GBK 解码（Electron 自带全量 ICU）。 */
+function decodeChunk(buf) {
+  const s = buf.toString('utf8')
+  if (!s.includes('\uFFFD')) return s
+  try { return new TextDecoder('gbk').decode(buf) } catch { return s }
+}
+
+/** 清掉卡在更新器缓存目录里的残留安装器进程——它们会让新安装器误判"同款已在运行"
+ *  而中止（实战遇到过 setup.exe --updated /S 僵尸挡住更新的情况）。 */
+function killStaleUpdaterInstallers() {
+  if (!isWin || !process.env.LOCALAPPDATA) return
+  try {
+    const dir = path.join(process.env.LOCALAPPDATA, 'dsh-desktop-updater')
+    if (!fs.existsSync(dir)) return
+    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith('" + dir + "', 'OrdinalIgnoreCase') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    spawnSync('powershell', ['-NoProfile', '-Command', ps], { windowsHide: true, timeout: 15000 })
+  } catch {}
+}
+
+function notifyQuarantine(removed) {
+  state.quarantined = [...(state.quarantined || []), ...removed]
+  try {
+    if (Notification.isSupported()) {
+      const n = new Notification({
+        title: `已自动禁用 ${removed.length} 个出错的插件`,
+        body: `${removed.join('、')} 导致内核启动失败，已跳过它们保证应用可用；托盘菜单可重新启用。`,
+      })
+      n.show()
+    }
+  } catch {}
+}
+
+/**
+ * startKernel + waitReady，带启动恢复链：坏插件隔离（最多 4 轮）→ 补丁降级
+ * （full→bridge→none，仅初始启动启用降级；内核重启只做隔离，避免慢启动被误降级）。
+ * 任一轮成功即返回；全部失败向上抛（进入启动失败画面 / 内核状态提示）。
+ */
+async function startKernelUntilReady({ degradePatch = false } = {}) {
+  for (let round = 0; ; round++) {
+    try {
+      await startKernel()
+      await waitReady()
+      return
+    } catch (err) {
+      const bad = detectBrokenBundles(state.logTail.join('\n'))
+      const known = new Set(readQuarantine().map((e) => e.name))
+      const fresh = bad.filter((n) => !known.has(n))
+      if (fresh.length && round < 4) {
+        const removed = quarantineBundles(fresh, String(err.message).slice(0, 200))
+        if (removed.length) {
+          notifyQuarantine(removed)
+          killChild()
+          state.ready = false
+          continue
+        }
+      }
+      if (degradePatch && state.patchMode === 'full') {
+        log(`boot failed (${err.message}); retrying with review bridge only`)
+        state.patchMode = 'bridge'
+      } else if (degradePatch && state.patchMode === 'bridge') {
+        log(`boot failed (${err.message}); retrying without kernel patch`)
+        state.patchMode = 'none'
+      } else {
+        throw err
+      }
+      killChild()
+      state.ready = false
+    }
+  }
+}
+
 async function startKernel() {
   await ensureExternalRuntime() // 打包后：保证内核从外部副本启动（见 ensureExternalRuntime 注释）
   state.port = await freePort()
@@ -567,8 +772,8 @@ async function startKernel() {
     child.once('error', reject)
   })
 
-  child.stdout.on('data', (d) => log(d.toString()))
-  child.stderr.on('data', (d) => log(d.toString()))
+  child.stdout.on('data', (d) => log(decodeChunk(d)))
+  child.stderr.on('data', (d) => log(decodeChunk(d)))
   child.on('error', (err) => {
     log(`kernel spawn error: ${err.message}`)
     if (!state.quitting) {
@@ -653,8 +858,9 @@ async function restartKernel() {
   try {
     killChild()
     state.ready = false
-    await startKernel()
-    await waitReady()
+    // 内核重启也走隔离恢复链（装了坏插件后点「重启内核」不再把应用搞挂）；
+    // 但不做补丁降级——内核偶发慢启动不该悄悄丢掉审阅桥。
+    await startKernelUntilReady({ degradePatch: false })
     if (win && !win.isDestroyed()) {
       win.webContents.send('shell:kernel-status', { alive: true })
       if (win.webContents.getURL().startsWith('http')) win.webContents.reload()
@@ -1178,6 +1384,7 @@ function installUpdateNow() {
   setTimeout(async () => {
     await waitChildExit(child, 8000)
     await sleep(300) // 让 /T 子树里的残余句柄一并释放
+    killStaleUpdaterInstallers() // 清掉更新器目录里卡住的残留安装器，避免新安装器误判"已在运行"而中止
     try {
       autoUpdater.quitAndInstall(true, true)
     } catch (err) {
@@ -1249,21 +1456,33 @@ async function checkForUpdates(manual) {
     }
     return
   }
-  try {
-    autoUpdater.setFeedURL(feed)
-    const result = await autoUpdater.checkForUpdates()
-    // 修复：checkForUpdates 在"已是最新"时也返回非空 result（isUpdateAvailable=false），
-    // 原条件 `!result` 使"当前已是最新版本"提示永远不弹——手动检查看起来"点了没反应"。
-    if (manual && result && !result.isUpdateAvailable) {
-      dialog.showMessageBox(win, { type: 'info', title: '检查更新', message: '当前已是最新版本。' })
+  // 网络抖动（如 ERR_CONNECTION_RESET，GitHub API 直连常见）自动重试：0s/3s/8s 共 3 次，
+  // 只有手动检查且最终失败才弹窗；静默检查失败只记日志。
+  let lastErr = null
+  for (const delay of [0, 3000, 8000]) {
+    if (delay) {
+      await sleep(delay)
+      log(`update check retrying after ${delay}ms...`)
     }
-  } catch (err) {
-    log(`update check failed: ${err.message}`)
-    if (manual) {
-      dialog.showMessageBox(win, {
-        type: 'error', title: '检查更新', message: '检查更新失败', detail: String(err.message),
-      })
+    try {
+      autoUpdater.setFeedURL(feed)
+      const result = await autoUpdater.checkForUpdates()
+      // 修复：checkForUpdates 在"已是最新"时也返回非空 result（isUpdateAvailable=false），
+      // 原条件 `!result` 使"当前已是最新版本"提示永远不弹——手动检查看起来"点了没反应"。
+      if (manual && result && !result.isUpdateAvailable) {
+        dialog.showMessageBox(win, { type: 'info', title: '检查更新', message: '当前已是最新版本。' })
+      }
+      return
+    } catch (err) {
+      lastErr = err
+      log(`update check failed: ${err.message}`)
     }
+  }
+  if (manual) {
+    dialog.showMessageBox(win, {
+      type: 'error', title: '检查更新', message: '检查更新失败',
+      detail: String((lastErr && lastErr.message) || lastErr),
+    })
   }
 }
 
@@ -1312,6 +1531,12 @@ function buildTrayMenu() {
       ? [{
         label: `⬆ 重启并安装更新 ${state.updateReady.version}`,
         click: () => installUpdateNow(),
+      }]
+      : []),
+    ...(readQuarantine().length
+      ? [{
+        label: `↻ 重新启用被隔离的插件（${readQuarantine().length} 个）`,
+        click: () => restoreQuarantinedBundles(),
       }]
       : []),
     { type: 'separator' },
@@ -1528,30 +1753,9 @@ function registerIpc() {
 
 async function bootKernel() {
   const t0 = Date.now()
-  try {
-    await startKernel()
-    await waitReady()
-  } catch (err) {
-    // 兼容性保险：新内置插件（dialog-optimize）或审阅桥若导致启动失败，逐级降级
-    // 重试（先仅审阅桥，再完全无补丁），保证应用本体永远可用，而不是启动失败。
-    if (state.patchMode === 'full') {
-      log(`boot failed (${err.message}); retrying with review bridge only`)
-      state.patchMode = 'bridge'
-      killChild()
-      state.ready = false
-      await startKernel()
-      await waitReady()
-    } else if (state.patchMode === 'bridge') {
-      log(`boot failed (${err.message}); retrying without kernel patch`)
-      state.patchMode = 'none'
-      killChild()
-      state.ready = false
-      await startKernel()
-      await waitReady()
-    } else {
-      throw err
-    }
-  }
+  // 启动恢复链：坏插件隔离（≤4 轮）→ 补丁降级（full→bridge→none）。
+  // 任何插件更新把内核搞崩，都会被降级成"禁用坏插件 + 通知"，应用本体永远可启动。
+  await startKernelUntilReady({ degradePatch: true })
   state.elapsedMs = Date.now() - t0
   setStatus('ready', `已就绪（${(state.elapsedMs / 1000).toFixed(1)}s），正在进入工作区…`)
 
@@ -1802,6 +2006,7 @@ if (!gotLock) {
     } catch (err) {
       log(`auto-update init failed: ${err && err.message ? err.message : err}`)
     }
+    killStaleUpdaterInstallers() // 启动即清一次更新器残留（僵尸安装器会挡住下次更新）
     try {
       createTray()
     } catch (err) {
