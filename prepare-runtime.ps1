@@ -11,7 +11,7 @@ $env:NPM_CONFIG_CACHE = Join-Path $proj '.npm-cache'
 Write-Host "installing dsh (hoisted) into runtime..."
 Remove-Item $runtime -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
-Set-Content -Path (Join-Path $runtime 'package.json') -Value '{ "dependencies": { "@deepseek-ai/dsh": "0.1.0-rc.7" } }'
+Set-Content -Path (Join-Path $runtime 'package.json') -Value '{ "dependencies": { "@deepseek-ai/dsh": "0.1.1-rc.1" } }'
 Push-Location $runtime
 npm install --no-audit --no-fund --registry=https://registry.npmmirror.com
 Pop-Location
