@@ -101,6 +101,7 @@ const DEFAULT_SETTINGS = {
 const THEMES = {
   deep: { label: '深海 · 单光环', bg: '#05070f' },
   seascape: { label: '海景 · Seascape（致敬杉本博司）', bg: '#0a0b0c' },
+  palis: { label: '复古科幻档案终端 · PALIS', bg: '#0a0a0a' },
 }
 
 /** 当前皮肤 id（脏数据一律回落到 deep）。 */

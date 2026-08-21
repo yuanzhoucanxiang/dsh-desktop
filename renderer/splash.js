@@ -41,10 +41,11 @@ const PHASE_P = {
   ready: [1, 1],
 }
 
-/** 皮肤：deep = 深海 · 单光环；seascape = 海景 · Seascape（致敬杉本博司） */
+/** 皮肤：deep = 深海 · 单光环；seascape = 海景 · Seascape；palis = 复古科幻档案终端 */
 const THEMES = {
-  deep: { note: '内核零修改' },
-  seascape: { note: '海景 · after Hiroshi Sugimoto' },
+  deep: { note: '内核零修改', title: 'DeepSeek Harness' },
+  seascape: { note: '海景 · after Hiroshi Sugimoto', title: 'DeepSeek Harness' },
+  palis: { note: 'PALIS // NODE 09A', title: 'DEEPSEEK HARNESS ARCHIVE' },
 }
 
 const RING_CIRC = 345.575 // 2π × r(55)，与 splash.css 的 stroke-dasharray 一致
@@ -56,6 +57,9 @@ let progress = 0
 let ceiling = 0
 let creepTimer = 0
 let exiting = false
+let flashTimer = 0
+let currentTheme = 'deep'
+let currentPhase = 'boot'
 
 /* ─────────────────────────── 入场编排启动闸门 ─────────────────────────── */
 
@@ -84,16 +88,53 @@ function armIntro() {
 
 /* ─────────────────────────── 皮肤 ─────────────────────────── */
 
-/** 应用皮肤：只切 body[data-theme] + 页脚署名，两套皮肤共用同一套 DOM 与进度数值 */
+/** palis 的打字机：JS 逐字打出标题（CSS width 动画在离屏合成下不渲染文字，已弃用） */
+let typeTimer = 0
+function typePalisTitle() {
+  const titleEl = $('title')
+  const full = THEMES.palis.title
+  if (typeTimer) clearInterval(typeTimer)
+  if (reducedMotion.matches) {
+    titleEl.textContent = full
+    return
+  }
+  titleEl.textContent = ''
+  const cursor = document.createElement('span')
+  cursor.className = 'type-cursor'
+  titleEl.appendChild(cursor)
+  let n = 0
+  typeTimer = setInterval(() => {
+    if (n >= full.length) {
+      clearInterval(typeTimer)
+      typeTimer = 0
+      cursor.remove()
+      return
+    }
+    n++
+    cursor.before(document.createTextNode(full[n - 1]))
+  }, 48)
+}
+
+/** 应用皮肤：只切 body[data-theme] + 页脚署名，三套皮肤共用同一套 DOM 与进度数值 */
 function applyTheme(id) {
   const theme = THEMES[id] ? id : 'deep'
   if (document.body.dataset.theme === theme) return
   document.body.dataset.theme = theme
+  currentTheme = theme
+  const titleEl = $('title')
+  if (theme === 'palis') {
+    typePalisTitle()
+  } else {
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = 0 }
+    titleEl.textContent = THEMES[theme].title
+  }
+  titleEl.setAttribute('aria-label', THEMES[theme].title)
   $('footerNote').textContent = THEMES[theme].note
-  paintProgress() // 换皮肤后立刻按当前进度重画（地平线/光环各归各位）
+  paintProgress() // 换皮肤后立刻按当前进度重画（弧/地平线/日志各归各位）
+  renderBootLog() // palis 的日志面板按当前状态立即重画
 }
 
-/* ─────────────────────────── 进度：一个数值，两套表达 ─────────────────────────── */
+/* ─────────────────────────── 进度：一个数值，三种表达 ─────────────────────────── */
 
 function paintProgress() {
   // 深海：光环弧长 + 弧尖光点
@@ -104,12 +145,59 @@ function paintProgress() {
   horizonLine.style.transform = `scaleX(${progress.toFixed(4)})`
 }
 
+/** PALIS 引导日志：状态行逐行输出 + 一行方括号空格进度（与全局 progress 同步） */
+const BOOT_ROWS = {
+  boot: ['SYS  INIT', 'MOUNT /dev/kernel'],
+  kernel: ['MOUNT /dev/kernel', 'LOAD AGENT RUNTIME'],
+  wait: ['LOAD AGENT RUNTIME', 'AWAIT SERVICE LINK'],
+  ready: ['AWAIT SERVICE LINK', 'LINK OK'],
+  error: ['AWAIT SERVICE LINK', 'ABORT'],
+}
+
+function renderBootLog() {
+  const el = $('bootLog')
+  if (!el) return
+  if (currentTheme !== 'palis') {
+    el.textContent = ''
+    return
+  }
+  const phase = currentPhase
+  const rows = BOOT_ROWS[phase] || BOOT_ROWS.boot
+  const html = rows.map((r, i) => {
+    const cls = phase === 'error' && i === rows.length - 1 ? 'ln-red' : 'ln-ok'
+    return `<span class="${cls}">[ ${r} ]</span>`
+  }).join('\n')
+  const ticks = Math.max(0, Math.min(20, Math.round(progress * 20)))
+  let cells = ''
+  for (let i = 0; i < 20; i++) cells += `<i class="${i < ticks ? 'on' : ''}"></i>`
+  const progCls = phase === 'error' ? 'ln-red' : phase === 'ready' ? 'ln-blue' : 'ln-dim'
+  el.innerHTML = html
+    + `\n<span class="${progCls}">[ <span class="ln-prog">${cells}</span> ] ${Math.round(progress * 100)}%</span>`
+    + '\n<span class="ln-dim">&gt; <span class="cursor"></span></span>'
+}
+
+/** 推进 PALIS 日志（每次 advance 都跟着重画，保持与全局进度同源） */
+function paintPalisLog() {
+  if (currentTheme === 'palis') renderBootLog()
+}
+
+/** 相位切换时的一次性扫描线闪烁（palis 专属；deep/seascape 保持各自的绽放） */
+function scanFlash() {
+  if (currentTheme !== 'palis') return
+  stage.classList.remove('flash')
+  void stage.offsetWidth
+  stage.classList.add('flash')
+  if (flashTimer) clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => stage.classList.remove('flash'), 420)
+}
+
 /** 唯一的进度写入口：只接受"更大的值"，从机制上保证光环不回退 */
 function advance(value) {
   const next = Math.max(progress, Math.min(1, value))
   if (next === progress) return
   progress = next
   paintProgress()
+  paintPalisLog()
 }
 
 function stopCreep() {
@@ -143,6 +231,7 @@ function resetProgress() {
   const frozen = [ringArc, ringTip, horizonLine]
   for (const el of frozen) el.style.transition = 'none'
   paintProgress()
+  renderBootLog() // palis 的引导日志也要跟着归零
   // 强制回流后恢复过渡，避免"归零"这一步被动画成倒退
   void ringArc.getBoundingClientRect()
   for (const el of frozen) el.style.transition = ''
@@ -176,6 +265,8 @@ function setVisual(phase) {
   statusRow.classList.toggle('is-error', failed)
   if (failed) stopCreep() // 错误就停在原地，不假装跑完
   if (ready || failed) bloom()
+  scanFlash() // palis：相位节点来一次扫描线闪烁（其余皮肤无感）
+  renderBootLog()
 }
 
 function renderLog(tail) {
@@ -188,6 +279,7 @@ function renderLog(tail) {
 }
 
 function renderError(info) {
+  currentPhase = 'error' // palis 引导日志要能切成 ABORT 行
   setVisual('error')
   setStatusText(PHASE_TEXT.error)
   errorBox.hidden = false
@@ -197,6 +289,7 @@ function renderError(info) {
 
 function applyStatus(s) {
   const phase = (s && s.phase) || 'boot'
+  currentPhase = phase
   let text = PHASE_TEXT[phase] || (s && s.message) || '…'
   if (phase === 'ready' && s && s.elapsedMs) {
     text = `已就绪（${(s.elapsedMs / 1000).toFixed(1)}s），正在进入工作区…`

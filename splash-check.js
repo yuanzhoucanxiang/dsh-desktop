@@ -35,7 +35,7 @@ process.on('unhandledRejection', die('unhandledRejection'))
 
 const SPLASH = path.join(__dirname, 'renderer', 'splash.html')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const THEMES = ['deep', 'seascape']
+const THEMES = ['deep', 'seascape', 'palis']
 
 function registerStubs() {
   ipcMain.handle('shell:get-state', () => ({
@@ -187,6 +187,7 @@ app.whenReady().then(async () => {
       subtitle: box('.subtitle'), status: box('.status'), footer: box('.footer'),
       whale: box('.mark-whale'), log: box('.log'), error: box('#errorBox'),
       sky: box('.sky'), sea: box('.sea'), horizon: box('.horizon'), print: box('.print'),
+      frame: box('.frame'), archive: box('.archive'),
       cardCenter: card.left + card.width / 2,
       pe: { glow: pe('.glow'), print: pe('.print'), ring: pe('.ring') },
     }
@@ -222,8 +223,15 @@ app.whenReady().then(async () => {
       check(`[${label}] no scroll overflow`, m.sw <= m.vw && m.sh <= m.vh, `scroll=${m.sw}x${m.sh}`)
       check(`[${label}] card horizontally centered`, Math.abs(m.cardCenter - m.vw / 2) < 1.5,
         `delta=${(m.cardCenter - m.vw / 2).toFixed(2)}px`)
-      check(`[${label}] footer below content`, m.footer.t > m.card.b,
-        `footerTop=${m.footer.t.toFixed(1)} cardBottom=${m.card.b.toFixed(1)}`)
+      // palis 的页脚是贴屏幕底的"状态条"（绝对定位），本来就位于版心之下 ——
+      // 断言换成"不压到版心内容"，而不是机械比较顶部坐标
+      if (theme === 'palis') {
+        check(`[${label}] status bar clears the card content`, m.footer.t > m.card.b || m.footer.b < m.card.t,
+          `footer=${m.footer.t.toFixed(0)}-${m.footer.b.toFixed(0)} card=${m.card.t.toFixed(0)}-${m.card.b.toFixed(0)}`)
+      } else {
+        check(`[${label}] footer below content`, m.footer.t > m.card.b,
+          `footerTop=${m.footer.t.toFixed(1)} cardBottom=${m.card.b.toFixed(1)}`)
+      }
       check(`[${label}] mark is square & sane`, Math.abs(m.mark.w - m.mark.h) < 1.5 && m.mark.w >= minMark,
         `${m.mark.w.toFixed(1)}x${m.mark.h.toFixed(1)}`)
       check(`[${label}] whale centered in mark`,
@@ -324,8 +332,12 @@ app.whenReady().then(async () => {
       check(`[${label}] error panel inside viewport`,
         m.error.l >= -0.5 && m.error.t >= -0.5 && m.error.r <= m.vw + 0.5 && m.error.b <= m.vh + 0.5,
         `l=${m.error.l.toFixed(1)} t=${m.error.t.toFixed(1)} r=${m.error.r.toFixed(1)} b=${m.error.b.toFixed(1)}`)
-      check(`[${label}] error panel clears footer`, m.error.b <= m.footer.t,
-        `errorBottom=${m.error.b.toFixed(1)} footerTop=${m.footer.t.toFixed(1)}`)
+      // palis 的 footer 是贴底状态条：判断"错误面板没压到状态条"（footer.b 在面板上方，或面板在 footer 下方皆可）
+      const clearsFooter = theme === 'palis'
+        ? (m.error.b <= m.footer.t || m.footer.b <= m.error.t)
+        : m.error.b <= m.footer.t
+      check(`[${label}] error panel clears footer`, clearsFooter,
+        `errorBottom=${m.error.b.toFixed(1)} footerTop=${m.footer.t.toFixed(1)} footerBottom=${m.footer.b.toFixed(1)}`)
       check(`[${label}] log tail visible inside panel`,
         !!m.log && m.log.h > 0 && m.log.b <= m.error.b + 0.5,
         m.log ? `logBottom=${m.log.b.toFixed(1)}` : 'log missing')
@@ -336,13 +348,44 @@ app.whenReady().then(async () => {
     if (theme === 'deep') {
       const frozen = await arcOffset()
       check(`[${label}] arc freezes instead of faking completion`, frozen > 2, `offset=${frozen.toFixed(1)}`)
-    } else {
+    } else if (theme === 'seascape') {
       const frozen = await horizonScale()
       check(`[${label}] horizon freezes instead of faking completion`, frozen < 0.97, `scaleX=${frozen.toFixed(3)}`)
       const printOpacity = await exec(`parseFloat(getComputedStyle(document.querySelector('.print')).opacity)`)
       check(`[${label}] print recedes behind the plate`, printOpacity < 0.9, `opacity=${printOpacity}`)
+    } else { // palis
+      const bootText = await exec(`document.getElementById('bootLog').textContent`)
+      check(`[${label}] boot log shows ABORT and freezes below 100%`,
+        /ABORT/.test(bootText) && !/100%/.test(bootText), bootText.replace(/\s+/g, ' ').slice(0, 80))
     }
   }
+
+  /* ── 6b. palis 专属断言（档案终端的概念约束） ─────────────────────────────── */
+  await setTheme('palis')
+  win.setSize(1360, 920)
+  await sleep(500)
+  await resetViaRetry()
+  await sendPhase('kernel')
+  let palis = await measure()
+  check('palis: archive frame present', palis.frame !== null, palis.frame ? `${palis.frame.w}x${palis.frame.h}` : 'missing')
+  if (palis.frame) {
+    const radius = await exec(
+      `[getComputedStyle(document.querySelector('.frame')).borderRadius,
+        getComputedStyle(document.querySelector('.btn')).borderRadius].join('|')`)
+    check('palis: no rounded corners anywhere', radius === '0px|0px', radius)
+    const font = await exec(`getComputedStyle(document.querySelector('.title')).fontFamily`)
+    check('palis: monospace type', /Mono|Consolas|Courier/i.test(font), font.slice(0, 40))
+  }
+  const boot1 = await exec(`document.getElementById('bootLog').textContent`)
+  await sendPhase('ready', { elapsedMs: 1840 })
+  const boot2 = await exec(`document.getElementById('bootLog').textContent`)
+  check('palis: boot log advances with the phase',
+    /LINK OK/.test(boot2) && !/LINK OK/.test(boot1), boot2.replace(/\s+/g, ' ').slice(0, 70))
+  check('palis: footer credits the archive', /PALIS/.test(await exec(`document.getElementById('footerNote').textContent`)))
+  palis = await measure()
+  check('palis: card clears the frame (no overlap)',
+    palis.card.t > (palis.frame.t + palis.frame.h - 2) || palis.card.b < palis.frame.t + 2,
+    `card t=${palis.card.t.toFixed(0)} frame b=${(palis.frame.t + palis.frame.h).toFixed(0)}`)
 
   /* ── 7. 恢复入口：点"重新启动" ──────────────────────────────────────────── */
   const restarted = new Promise((resolve) => {
@@ -361,8 +404,17 @@ app.whenReady().then(async () => {
     afterRetry.error ? `h=${afterRetry.error.h}` : 'hidden')
   const retryCls = await exec(`document.getElementById('mark').className`)
   check('[retry] error styling cleared', !/is-error/.test(retryCls), retryCls)
-  const retryScale = await horizonScale()
-  check('[retry] progress restarts from the beginning', retryScale < 0.2, `scaleX=${retryScale.toFixed(3)}`)
+  // 深海的环、海景的地平线、palis 的引导日志 —— 按当前皮肤查各自的"归零"表达
+  const retryTheme = await exec(`document.body.dataset.theme`)
+  if (retryTheme === 'palis') {
+    const retryBoot = await exec(`document.getElementById('bootLog').textContent`)
+    check('[retry] progress restarts from the beginning',
+      /[0-7]%/.test(retryBoot) && !/ABORT/.test(retryBoot),
+      retryBoot.replace(/\s+/g, ' ').slice(0, 70))
+  } else {
+    const retryScale = await horizonScale()
+    check('[retry] progress restarts from the beginning', retryScale < 0.2, `scaleX=${retryScale.toFixed(3)}`)
+  }
 
   /* ── 8. 淡出交接握手 ────────────────────────────────────────────────────── */
   const acked = await new Promise((resolve) => {

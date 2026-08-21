@@ -553,6 +553,308 @@ body[data-theme="seascape"] .stage.is-leaving .horizon-line {
   transition: opacity .3s ease .12s;
 }
 
+/* ═══════════════ 主题三 · 复古科幻档案终端 PALIS ═══════════════
+   模拟恐怖 × 磁带未来主义 × SCP 档案局美学：
+     · 黑白单色高反差；强调色只有系统蓝（进度/选中）与警示红（警告/危险）
+     · 全等宽字体；英文全大写 + 大字距；直角、无圆角、无投影
+     · CRT 质感：扫描线 overlay + feTurbulence 细噪点 + 轻微暗角
+   动效纪律：一律 linear / steps()，没有平滑缓动。
+   实现纪律：扫描线与噪点只用 repeating-linear-gradient 与内联 SVG，
+   不用图片；所有颜色走 :root 变量，可一键换色。
+   ════════════════════════════════════════════════════════════════ */
+
+body[data-theme="palis"] {
+  --bg-0: #0a0a0a;
+  --bg-1: #141414;
+  --bg-2: #1e1e1e;
+  --fg-0: #e8e8e8;
+  --fg-1: #8a8a8a;
+  --blue: #2b5fd9;
+  --red: #c8322b;
+  --border: #3a3a3a;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas,
+    "Courier New", monospace;
+  --radius: 0px;
+}
+
+/* 归档底：近黑 + 极轻微暗角；装饰层只有 .archive（CRT 叠加 + 窗框） */
+body[data-theme="palis"] .glow,
+body[data-theme="palis"] .print { display: none; }
+body[data-theme="palis"] .ring { display: none; }
+
+body[data-theme="palis"] .stage {
+  padding: 0;
+  background: var(--bg-0);
+}
+
+/* CRT 层：横向扫描线 + feTurbulence 细噪点（全部程序生成，无图片） */
+.archive { display: none; }
+
+body[data-theme="palis"] .archive {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+body[data-theme="palis"] .crt {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(255, 255, 255, .028) 0px, rgba(255, 255, 255, .028) 1px,
+      transparent 1px, transparent 3px),
+    radial-gradient(ellipse 96% 88% at 50% 46%, transparent 58%, rgba(0, 0, 0, .42) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: .06;
+}
+
+/* 档案窗框：直角细边框 + 标题栏（低饱和蓝白），内嵌引导日志 */
+body[data-theme="palis"] .frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(560px, 84vw);
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+body[data-theme="palis"] .frame-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #3a4a6b, #2a3550);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: #d7dce8;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+body[data-theme="palis"] .fh-no { color: #93a0bf; }
+
+body[data-theme="palis"] .boot-log {
+  margin: 0;
+  min-height: 128px;
+  max-height: 30vh;
+  overflow: hidden;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.9;
+  color: var(--fg-0);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+body[data-theme="palis"] .boot-log .ln-ok   { color: var(--fg-0); }
+body[data-theme="palis"] .boot-log .ln-dim  { color: var(--fg-1); }
+body[data-theme="palis"] .boot-log .ln-blue { color: var(--blue); }
+body[data-theme="palis"] .boot-log .ln-red  { color: var(--red); }
+
+/* 行式进度：方形括号内的空格进度（steps() 前进，一步一格，不圆滑） */
+body[data-theme="palis"] .boot-log .ln-prog {
+  display: inline-block;
+  width: 20ch;
+  font-size: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+body[data-theme="palis"] .boot-log .ln-prog i {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  font-size: 11px;
+  background: var(--bg-2);
+}
+body[data-theme="palis"] .boot-log .ln-prog i.on { background: var(--blue); }
+
+/* 闪烁块光标（终端感） */
+body[data-theme="palis"] .boot-log .cursor {
+  display: inline-block;
+  width: .6em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--fg-0);
+  animation: palisBlink 1s steps(1, end) infinite;
+}
+@keyframes palisBlink { 50% { opacity: 0; } }
+
+/* 版心：绝对定位在窗框下方（避免与档案面板挤在同一区域） */
+body[data-theme="palis"] .card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(46px, 7.5vh, 64px);
+  width: auto;
+  padding: 0 clamp(20px, 5vw, 72px);
+  text-align: center;
+  align-items: center;
+}
+
+/* 底部状态条：贴屏幕底的细条（盖过版心，与其上内容不重叠） */
+body[data-theme="palis"] .footer {
+  bottom: 10px;
+  border-top: 1px solid var(--border);
+  width: min(420px, 86vw);
+  padding-top: 6px;
+  margin: 0 auto;
+  background: var(--bg-0);
+}
+
+body[data-theme="palis"] .mark {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 12px;
+  border: 1px solid var(--fg-1);
+  background: var(--bg-2);
+}
+body[data-theme="palis"] .mark-whale {
+  width: 74%;
+  height: 74%;
+  opacity: 1;
+  filter: none;
+  animation: none;
+}
+body[data-theme="palis"] .mark.bloom::after { display: none; }
+
+/* 字标：等宽大写 + 打字机逐字出场（由 JS 驱动，见 splash.js 的 typePalisTitle；
+   这里只负责字体/颜色，不再用 CSS width 动画 —— 那套在离屏合成下不渲染文字） */
+body[data-theme="palis"] .title {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: clamp(15px, 2.4vh, 19px);
+  font-weight: 500;
+  letter-spacing: .22em;
+  text-indent: .22em;
+  text-transform: uppercase;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--fg-0);
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* 光标：JS 打字期间挂在末尾的方块 */
+body[data-theme="palis"] .title .type-cursor {
+  display: inline-block;
+  width: .6em;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.1em;
+  background: var(--fg-0);
+  animation: palisBlink 1s steps(1, end) infinite;
+}
+
+body[data-theme="palis"] .subtitle {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .34em;
+  text-indent: .34em;
+  text-transform: uppercase;
+  color: var(--fg-1);
+}
+
+body[data-theme="palis"] .status {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+  color: var(--fg-1);
+}
+body[data-theme="palis"] .status.is-ready { color: var(--fg-0); }
+body[data-theme="palis"] .status.is-error { color: var(--red); }
+
+body[data-theme="palis"] .footer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .18em;
+  color: var(--fg-1);
+  text-transform: uppercase;
+}
+
+/* 就绪/失败：日志面板边线换色（蓝=READY / 红=ABORT），不发散、不发光 */
+body[data-theme="palis"] .stage.ready .frame { border-color: var(--blue); }
+body[data-theme="palis"] .stage.ready .frame-head { background: linear-gradient(180deg, #26407e, #1d325f); }
+body[data-theme="palis"] .stage.failed .frame { border-color: var(--red); }
+body[data-theme="palis"] .stage.failed .frame-head { background: linear-gradient(180deg, #5e2622, #451d1a); }
+
+/* 发送/切换时的一次扫描线闪烁：覆盖层瞬间拉满亮度再落下（steps，无缓动） */
+body[data-theme="palis"] .stage.flash .crt {
+  animation: palisScanFlash .34s steps(4, end) both;
+}
+@keyframes palisScanFlash {
+  0%   { background-color: transparent; }
+  50%  { background-color: rgba(232, 232, 232, .07); }
+  100% { background-color: transparent; }
+}
+
+/* 错误面板：PALIS 封条 —— 直角、细红边、等宽、大写 kicker */
+body[data-theme="palis"] .error {
+  background: var(--bg-1);
+  border: 1px solid var(--red);
+  box-shadow: none;
+  font-family: var(--font-mono);
+}
+body[data-theme="palis"] .error-kicker {
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+body[data-theme="palis"] .error-text { color: var(--fg-0); }
+body[data-theme="palis"] .log {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  color: var(--fg-1);
+}
+body[data-theme="palis"] .btn {
+  font-family: var(--font-mono);
+  border-radius: 0;
+  border: 1px solid var(--fg-0);
+  background: var(--bg-0);
+  color: var(--fg-0);
+  box-shadow: none;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+body[data-theme="palis"] .btn:hover {
+  background: var(--fg-0);
+  color: var(--bg-0);
+  border-color: var(--fg-0);
+}
+body[data-theme="palis"] .btn.ghost {
+  background: var(--bg-0);
+  border-color: var(--border);
+  color: var(--fg-1);
+}
+body[data-theme="palis"] .btn.ghost:hover {
+  background: var(--fg-0);
+  color: var(--bg-0);
+  border-color: var(--fg-0);
+}
+body[data-theme="palis"] .btn:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+
+/* 退场：CRT 关机 —— 全屏线性收缩成一条亮线再熄灭（steps 无缓动） */
+body[data-theme="palis"] .stage.is-leaving { opacity: 1; }
+body[data-theme="palis"] .stage.is-leaving .card { opacity: 0; transition: opacity .2s steps(2, end); transform: none; }
+body[data-theme="palis"] .stage.is-leaving .archive {
+  animation: palisPowerOff .42s steps(6, end) both;
+}
+@keyframes palisPowerOff {
+  0%   { clip-path: inset(0); }
+  70%  { clip-path: inset(47% 0); }
+  100% { clip-path: inset(50% 0); opacity: 0; }
+}
+
 /* ─────────────────────────────── 错误面板（仅异常时出现） ─────────────────────────────── */
 
 .error {
@@ -697,6 +999,11 @@ body:not(.is-live) .footer { animation-play-state: paused !important; }
   }
   body[data-theme="seascape"] .card { bottom: clamp(40px, 6.5vh, 56px); }
   .halo { height: 26vh; }
+  /* 矮窗：档案面板收小，版心更贴底 */
+  body[data-theme="palis"] .frame { width: min(460px, 84vw); }
+  body[data-theme="palis"] .boot-log { min-height: 92px; max-height: 22vh; }
+  body[data-theme="palis"] .mark { width: 64px; height: 64px; margin-bottom: 10px; }
+  body[data-theme="palis"] .card { bottom: clamp(38px, 6vh, 50px); }
 }
 
 /* 用户偏好减少动态效果：装饰动画全关，只留即时的状态变化 */
@@ -712,4 +1019,7 @@ body:not(.is-live) .footer { animation-play-state: paused !important; }
   body[data-theme="seascape"] .halo { opacity: .85; }
   body[data-theme="seascape"] .swell { transform: none; }
   body[data-theme="seascape"] .stage.is-leaving { opacity: 0; }
+  body[data-theme="palis"] .title { width: auto; animation: none; }
+  body[data-theme="palis"] .boot-log .cursor { animation: none; }
+  body[data-theme="palis"] .stage.is-leaving { opacity: 0; }
 }

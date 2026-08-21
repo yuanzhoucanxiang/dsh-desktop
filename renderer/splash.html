@@ -7,10 +7,12 @@
   <link rel="stylesheet" href="splash.css" />
 </head>
 <body data-theme="deep">
-  <!-- 启动画面 · 两套皮肤共用一套 DOM（body[data-theme] 切换）：
+  <!-- 启动画面 · 三套皮肤共用一套 DOM（body[data-theme] 切换）：
        deep     = 深海 · 单光环：进度是绕徽标的一道弧
        seascape = 海景 · Seascape（致敬杉本博司）：天与海各占一半，
-                  进度是那条从正中向两侧铺开的地平线 -->
+                  进度是那条从正中向两侧铺开的地平线
+       palis    = 复古科幻档案终端（PALIS）：黑白高反差 + CRT 扫描线，
+                  进度在引导日志面板里逐行推进 -->
   <div id="stage" class="stage">
     <!-- 深海：徽标背后一团柔光 -->
     <div class="glow" aria-hidden="true"></div>
@@ -23,6 +25,15 @@
       <div class="halo"></div>
       <div class="horizon"><i id="horizonLine" class="horizon-line"></i></div>
       <div class="grain"></div>
+    </div>
+
+    <!-- 复古科幻档案终端 PALIS：扫描线/噪点覆盖 + 档案窗框 + 引导日志 -->
+    <div class="archive" aria-hidden="true">
+      <div class="crt"></div>
+      <div class="frame">
+        <div class="frame-head"><span class="fh-id">PALIS ARCHIVE</span><span class="fh-no">NODE 09A // 已隔离文档</span></div>
+        <pre id="bootLog" class="boot-log" aria-live="polite"></pre>
+      </div>
     </div>
 
     <main class="card">

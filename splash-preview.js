@@ -80,7 +80,7 @@ app.whenReady().then(async () => {
     skipTaskbar: CHECK,
     focusable: !CHECK,
     title: '启动画面预览 · DeepSeek Harness Desktop',
-    backgroundColor: THEME === 'seascape' ? '#0a0b0c' : '#05070f',
+    backgroundColor: THEME === 'seascape' ? '#0a0b0c' : THEME === 'palis' ? '#0a0a0a' : '#05070f',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

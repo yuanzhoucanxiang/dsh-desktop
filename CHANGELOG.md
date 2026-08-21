@@ -2,6 +2,26 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
+## [Unreleased]
+
+### 新增
+
+- **第三套皮肤「复古科幻档案终端 · PALIS」**（托盘 →「皮肤」切换，模拟恐怖 × 磁带未来主义 ×
+  SCP 档案局美学）：
+  - 黑白单色高反差（`#0a0a0a` 系）+ 仅两种强调色：系统蓝（进度/选中）、警示红（警告/ABORT）
+  - 全站等宽（JetBrains Mono 系）+ 英文大写大字距 + 直角（radius=0）+ 无投影
+  - CRT 质感：`repeating-linear-gradient` 扫描线 + `feTurbulence` 细噪点（feColorMatrix 压成真灰）+ 轻微暗角
+  - **进度 = 档案窗框里的引导日志**：逐行 `[ SYS INIT ] → [ MOUNT /dev/kernel ] → … → [ LINK OK ]`，
+    外加 20 格行式进度 `[ ▓▓░░… ] 42%`；失败最后一行变红 `[ ABORT ]` 且进度停在 100% 以下
+  - 字标用 **JS 打字机**逐字打出 `DEEPSEEK HARNESS ARCHIVE`（尾随闪烁方块光标）；
+    动效一律 `linear` / `steps()`，退场是"CRT 关机"（屏幕收成一条亮线熄灭）
+  - 审阅侧边栏同步换肤：仿 Win95 标题栏、列表 hover 扫描线高亮、选中项左侧白竖条、
+    按钮 hover 反色；断连浮层同套
+  - 完整设计文档与内核侧参考 CSS（[USER] / [PALIS CLERK] 气泡）见
+    [`docs/palis-theme.md`](docs/palis-theme.md)
+- **回归扩到 231 项**：新增 PALIS 概念断言（直角/等宽/引导日志随相位推进/错误态 ABORT、
+  进度冻结/状态条不与版心重叠）与侧边栏 palis 皮肤断言（近黑底/直角/等宽/不外泄内核页面）
+
 ## [0.1.17] - 2026-08-21
 
 ### 修复（根因）：内核运行时不再装入安装目录，更新可直接覆盖

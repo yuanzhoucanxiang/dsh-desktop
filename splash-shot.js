@@ -11,7 +11,7 @@ const { pathToFileURL } = require('node:url')
 
 const ALL_STATES = process.argv.includes('--states')
 const only = (process.argv.find((a) => a.startsWith('--theme=')) || '').split('=')[1]
-const THEMES = only ? [only] : ['deep', 'seascape']
+const THEMES = only ? [only] : ['deep', 'seascape', 'palis']
 const SPLASH = path.join(__dirname, 'renderer', 'splash.html')
 const OUT = path.join(__dirname, 'build')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -49,7 +49,7 @@ app.whenReady().then(async () => {
       y: -20000,
       skipTaskbar: true,
       focusable: false,
-      backgroundColor: theme === 'seascape' ? '#0a0b0c' : '#05070f',
+      backgroundColor: theme === 'seascape' ? '#0a0b0c' : theme === 'palis' ? '#0a0a0a' : '#05070f',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,

@@ -67,12 +67,14 @@ contextBridge.exposeInMainWorld('dshShell', {
  * 绝不外泄到内核页面）。因此：
  *   deep（默认）    = 一个字都不覆盖，侧边栏继续跟随内核主题（原行为）
  *   seascape        = 覆盖成单色银盐，和海景启动画面同一套调子
+ *   palis           = 复古科幻档案终端：黑白高反差 + 蓝/红双强调色 + 全等宽 + 直角
  */
+const SKINS = ['deep', 'seascape', 'palis']
 const SKIN_ATTR = 'dshSkin'
 let pendingSkin = null
 
 function applySkin(id) {
-  const skin = id === 'seascape' ? 'seascape' : 'deep'
+  const skin = SKINS.includes(id) ? id : 'deep'
   pendingSkin = skin
   const el = document.documentElement
   if (el) {
@@ -113,6 +115,129 @@ const SKIN_TOKENS = `
     --dsw-alias-state-business-primary: #b0bcc3;
     --dsw-alias-state-business-tertiary: rgba(176, 188, 195, .13);
   }
+  /* PALIS：复古科幻档案终端 —— 黑白高反差 + 蓝/红双强调色。
+     这里只覆盖令牌，字体/直角/扫描线等结构性样式在下方 PALIS_CHROME。 */
+  html[data-dsh-skin="palis"] #dsh-review-root,
+  html[data-dsh-skin="palis"] #dsh-shell-kernel-overlay {
+    --dsw-alias-bg-base: #0a0a0a;
+    --dsw-alias-bg-layer-1: #141414;
+    --dsw-alias-label-primary: #e8e8e8;
+    --dsw-alias-label-secondary: #8a8a8a;
+    --dsw-alias-label-tertiary: #6e6e6e;
+    --dsw-alias-label-dimmed: #555555;
+    --dsw-alias-label-primary-foreground: #0a0a0a;
+    --dsw-alias-border-l1: rgba(232, 232, 232, .14);
+    --dsw-alias-border-l2: rgba(232, 232, 232, .30);
+    --dsw-alias-interactive-bg-hover: rgba(232, 232, 232, .07);
+    --dsw-alias-interactive-bg-hover-accent: rgba(43, 95, 217, .22);
+    --dsw-alias-brand-primary: #2b5fd9;
+    --dsw-alias-button-primary-fill: #e8e8e8;
+    --dsw-alias-state-success-primary: #e8e8e8;
+    --dsw-alias-state-success-secondary: rgba(232, 232, 232, .10);
+    --dsw-alias-state-success-tertiary: rgba(232, 232, 232, .06);
+    --dsw-alias-state-error-primary: #c8322b;
+    --dsw-alias-state-error-secondary: rgba(200, 50, 43, .14);
+    --dsw-alias-state-warn-primary: #c8322b;
+    --dsw-alias-state-warn-secondary: rgba(200, 50, 43, .10);
+    --dsw-alias-state-business-primary: #2b5fd9;
+    --dsw-alias-state-business-tertiary: rgba(43, 95, 217, .14);
+  }
+`
+
+/* PALIS 的结构性样式：全等宽、直角、Win95 式标题栏、扫描线高亮、选中白竖条。
+   作用域仍限制在外壳自己的根元素内，不碰内核页面。 */
+const PALIS_CHROME = `
+  html[data-dsh-skin="palis"] #dsh-review-root {
+    font-family: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-panel {
+    border-radius: 0;
+    border-left: 1px solid #3a3a3a;
+    border-top: 1px solid #3a3a3a;
+    box-shadow: none;
+    /* 细扫描线：只在面板上（repeating-linear-gradient，无图片） */
+    background-image:
+      repeating-linear-gradient(0deg, rgba(232,232,232,.03) 0px, rgba(232,232,232,.03) 1px, transparent 1px, transparent 3px);
+    background-color: #0a0a0a;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-head {
+    border-bottom: 1px solid #3a3a3a;
+    /* 仿 Win95 标题栏：低饱和蓝白，大写字距 */
+    background: linear-gradient(180deg, #3a4a6b, #2a3550);
+  }
+  html[data-dsh-skin="palis"] #dsh-review-title {
+    font-family: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: #d7dce8;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-head button { border-radius: 0; }
+  html[data-dsh-skin="palis"] #dsh-review-mode button {
+    font-family: inherit;
+    border-radius: 0;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-mode button.dsh-active { color: #e8e8e8; }
+  html[data-dsh-skin="palis"] #dsh-review-ws {
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  /* 列表项：hover 扫描线高亮；选中项左侧白色竖条（直角的世界里用条代替圆点） */
+  html[data-dsh-skin="palis"] #dsh-review-item-row,
+  html[data-dsh-skin="palis"] #dsh-review-fhead {
+    border-radius: 0;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-item-row:hover,
+  html[data-dsh-skin="palis"] #dsh-review-fhead:hover {
+    background-image: repeating-linear-gradient(0deg, rgba(43,95,217,.14) 0px, rgba(43,95,217,.14) 1px, transparent 1px, transparent 3px);
+  }
+  html[data-dsh-skin="palis"] #dsh-review-item-row.dsh-selected {
+    border-left: 2px solid #e8e8e8;
+    padding-left: 12px;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-badge,
+  html[data-dsh-skin="palis"] #dsh-review-fcount,
+  html[data-dsh-skin="palis"] #dsh-review-cnote,
+  html[data-dsh-skin="palis"] #dsh-review-sect,
+  html[data-dsh-skin="palis"] #dsh-review-commit .c-meta,
+  html[data-dsh-skin="palis"] #dsh-review-foot { border-radius: 0; }
+  html[data-dsh-skin="palis"] #dsh-review-path,
+  html[data-dsh-skin="palis"] #dsh-review-diff,
+  html[data-dsh-skin="palis"] #dsh-review-cdiff { font-family: inherit; }
+  html[data-dsh-skin="palis"] #dsh-review-hunkbar,
+  html[data-dsh-skin="palis"] #dsh-review-hunkbar button,
+  html[data-dsh-skin="palis"] #dsh-review-commit textarea,
+  html[data-dsh-skin="palis"] #dsh-review-commit button,
+  html[data-dsh-skin="palis"] #dsh-review-act,
+  html[data-dsh-skin="palis"] #dsh-review-cops button,
+  html[data-dsh-skin="palis"] #dsh-review-vhead button { border-radius: 0; }
+  /* 底部状态条：PALIS / 09A 已连接 */
+  html[data-dsh-skin="palis"] #dsh-review-foot {
+    border-top: 1px solid #3a3a3a;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  /* 按钮：直角细边黑底白字，hover 反色（白底黑字） */
+  html[data-dsh-skin="palis"] #dsh-review-commit button.primary {
+    border: 1px solid #e8e8e8;
+    background: #0a0a0a;
+    color: #e8e8e8;
+  }
+  html[data-dsh-skin="palis"] #dsh-review-commit button.primary:hover {
+    background: #e8e8e8;
+    color: #0a0a0a;
+  }
+  /* 断连浮层：直角、细边、警示红点 */
+  html[data-dsh-skin="palis"] #dsh-shell-kernel-overlay {
+    border-radius: 0;
+    font-family: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  html[data-dsh-skin="palis"] #dsh-shell-kernel-overlay button { border-radius: 0; }
 `
 
 /* ── 内核断连浮层（仅注入到内核页面，splash 自己渲染状态） ────────────────── */
@@ -177,7 +302,7 @@ function injectReviewSidebar() {
   const style = document.createElement('style')
   // 主题：直接复用内核页面的 --dsw-alias-* 设计变量，自动跟随明暗主题；
   // 海景皮肤下由 SKIN_TOKENS 把这些令牌在外壳根元素上重定义成单色银盐。
-  style.textContent = SKIN_TOKENS + `
+  style.textContent = SKIN_TOKENS + PALIS_CHROME + `
     #${S}-root,#${S}-root *{box-sizing:border-box;margin:0;padding:0;}
     #${S}-root{font:13px/1.5 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
       color:var(--dsw-alias-label-primary,#e8e6f2);}

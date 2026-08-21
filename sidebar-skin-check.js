@@ -132,6 +132,20 @@ app.whenReady().then(async () => {
     `${kernelBefore.bg}/${kernelBefore.color} → ${sea.kernel.bg}/${sea.kernel.color}`)
   check('no leak: kernel page background unchanged', sea.body === deep.body, `${deep.body} → ${sea.body}`)
 
+  /* ── 2b. palis 皮肤：黑白高反差 + 直角 + 等宽，内核页面不受影响 ─────────── */
+  await setTheme('palis')
+  const pal = await probe()
+  check('palis skin marked on <html>', pal.skin === 'palis', String(pal.skin))
+  check('palis: panel bg is near-black', rgb(pal.panel.bg).join(',') === '10,10,10', pal.panel.bg)
+  check('palis: panel corners are square',
+    (await exec(`getComputedStyle(document.getElementById('dsh-review-panel')).borderRadius`)) === '0px')
+  check('palis: monospace type',
+    /Mono|Consolas|Courier/i.test(await exec(`getComputedStyle(document.getElementById('dsh-review-root')).fontFamily`)))
+  check('no leak: kernel-owned element unchanged under palis',
+    pal.kernel.bg === kernelBefore.bg && pal.kernel.color === kernelBefore.color,
+    `${kernelBefore.bg}/${kernelBefore.color} → ${pal.kernel.bg}/${pal.kernel.color}`)
+  await setTheme('seascape')
+
   /* ── 3. 断连浮层跟随皮肤 ────────────────────────────────────────────────── */
   win.webContents.send('shell:kernel-status', { alive: false, message: '测试用断连' })
   await sleep(400)
