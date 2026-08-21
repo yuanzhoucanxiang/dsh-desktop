@@ -10,7 +10,10 @@ Set-Location $proj
 
 $owner = 'yuanzhoucanxiang'
 $repo = 'dsh-desktop'
-$ver = (Get-Content "$proj\package.json" | ConvertFrom-Json).version
+# Read the version with node, NEVER with PowerShell's ConvertFrom-Json:
+# PS 5.1 parses package.json (non-ASCII description) as ANSI/GBK -> invalid JSON
+# (same pitfall documented in build.ps1; bit the release flow at v0.1.20).
+$ver = (& node -p "require('./package.json').version").Trim()
 $tag = "v$ver"
 $exe = "dsh-desktop-$ver-setup.exe"
 
