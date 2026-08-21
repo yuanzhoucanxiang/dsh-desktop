@@ -38,6 +38,12 @@ const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起�
 const UI_SMOKE = process.argv.includes('--ui-smoke') // UI 冒烟：真实窗口验证侧边栏注入/开关/拖拽/查看器
 const DEV = process.argv.includes('--dev')
 
+// 调试口：DSH_DESKTOP_USER_DATA 指定独立数据目录——绕开单实例锁（锁按 userData 分桶），
+// 可在用户应用运行时起第二个隔离实例做 E2E 验证，不碰真实设置/日志。
+if (process.env.DSH_DESKTOP_USER_DATA) {
+  try { app.setPath('userData', process.env.DSH_DESKTOP_USER_DATA) } catch {}
+}
+
 const APP_NAME = 'DeepSeek Harness Desktop'
 const SPLASH_PATH = path.join(__dirname, 'renderer', 'splash.html')
 const SETTINGS_PATH = path.join(__dirname, 'renderer', 'settings.html')
@@ -2223,8 +2229,46 @@ if (!gotLock) {
     } catch (err) {
       log(`plugin inspect failed: ${err && err.message ? err.message : err}`)
     }
-    // 调试口：DSH_DESKTOP_SETTINGS_PANEL=1 启动时自动打开设置面板（验证 UI 用）
+    // 调试口：DSH_DESKTOP_SETTINGS_PANEL=1 启动时自动打开设置面板（验证 UI 用）；
+    // DSH_DESKTOP_SETTINGS_SHOT=<目录> 再补两张截图（主窗=内核页左下角入口、面板页）后自动退出，
+    // 供 E2E 离线核对——应用进程内 capturePage，无需外部截屏工具。
     if (process.env.DSH_DESKTOP_SETTINGS_PANEL === '1') setTimeout(() => openSettingsPanel(process.env.DSH_DESKTOP_SETTINGS_TAB), 3500)
+    if (process.env.DSH_DESKTOP_SETTINGS_SHOT) {
+      const dir = process.env.DSH_DESKTOP_SETTINGS_SHOT
+      setTimeout(async () => {
+        try {
+          fs.mkdirSync(dir, { recursive: true })
+          const shot = async (w, name) => {
+            if (!w || w.isDestroyed()) return
+            try { w.show(); w.focus() } catch {}
+            await sleep(500)
+            // UnknownVizError：合成器表面偶发不可用（本机硬件加速下见过），重试三次
+            for (let i = 0; i < 3; i++) {
+              try {
+                const img = await w.webContents.capturePage()
+                fs.writeFileSync(path.join(dir, name), img.toPNG())
+                log(`E2E shot saved: ${name}`)
+                return
+              } catch {
+                await sleep(900)
+              }
+            }
+            log(`E2E shot failed after retries: ${name}`)
+          }
+          await sleep(2500) // 等面板数据与内核页注入就位
+          if (settingsWin && !settingsWin.isDestroyed() && process.env.DSH_DESKTOP_SETTINGS_TAB === 'update') {
+            try { await settingsWin.webContents.executeJavaScript('document.getElementById("btn-check").click()', true) } catch {}
+            await sleep(1200)
+          }
+          await shot(settingsWin, 'settings-panel.png')
+          await shot(win, 'main-window.png')
+        } catch (err) {
+          log(`E2E shot failed: ${err.message}`)
+        } finally {
+          if (process.env.DSH_DESKTOP_E2E_QUIT === '1') { state.quitting = true; app.quit() }
+        }
+      }, 9000)
+    }
     startTurnWatcher() // 回合完成通知（失焦才提醒；无审阅流时自动静默）
     // 首次启动就带 dsh:// 参数时也认（Windows 从浏览器点链接会走这里）
     const bootLink = process.argv.find((a) => typeof a === 'string' && /^dsh:/i.test(a))
