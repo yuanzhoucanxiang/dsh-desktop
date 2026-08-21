@@ -21,6 +21,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const CLIENT = path.join(__dirname, 'plugin', 'dialog-optimize', 'client.js')
+const PALIS_CLIENT = path.join(__dirname, 'plugin', 'palis-theme', 'client.js')
 const argv = process.argv.slice(2)
 const INSTALLED = argv.includes('--installed')
 const explicit = (() => {
@@ -112,10 +113,18 @@ if (!fs.existsSync(root)) {
 
 const src = fs.readFileSync(CLIENT, 'utf8')
 const { hashed, attrs, selfWritten } = extractSelectors(src)
-const needles = [...hashed, ...attrs]
+// palis-theme 的 client 用到的内核语义属性也纳入监控（它只用 data 属性，不依赖 hash 类名）
+let palisAttrs = []
+if (fs.existsSync(PALIS_CLIENT)) {
+  const src2 = fs.readFileSync(PALIS_CLIENT, 'utf8')
+  const e2 = extractSelectors(src2)
+  palisAttrs = e2.attrs.filter((a) => !attrs.includes(a))
+}
+const needles = [...hashed, ...attrs, ...palisAttrs]
 console.log(`运行时：${root}`)
-console.log(`从 client.js 抽出 ${hashed.length} 个 hash 类名 + ${attrs.length} 个 data 属性`
+console.log(`从 dialog-optimize 抽出 ${hashed.length} 个 hash 类名 + ${attrs.length} 个 data 属性`
   + `（另有 ${selfWritten.length} 个插件自己写的属性已排除：${selfWritten.join(', ') || '无'}）`)
+if (palisAttrs.length) console.log(`从 palis-theme 抽出 ${palisAttrs.length} 个内核语义属性（只做样式增强）：${palisAttrs.join(', ')}`)
 
 const found = findIn(root, needles)
 const dead = []
@@ -133,8 +142,8 @@ for (const n of needles) {
 if (dead.length) {
   console.log('')
   console.log('SELECTOR_CHECK_FAIL 失效选择器：' + dead.join(', '))
-  console.log('说明：内置插件 dialog-optimize 依赖的私有选择器变了 —— 对应功能（折叠/导航/撤回）会静默失效。')
-  console.log('处理：优先改用官方 Slots 契约；短期可先在 client.js 里对该选择器做空值降级，别让 rAF 循环空转。')
+  console.log('说明：内置插件依赖的内核属性变了 —— dialog-optimize 的功能（折叠/导航/撤回）或 palis-theme')
+  console.log('的样式增强会静默失效。处理：dialog-optimize 优先改走官方 Slots；palis-theme 的增强是"存在才')
   process.exit(1)
 }
 console.log('')

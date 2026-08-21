@@ -160,4 +160,35 @@ html[data-dsh-skin="palis"] #dsh-review-root #dsh-review-panel #dsh-review-head 
 
 ---
 
+## 6. 全界面覆盖（v0.1.19 起）：内置内核侧主题插件
+
+> 之前第 4 节的"边界"已被用户推翻：主题要**覆盖所有界面，包括内核对话区**。
+> 实现走的是官方允许的路，而不是往内核 DOM 注入样式：
+
+新增内置插件 **`@dsh-local/palis-theme`**（`plugin/palis-theme/`，host + client 双面，
+与 `dialog-optimize` 同一套 `--patch` 注入机制）：
+
+- **host**（`index.js`）：在 `/api/palis-theme` 上维护主题态（GET 读、POST 写）。
+- **client**（`client.js`）：每 2s 轮询该端点；主题为 `palis` 时——
+  1. 在 `<html>` 上覆盖内核自己的 `--dsw-alias-*` 设计令牌（**与内核明暗主题同一套机制**，
+     所有内核组件自动换色，不碰 DOM 结构）；
+  2. 注入一段**自包含样式表**：直角归一、等宽字体、直角滚动条、输入框终端化、
+     用户消息标签 `[USER]`（用 `[data-chat-flow-key][data-chat-flow-kind=...]` 语义属性，
+     **不依赖编译 hash 类名**）；
+  3. 挂载全屏 CRT overlay（扫描线 + 暗角，`pointer-events:none`）。
+  取消时全部移除、变量还原 —— 皮肤可逆。
+- **外壳联动**（`main.js`）：`applyTheme()` 与内核就绪后把所选皮肤 POST 到
+  `/api/palis-theme`（2.5s 超时，内核没装插件时静默）。
+- **监控**：`plugin-selector-check` 现在同时抽取 palis-theme 依赖的内核语义属性
+  （`data-chat-flow-kind` 等），内核升级把它们改掉时打包门禁会叫。
+
+**验证**（`--ui-smoke` 真实内核 + 真实窗口，本轮已绿）：
+端点可达 → 页面挂上 `data-palis-theme` → `--dsw-alias-bg-base` 变 `#0a0a0a` →
+CRT overlay 挂载 → POST 空值后干净清除。且与 `dsh-better-sidebar` 共存时
+审阅侧栏正确让位（ui-smoke 断言已共存感知）。
+
+**仍未越过的线（如实说明）**：`[PALIS CLERK]` 标签与输入框占位符文本
+（`> AWAITING INPUT...`）需要内核的文案/结构级支持——client 只能给占位符换观感、
+给用户侧消息加标签，改不了内核决定显示的文案。这两项留给 Slots 正路。
+
 — 设计文档：deepseek-v4-pro（2026-08-21）

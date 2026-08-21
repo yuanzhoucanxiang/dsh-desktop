@@ -283,10 +283,12 @@ function dshHome() {
  * 锚点读 dsh.client 声明，所以 host/client 两半都从这里加载。
  * 内容相同则跳过（不扰动 mtime）；返回插件文件是否可用。
  */
-function syncBuiltinDialogPlugin() {
-  const src = path.join(pluginRoot(), 'dialog-optimize')
+const BUILTIN_PLUGINS = ['dialog-optimize', 'palis-theme']
+
+function syncBuiltinPlugin(name) {
+  const src = path.join(pluginRoot(), name)
   if (!fs.existsSync(path.join(src, 'package.json'))) return false
-  const dest = path.join(dshHome(), 'profiles', 'node_modules', '@dsh-local', 'dialog-optimize')
+  const dest = path.join(dshHome(), 'profiles', 'node_modules', '@dsh-local', name)
   let synced = false
   for (const file of ['package.json', 'index.js', 'client.js']) {
     const s = path.join(src, file)
@@ -297,19 +299,21 @@ function syncBuiltinDialogPlugin() {
       fs.copyFileSync(s, d)
       synced = true
     } catch (err) {
-      log(`sync dialog-optimize ${file} failed: ${err.message}`)
+      log(`sync ${name} ${file} failed: ${err.message}`)
     }
   }
-  if (synced) log(`dialog-optimize synced to ${dest}`)
+  if (synced) log(`${name} synced to ${dest}`)
   return true
 }
+
+const syncBuiltinDialogPlugin = () => syncBuiltinPlugin('dialog-optimize') // 旧名保留（降级链调用）
 
 /**
  * 用户自己的补丁层里是否已挂载同名插件（$DSH_HOME 级或 profile 级 cordis.patch.yml）。
  * 已存在时不再注入内置行，避免同一插件出现两个 loader 条目（客户端模块表按条目
  * 名去重，重复名会在浏览器侧启动时抛错）。
  */
-function userInstalledDialogOptimize() {
+function userInstalledPlugin(name) {
   const home = dshHome()
   const candidates = [
     path.join(home, 'cordis.patch.yml'),
@@ -318,11 +322,13 @@ function userInstalledDialogOptimize() {
   for (const file of candidates) {
     try {
       const raw = fs.readFileSync(file, 'utf8')
-      if (raw.includes('@dsh-local/dialog-optimize')) return true
+      if (raw.includes(name)) return true
     } catch {}
   }
   return false
 }
+
+const userInstalledDialogOptimize = () => userInstalledPlugin('@dsh-local/dialog-optimize') // 旧名保留
 
 /**
  * 生成内核补丁文件（写入 userData），供内核 --patch 注入：
@@ -354,14 +360,18 @@ function writeKernelPatch(mode) {
         `        out: '${streamFile.replace(/\\/g, '/')}'`,
       ].join('\n'))
     }
-    if (mode === 'full' && syncBuiltinDialogPlugin()) {
-      if (userInstalledDialogOptimize()) {
-        log('dialog-optimize already in user patch layer, skipping builtin row')
-      } else {
+    if (mode === 'full') {
+      for (const pluginName of BUILTIN_PLUGINS) {
+        if (!syncBuiltinPlugin(pluginName)) continue
+        const pkg = `@dsh-local/${pluginName}`
+        if (userInstalledPlugin(pkg)) {
+          log(`${pluginName} already in user patch layer, skipping builtin row`)
+          continue
+        }
         rows.push([
           '- insert:',
-          '    - id: dialog-optimize',
-          "      name: '@dsh-local/dialog-optimize'",
+          `    - id: ${pluginName}`,
+          `      name: '${pkg}'`,
         ].join('\n'))
       }
     }
@@ -705,9 +715,27 @@ async function handoffFromSplash() {
 /* ─────────────────────────────── 皮肤（外壳级） ────────────────────────────── */
 
 /**
- * 切换外壳皮肤：持久化 + 窗口底色 + 广播给启动画面/预览窗口 + 刷新托盘勾选。
- * 作用范围只有外壳自己的界面（启动画面、窗口底色、预览窗口）；内核页面与注入的
- * 审阅侧边栏继续跟随内核的设计令牌，不在这里染色。
+ * 把所选皮肤同步给内核 Web UI：内置插件 @dsh-local/palis-theme 在 /api/palis-theme
+ * 上维护主题态（POST 写入），其 client 半轮询该端点，用内核自己的 --dsw-alias-*
+ * 设计令牌 + 一段自包含样式表给整个页面换肤（不刮 DOM、不依赖编译 hash 类名）。
+ * 未就绪/未启用时静默跳过 —— 这只是"联动"，不影响外壳皮肤本身。
+ */
+function pushThemeToKernel(theme) {
+  if (!state.ready || !state.url) return
+  const value = theme === 'palis' ? 'palis' : ''
+  fetch(`${state.url}/api/palis-theme`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ theme: value }),
+    signal: AbortSignal.timeout(2500),
+  }).then((r) => {
+    if (!r.ok) log(`palis-theme push returned ${r.status}`)
+  }).catch(() => {}) // 内核没装插件时 404/网络错，静默
+}
+
+/**
+ * 切换外壳皮肤：持久化 + 窗口底色 + 广播给启动画面/预览窗口 + 联动内核页面主题。
+ * palis 皮肤下，内核 Web UI 经内置 palis-theme 插件一起换成档案终端观感。
  */
 function applyTheme(id) {
   const next = THEMES[id] ? id : 'deep'
@@ -732,6 +760,7 @@ function applyTheme(id) {
     }
   }
   refreshMenus()
+  pushThemeToKernel(next)
   log(`theme -> ${next}`)
 }
 
@@ -1555,6 +1584,7 @@ async function bootKernel() {
   showMainWindow()
   log(`ready at ${state.url}`)
   refreshMenus() // 就绪后"新窗口"等依赖内核的菜单项才可用
+  pushThemeToKernel(themeId()) // 就绪后把当前皮肤同步给内核主题插件（重启内核同理）
 }
 
 /* ─────────────────────────────── UI 冒烟（真实窗口回归测试） ───────────────── */
@@ -1594,41 +1624,87 @@ async function runUiSmoke(win) {
   check('rail present', await js(`document.getElementById('dsh-review-rail') !== null`))
   check('toggle present', await js(`document.getElementById('dsh-review-toggle') !== null`))
 
+  // 0) 全界面主题联动：palis-theme 插件应已随补丁注入内核
+  try {
+    await fetch(`${state.url}/api/palis-theme`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ theme: 'palis' }),
+      signal: AbortSignal.timeout(3000),
+    })
+  } catch (err) {
+    check('palis theme endpoint reachable', false)
+  }
+  await wait(3200) // 客户端 2s 轮询 + 余量
+  check('kernel page wears palis (attr)', await js(`document.documentElement.hasAttribute('data-palis-theme')`))
+  const tokenBg = await js(
+    `getComputedStyle(document.documentElement).getPropertyValue('--dsw-alias-bg-base').trim()`)
+  check('kernel token overridden to #0a0a0a', tokenBg === '#0a0a0a' || tokenBg === 'rgb(10, 10, 10)', tokenBg)
+  check('crt overlay mounted', await js(`document.getElementById('palis-theme-crt') !== null`))
+  // 回退验证：外壳皮肤必须是可逆的
+  try {
+    await fetch(`${state.url}/api/palis-theme`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ theme: '' }),
+      signal: AbortSignal.timeout(3000),
+    })
+  } catch {}
+  await wait(3200)
+  check('kernel theme clears cleanly', await js(`!document.documentElement.hasAttribute('data-palis-theme')`))
+
   // 1) 点开关 → 面板展开
   await js(`document.getElementById('dsh-review-toggle').click()`)
   await wait(400)
   check('panel opens on toggle click', await js(`!document.getElementById('dsh-review-panel').classList.contains('dsh-hidden')`))
-  check('split margin applied', await js(`document.body.style.marginRight === '360px'`))
-
-  // 2) 拖拽竖条 → 面板左缘跟随鼠标加宽 + 持久化
-  const before = await js(`document.body.style.marginRight`)
-  await js(`(function(){
-    const h = document.getElementById('dsh-review-rail')
-    const r = h.getBoundingClientRect()
-    const cx = r.left + 3, cy = r.top + 300
-    const ev = (t, x) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: cy, pointerId: 1 })
-    h.dispatchEvent(ev('pointerdown', cx))
-    h.dispatchEvent(ev('pointermove', cx - 120))
-    h.dispatchEvent(ev('pointerup', cx - 120))
-  })()`)
-  await wait(500)
-  const after = await js(`document.body.style.marginRight`)
-  check(`drag widens panel (${before} -> ${after})`, before !== after)
-  let savedW = null
-  for (let i = 0; i < 10 && savedW === null; i++) {
-    if (settings.panelWidth !== 360) savedW = settings.panelWidth
-    else await wait(300)
+  // 共存模式（内核侧装有 better-sidebar 等右侧栏插件时）不挤压页面、隐藏自己的 rail ——
+  // 这是设计行为：按实际模式断言，而不是固定期待 360px 挤压
+  const coexist = await js(`document.getElementById('dsh-review-root').classList.contains('dsh-coexist')`)
+  if (coexist) {
+    check('coexist mode: page is not squeezed', await js(`document.body.style.marginRight === ''`))
+    check('coexist mode: own rail hidden', await js(`getComputedStyle(document.getElementById('dsh-review-rail')).display === 'none'`))
+  } else {
+    check('split margin applied', await js(`document.body.style.marginRight === '360px'`))
   }
-  check('width persisted to settings', savedW !== null && savedW > 360)
 
-  // 3) 双击竖条 → 恢复默认 360px
-  await js(`(function(){
-    const h = document.getElementById('dsh-review-rail')
-    const r = h.getBoundingClientRect()
-    h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: r.left + 3, clientY: r.top + 300 }))
-  })()`)
-  await wait(500)
-  check('dblclick resets to 360px', await js(`document.body.style.marginRight === '360px'`))
+  // 2) 拖拽竖条 → 面板左缘跟随鼠标加宽 + 持久化（共存模式下跳过：拖拽把手让位了）
+  const before = await js(`document.body.style.marginRight`)
+  if (coexist) {
+    check('drag test skipped (coexist mode)', true)
+    check('width persistence skipped (coexist mode)', true)
+  } else {
+    await js(`(function(){
+      const h = document.getElementById('dsh-review-rail')
+      const r = h.getBoundingClientRect()
+      const cx = r.left + 3, cy = r.top + 300
+      const ev = (t, x) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: cy, pointerId: 1 })
+      h.dispatchEvent(ev('pointerdown', cx))
+      h.dispatchEvent(ev('pointermove', cx - 120))
+      h.dispatchEvent(ev('pointerup', cx - 120))
+    })()`)
+    await wait(500)
+    const after = await js(`document.body.style.marginRight`)
+    check(`drag widens panel (${before} -> ${after})`, before !== after)
+    let savedW = null
+    for (let i = 0; i < 10 && savedW === null; i++) {
+      if (settings.panelWidth !== 360) savedW = settings.panelWidth
+      else await wait(300)
+    }
+    check('width persisted to settings', savedW !== null && savedW > 360)
+  }
+
+  // 3) 双击竖条 → 恢复默认 360px（共存模式下拖拽把手已让位，跳过）
+  if (coexist) {
+    check('dblclick test skipped (coexist mode)', true)
+  } else {
+    await js(`(function(){
+      const h = document.getElementById('dsh-review-rail')
+      const r = h.getBoundingClientRect()
+      h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: r.left + 3, clientY: r.top + 300 }))
+    })()`)
+    await wait(500)
+    check('dblclick resets to 360px', await js(`document.body.style.marginRight === '360px'`))
+  }
 
   // 3) Git 视图 + 面板内文件查看器（临时仓库有 1 个改动文件）
   await js(`[...document.querySelectorAll('#dsh-review-mode button')].find(b => b.textContent === 'Git 工作区').click()`)

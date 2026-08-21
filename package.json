@@ -71,6 +71,15 @@
           "index.js",
           "client.js"
         ]
+      },
+      {
+        "from": "plugin/palis-theme",
+        "to": "plugin/palis-theme",
+        "filter": [
+          "package.json",
+          "index.js",
+          "client.js"
+        ]
       }
     ],
     "publish": {

@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-local/palis-theme",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PALIS 档案终端主题：外壳皮肤联动，把内核 Web UI 一起换成黑白高反差 + 直角 + 等宽 + CRT 质感",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
