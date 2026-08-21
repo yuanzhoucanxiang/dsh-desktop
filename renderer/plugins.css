@@ -1,0 +1,93 @@
+/* 插件体检面板（独立 file:// 页面，无内核令牌：固定深海配色，与外壳皮肤同调） */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #05070f;
+  --bg-layer: #101426;
+  --border: #262d4a;
+  --label-1: #e8e6f2;
+  --label-2: #aeb8d8;
+  --label-3: #6f7a99;
+  --brand: #5d6dff;
+  --ok: #7fe0a8;
+  --warn: #ffd97a;
+  --bad: #ff9a9a;
+}
+
+html, body { height: 100%; }
+body {
+  font: 13px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--label-1);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 12px;
+  gap: 12px;
+}
+
+header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex: none; }
+h1 { font-size: 17px; font-weight: 650; letter-spacing: .02em; }
+.sub { font-size: 12px; color: var(--label-3); margin-top: 2px; }
+.actions { display: flex; gap: 8px; }
+
+button {
+  font: inherit; font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--label-2); border: 1px solid var(--border);
+}
+button:hover { color: var(--label-1); border-color: var(--brand); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: #4f63d8; color: #f2f4ff; border-color: transparent; }
+button.primary:hover { background: #5d6dff; color: #fff; }
+button.danger { color: var(--bad); }
+button.danger:hover { border-color: var(--bad); }
+
+.summary { font-size: 12px; color: var(--label-3); flex: none; }
+.summary b { font-weight: 600; }
+.summary.bad b { color: var(--bad); }
+.summary.good b { color: var(--ok); }
+
+.banner {
+  flex: none; padding: 10px 14px; border-radius: 10px; font-size: 12px;
+  background: rgba(255, 154, 154, .08); border: 1px solid rgba(255, 154, 154, .35); color: var(--bad);
+}
+.hidden { display: none !important; }
+
+.card {
+  flex: none; padding: 12px 14px; border-radius: 12px; font-size: 12px;
+  background: rgba(255, 217, 122, .06); border: 1px solid rgba(255, 217, 122, .3);
+}
+.card-title { color: var(--warn); font-weight: 600; margin-bottom: 6px; }
+.card ul { list-style: none; }
+.card li { padding: 3px 0; color: var(--label-2); word-break: break-all; }
+.card li .why { color: var(--label-3); }
+.card-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.card-actions .hint { font-size: 11px; color: var(--label-3); }
+
+.tbl-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th {
+  position: sticky; top: 0; text-align: left; font-weight: 600; font-size: 11.5px; color: var(--label-3);
+  padding: 9px 12px; background: var(--bg-layer); border-bottom: 1px solid var(--border);
+  letter-spacing: .04em; white-space: nowrap;
+}
+.tbl td { padding: 9px 12px; border-bottom: 1px solid rgba(38, 45, 74, .55); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:hover td { background: rgba(93, 109, 255, .05); }
+.tbl .name { color: var(--label-1); font-weight: 600; word-break: break-all; }
+.tbl .name .src { font-weight: 400; color: var(--label-3); margin-left: 6px; font-size: 11px; }
+.tbl .ver { font-family: Consolas, "Cascadia Mono", monospace; color: var(--label-2); white-space: nowrap; }
+.tbl .latest { font-family: Consolas, "Cascadia Mono", monospace; white-space: nowrap; }
+.tbl .latest.up { color: var(--ok); font-weight: 600; }
+.tbl .latest.dim { color: var(--label-3); }
+.tbl .latest.err { color: var(--bad); font-size: 11px; }
+.tbl .loading { text-align: center; color: var(--label-3); padding: 28px 0; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  font-size: 11px; padding: 1px 8px; border-radius: 6px; white-space: nowrap;
+  background: rgba(127, 224, 168, .1); color: var(--ok);
+}
+.chip.warn { background: rgba(255, 217, 122, .1); color: var(--warn); }
+.chip.bad { background: rgba(255, 154, 154, .12); color: var(--bad); }
+
+footer { flex: none; font-size: 11px; color: var(--label-3); padding-top: 2px; }

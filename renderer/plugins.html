@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>插件与体检</title>
+<link rel="stylesheet" href="plugins.css">
+</head>
+<body>
+<header>
+  <div class="head-text">
+    <h1>插件与体检</h1>
+    <p class="sub">只读体检，不修改任何文件 · 更新检测仅查询 npm registry</p>
+  </div>
+  <div class="actions">
+    <button id="btn-refresh" type="button">重新体检</button>
+    <button id="btn-updates" type="button" class="primary">检测更新</button>
+  </div>
+</header>
+
+<div id="summary" class="summary"></div>
+<div id="error-banner" class="banner hidden"></div>
+
+<section id="quarantine" class="card hidden">
+  <div class="card-title">被隔离的插件（内核曾因它们启动失败，被自动摘除）</div>
+  <div id="quarantine-list"></div>
+  <div class="card-actions">
+    <button id="btn-restore" type="button" class="danger">恢复全部并重启内核</button>
+    <span class="hint">恢复后若再出问题会被再次自动隔离，不会卡死启动</span>
+  </div>
+</section>
+
+<div class="tbl-wrap">
+<table class="tbl">
+  <thead>
+    <tr><th>插件</th><th>已装版本</th><th>启用</th><th>体检状态</th><th>最新版</th></tr>
+  </thead>
+  <tbody id="rows">
+    <tr><td colspan="5" class="loading">正在体检…</td></tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  一键更新暂未开放（等链接自修复就位，避免 pnpm 打断本地链接）；本地链接插件的更新方式 = 在源目录拉取最新代码后重启内核。
+</footer>
+
+<script src="plugins.js"></script>
+</body>
+</html>

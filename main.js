@@ -31,6 +31,7 @@ const path = require('node:path')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { createGitReview } = require('./lib/git-review')
+const { inspectProfile, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
@@ -39,6 +40,7 @@ const DEV = process.argv.includes('--dev')
 
 const APP_NAME = 'DeepSeek Harness Desktop'
 const SPLASH_PATH = path.join(__dirname, 'renderer', 'splash.html')
+const PLUGINS_PATH = path.join(__dirname, 'renderer', 'plugins.html')
 const ICON_PATH = path.join(__dirname, 'build', 'icon.png')
 const READY_TIMEOUT_MS = 120000
 // 启动画面交接编排（只影响观感，不影响内核拉起时序）：
@@ -50,6 +52,8 @@ const SPLASH_EXIT_MS = 520 // 淡出等待上限：渲染侧 ack 会提前返回
 let win = null
 /** @type {BrowserWindow | null} 托盘「预览启动画面」用的独立窗口 */
 let previewWin = null
+/** @type {BrowserWindow | null} 「插件与体检」面板窗口 */
+let pluginsWin = null
 /** @type {Tray | null} */
 let tray = null
 
@@ -75,6 +79,7 @@ const state = {
   updateReady: null, // 已下载待安装的更新信息（{version,...}）；有值时托盘/菜单出现安装入口
   patchMode: 'full', // 内核补丁模式：full=审阅桥+内置插件 / bridge=仅审阅桥 / none=无补丁
   quarantined: [],   // 本次会话被自动隔离的坏插件名（用于汇总提示）
+  pluginProblems: null, // 插件体检发现的异常条数（null=尚未体检）；托盘/左下角入口据此亮标
 }
 
 /* ─────────────────────────────── 设置持久化 ───────────────────────────────── */
@@ -668,6 +673,93 @@ function restoreQuarantinedBundles() {
   } catch (err) {
     log(`restore quarantine failed: ${err.message}`)
   }
+}
+
+/* ─────────────────────────────── 插件体检 ───────────────────────────────────
+ * 背景：三类真实事故（bundles 丢条目静默消失 / pnpm 跨盘 link 悬空 / 缺 dsh.bundle
+ * 声明内核即崩，见 logs/2026-08-22.md ㉒㉓）。体检全部只读，复用 lib/profile-inspect；
+ * 网络侧更新检测只查 npm registry，不做任何安装动作——一键更新等"链接自修复"
+ * 就位后再上，避免给用户一个会打断 pnpm 链接的自爆按钮。 */
+
+/** 只读体检当前 web profile 的插件。同时更新 state.pluginProblems（托盘/入口亮标用）。 */
+function runPluginInspection() {
+  const report = inspectProfile({
+    manifestPath: profileWebManifest(),
+    quarantined: readQuarantine(),
+    coreBundles: CORE_BUNDLES,
+  })
+  state.pluginProblems = report.error ? null : report.problems.length
+  if (report.error) log(`plugin inspect: ${report.error}`)
+  for (const p of report.problems) {
+    log(`plugin inspect: ${p.name} — ${p.label}${p.detail ? `（${p.detail}）` : ''}`)
+  }
+  return report
+}
+
+/** 体检结果 → 渲染端结构（问题码换成可读文案，附隔离名单原始记录）。 */
+function pluginReportForRenderer(report) {
+  return {
+    checkedAt: new Date().toISOString(),
+    error: report.error,
+    items: report.items.map((i) => ({ ...i, problemLabels: i.problems.map((c) => PLUGIN_PROBLEM_LABELS[c] || c) })),
+    problems: report.problems,
+    quarantined: readQuarantine(),
+  }
+}
+
+/** 查 npm registry 最新版本（仅 registry 来源插件；本地 link 是源码开发版，无此概念）。 */
+async function registryLatestVersion(name) {
+  const res = await fetch(`https://registry.npmjs.org/${name}/latest`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`registry HTTP ${res.status}`)
+  const data = await res.json()
+  if (!data || !data.version) throw new Error('registry 响应缺 version')
+  return data.version
+}
+
+/** 逐个比对 registry 插件的已装/最新版本。单个失败不拖垮整批。 */
+async function checkPluginUpdates() {
+  const report = runPluginInspection()
+  const targets = report.items.filter((i) => i.source === 'registry' && i.version)
+  const results = await Promise.all(targets.map(async (i) => {
+    try {
+      const latest = await registryLatestVersion(i.name)
+      return { name: i.name, latest, upToDate: compareVersions(latest, i.version) <= 0 }
+    } catch (err) {
+      return { name: i.name, error: err && err.message ? err.message : String(err) }
+    }
+  }))
+  return { at: new Date().toISOString(), results }
+}
+
+/** 「插件与体检」面板窗口（独立 BrowserWindow，照启动画面预览的窗口配方）。 */
+function openPluginsPanel() {
+  if (pluginsWin && !pluginsWin.isDestroyed()) {
+    pluginsWin.show()
+    pluginsWin.focus()
+    return
+  }
+  pluginsWin = new BrowserWindow({
+    width: 800,
+    height: 620,
+    minWidth: 640,
+    minHeight: 460,
+    title: '插件与体检',
+    backgroundColor: THEMES[themeId()].bg,
+    icon: ICON_PATH,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  pluginsWin.on('closed', () => { pluginsWin = null })
+  pluginsWin.loadURL(pathToFileURL(PLUGINS_PATH).toString()).catch((err) => log(`plugins panel failed: ${err.message}`))
 }
 
 /** 内核输出在 Windows 上是 OEM/GBK，而本应用日志是 UTF-8：直接 toString 会得到乱码，
@@ -1535,6 +1627,12 @@ function buildTrayMenu() {
         click: () => installUpdateNow(),
       }]
       : []),
+    ...(state.pluginProblems
+      ? [{
+        label: `⚠ 插件体检发现 ${state.pluginProblems} 项异常…`,
+        click: () => openPluginsPanel(),
+      }]
+      : []),
     ...(readQuarantine().length
       ? [{
         label: `↻ 重新启用被隔离的插件（${readQuarantine().length} 个）`,
@@ -1543,6 +1641,7 @@ function buildTrayMenu() {
       : []),
     { type: 'separator' },
     { label: '重启内核', click: () => restartKernel() },
+    { label: '插件与体检…', click: () => openPluginsPanel() },
     { label: '设置工作目录…', click: () => pickWorkspace() },
     { label: '打开日志', click: () => shell.openPath(state.logPath || path.join(app.getPath('userData'), 'kernel.log')) },
     { label: '检查更新…', click: () => checkForUpdates(true) },
@@ -1634,6 +1733,17 @@ function registerIpc() {
     saveSettings()
     return n
   })
+  // 插件体检面板：只读报告 / registry 更新比对 / 恢复被隔离插件（内部会重启内核）
+  ipcMain.handle('shell:plugins-report', () => pluginReportForRenderer(runPluginInspection()))
+  ipcMain.handle('shell:plugins-check-updates', () => checkPluginUpdates())
+  ipcMain.handle('shell:plugins-restore', () => {
+    const list = readQuarantine()
+    if (!list.length) return { ok: true, restored: 0 }
+    const before = list.length
+    restoreQuarantinedBundles()
+    return { ok: true, restored: before }
+  })
+  ipcMain.on('shell:open-plugins', () => openPluginsPanel())
   ipcMain.handle('shell:open-file', (_e, p) => {
     // 审阅流里的路径多为绝对路径：path.resolve 保证绝对路径原样通过，相对路径按工作目录解析
     const fp = path.resolve(kernelCwd(), String(p))
@@ -2014,6 +2124,21 @@ if (!gotLock) {
     } catch (err) {
       log(`tray unavailable: ${err.message}`)
     }
+    // 启动静默体检：纯只读、失败不影响启动。有异常时托盘亮入口、左下角插件入口带红点。
+    try {
+      const report = runPluginInspection()
+      if (report.problems.length) {
+        log(`plugin inspect: 共 ${report.problems.length} 项异常（托盘/主界面左下角可查看）`)
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('shell:plugin-health', { problems: report.problems.length })
+        }
+      }
+      refreshTray()
+    } catch (err) {
+      log(`plugin inspect failed: ${err && err.message ? err.message : err}`)
+    }
+    // 调试口：DSH_DESKTOP_PLUGINS_PANEL=1 启动时自动打开体检面板（验证 UI 用）
+    if (process.env.DSH_DESKTOP_PLUGINS_PANEL === '1') setTimeout(() => openPluginsPanel(), 3500)
     startTurnWatcher() // 回合完成通知（失焦才提醒；无审阅流时自动静默）
     // 首次启动就带 dsh:// 参数时也认（Windows 从浏览器点链接会走这里）
     const bootLink = process.argv.find((a) => typeof a === 'string' && /^dsh:/i.test(a))

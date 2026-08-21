@@ -59,6 +59,11 @@ contextBridge.exposeInMainWorld('dshShell', {
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),
   setPanelWidth: (w) => ipcRenderer.invoke('shell:set-panel-width', w),
+  // 插件体检：入口打开面板 / 只读报告 / registry 更新比对 / 恢复被隔离插件
+  openPlugins: () => ipcRenderer.send('shell:open-plugins'),
+  pluginsReport: () => ipcRenderer.invoke('shell:plugins-report'),
+  pluginsCheckUpdates: () => ipcRenderer.invoke('shell:plugins-check-updates'),
+  pluginsRestore: () => ipcRenderer.invoke('shell:plugins-restore'),
 })
 
 /* ── 外壳皮肤（跟随托盘「皮肤」设置） ─────────────────────────────────────────
@@ -1463,8 +1468,49 @@ function injectReviewSidebar() {
 ipcRenderer.invoke('shell:get-state').then((s) => applySkin(s && s.theme)).catch(() => {})
 ipcRenderer.on('shell:theme', (_e, id) => applySkin(id))
 
+/* ── 主界面左下角「插件」入口（外壳级覆盖层，与审阅栏同一套路） ────────────────
+ * 点击打开「插件与体检」面板；体检发现异常时红点亮起（主进程推送
+ * shell:plugin-health / 打开页面时主动拉一次报告）。 */
+function injectPluginsEntry() {
+  if (location.protocol === 'file:') return // splash 与体检面板自身不注入
+  if (document.getElementById('dsh-plugins-entry')) return
+
+  const S = 'dsh-plugins-entry'
+  const style = document.createElement('style')
+  // 令牌复用内核页面的 --dsw-alias-*（皮肤层会重定义），自动跟随明暗主题
+  style.textContent = `
+    #${S}{position:fixed;left:0;bottom:120px;z-index:2147482940;height:26px;
+      display:inline-flex;align-items:center;gap:6px;padding:0 11px 0 10px;cursor:pointer;user-select:none;
+      font:12px/1 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+      color:var(--dsw-alias-label-secondary,#aeb8d8);
+      background:var(--dsw-alias-bg-layer-1,rgba(30,34,54,.92));
+      border:1px solid var(--dsw-alias-border-l2,transparent);border-left:none;border-radius:0 13px 13px 0;}
+    #${S}:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
+    #${S} .dot{display:none;width:7px;height:7px;border-radius:50%;flex:none;
+      background:var(--dsw-alias-state-error-primary,#ff8080);}
+    #${S}.dsh-warn .dot{display:inline-block;}`
+  document.head.appendChild(style)
+
+  const el = document.createElement('div')
+  el.id = S
+  el.title = '插件与体检（健康状态 / 更新检测）'
+  el.textContent = '⚙ 插件'
+  const dot = document.createElement('span')
+  dot.className = 'dot'
+  el.insertBefore(dot, el.firstChild)
+  el.addEventListener('click', () => { try { window.dshShell && window.dshShell.openPlugins() } catch {} })
+  document.body.appendChild(el)
+
+  const mark = (n) => { if (Number(n) > 0) el.classList.add('dsh-warn') }
+  ipcRenderer.invoke('shell:plugins-report').then((r) => {
+    if (r && !r.error) mark((r.problems || []).length)
+  }).catch(() => {})
+  ipcRenderer.on('shell:plugin-health', (_e, s) => mark(s && s.problems))
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectReviewSidebar)
+  document.addEventListener('DOMContentLoaded', () => { injectReviewSidebar(); injectPluginsEntry() })
 } else {
   injectReviewSidebar()
+  injectPluginsEntry()
 }
