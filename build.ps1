@@ -20,9 +20,14 @@ if (-not (Test-Path "$proj\runtime\node.exe")) {
 # 2. pack the kernel runtime as a SINGLE archive + a version marker. The app unpacks
 #    this to %LOCALAPPDATA% on first launch; the install dir then stays a thin shell,
 #    so updates can directly overwrite it (no giant runtime tree to uninstall).
+# NOTE: call System32\tar.exe by full path. Plain `tar` can resolve to Git Bash's
+# /usr/bin/tar under npm's PATH, and that tar does not understand "E:\..." paths
+# ("Cannot connect to E: resolve failed"). This bit the build once.
 Write-Host "packing runtime -> dist/runtime.tar.gz ..."
 if (Test-Path "$proj\dist\runtime.tar.gz") { Remove-Item "$proj\dist\runtime.tar.gz" -Force }
-& tar -czf "$proj\dist\runtime.tar.gz" -C "$proj" runtime
+$sysTar = "$env:SystemRoot\System32\tar.exe"
+if (-not (Test-Path $sysTar)) { throw "System32\tar.exe not found" }
+& $sysTar -czf "$proj\dist\runtime.tar.gz" -C "$proj" runtime
 if ($LASTEXITCODE -ne 0) { throw "tar pack failed (exit $LASTEXITCODE)" }
 Copy-Item "$proj\runtime\runtime.json" "$proj\dist\runtime-marker.json" -Force
 Write-Host "runtime packed ($(([math]::Round((Get-Item "$proj\dist\runtime.tar.gz").Length/1MB,1))) MB)"
