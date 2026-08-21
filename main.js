@@ -1252,7 +1252,9 @@ async function checkForUpdates(manual) {
   try {
     autoUpdater.setFeedURL(feed)
     const result = await autoUpdater.checkForUpdates()
-    if (manual && !result) {
+    // 修复：checkForUpdates 在"已是最新"时也返回非空 result（isUpdateAvailable=false），
+    // 原条件 `!result` 使"当前已是最新版本"提示永远不弹——手动检查看起来"点了没反应"。
+    if (manual && result && !result.isUpdateAvailable) {
       dialog.showMessageBox(win, { type: 'info', title: '检查更新', message: '当前已是最新版本。' })
     }
   } catch (err) {

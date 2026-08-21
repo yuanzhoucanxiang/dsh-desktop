@@ -2,9 +2,17 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
-## [Unreleased]
+## [0.1.20] - 2026-08-21
 
-（暂无）
+### 修复
+
+- **「检查更新」无反馈**：`checkForUpdates()` 在"已是最新"时返回非空 result（`isUpdateAvailable=false`），
+  原条件 `manual && !result` 让"当前已是最新版本"提示永远不弹 —— 已改为
+  `manual && result && !result.isUpdateAvailable`。手动检查现在有明确反馈。
+- （环境侧）更新检查偶发 `ERR_CONNECTION_RESET`：api.github.com 的 DNS 轮换会落到被重置节点，
+  已通过 hosts 固定可用 IP（系统级，随本版一并说明）。
+
+署名：deepseek-v4-flash-vision-exp
 
 ## [0.1.19] - 2026-08-21
 
