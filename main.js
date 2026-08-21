@@ -609,6 +609,8 @@ function detectBrokenBundles(text) {
   }
   for (const m of text.matchAll(/(?:failed to import|failed to apply) loader entry [^(]*?\(([^)]+)\)/g)) push(m[1])
   for (const m of text.matchAll(/profile bundle "([^"]+)" declares/g)) push(m[1])
+  // 包解析失败（如 link 依赖悬空）：dsh-app-boot 抛 cannot resolve profile bundle "x" 后内核直接退出
+  for (const m of text.matchAll(/cannot resolve profile bundle "([^"]+)"/g)) push(m[1])
   return [...names]
 }
 
