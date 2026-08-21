@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>设置</title>
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<header>
+  <div class="head-text">
+    <h1>设置</h1>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-tab="plugins" class="tab">插件</button>
+    <button type="button" data-tab="update" class="tab">软件更新 <span id="update-dot" class="tab-dot hidden"></span></button>
+  </nav>
+</header>
+
+<main id="page-plugins" class="page">
+  <div class="page-head">
+    <p class="sub">只读体检，不修改任何文件 · 更新检测仅查询 npm registry</p>
+    <div class="actions">
+      <button id="btn-refresh" type="button">重新体检</button>
+      <button id="btn-updates" type="button" class="primary">检测更新</button>
+    </div>
+  </div>
+
+  <div id="summary" class="summary"></div>
+  <div id="error-banner" class="banner hidden"></div>
+
+  <section id="quarantine" class="card warn-card hidden">
+    <div class="card-title">被隔离的插件（内核曾因它们启动失败，被自动摘除）</div>
+    <div id="quarantine-list"></div>
+    <div class="card-actions">
+      <button id="btn-restore" type="button" class="danger">恢复全部并重启内核</button>
+      <span class="hint">恢复后若再出问题会被再次自动隔离，不会卡死启动</span>
+    </div>
+  </section>
+
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr><th>插件</th><th>已装版本</th><th>启用</th><th>体检状态</th><th>最新版</th></tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="5" class="loading">正在体检…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer class="page-foot">
+    插件一键更新暂未开放（等链接自修复就位，避免 pnpm 打断本地链接）；本地链接插件的更新方式 = 在源目录拉取最新代码后重启内核。
+  </footer>
+</main>
+
+<main id="page-update" class="page hidden">
+  <div class="page-head">
+    <p class="sub" id="app-version">当前版本 —</p>
+    <div class="actions">
+      <button id="btn-check" type="button" class="primary">检查更新</button>
+    </div>
+  </div>
+
+  <section id="update-card" class="card neutral-card">
+    <div id="update-state" class="update-state">正在读取更新状态…</div>
+    <div id="update-progress" class="progress hidden">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <div id="progress-text" class="progress-text">0%</div>
+    </div>
+    <div id="update-notes" class="update-notes hidden"></div>
+    <div class="card-actions">
+      <button id="btn-download" type="button" class="hidden">立即下载</button>
+      <button id="btn-install" type="button" class="primary hidden">重启并安装</button>
+      <span class="hint" id="update-hint"></span>
+    </div>
+  </section>
+
+  <footer class="page-foot">
+    应用启动后会在后台自动检查并下载更新：下载完成时用系统通知提醒，不打断你；不点「重启并安装」也没关系，下次退出应用时会自动装上。
+  </footer>
+</main>
+
+<script src="settings.js"></script>
+</body>
+</html>

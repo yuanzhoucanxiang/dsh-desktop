@@ -40,7 +40,7 @@ const DEV = process.argv.includes('--dev')
 
 const APP_NAME = 'DeepSeek Harness Desktop'
 const SPLASH_PATH = path.join(__dirname, 'renderer', 'splash.html')
-const PLUGINS_PATH = path.join(__dirname, 'renderer', 'plugins.html')
+const SETTINGS_PATH = path.join(__dirname, 'renderer', 'settings.html')
 const ICON_PATH = path.join(__dirname, 'build', 'icon.png')
 const READY_TIMEOUT_MS = 120000
 // 启动画面交接编排（只影响观感，不影响内核拉起时序）：
@@ -52,8 +52,8 @@ const SPLASH_EXIT_MS = 520 // 淡出等待上限：渲染侧 ack 会提前返回
 let win = null
 /** @type {BrowserWindow | null} 托盘「预览启动画面」用的独立窗口 */
 let previewWin = null
-/** @type {BrowserWindow | null} 「插件与体检」面板窗口 */
-let pluginsWin = null
+/** @type {BrowserWindow | null} 「设置」面板窗口（插件体检 / 软件更新） */
+let settingsWin = null
 /** @type {Tray | null} */
 let tray = null
 
@@ -734,19 +734,21 @@ async function checkPluginUpdates() {
   return { at: new Date().toISOString(), results }
 }
 
-/** 「插件与体检」面板窗口（独立 BrowserWindow，照启动画面预览的窗口配方）。 */
-function openPluginsPanel() {
-  if (pluginsWin && !pluginsWin.isDestroyed()) {
-    pluginsWin.show()
-    pluginsWin.focus()
+/** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
+function openSettingsPanel(tab) {
+  const target = tab === 'update' ? 'update' : 'plugins'
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show()
+    settingsWin.focus()
+    try { settingsWin.webContents.send('shell:settings-tab', target) } catch {}
     return
   }
-  pluginsWin = new BrowserWindow({
+  settingsWin = new BrowserWindow({
     width: 800,
     height: 620,
     minWidth: 640,
     minHeight: 460,
-    title: '插件与体检',
+    title: '设置',
     backgroundColor: THEMES[themeId()].bg,
     icon: ICON_PATH,
     autoHideMenuBar: true,
@@ -758,8 +760,11 @@ function openPluginsPanel() {
       spellcheck: false,
     },
   })
-  pluginsWin.on('closed', () => { pluginsWin = null })
-  pluginsWin.loadURL(pathToFileURL(PLUGINS_PATH).toString()).catch((err) => log(`plugins panel failed: ${err.message}`))
+  settingsWin.on('closed', () => { settingsWin = null })
+  // 注意：不能用 loadFile(path, { query })——路径含空格/反斜杠时拼出的 URL 会加载失败
+  const url = pathToFileURL(SETTINGS_PATH)
+  url.searchParams.set('tab', target)
+  settingsWin.loadURL(url.toString()).catch((err) => log(`settings panel failed: ${err.message}`))
 }
 
 /** 内核输出在 Windows 上是 OEM/GBK，而本应用日志是 UTF-8：直接 toString 会得到乱码，
@@ -1286,7 +1291,7 @@ function buildAppMenu() {
             click: () => installUpdateNow(),
           }]
           : []),
-        { label: '检查更新…', click: () => checkForUpdates(true) },
+        { label: '检查更新…', click: () => openSettingsPanel('update') },
       ],
     },
     { label: '皮肤', submenu: themeMenuItems() },
@@ -1473,6 +1478,7 @@ function installUpdateNow() {
     if (!w.isDestroyed()) w.destroy()
   }
   if (previewWin && !previewWin.isDestroyed()) previewWin.destroy()
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy()
   // 等内核进程真正退出（taskkill 是异步生效的），再交给安装器，避免它撞上还在跑的进程；
   // 之后内核不再锁安装目录文件，安装器覆盖外壳即可（见 externalRuntimeDir 的设计说明）。
   setTimeout(async () => {
@@ -1495,16 +1501,17 @@ function installUpdateNow() {
   }, 200)
 }
 
-/** 更新已下载：用系统通知 + 托盘/菜单入口告知（窗口可能正藏在托盘里，模态框看不见）。 */
+/** 更新已下载：系统通知 + 托盘/菜单入口 + 设置面板角标（不弹模态框——像 Chrome/VSCode
+ *  那样被动提醒；窗口可能藏在托盘里，模态框反而看不见，借鉴 lumen 的卡片式更新体验）。 */
 function announceUpdateReady(info) {
   state.updateReady = info
   refreshMenus() // 让「重启并安装更新」项出现在托盘与菜单里
-  const version = (info && info.version) || ''
+  sendUpdateStatus({ state: 'downloaded', version: (info && info.version) || updateStatus.version, notes: releaseNotesOf(info) || updateStatus.notes })
   try {
     if (Notification.isSupported()) {
       const n = new Notification({
-        title: `更新已就绪 · ${version}`,
-        body: '点此立即重启并安装（约几秒，装完自动打开）',
+        title: `更新已就绪 · ${(info && info.version) || ''}`,
+        body: '点此立即重启并安装（约几秒，装完自动打开）；也可到左下角「设置 → 软件更新」里安装',
       })
       n.on('click', () => installUpdateNow())
       n.show()
@@ -1512,71 +1519,119 @@ function announceUpdateReady(info) {
   } catch (err) {
     log(`update notify failed: ${err.message}`)
   }
-  // 窗口可见时再补一个明确的选择框；隐藏在托盘时不打扰，靠通知/托盘入口
-  if (win && !win.isDestroyed() && win.isVisible()) {
-    dialog.showMessageBox(win, {
-      type: 'info',
-      buttons: ['立即重启并安装', '稍后'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-      title: '更新已就绪',
-      message: `新版本 ${version} 已下载完成。`,
-      detail: '点「立即重启并安装」后全自动完成：静默安装并自动重新打开，不会再让你手动关闭应用。\n'
-        + '选「稍后」也不用重新下载 —— 托盘菜单和「内核」菜单里会一直留着「重启并安装更新」。',
-    }).then((r) => {
-      if (r.response === 0) installUpdateNow()
-    })
+}
+
+/* ─────────────────────── 软件更新状态机（借鉴 lumen 的 updater 设计） ──────────
+ * 状态：idle → checking → available → downloading(%) → downloaded → (install)
+ *       └────────────→ none / error
+ * 与旧实现的差别：
+ *   · autoDownload=false，由我们编排下载——才能做"网络错误静默重试 2 次"
+ *     （lumen 里程碑 99：大包下载中途 ERR_* 断连很常见，一次失败不该让用户重来）
+ *   · disableDifferentialDownload：NSIS 差分下载是"先差分一遍→校验失败回退整包
+ *     再来一遍"，慢网/GitHub 不稳时几乎必失败，进度条还会 100% 后归零重跑
+ *   · 静默检查失败按 8s/30s/2min 递增重试（网络抖动常见），手动检查立即反馈
+ *   · 检查请求 60s 超时保护：网络抖动时 electron-updater 可能无限挂起不发 error
+ *   · UI 全部走设置面板卡片 + 推送事件（shell:update-status），不再弹模态框 */
+
+const updateStatus = { state: 'idle', version: '', notes: '', percent: 0, message: '', checkedAt: '' }
+let updateManualPending = false
+let autoCheckTimer = null
+const AUTO_CHECK_RETRY_DELAYS = [8000, 30000, 120000]
+let autoCheckRetryIndex = 0
+
+/** UpdateInfo.releaseNotes 可能是字符串或数组（en-US/zh-CN），统一成纯文本。 */
+function releaseNotesOf(info) {
+  const rn = info && info.releaseNotes
+  if (typeof rn === 'string') return rn.trim()
+  if (Array.isArray(rn)) {
+    return rn
+      .map((n) => (n && typeof n === 'object' && 'note' in n ? String(n.note) : ''))
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  return ''
+}
+
+function sendUpdateStatus(patch) {
+  Object.assign(updateStatus, patch)
+  for (const w of [settingsWin, win]) {
+    if (w && !w.isDestroyed()) {
+      try { w.webContents.send('shell:update-status', { ...updateStatus }) } catch {}
+    }
   }
 }
 
-async function checkForUpdates(manual) {
-  if (!app.isPackaged) {
-    if (manual) {
-      dialog.showMessageBox(win, {
-        type: 'info', title: '检查更新', message: '开发模式不支持自动更新',
-        detail: '打包安装后，更新功能才会生效。',
-      })
+/** 静默自动检查：失败按递增计划重试，成功即止（不打扰用户）。 */
+function scheduleAutoCheck(delay) {
+  if (autoCheckTimer) clearTimeout(autoCheckTimer)
+  autoCheckTimer = setTimeout(async () => {
+    autoCheckTimer = null
+    if (updateStatus.state === 'downloading' || updateStatus.state === 'downloaded') return
+    try {
+      await runUpdateCheck(false)
+      autoCheckRetryIndex = 0
+    } catch (err) {
+      if (autoCheckRetryIndex < AUTO_CHECK_RETRY_DELAYS.length - 1) {
+        autoCheckRetryIndex++
+        log(`update check failed (${err.message}), retry in ${AUTO_CHECK_RETRY_DELAYS[autoCheckRetryIndex] / 1000}s`)
+        scheduleAutoCheck(AUTO_CHECK_RETRY_DELAYS[autoCheckRetryIndex])
+      } else {
+        log('update check retries exhausted; manual check available in settings')
+      }
     }
-    return
+  }, delay)
+}
+
+async function runUpdateCheck(manual) {
+  if (!app.isPackaged) {
+    sendUpdateStatus({ state: 'dev', message: '开发模式不支持自动更新，打包安装后生效' })
+    return updateStatus
   }
   const feed = updateFeed()
   if (!feed) {
-    if (manual) {
-      dialog.showMessageBox(win, {
-        type: 'info', title: '检查更新', message: '未配置更新源',
-        detail: '请在设置里配置 updateUrl，或设置环境变量 DSH_DESKTOP_UPDATE_URL。',
-      })
-    }
-    return
+    sendUpdateStatus({ state: 'unconfigured', message: '未配置更新源（settings.updateUrl 或 DSH_DESKTOP_UPDATE_URL）' })
+    return updateStatus
   }
-  // 网络抖动（如 ERR_CONNECTION_RESET，GitHub API 直连常见）自动重试：0s/3s/8s 共 3 次，
-  // 只有手动检查且最终失败才弹窗；静默检查失败只记日志。
-  let lastErr = null
-  for (const delay of [0, 3000, 8000]) {
-    if (delay) {
-      await sleep(delay)
-      log(`update check retrying after ${delay}ms...`)
-    }
+  if (updateStatus.state === 'downloading' || updateStatus.state === 'downloaded') return updateStatus // 幂等：重复检查会重置已就绪状态
+  if (manual) updateManualPending = true
+  sendUpdateStatus({ state: 'checking', message: '' })
+  try {
+    autoUpdater.setFeedURL(feed)
+    // 超时保护：electron-updater 网络抖动时可能无限挂起（不触发 error 事件）
+    await Promise.race([
+      autoUpdater.checkForUpdates(),
+      new Promise((_r, rej) => setTimeout(() => rej(new Error('检查超时（60s）')), 60000)),
+    ])
+    return updateStatus // 状态由 update-available / update-not-available 事件推进
+  } catch (err) {
+    updateManualPending = false
+    log(`update check failed: ${err.message}`)
+    sendUpdateStatus({ state: 'error', message: String(err.message || err) })
+    throw err
+  }
+}
+
+/** 下载更新（手动/自动共用）：网络类错误静默重试 2 次（5s 间隔），最终失败才报状态。 */
+async function downloadUpdateWithRetry() {
+  if (updateStatus.state === 'downloading' || updateStatus.state === 'downloaded') return
+  sendUpdateStatus({ state: 'downloading', percent: updateStatus.percent || 0 })
+  for (let attempt = 0; ; attempt++) {
     try {
-      autoUpdater.setFeedURL(feed)
-      const result = await autoUpdater.checkForUpdates()
-      // 修复：checkForUpdates 在"已是最新"时也返回非空 result（isUpdateAvailable=false），
-      // 原条件 `!result` 使"当前已是最新版本"提示永远不弹——手动检查看起来"点了没反应"。
-      if (manual && result && !result.isUpdateAvailable) {
-        dialog.showMessageBox(win, { type: 'info', title: '检查更新', message: '当前已是最新版本。' })
-      }
+      await autoUpdater.downloadUpdate()
       return
     } catch (err) {
-      lastErr = err
-      log(`update check failed: ${err.message}`)
+      const msg = String((err && err.message) || err)
+      const networkish = /ERR_|ETIMEDOUT|ECONN|ENOTFOUND|net::/i.test(msg)
+      if (networkish && attempt < 2) {
+        log(`update download failed (${msg}), auto retry ${attempt + 1}/2 in 5s`)
+        await sleep(5000)
+        continue
+      }
+      log(`update download failed: ${msg}`)
+      sendUpdateStatus({ state: 'error', message: `下载失败：${msg}` })
+      return
     }
-  }
-  if (manual) {
-    dialog.showMessageBox(win, {
-      type: 'error', title: '检查更新', message: '检查更新失败',
-      detail: String((lastErr && lastErr.message) || lastErr),
-    })
   }
 }
 
@@ -1585,21 +1640,47 @@ function setupAutoUpdater() {
   const feed = updateFeed()
   if (!feed) {
     log('auto-update disabled: no update URL configured (set settings.updateUrl or DSH_DESKTOP_UPDATE_URL)')
+    sendUpdateStatus({ state: 'unconfigured', message: '未配置更新源' })
     return
   }
   try {
     autoUpdater.setFeedURL(feed)
-    autoUpdater.autoDownload = true
+    autoUpdater.autoDownload = false // 下载由 downloadUpdateWithRetry 编排（可重试）
     // 退出时自动安装：即便用户从不点"立即重启"，下次正常退出也能装上
     autoUpdater.autoInstallOnAppQuit = true
-    autoUpdater.on('update-available', (info) => log(`update available: ${info.version}`))
+    // 差分下载关闭：差分流程是"先差分一遍→失败回退整包一遍"，进度条会 100% 后归零
+    // 重跑，慢网/GitHub 不稳时几乎必失败（lumen 里程碑 99 的教训）
+    autoUpdater.disableDifferentialDownload = true
+    autoUpdater.on('update-available', (info) => {
+      log(`update available: ${info.version}`)
+      sendUpdateStatus({ state: 'available', version: info.version, notes: releaseNotesOf(info), percent: 0 })
+      // "像正常软件"：发现更新即在后台自动下载（面板里能看到进度）
+      downloadUpdateWithRetry().catch(() => {})
+    })
+    autoUpdater.on('update-not-available', () => {
+      const manual = updateManualPending
+      updateManualPending = false
+      // 静默检查无更新不打扰；面板若开着就顺手刷新状态
+      sendUpdateStatus({ state: 'none', checkedAt: new Date().toISOString(), message: manual ? '' : '（后台自动检查）' })
+    })
+    autoUpdater.on('download-progress', (p) => {
+      sendUpdateStatus({ state: 'downloading', percent: Math.floor(p.percent) })
+    })
     autoUpdater.on('update-downloaded', (info) => {
       log(`update downloaded: ${info.version}`)
       announceUpdateReady(info)
     })
-    autoUpdater.on('error', (err) => log(`autoUpdater error: ${err && err.message ? err.message : err}`))
-    // 启动后延迟自动检查一次（静默）
-    setTimeout(() => { checkForUpdates(false).catch(() => {}) }, 8000)
+    autoUpdater.on('error', (err) => {
+      const msg = err && err.message ? err.message : String(err)
+      // 下载中的错误由 downloadUpdateWithRetry 兜底（含自动重试）；这里只报检查阶段的错误
+      if (updateStatus.state !== 'downloading') {
+        updateManualPending = false
+        sendUpdateStatus({ state: 'error', message: msg })
+      }
+      log(`autoUpdater error: ${msg}`)
+    })
+    // 启动后延迟静默检查一次（失败按 AUTO_CHECK_RETRY_DELAYS 递增重试）
+    scheduleAutoCheck(AUTO_CHECK_RETRY_DELAYS[0])
   } catch (err) {
     log(`auto-update setup failed: ${err && err.message ? err.message : err}`)
   }
@@ -1630,7 +1711,7 @@ function buildTrayMenu() {
     ...(state.pluginProblems
       ? [{
         label: `⚠ 插件体检发现 ${state.pluginProblems} 项异常…`,
-        click: () => openPluginsPanel(),
+        click: () => openSettingsPanel('plugins'),
       }]
       : []),
     ...(readQuarantine().length
@@ -1641,10 +1722,10 @@ function buildTrayMenu() {
       : []),
     { type: 'separator' },
     { label: '重启内核', click: () => restartKernel() },
-    { label: '插件与体检…', click: () => openPluginsPanel() },
+    { label: '设置（插件 / 软件更新）…', click: () => openSettingsPanel() },
     { label: '设置工作目录…', click: () => pickWorkspace() },
     { label: '打开日志', click: () => shell.openPath(state.logPath || path.join(app.getPath('userData'), 'kernel.log')) },
-    { label: '检查更新…', click: () => checkForUpdates(true) },
+    { label: '检查更新…', click: () => openSettingsPanel('update') },
     { type: 'separator' },
     {
       label: '皮肤',
@@ -1743,7 +1824,12 @@ function registerIpc() {
     restoreQuarantinedBundles()
     return { ok: true, restored: before }
   })
-  ipcMain.on('shell:open-plugins', () => openPluginsPanel())
+  ipcMain.on('shell:open-settings', () => openSettingsPanel())
+  // 软件更新：状态查询/手动检查/下载/安装（状态推进也会经 shell:update-status 推送）
+  ipcMain.handle('shell:update-get', () => ({ appVersion: app.getVersion(), ...updateStatus }))
+  ipcMain.handle('shell:update-check', () => runUpdateCheck(true).catch(() => updateStatus))
+  ipcMain.handle('shell:update-download', () => downloadUpdateWithRetry())
+  ipcMain.handle('shell:update-install', () => { installUpdateNow(); return { ok: true } })
   ipcMain.handle('shell:open-file', (_e, p) => {
     // 审阅流里的路径多为绝对路径：path.resolve 保证绝对路径原样通过，相对路径按工作目录解析
     const fp = path.resolve(kernelCwd(), String(p))
@@ -2137,8 +2223,8 @@ if (!gotLock) {
     } catch (err) {
       log(`plugin inspect failed: ${err && err.message ? err.message : err}`)
     }
-    // 调试口：DSH_DESKTOP_PLUGINS_PANEL=1 启动时自动打开体检面板（验证 UI 用）
-    if (process.env.DSH_DESKTOP_PLUGINS_PANEL === '1') setTimeout(() => openPluginsPanel(), 3500)
+    // 调试口：DSH_DESKTOP_SETTINGS_PANEL=1 启动时自动打开设置面板（验证 UI 用）
+    if (process.env.DSH_DESKTOP_SETTINGS_PANEL === '1') setTimeout(() => openSettingsPanel(process.env.DSH_DESKTOP_SETTINGS_TAB), 3500)
     startTurnWatcher() // 回合完成通知（失焦才提醒；无审阅流时自动静默）
     // 首次启动就带 dsh:// 参数时也认（Windows 从浏览器点链接会走这里）
     const bootLink = process.argv.find((a) => typeof a === 'string' && /^dsh:/i.test(a))

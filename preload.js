@@ -59,11 +59,26 @@ contextBridge.exposeInMainWorld('dshShell', {
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),
   setPanelWidth: (w) => ipcRenderer.invoke('shell:set-panel-width', w),
-  // 插件体检：入口打开面板 / 只读报告 / registry 更新比对 / 恢复被隔离插件
-  openPlugins: () => ipcRenderer.send('shell:open-plugins'),
+  // 插件体检：入口打开设置面板 / 只读报告 / registry 更新比对 / 恢复被隔离插件
+  openSettings: () => ipcRenderer.send('shell:open-settings'),
   pluginsReport: () => ipcRenderer.invoke('shell:plugins-report'),
   pluginsCheckUpdates: () => ipcRenderer.invoke('shell:plugins-check-updates'),
   pluginsRestore: () => ipcRenderer.invoke('shell:plugins-restore'),
+  // 软件更新：状态查询 / 手动检查 / 下载 / 安装；状态推进经 onUpdateStatus 推送
+  updateGet: () => ipcRenderer.invoke('shell:update-get'),
+  updateCheck: () => ipcRenderer.invoke('shell:update-check'),
+  updateDownload: () => ipcRenderer.invoke('shell:update-download'),
+  updateInstall: () => ipcRenderer.invoke('shell:update-install'),
+  onUpdateStatus: (cb) => {
+    const h = (_e, s) => cb(s)
+    ipcRenderer.on('shell:update-status', h)
+    return () => ipcRenderer.removeListener('shell:update-status', h)
+  },
+  onSettingsTab: (cb) => {
+    const h = (_e, tab) => cb(tab)
+    ipcRenderer.on('shell:settings-tab', h)
+    return () => ipcRenderer.removeListener('shell:settings-tab', h)
+  },
 })
 
 /* ── 外壳皮肤（跟随托盘「皮肤」设置） ─────────────────────────────────────────
@@ -1468,14 +1483,14 @@ function injectReviewSidebar() {
 ipcRenderer.invoke('shell:get-state').then((s) => applySkin(s && s.theme)).catch(() => {})
 ipcRenderer.on('shell:theme', (_e, id) => applySkin(id))
 
-/* ── 主界面左下角「插件」入口（外壳级覆盖层，与审阅栏同一套路） ────────────────
- * 点击打开「插件与体检」面板；体检发现异常时红点亮起（主进程推送
- * shell:plugin-health / 打开页面时主动拉一次报告）。 */
-function injectPluginsEntry() {
-  if (location.protocol === 'file:') return // splash 与体检面板自身不注入
-  if (document.getElementById('dsh-plugins-entry')) return
+/* ── 主界面左下角「设置」入口（外壳级覆盖层，与审阅栏同一套路） ────────────────
+ * 点击打开「设置」面板（插件体检 / 软件更新）；红点在两种情况亮起：
+ * 插件体检发现异常，或应用更新已下载待安装（主进程推送，打开页面时也主动拉一次）。 */
+function injectSettingsEntry() {
+  if (location.protocol === 'file:') return // splash 与设置面板自身不注入
+  if (document.getElementById('dsh-settings-entry')) return
 
-  const S = 'dsh-plugins-entry'
+  const S = 'dsh-settings-entry'
   const style = document.createElement('style')
   // 令牌复用内核页面的 --dsw-alias-*（皮肤层会重定义），自动跟随明暗主题
   style.textContent = `
@@ -1493,24 +1508,48 @@ function injectPluginsEntry() {
 
   const el = document.createElement('div')
   el.id = S
-  el.title = '插件与体检（健康状态 / 更新检测）'
-  el.textContent = '⚙ 插件'
+  el.title = '设置（插件体检 / 软件更新）'
+  el.textContent = '⚙ 设置'
   const dot = document.createElement('span')
   dot.className = 'dot'
   el.insertBefore(dot, el.firstChild)
-  el.addEventListener('click', () => { try { window.dshShell && window.dshShell.openPlugins() } catch {} })
+  el.addEventListener('click', () => { try { window.dshShell && window.dshShell.openSettings() } catch {} })
   document.body.appendChild(el)
 
-  const mark = (n) => { if (Number(n) > 0) el.classList.add('dsh-warn') }
-  ipcRenderer.invoke('shell:plugins-report').then((r) => {
-    if (r && !r.error) mark((r.problems || []).length)
-  }).catch(() => {})
-  ipcRenderer.on('shell:plugin-health', (_e, s) => mark(s && s.problems))
+  const mark = (on) => { el.classList.toggle('dsh-warn', !!on) }
+  const pluginBad = (n) => Number(n) > 0
+  const updateReady = () => window.__dshUpdateDownloaded === true
+  window.__dshUpdateDownloaded = false
+  const refreshDot = () => mark(pluginBad(window.__dshPluginProblems) || updateReady())
+  window.__dshPluginProblems = 0
+
+  if (window.dshShell) {
+    if (window.dshShell.pluginsReport) {
+      window.dshShell.pluginsReport().then((r) => {
+        window.__dshPluginProblems = (r && !r.error && r.problems) ? r.problems.length : 0
+        refreshDot()
+      }).catch(() => {})
+    }
+    if (window.dshShell.updateGet) {
+      window.dshShell.updateGet().then((s) => {
+        window.__dshUpdateDownloaded = !!(s && s.state === 'downloaded')
+        refreshDot()
+      }).catch(() => {})
+    }
+  }
+  ipcRenderer.on('shell:plugin-health', (_e, s) => {
+    window.__dshPluginProblems = (s && s.problems) || 0
+    refreshDot()
+  })
+  ipcRenderer.on('shell:update-status', (_e, s) => {
+    window.__dshUpdateDownloaded = !!(s && s.state === 'downloaded')
+    refreshDot()
+  })
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { injectReviewSidebar(); injectPluginsEntry() })
+  document.addEventListener('DOMContentLoaded', () => { injectReviewSidebar(); injectSettingsEntry() })
 } else {
   injectReviewSidebar()
-  injectPluginsEntry()
+  injectSettingsEntry()
 }
