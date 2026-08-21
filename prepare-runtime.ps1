@@ -19,17 +19,6 @@ Pop-Location
 Write-Host "pruning dev artifacts (.d.ts/.map/.ts)..."
 Get-ChildItem $runtime -Recurse -File -Include *.d.ts, *.d.ts.map, *.map, *.ts -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Prune pathologically deep paths (defense in depth). A nested package can exceed
-# Windows MAX_PATH; such files cannot be renamed by the NSIS uninstaller, which makes
-# every update abort with exit code 2 ("Failed to uninstall old application files").
-# Real runtime files never need a path longer than ~250 chars - deeper ones are
-# self-referential package copies and safe to drop.
-Get-ChildItem $runtime -Recurse -Force -ErrorAction SilentlyContinue |
-  Where-Object { $_.FullName.Length -gt 250 } |
-  Sort-Object { $_.FullName.Length } -Descending |
-  ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-Write-Host "pruned paths longer than 250 chars"
-
 Write-Host "copying node.exe..."
 Copy-Item $nodeExe (Join-Path $runtime 'node.exe') -Force
 

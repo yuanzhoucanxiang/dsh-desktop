@@ -20,15 +20,6 @@ NPM_HEAP_MB="${NPM_HEAP_MB:-4096}"
 echo "==> pruning dev artifacts (.d.ts/.map/.ts)..."
 find "$RUNTIME/node_modules" \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.map' -o -name '*.ts' \) -delete 2>/dev/null || true
 
-# Prune pathologically deep paths (defense in depth): self-referential package nesting
-# bloats the runtime and breaks NSIS's Rename-based uninstall on Windows (MAX_PATH).
-# Nothing legit needs a path longer than 250 chars.
-find "$RUNTIME" -depth -print0 | while IFS= read -r -d '' p; do
-  [ "${#p}" -le 250 ] && continue
-  rm -rf "$p" 2>/dev/null || true
-done
-echo "==> pruned paths longer than 250 chars"
-
 echo "==> copying node binary..."
 NODE_BIN="$(command -v node)"
 if [ -z "$NODE_BIN" ]; then

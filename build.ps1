@@ -17,7 +17,17 @@ if (-not (Test-Path "$proj\runtime\node.exe")) {
   if ($LASTEXITCODE -ne 0) { throw "prepare-runtime.ps1 failed (exit $LASTEXITCODE)" }
 }
 
-# 2. package app (dir only -> dist/win-unpacked; no implicit publishing)
+# 2. pack the kernel runtime as a SINGLE archive + a version marker. The app unpacks
+#    this to %LOCALAPPDATA% on first launch; the install dir then stays a thin shell,
+#    so updates can directly overwrite it (no giant runtime tree to uninstall).
+Write-Host "packing runtime -> dist/runtime.tar.gz ..."
+if (Test-Path "$proj\dist\runtime.tar.gz") { Remove-Item "$proj\dist\runtime.tar.gz" -Force }
+& tar -czf "$proj\dist\runtime.tar.gz" -C "$proj" runtime
+if ($LASTEXITCODE -ne 0) { throw "tar pack failed (exit $LASTEXITCODE)" }
+Copy-Item "$proj\runtime\runtime.json" "$proj\dist\runtime-marker.json" -Force
+Write-Host "runtime packed ($(([math]::Round((Get-Item "$proj\dist\runtime.tar.gz").Length/1MB,1))) MB)"
+
+# 3. package app (dir only -> dist/win-unpacked; no implicit publishing)
 # NOTE: PowerShell does NOT stop on a native command's non-zero exit
 # ($ErrorActionPreference does not cover native exes), so every step below checks
 # $LASTEXITCODE explicitly. Without this the script kept going after a failed
@@ -25,14 +35,6 @@ if (-not (Test-Path "$proj\runtime\node.exe")) {
 # which looked like a successful build. That really happened; do not remove.
 & "$proj\node_modules\.bin\electron-builder.cmd" --dir --publish never
 if ($LASTEXITCODE -ne 0) { throw "electron-builder --dir failed (exit $LASTEXITCODE)" }
-
-# 3. complete the runtime: electron-builder's extraResources silently skips
-#    any directory named "node_modules", so copy it in manually.
-$src = "$proj\runtime\node_modules"
-$dst = "$proj\dist\win-unpacked\resources\runtime\node_modules"
-Write-Host "copying runtime node_modules into win-unpacked..."
-if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
-Copy-Item $src $dst -Recurse -Force
 
 # 3b. app-update.yml: required by electron-updater at download/install time;
 #     the two-step (--dir then --prepackaged) flow does not generate it.

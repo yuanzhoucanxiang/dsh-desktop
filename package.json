@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
   "author": "dsh-desktop",
   "license": "MIT",
@@ -48,11 +48,12 @@
     ],
     "extraResources": [
       {
-        "from": "runtime",
-        "to": "runtime",
-        "filter": [
-          "**/*"
-        ]
+        "from": "dist/runtime.tar.gz",
+        "to": "runtime.tar.gz"
+      },
+      {
+        "from": "dist/runtime-marker.json",
+        "to": "runtime-marker.json"
       },
       {
         "from": "plugin",

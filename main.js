@@ -209,36 +209,48 @@ function externalRuntimeDir() {
   return path.join(base, APP_NAME, 'runtime')
 }
 
-/** 读 dir 下 runtime.json 的原文（无则 null）；用于判定"本地副本是否等于本次内置运行时"。 */
-function runtimeMarker(dir) {
+/** 读 JSON 元数据（runtime.json / runtime-marker.json 字段一致：dsh/node/builtAt）。 */
+function readRuntimeMeta(file) {
   try {
-    const p = path.join(dir, 'runtime.json')
-    if (!fs.existsSync(p)) return null
-    return fs.readFileSync(p, 'utf8').trim()
+    if (!fs.existsSync(file)) return null
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
   } catch { return null }
 }
 
 /**
- * 打包后：首次启动（或内置运行时变了）把 resources/runtime 同步到用户目录。
- * 先写临时目录再整体替换，避免中断留下半成品；标记一致则跳过（纯外壳更新不重拷）。
+ * 打包后：首次启动（或内置运行时版本变化时）把 resources/runtime.tar.gz 解压到用户目录。
+ * 安装目录只装外壳、不装运行时树 → 更新时安装器直接覆盖外壳即可，永不触达巨型运行时；
+ * 内核始终从用户目录的副本执行（见 externalRuntimeDir 的定位）。
+ * 解压到临时目录再整体替换，避免中断留下半成品；内置标记与本地一致则跳过。
  */
 async function ensureExternalRuntime() {
   if (!app.isPackaged) return
-  const bundled = path.join(process.resourcesPath, 'runtime')
-  if (!fs.existsSync(bundled)) return // 理论不该发生；缺内置运行时交给 resolveDshBin 兜底
+  const archive = path.join(process.resourcesPath, 'runtime.tar.gz')
+  if (!fs.existsSync(archive)) return // 旧安装/异常：无归档则交给 resolveDshBin 兜底
   const local = externalRuntimeDir()
-  const bMark = runtimeMarker(bundled)
-  const lMark = runtimeMarker(local)
-  if (bMark !== null && lMark === bMark) return // 已同步且与内置一致
-  if (bMark === null && lMark === null && fs.existsSync(local)) return // 无标记可比对但本地已存在
-  setStatus('kernel', '正在同步内核运行时…')
-  log(`syncing kernel runtime -> ${local}`)
-  const tmp = local + '.sync.tmp'
-  await fs.promises.rm(tmp, { recursive: true, force: true })
-  await fs.promises.mkdir(path.dirname(local), { recursive: true })
-  await fs.promises.cp(bundled, tmp, { recursive: true })
+  const want = readRuntimeMeta(path.join(process.resourcesPath, 'runtime-marker.json'))
+  const have = readRuntimeMeta(path.join(local, 'runtime.json'))
+  if (want && have && have.dsh === want.dsh && have.node === want.node && have.builtAt === want.builtAt) return
+  setStatus('kernel', '正在解压内核运行时…')
+  log(`extracting kernel runtime -> ${local}`)
+  const parent = path.dirname(local)
+  const stage = path.join(parent, '.runtime-extract')
+  await fs.promises.rm(stage, { recursive: true, force: true })
+  await fs.promises.mkdir(parent, { recursive: true })
+  await fs.promises.mkdir(stage, { recursive: true })
+  // 系统 tar（Win10 1803+ 自带 bsdtar；开发机 Git 也带 GNU tar）。归档内容带 runtime/ 前缀。
+  const tarExe = isWin && process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, 'System32', 'tar.exe')
+    : 'tar'
+  const r = spawnSync(tarExe, ['-xf', archive, '-C', stage], { windowsHide: true })
+  const extracted = path.join(stage, 'runtime')
+  if (r.status !== 0 || !fs.existsSync(path.join(extracted, 'runtime.json'))) {
+    await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
+    throw new Error(`内核运行时解压失败（tar exit ${r.status}）`)
+  }
   await fs.promises.rm(local, { recursive: true, force: true })
-  await fs.promises.rename(tmp, local)
+  await fs.promises.rename(extracted, local)
+  await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
   log(`kernel runtime ready at ${local}`)
 }
 

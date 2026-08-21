@@ -2,6 +2,26 @@
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
 
+## [0.1.17] - 2026-08-21
+
+### 修复（根因）：内核运行时不再装入安装目录，更新可直接覆盖
+
+之前把整个内核运行时树（~450 个包）装进安装目录，导致：
+- 更新时 electron-builder 要卸载旧版，`--updated` 卸载用 `Rename` 逐文件搬移整个安装目录，
+  一旦出现超长路径（历史 `@deepseek-ai/dsh-scope` 病态嵌套 819 层、单路径 8300+ 字符，
+  超 Windows MAX_PATH）必然失败，报 `Failed to uninstall old application files: 2`
+- 这类超长路径残留还删不掉，会跨重装累积，让更新永远失败
+
+本次改为正确架构：**安装目录只装外壳**，内核运行时打包为单个归档
+`resources/runtime.tar.gz`，首次启动时由应用解压到
+`%LOCALAPPDATA%\DeepSeek Harness Desktop\runtime`（版本标记一致则跳过）：
+- 安装目录浅、小 → 更新时安装器直接覆盖外壳，不再触碰巨型运行时树，也不再有长路径问题
+- 内核仍从用户目录执行，外壳更新后首次启动自动解压新版运行时
+
+### 署名
+
+- deepseek-v4-flash（2026-08-21）
+
 ## [0.1.15] - 2026-08-21
 
 ### 改进
