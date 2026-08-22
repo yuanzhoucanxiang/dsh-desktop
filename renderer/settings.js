@@ -4,6 +4,22 @@
  * 两个页签：插件（只读体检） / 软件更新（状态机卡片，借鉴 lumen 的更新体验） */
 
 const $ = (id) => document.getElementById(id)
+
+/* ─────────────────────────── 皮肤（与启动画面同一体系） ───────────────────
+ * 首帧用查询参数（主进程开窗时带上，零闪烁），随后跟随托盘皮肤切换即时变。 */
+const query = new URLSearchParams(location.search)
+function applySkin(id) {
+  document.body.dataset.theme = ['deep', 'seascape', 'palis'].includes(id) ? id : 'deep'
+}
+applySkin(query.get('theme'))
+if (window.dshShell) {
+  if (window.dshShell.onTheme) window.dshShell.onTheme(applySkin)
+  // 以主进程状态为准再校正一次（查询参数缺失/过期时兜底）
+  if (window.dshShell.status) {
+    window.dshShell.status().then((s) => { if (s && s.theme) applySkin(s.theme) }).catch(() => {})
+  }
+}
+
 const BAD_CODES = new Set(['dangling-link', 'missing-entry', 'no-dsh-bundle', 'unreadable'])
 let lastReport = null
 let updateResults = null // { at, results: [{name, latest, upToDate, error}] }
@@ -33,7 +49,7 @@ function switchTab(tab) {
 for (const btn of document.querySelectorAll('.tab')) {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab))
 }
-switchTab(new URLSearchParams(location.search).get('tab'))
+switchTab(query.get('tab'))
 if (window.dshShell && window.dshShell.onSettingsTab) {
   window.dshShell.onSettingsTab((tab) => switchTab(tab))
 }

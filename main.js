@@ -812,6 +812,7 @@ function openSettingsPanel(tab) {
   // 注意：不能用 loadFile(path, { query })——路径含空格/反斜杠时拼出的 URL 会加载失败
   const url = pathToFileURL(SETTINGS_PATH)
   url.searchParams.set('tab', target)
+  url.searchParams.set('theme', themeId()) // 首帧皮肤（渲染侧零闪烁），随后 shell:theme 即时切换
   settingsWin.loadURL(url.toString()).catch((err) => log(`settings panel failed: ${err.message}`))
 }
 
@@ -1105,14 +1106,14 @@ function pushThemeToKernel(theme) {
 }
 
 /**
- * 切换外壳皮肤：持久化 + 窗口底色 + 广播给启动画面/预览窗口 + 联动内核页面主题。
+ * 切换外壳皮肤：持久化 + 窗口底色 + 广播给启动画面/预览窗口/设置面板 + 联动内核页面主题。
  * palis 皮肤下，内核 Web UI 经内置 palis-theme 插件一起换成档案终端观感。
  */
 function applyTheme(id) {
   const next = THEMES[id] ? id : 'deep'
   settings.theme = next
   saveSettings()
-  for (const w of [win, previewWin]) {
+  for (const w of [win, previewWin, settingsWin]) {
     if (!w || w.isDestroyed()) continue
     try {
       w.setBackgroundColor(THEMES[next].bg)

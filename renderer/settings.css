@@ -1,7 +1,11 @@
-/* 设置面板（独立 file:// 页面，无内核令牌：固定深海配色，与外壳皮肤同调） */
+/* 设置面板（独立 file:// 页面，无内核令牌：跟随外壳皮肤，与启动画面同一体系）
+   皮肤机制：body[data-theme] 由 settings.js 设置——首帧取主进程开窗时带的查询参数
+   （零闪烁），随后跟随托盘皮肤切换（shell:theme）即时变。
+   :root 的默认值即 deep（深海）；seascape / palis 只换令牌 + 少量结构修饰。 */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  /* deep · 深海（默认） */
   --bg: #05070f;
   --bg-layer: #101426;
   --border: #262d4a;
@@ -9,14 +13,35 @@
   --label-2: #aeb8d8;
   --label-3: #6f7a99;
   --brand: #5d6dff;
+  --brand-strong: #4f63d8;
+  --brand-strong-hover: #5d6dff;
+  --brand-text-on: #f2f4ff;
+  --brand-bg: rgba(93, 109, 255, .06);
+  --brand-soft: #9aa6ff;
+  --track: rgba(93, 109, 255, .15);
+  --fill: linear-gradient(90deg, #4f63d8, #7d8bff);
+  --row-hover: rgba(93, 109, 255, .05);
+  --row-border: rgba(38, 45, 74, .55);
   --ok: #7fe0a8;
+  --ok-bg: rgba(127, 224, 168, .1);
   --warn: #ffd97a;
+  --warn-bg: rgba(255, 217, 122, .1);
+  --warn-card-bg: rgba(255, 217, 122, .06);
+  --warn-card-border: rgba(255, 217, 122, .3);
   --bad: #ff9a9a;
+  --bad-bg: rgba(255, 154, 154, .12);
+  --banner-bg: rgba(255, 154, 154, .08);
+  --banner-border: rgba(255, 154, 154, .35);
+  --font-body: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: Consolas, "Cascadia Mono", monospace;
+  --r-s: 9px;  /* 页签 / 按钮 */
+  --r-xs: 6px; /* 徽章 / 进度条 */
+  --r-m: 12px; /* 卡片 / 表格容器 */
 }
 
 html, body { height: 100%; }
 body {
-  font: 13px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font: 13px/1.6 var(--font-body);
   color: var(--label-1);
   background: var(--bg);
   display: flex;
@@ -30,7 +55,7 @@ h1 { font-size: 17px; font-weight: 650; letter-spacing: .02em; }
 
 .tabs { display: flex; gap: 4px; }
 .tab {
-  font: inherit; font-size: 12.5px; padding: 6px 16px; border-radius: 9px; cursor: pointer;
+  font: inherit; font-size: 12.5px; padding: 6px 16px; border-radius: var(--r-s); cursor: pointer;
   background: transparent; color: var(--label-2); border: 1px solid transparent;
 }
 .tab:hover { color: var(--label-1); }
@@ -46,13 +71,13 @@ h1 { font-size: 17px; font-weight: 650; letter-spacing: .02em; }
 .actions { display: flex; gap: 8px; }
 
 button {
-  font: inherit; font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12px; padding: 6px 14px; border-radius: var(--r-s); cursor: pointer;
   background: transparent; color: var(--label-2); border: 1px solid var(--border);
 }
 button:hover { color: var(--label-1); border-color: var(--brand); }
 button:disabled { opacity: .5; cursor: default; }
-button.primary { background: #4f63d8; color: #f2f4ff; border-color: transparent; }
-button.primary:hover { background: #5d6dff; color: #fff; }
+button.primary { background: var(--brand-strong); color: var(--brand-text-on); border-color: transparent; }
+button.primary:hover { background: var(--brand-strong-hover); color: var(--brand-text-on); }
 button.danger { color: var(--bad); }
 button.danger:hover { border-color: var(--bad); }
 
@@ -62,14 +87,14 @@ button.danger:hover { border-color: var(--bad); }
 .summary.good b { color: var(--ok); }
 
 .banner {
-  flex: none; padding: 10px 14px; border-radius: 10px; font-size: 12px;
-  background: rgba(255, 154, 154, .08); border: 1px solid rgba(255, 154, 154, .35); color: var(--bad);
+  flex: none; padding: 10px 14px; border-radius: var(--r-m); font-size: 12px;
+  background: var(--banner-bg); border: 1px solid var(--banner-border); color: var(--bad);
 }
 .hidden { display: none !important; }
 
-.card { flex: none; padding: 12px 14px; border-radius: 12px; font-size: 12px; }
+.card { flex: none; padding: 12px 14px; border-radius: var(--r-m); font-size: 12px; }
 .card-title { font-weight: 600; margin-bottom: 6px; }
-.warn-card { background: rgba(255, 217, 122, .06); border: 1px solid rgba(255, 217, 122, .3); }
+.warn-card { background: var(--warn-card-bg); border: 1px solid var(--warn-card-border); }
 .warn-card .card-title { color: var(--warn); }
 .neutral-card { background: var(--bg-layer); border: 1px solid var(--border); }
 .card ul { list-style: none; }
@@ -80,37 +105,37 @@ button.danger:hover { border-color: var(--bad); }
 
 /* ── 软件更新卡片 ── */
 .update-state { font-size: 13px; }
-.update-state .ver { font-family: Consolas, "Cascadia Mono", monospace; font-weight: 600; }
+.update-state .ver { font-family: var(--font-mono); font-weight: 600; }
 .update-state.ok { color: var(--ok); }
 .update-state.err { color: var(--bad); }
 .update-state.dim { color: var(--label-3); }
 
 .progress { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.progress-bar { flex: 1; height: 8px; border-radius: 5px; background: rgba(93, 109, 255, .15); overflow: hidden; }
-.progress-fill { height: 100%; width: 0; border-radius: 5px; background: linear-gradient(90deg, #4f63d8, #7d8bff); transition: width .25s; }
-.progress-text { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; color: var(--label-2); min-width: 42px; text-align: right; }
+.progress-bar { flex: 1; height: 8px; border-radius: var(--r-xs); background: var(--track); overflow: hidden; }
+.progress-fill { height: 100%; width: 0; border-radius: var(--r-xs); background: var(--fill); transition: width .25s; }
+.progress-text { font-family: var(--font-mono); font-size: 12px; color: var(--label-2); min-width: 42px; text-align: right; }
 
 /* 更新说明（release notes）：分类标题 + · 条目，借鉴 lumen 的约定格式 */
-.update-notes { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(93, 109, 255, .06); font-size: 12px; }
-.update-notes .nt-title { font-weight: 600; color: #9aa6ff; margin: 6px 0 2px; }
+.update-notes { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-m); background: var(--brand-bg); font-size: 12px; }
+.update-notes .nt-title { font-weight: 600; color: var(--brand-soft); margin: 6px 0 2px; }
 .update-notes .nt-title:first-child { margin-top: 0; }
 .update-notes .nt-item { display: flex; gap: 6px; color: var(--label-2); padding: 1px 0; }
-.update-notes .nt-item .bullet { color: #9aa6ff; flex: none; }
+.update-notes .nt-item .bullet { color: var(--brand-soft); flex: none; }
 
-.tbl-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+.tbl-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-m); }
 .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .tbl th {
   position: sticky; top: 0; text-align: left; font-weight: 600; font-size: 11.5px; color: var(--label-3);
   padding: 9px 12px; background: var(--bg-layer); border-bottom: 1px solid var(--border);
   letter-spacing: .04em; white-space: nowrap;
 }
-.tbl td { padding: 9px 12px; border-bottom: 1px solid rgba(38, 45, 74, .55); vertical-align: top; }
+.tbl td { padding: 9px 12px; border-bottom: 1px solid var(--row-border); vertical-align: top; }
 .tbl tr:last-child td { border-bottom: none; }
-.tbl tr:hover td { background: rgba(93, 109, 255, .05); }
+.tbl tr:hover td { background: var(--row-hover); }
 .tbl .name { color: var(--label-1); font-weight: 600; word-break: break-all; }
 .tbl .name .src { font-weight: 400; color: var(--label-3); margin-left: 6px; font-size: 11px; }
-.tbl .ver { font-family: Consolas, "Cascadia Mono", monospace; color: var(--label-2); white-space: nowrap; }
-.tbl .latest { font-family: Consolas, "Cascadia Mono", monospace; white-space: nowrap; }
+.tbl .ver { font-family: var(--font-mono); color: var(--label-2); white-space: nowrap; }
+.tbl .latest { font-family: var(--font-mono); white-space: nowrap; }
 .tbl .latest.up { color: var(--ok); font-weight: 600; }
 .tbl .latest.dim { color: var(--label-3); }
 .tbl .latest.err { color: var(--bad); font-size: 11px; }
@@ -118,10 +143,106 @@ button.danger:hover { border-color: var(--bad); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip {
-  font-size: 11px; padding: 1px 8px; border-radius: 6px; white-space: nowrap;
-  background: rgba(127, 224, 168, .1); color: var(--ok);
+  font-size: 11px; padding: 1px 8px; border-radius: var(--r-xs); white-space: nowrap;
+  background: var(--ok-bg); color: var(--ok);
 }
-.chip.warn { background: rgba(255, 217, 122, .1); color: var(--warn); }
-.chip.bad { background: rgba(255, 154, 154, .12); color: var(--bad); }
+.chip.warn { background: var(--warn-bg); color: var(--warn); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
 
 .page-foot { flex: none; font-size: 11px; color: var(--label-3); padding-top: 2px; }
+
+/* ═══════════════ 皮肤二 · 海景 Seascape（致敬杉本博司） ═══════════════
+   单色银盐：只有灰度层次。唯一的例外是错误态沿用启动画面的低饱和暗红
+   （#b3565e/#cf9096，与海景 splash 错误封条同色）——语义色完全抹平会误事。 */
+body[data-theme="seascape"] {
+  --bg: #0a0b0c;
+  --bg-layer: #131619;
+  --border: #2a2f33;
+  --label-1: #e7ecee;
+  --label-2: #9ba2a6;
+  --label-3: #6d7478;
+  --brand: #cdd6da;
+  --brand-strong: #c9d2d6;
+  --brand-strong-hover: #e7ecee;
+  --brand-text-on: #0a0b0c;
+  --brand-bg: rgba(220, 227, 230, .05);
+  --brand-soft: #cdd6da;
+  --track: rgba(220, 227, 230, .12);
+  --fill: linear-gradient(90deg, #6d7478, #e7ecee);
+  --row-hover: rgba(220, 227, 230, .04);
+  --row-border: rgba(42, 47, 51, .6);
+  --ok: #e7ecee;
+  --ok-bg: rgba(231, 236, 238, .08);
+  --warn: #c9d2d6;
+  --warn-bg: rgba(201, 210, 214, .1);
+  --warn-card-bg: rgba(201, 210, 214, .05);
+  --warn-card-border: rgba(201, 210, 214, .28);
+  --bad: #cf9096;
+  --bad-bg: rgba(179, 86, 94, .12);
+  --banner-bg: rgba(179, 86, 94, .08);
+  --banner-border: rgba(179, 86, 94, .32);
+}
+
+body[data-theme="seascape"] h1 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  letter-spacing: .1em;
+}
+
+/* ═══════════════ 皮肤三 · 复古科幻档案终端 PALIS ═══════════════
+   黑白高反差；强调色只有系统蓝（进度/选中）与警示红（警告/危险）；
+   全等宽、直角、大写大字距；一层极淡 CRT 扫描线。 */
+body[data-theme="palis"] {
+  --bg: #0a0a0a;
+  --bg-layer: #141414;
+  --border: #3a3a3a;
+  --label-1: #e8e8e8;
+  --label-2: #8a8a8a;
+  --label-3: #636363;
+  --brand: #2b5fd9;
+  --brand-strong: #2b5fd9;
+  --brand-strong-hover: #3a6de8;
+  --brand-text-on: #ffffff;
+  --brand-bg: rgba(43, 95, 217, .1);
+  --brand-soft: #7a97e8;
+  --track: rgba(43, 95, 217, .18);
+  --fill: #2b5fd9;
+  --row-hover: rgba(43, 95, 217, .06);
+  --row-border: rgba(58, 58, 58, .6);
+  --ok: #e8e8e8;
+  --ok-bg: rgba(232, 232, 232, .08);
+  --warn: #c8322b;
+  --warn-bg: rgba(200, 50, 43, .1);
+  --warn-card-bg: rgba(200, 50, 43, .05);
+  --warn-card-border: rgba(200, 50, 43, .35);
+  --bad: #c8322b;
+  --bad-bg: rgba(200, 50, 43, .12);
+  --banner-bg: rgba(200, 50, 43, .08);
+  --banner-border: rgba(200, 50, 43, .4);
+  --font-body: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+  --r-s: 0;
+  --r-xs: 0;
+  --r-m: 0;
+}
+
+body[data-theme="palis"] h1,
+body[data-theme="palis"] .tab,
+body[data-theme="palis"] button,
+body[data-theme="palis"] .tbl th,
+body[data-theme="palis"] .card-title {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+
+/* CRT 扫描线：极淡一层横向条纹，静止、不吃点击 */
+body[data-theme="palis"]::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg,
+    rgba(255, 255, 255, .022) 0px, rgba(255, 255, 255, .022) 1px,
+    transparent 1px, transparent 3px);
+}
