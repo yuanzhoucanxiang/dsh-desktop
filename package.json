@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
   "author": "dsh-desktop",
   "license": "MIT",
@@ -21,6 +21,8 @@
     "sidebar-skin-check": "electron sidebar-skin-check.js",
     "review-ui-check": "electron review-ui-check.js",
     "git-review-test": "node lib/git-review.test.js",
+    "profile-inspect-test": "node lib/profile-inspect.test.js",
+    "atomic-file-test": "node lib/atomic-file.test.js",
     "selector-check": "node plugin-selector-check.js"
   },
   "devDependencies": {
@@ -41,6 +43,8 @@
       "preload.js",
       "lib/git-review.js",
       "lib/profile-inspect.js",
+      "lib/atomic-file.js",
+      "lib/settings-store.js",
       "renderer/**/*",
       "build/*.png",
       "build/icon.ico",
@@ -73,24 +77,15 @@
           "client.js"
         ]
       },
-    {
-      "from": "plugin/dialog-optimize",
-      "to": "plugin/dialog-optimize",
-      "filter": [
-        "package.json",
-        "index.js",
-        "client.js"
-      ]
-    },
-    {
-      "from": "plugin/shell-settings",
-      "to": "plugin/shell-settings",
-      "filter": [
-        "package.json",
-        "index.js",
-        "client.js"
-      ]
-    }
+      {
+        "from": "plugin/shell-settings",
+        "to": "plugin/shell-settings",
+        "filter": [
+          "package.json",
+          "index.js",
+          "client.js"
+        ]
+      }
     ],
     "publish": {
       "provider": "github",

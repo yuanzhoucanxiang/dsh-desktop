@@ -656,13 +656,16 @@ body[data-theme="palis"] .boot-log .ln-dim  { color: var(--fg-1); }
 body[data-theme="palis"] .boot-log .ln-blue { color: var(--blue); }
 body[data-theme="palis"] .boot-log .ln-red  { color: var(--red); }
 
-/* 行式进度：方形括号内的空格进度（steps() 前进，一步一格，不圆滑） */
+/* 行式进度：方形括号内的 20 格进度（steps() 前进，一步一格，不圆滑）。
+   容器不定宽：JS 恒生成 20 个 1ch 宽的 <i>，宽度由格子自然撑开；nowrap 禁止换行。
+   绝不能给容器写 width: 20ch —— font-size:0 会把容器的 1ch 算成 0px，
+   容器塌成 0 宽后每个格子各自换行，进度条就竖过来了（PALIS 皮肤落地即带的缺陷）。 */
 body[data-theme="palis"] .boot-log .ln-prog {
   display: inline-block;
-  width: 20ch;
   font-size: 0;
   line-height: 1;
   vertical-align: middle;
+  white-space: nowrap;
 }
 body[data-theme="palis"] .boot-log .ln-prog i {
   display: inline-block;
