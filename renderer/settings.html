@@ -28,6 +28,7 @@
 
   <div id="summary" class="summary"></div>
   <div id="error-banner" class="banner hidden"></div>
+  <div id="manage-banner" class="banner manage hidden"></div>
 
   <section id="quarantine" class="card warn-card hidden">
     <div class="card-title">被隔离的插件（内核曾因它们启动失败，被自动摘除）</div>
@@ -50,7 +51,7 @@
   </div>
 
   <footer class="page-foot">
-    插件一键更新暂未开放（等链接自修复就位，避免 pnpm 打断本地链接）；本地链接插件的更新方式 = 在源目录拉取最新代码后重启内核。
+    插件开关经 profile 的 cordis.patch.yml 下发禁用补丁：内核运行中改动即时热重载（免重启），未运行则下次启动生效。外壳自带组件（审阅桥/对话优化等）不走此列表；插件一键更新暂未开放。
   </footer>
 </main>
 

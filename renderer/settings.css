@@ -37,6 +37,7 @@
   --r-s: 9px;  /* 页签 / 按钮 */
   --r-xs: 6px; /* 徽章 / 进度条 */
   --r-m: 12px; /* 卡片 / 表格容器 */
+  --pill: 999px; /* 胶囊圆角（开关滑轨/滑块）；直角皮肤置 0 */
 }
 
 html, body { height: 100%; }
@@ -224,6 +225,7 @@ body[data-theme="palis"] {
   --r-s: 0;
   --r-xs: 0;
   --r-m: 0;
+  --pill: 0;
 }
 
 body[data-theme="palis"] h1,
@@ -246,3 +248,32 @@ body[data-theme="palis"]::before {
     rgba(255, 255, 255, .022) 0px, rgba(255, 255, 255, .022) 1px,
     transparent 1px, transparent 3px);
 }
+
+/* ─────────────── 插件管理开关（cordis.patch.yml 禁用补丁） ─────────────── */
+.banner.manage { background: var(--brand-bg); border-color: var(--border); color: var(--label-2); }
+.banner.manage.manage-err { background: var(--banner-bg); border-color: var(--banner-border); color: var(--bad); }
+
+.switch { position: relative; display: inline-block; width: 34px; height: 20px; vertical-align: middle; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch .slider {
+  position: absolute; inset: 0; cursor: pointer; transition: .15s;
+  background: var(--bg-layer); border: 1px solid var(--border); border-radius: var(--pill);
+}
+.switch .slider:before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px;
+  background: var(--label-3); border-radius: var(--pill); transition: .15s;
+}
+/* 选中态从 --ok 派生（各皮肤语义色不同：deep 绿 / seascape 银 / palis 白） */
+.switch input:checked + .slider {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  border-color: var(--ok);
+}
+.switch input:checked + .slider:before { transform: translateX(14px); background: var(--ok); }
+.switch input:focus-visible + .slider { outline: 2px solid var(--brand); outline-offset: 1px; }
+.switch input:disabled + .slider { opacity: .4; cursor: wait; }
+
+.st-label { font-size: 12px; margin-left: 8px; vertical-align: middle; white-space: nowrap; }
+.st-label.on { color: var(--ok); }
+.st-label.off { color: var(--bad); }
+.st-label.warn { color: var(--warn); }
+.st-label .why, td .why { display: block; font-size: 11px; color: var(--label-3); }

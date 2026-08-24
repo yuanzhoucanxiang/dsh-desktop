@@ -34,6 +34,7 @@ const { createGitReview } = require('./lib/git-review')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
 const { createSettingsStore } = require('./lib/settings-store')
+const { parsePatchList, effectiveDisabled, entryIdsForPackage, setEntryDisabled } = require('./lib/plugin-manager')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
@@ -328,7 +329,15 @@ function dshHome() {
  * 锚点读 dsh.client 声明，所以 host/client 两半都从这里加载。
  * 内容相同则跳过（不扰动 mtime）；返回插件文件是否可用。
  */
-const BUILTIN_PLUGINS = ['dialog-optimize', 'palis-theme', 'shell-settings']
+/**
+ * 内置插件名单（同步到 $DSH_HOME/profiles/node_modules/@dsh-local/<name> 后经
+ * kernel.patch.yml 注入）。注意 palis-theme 不在名单里：它与用户自装的
+ * @dsh-local/palis-theme-panel 插件是同一能力（都注册 /api/palis-theme 契约路由，
+ * 见 main.js pushThemeToKernel），双挂载会让内核 webserver 报 duplicate exact route
+ * 启动即崩（2026-08-24 实测）。皮肤联动的内核侧归属 = palis-theme-panel bundle，
+ * 扁平内置版（plugin/palis-theme/ 源码保留）只是未启用的备选实现。
+ */
+const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings']
 
 function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)
@@ -613,6 +622,11 @@ function profileWebManifest() {
   return path.join(dshHome(), 'profiles', 'web', 'package.json')
 }
 
+/** profile 用户补丁层：内核 boot 时 watch 此文件，改动热重载免重启（dsh-app-boot）。 */
+function profilePatchFile() {
+  return path.join(dshHome(), 'profiles', 'web', 'cordis.patch.yml')
+}
+
 /** 从日志文本里提取报错点名的 bundle 包名（排除内核自身的 cordis:* 内部条目）。
  *  ⚠ 这仅是**运行期失败的安全网**——插件代码在 import 时报错（静态体检看不见）
  *  才会走到这里。会炸内核的静态问题（缺 dsh.bundle / 链接悬空 / 缺条目）由启动前
@@ -753,6 +767,83 @@ function pluginReportForRenderer(report) {
     problems: report.problems,
     quarantined: readQuarantine(),
   }
+}
+
+/* ─────────────────────────── 插件管理（按钮式启停） ──────────────────────────
+ * 内核 web UI 对插件只有只读清单、无任何启停 RPC；本外壳经 profile 的
+ * cordis.patch.yml 下发 `- id: <entryId>` + `disabled: true` 补丁实现禁用/启用。
+ * entryId 从各插件自己的 dsh.bundle.patch insert 块解析；内核 watchUserPatches
+ * 对该文件热重载（内核运行中即时生效，未运行则下次启动生效）。内核零修改。 */
+
+/** 组装插件管理清单：体检结果 + bundle patch entryIds + 当前补丁禁用态。 */
+function buildManageList() {
+  const patchFile = profilePatchFile()
+  const manifestPath = profileWebManifest()
+  const manifest = readJsonSafe(manifestPath)
+  const deps = (manifest && manifest.dependencies) || {}
+  const report = runPluginInspection()
+
+  let raw = null
+  try { raw = fs.readFileSync(patchFile, 'utf8') } catch (err) { if (err.code !== 'ENOENT') raw = '' }
+  let parseError = ''
+  let patchEntries = []
+  if (raw !== null && raw.trim() !== '') {
+    const parsed = parsePatchList(raw)
+    if (parsed.ok) patchEntries = parsed.entries
+    else parseError = parsed.error
+  }
+
+  // inspectProfile 会用 pkg.name 覆盖 item.name，按 deps 键优先对齐，其次按依赖声明串
+  const used = new Set()
+  const baseFor = (key) => {
+    let found = report.items.find((i) => !used.has(i) && i.name === key)
+    if (!found) found = report.items.find((i) => !used.has(i) && i.spec === deps[key])
+    if (found) used.add(found)
+    return found || {}
+  }
+
+  const nodeModulesDir = path.join(path.dirname(manifestPath), 'node_modules')
+  const items = Object.keys(deps).map((key) => {
+    const base = baseFor(key)
+    const entryIds = entryIdsForPackage(nodeModulesDir, key)
+    const disabled = entryIds.length > 0 && entryIds.every((id) => effectiveDisabled(patchEntries, id))
+    const blockedByUnsupported = parseError === '' && entryIds.some((id) => patchEntries.some((e) => e.id === id && e.unsupported))
+    const codes = Array.isArray(base.problems) ? base.problems : []
+    return {
+      key,
+      name: base.name || key,
+      version: base.version || '',
+      source: base.source || (/^link:/i.test(deps[key] || '') ? 'link' : 'registry'),
+      inBundles: base.inBundles ?? false,
+      problemLabels: codes.map((c) => PLUGIN_PROBLEM_LABELS[c] || c),
+      problemCodes: codes,
+      quarantined: codes.includes('quarantined'),
+      entryIds,
+      disabled,
+      toggleable: !report.error && parseError === '' && !blockedByUnsupported && base.inBundles === true && entryIds.length > 0,
+    }
+  })
+  return {
+    checkedAt: new Date().toISOString(),
+    error: report.error,
+    parseError,
+    patchFile,
+    kernelRunning: !!state.ready && !state.restarting,
+    items,
+  }
+}
+
+/** 切换一个插件的禁用态：对其全部 entryId 下发/撤销 disabled 补丁。 */
+function togglePluginDisabled(key, disable) {
+  const nodeModulesDir = path.join(path.dirname(profileWebManifest()), 'node_modules')
+  const entryIds = entryIdsForPackage(nodeModulesDir, key)
+  if (!entryIds.length) return { ok: false, error: `无法从 ${key} 的 dsh.bundle.patch 解析出 entry id`, kernelRunning: !!state.ready }
+  for (const id of entryIds) {
+    const r = setEntryDisabled(profilePatchFile(), id, disable)
+    if (!r.ok) return { ok: false, error: r.error, kernelRunning: !!state.ready && !state.restarting }
+  }
+  log(`plugin manage: ${key} → ${disable ? 'disabled' : 'enabled'}（entryIds: ${entryIds.join(', ')}）`)
+  return { ok: true, error: '', kernelRunning: !!state.ready && !state.restarting, hotReload: true }
 }
 
 /** 查 npm registry 最新版本（仅 registry 来源插件；本地 link 是源码开发版，无此概念）。 */
@@ -1890,6 +1981,15 @@ function registerIpc() {
     const before = list.length
     restoreQuarantinedBundles()
     return { ok: true, restored: before }
+  })
+  // 插件管理：按钮式禁用/启用（写 profile cordis.patch.yml，内核热重载；见 buildManageList 注释）
+  ipcMain.handle('shell:plugins-manage-list', () => buildManageList())
+  ipcMain.handle('shell:plugins-manage-toggle', (_e, key, disable) => {
+    if (typeof key !== 'string' || !key || typeof disable !== 'boolean') return { ok: false, error: '参数不合法' }
+    try { return togglePluginDisabled(key, disable) } catch (err) {
+      log(`plugin manage: toggle ${key} failed: ${err.message}`)
+      return { ok: false, error: err.message, kernelRunning: !!state.ready && !state.restarting }
+    }
   })
   ipcMain.on('shell:open-settings', () => openSettingsPanel())
   // 软件更新：状态查询/手动检查/下载/安装（状态推进也会经 shell:update-status 推送）

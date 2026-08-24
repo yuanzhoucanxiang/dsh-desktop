@@ -22,6 +22,7 @@ if (window.dshShell) {
 
 const BAD_CODES = new Set(['dangling-link', 'missing-entry', 'no-dsh-bundle', 'unreadable'])
 let lastReport = null
+let manageState = null // { parseError, kernelRunning, items:[{key,name,disabled,toggleable,...}] }
 let updateResults = null // { at, results: [{name, latest, upToDate, error}] }
 let updateStatus = null // { state, version, notes, percent, message, checkedAt }
 
@@ -62,15 +63,20 @@ function chipClass(code) {
 
 function renderRows() {
   const rows = $('rows')
+  const manage = manageState && !manageState.error ? manageState : null
   if (!lastReport || lastReport.error) {
     rows.innerHTML = '<tr><td colspan="5" class="loading">暂无数据</td></tr>'
     return
   }
   const updates = updateResults ? new Map(updateResults.results.map((r) => [r.name, r])) : null
-  const html = lastReport.items.map((it) => {
+  // 管理清单（manifest deps 全集）为主；缺失时回退到体检条目
+  const items = manage
+    ? manage.items.map((it) => ({ ...it, problemLabels: it.problemLabels || [], problemCodes: it.problemCodes || [] }))
+    : lastReport.items.map((it) => ({ key: it.name, name: it.name, version: it.version, source: it.source, inBundles: it.inBundles, problemLabels: it.problemLabels || [], problemCodes: it.problems || [], toggleable: false, disabled: false }))
+  const html = items.map((it) => {
     const srcLabel = it.source === 'link' ? '🔗 本地链接' : '📦 npm'
     const chips = it.problemLabels && it.problemLabels.length
-      ? it.problems.map((c, i) => `<span class="chip ${chipClass(c)}" title="${esc(it.problems[i])}">${esc(it.problemLabels[i])}</span>`).join('')
+      ? it.problemCodes.map((c, i) => `<span class="chip ${chipClass(c)}" title="${esc(c)}">${esc(it.problemLabels[i])}</span>`).join('')
       : '<span class="chip">✓ 正常</span>'
     let latest = '—'
     if (it.source === 'link') {
@@ -84,12 +90,39 @@ function renderRows() {
     return `<tr>
       <td class="name">${esc(it.name)}<span class="src">${srcLabel}</span></td>
       <td class="ver">${esc(it.version || '?')}</td>
-      <td style="color:var(--label-3)">${it.inBundles ? '已启用' : '未启用'}</td>
+      <td>${statusCell(it)}</td>
       <td><div class="chips">${chips}</div></td>
       <td class="latest">${latest}</td>
     </tr>`
   }).join('')
   rows.innerHTML = html || '<tr><td colspan="5" class="loading">profile 里还没有插件</td></tr>'
+}
+
+/** 「启用」列：可管理的行给开关，其余给只读状态文案。 */
+function statusCell(it) {
+  if (it.quarantined) return '<span class="st-label warn">已被隔离（见上方恢复区）</span>'
+  if (!it.inBundles) return '<span class="st-label">未启用（不在加载列表）</span>'
+  if (!manageState || manageState.error) return `<span class="st-label">${it.disabled ? '已禁用' : '已启用'}</span>`
+  if (!it.toggleable) {
+    const why = (it.entryIds || []).length === 0 ? '缺 bundle patch id' : '文件含手工内容'
+    return `<span class="st-label">${it.disabled ? '已禁用' : '已启用'}<span class="why">（不可切换：${why}）</span></span>`
+  }
+  const note = manageState.kernelRunning ? '' : '<span class="why">下次启动生效</span>'
+  return `<label class="switch" title="${it.disabled ? '启用' : '禁用'} ${esc(it.name)}">
+      <input type="checkbox" data-manage-key="${esc(it.key)}" ${it.disabled ? '' : 'checked'}>
+      <span class="slider"></span>
+    </label><span class="st-label ${it.disabled ? 'off' : 'on'}">${it.disabled ? '已禁用' : '运行中'}</span>${note}`
+}
+
+function renderManageBanner() {
+  const el = $('manage-banner')
+  if (!manageState || manageState.error) { el.classList.add('hidden'); return }
+  if (manageState.parseError) {
+    el.textContent = `⚠ ${manageState.patchFile} 含无法解析的手工内容（${manageState.parseError}），开关已停用以保护手工编辑。`
+    el.classList.remove('hidden')
+    return
+  }
+  el.classList.add('hidden')
 }
 
 function renderSummary() {
@@ -117,6 +150,7 @@ function renderQuarantine() {
 function renderAll() {
   renderSummary()
   renderQuarantine()
+  renderManageBanner()
   renderRows()
 }
 
@@ -124,7 +158,10 @@ async function refresh() {
   if (!window.dshShell || !window.dshShell.pluginsReport) return
   $('btn-refresh').disabled = true
   try {
-    lastReport = await window.dshShell.pluginsReport()
+    const jobs = [window.dshShell.pluginsReport(), window.dshShell.pluginsManageList ? window.dshShell.pluginsManageList() : Promise.resolve(null)]
+    const [report, manage] = await Promise.all(jobs)
+    lastReport = report
+    manageState = manage
     if (lastReport.error) {
       $('error-banner').textContent = lastReport.error
       $('error-banner').classList.remove('hidden')
@@ -139,6 +176,47 @@ async function refresh() {
     $('btn-refresh').disabled = false
   }
 }
+
+/* ───────────────────── 插件开关（cordis.patch.yml 禁用补丁） ─────────────────── */
+
+async function onToggle(key, checked, input) {
+  const item = ((manageState && manageState.items) || []).find((i) => i.key === key)
+  input.disabled = true
+  try {
+    const res = await window.dshShell.pluginsManageToggle(key, !checked)
+    if (!res || !res.ok) {
+      showManageMsg((res && res.error) || '切换失败', true)
+      if (item) input.checked = !checked // 回弹
+      return
+    }
+    if (item) item.disabled = !checked
+    showManageMsg(res.kernelRunning
+      ? `${checked ? '已启用' : '已禁用'} ${item ? item.name : key}——内核热重载已完成；已打开的会话页如有残留，刷新该页即可`
+      : `${checked ? '已启用' : '已禁用'} ${item ? item.name : key}——内核未运行，下次启动生效`)
+    renderRows()
+  } catch (err) {
+    showManageMsg('切换失败：' + (err && err.message ? err.message : String(err)), true)
+    if (item) input.checked = !checked
+  } finally {
+    input.disabled = false
+  }
+}
+
+let manageMsgTimer = null
+function showManageMsg(text, isErr = false) {
+  const el = $('manage-banner')
+  el.textContent = (isErr ? '⚠ ' : '') + text
+  el.classList.toggle('manage-err', !!isErr)
+  el.classList.remove('hidden')
+  clearTimeout(manageMsgTimer)
+  if (!isErr) manageMsgTimer = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('manage-err') }, 5000)
+}
+
+$('rows').addEventListener('change', (ev) => {
+  const input = ev.target.closest('input[data-manage-key]')
+  if (!input || input.disabled) return
+  onToggle(input.getAttribute('data-manage-key'), input.checked, input)
+})
 
 async function checkPluginUpdates() {
   if (!window.dshShell || !window.dshShell.pluginsCheckUpdates) return

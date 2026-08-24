@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('dshShell', {
   pluginsReport: () => ipcRenderer.invoke('shell:plugins-report'),
   pluginsCheckUpdates: () => ipcRenderer.invoke('shell:plugins-check-updates'),
   pluginsRestore: () => ipcRenderer.invoke('shell:plugins-restore'),
+  // 插件管理：按钮式禁用/启用（写 profile cordis.patch.yml，内核热重载）
+  pluginsManageList: () => ipcRenderer.invoke('shell:plugins-manage-list'),
+  pluginsManageToggle: (key, disable) => ipcRenderer.invoke('shell:plugins-manage-toggle', key, disable),
   // 软件更新：状态查询 / 手动检查 / 下载 / 安装；状态推进经 onUpdateStatus 推送
   updateGet: () => ipcRenderer.invoke('shell:update-get'),
   updateCheck: () => ipcRenderer.invoke('shell:update-check'),

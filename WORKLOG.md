@@ -24,6 +24,7 @@
 | 2026-08-21 | [`logs/2026-08-21.md`](logs/2026-08-21.md) | 注入 UI（审阅侧栏/断连浮层）随皮肤统一且不外泄内核页面；修掉两个"失败也报成功"的历史测试；Codex 基准调研落盘 `docs/codex-benchmark.md`；第一批对标迭代（原生菜单+快捷键、多窗口、全局唤起、回合完成通知、深链接）；发现 `dsh-better-sidebar` 与注入侧栏重复，给出后续路线 | deepseek-v4-pro |
 | 2026-08-21 | [`logs/2026-08-21.md`](logs/2026-08-21.md)（⑭ 补充） | 内置内核升级 dsh 0.1.0-rc.7 → 0.1.1-rc.1（npm next 预览线）：锁定脚本同步、运行时重建、冒烟 `SMOKE_OK`；已安装版需 dist+安装才生效 | deepseek-v4-pro |
 | 2026-08-22 | [`logs/2026-08-22.md`](logs/2026-08-22.md) | v0.1.21–0.1.23 三连发：更新架构加固、坏插件隔离改前置体检、统一原子持久层、插件体检/设置面板、shell-settings 进内核设置面板；extraResources 去重 + 陈旧构建残留清理；PALIS 启动进度条竖排修复、内核拉起固定 --no-open（不再抢开系统浏览器）；发布 v0.1.24（%TEMP% 外置构建 + 配置现场派生）；设置面板接入三皮肤体系（deep/seascape/palis，E2E 截图×4 目检）；dsh-better-sidebar 找回上游（omdsh-dev）切 v0.15.2 主干 + 动效修复移植分支（fork 管理） | deepseek-v4-flash、kimi |
+| 2026-08-24 | [`logs/2026-08-24.md`](logs/2026-08-24.md)（〔70〕） | 插件管理开关：设置面板「启用」列升级为按钮式禁用/启用——写 profile cordis.patch.yml 禁用补丁，内核 watchUserPatches 热重载免重启；新增零依赖 lib/plugin-manager（YAML 子集解析 + entryId 提取 + 行级手术，19 项单测）。关键实测：热重载不回退「删补丁」，启用必须显式翻 disabled:false。隔离实例双通道 E2E 全过 | ox-alpha |
 
 ---
 
