@@ -851,6 +851,15 @@ function buildManageList() {
 
 /** 切换一个插件的禁用态：对其全部 entryId 下发/撤销 disabled 补丁。 */
 function togglePluginDisabled(key, disable) {
+  // key 来自渲染侧（内核页面/插件 JS 可达的 IPC）：必须命中 profile manifest 的
+  // dependencies 白名单——否则 '../x' 类路径穿越可让 entryIdsForPackage 读任意
+  // 目录的 package.json/dsh.bundle.patch，并把解析出的 id 写进 cordis.patch.yml。
+  const manifest0 = readJsonSafe(profileWebManifest())
+  const deps0 = (manifest0 && manifest0.dependencies) || {}
+  if (!Object.prototype.hasOwnProperty.call(deps0, key)) {
+    log(`plugin manage: rejected unknown plugin key: ${key}`)
+    return { ok: false, error: `未知插件：${key}`, kernelRunning: !!state.ready && !state.restarting }
+  }
   const nodeModulesDir = path.join(path.dirname(profileWebManifest()), 'node_modules')
   const entryIds = entryIdsForPackage(nodeModulesDir, key)
   if (!entryIds.length) return { ok: false, error: `无法从 ${key} 的 dsh.bundle.patch 解析出 entry id`, kernelRunning: !!state.ready }

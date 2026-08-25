@@ -1,3 +1,13 @@
+## [0.1.27] - 2026-08-25
+
+### 修复：插件管理 toggle 的 key 白名单（路径穿越收口）
+
+- shell:plugins-manage-toggle 的 key 来自渲染侧（内核页面/插件 JS 可达），
+  原实现直接 path.join(nodeModulesDir, key)——../ 类穿越可读任意目录的
+  package.json/dsh.bundle.patch 并把解析 id 写进 cordis.patch.yml。
+  现要求 key 必须命中 profile manifest dependencies 白名单，未命中一律拒绝。
+- 署名：ox-alpha（2026-08-25）
+
 ## [0.1.26] - 2026-08-25
 
 ### 修复：外壳 IPC 路径安全闸（插件越权面收口）
