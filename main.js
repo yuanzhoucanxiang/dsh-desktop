@@ -1590,7 +1590,12 @@ function createWindow() {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {
-    const isOurs = url.startsWith('file://') || (state.ready && url.startsWith(state.url))
+    // origin 级比较（startsWith 前缀匹配会被 127.0.0.1:port.evil.com 类域名绕过）
+    let isOurs = false
+    try {
+      isOurs = url.startsWith('file://') ||
+        (state.ready && new URL(url).origin === new URL(state.url).origin)
+    } catch { isOurs = false }
     if (!isOurs) {
       e.preventDefault()
       if (/^https?:/i.test(url)) shell.openExternal(url)
