@@ -154,6 +154,22 @@ function kernelCwd() {
   return os.homedir()
 }
 
+/**
+ * 路径安全闸：把渲染侧传来的路径解析为绝对路径，并要求落在内核工作区内。
+ * 为什么必须收口：preload（window.dshShell）暴露在内核页面主世界，第三方内核
+ * 插件的 JS 与外壳同权--若 read/open/revert 系列放行任意绝对路径，等于给所有
+ * 插件开了全盘文件读取（乃至 shell.openPath 打开任意文件）的能力。这些 API 的
+ * 正当用途是审阅侧栏（工作区内文件的查看/还原），因此统一在此判定：
+ * 工作区内 -> 返回解析后的绝对路径；工作区外 -> 返回 null（调用方拒绝）。
+ */
+function workspacePath(input) {
+  const root = path.resolve(kernelCwd())
+  const fp = path.resolve(root, String(input ?? ''))
+  const rel = path.relative(root, fp)
+  const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+  return inside ? fp : null
+}
+
 /* ─────────────────────────────── 修改审阅（git） ─────────────────────────────
  * 具体 git 逻辑在 lib/git-review.js（纯 Node，可用 `node lib/git-review.test.js`
  * 直接单测）。这里只保留"外壳职责"：确认对话框、IPC、把结果回给渲染侧。
@@ -1998,13 +2014,15 @@ function registerIpc() {
   ipcMain.handle('shell:update-download', () => downloadUpdateWithRetry())
   ipcMain.handle('shell:update-install', () => { installUpdateNow(); return { ok: true } })
   ipcMain.handle('shell:open-file', (_e, p) => {
-    // 审阅流里的路径多为绝对路径：path.resolve 保证绝对路径原样通过，相对路径按工作目录解析
-    const fp = path.resolve(kernelCwd(), String(p))
+    // 审阅流里的路径多为绝对路径：先经工作区闸（插件越权面收口，见 workspacePath），再解析
+    const fp = workspacePath(p)
+    if (fp === null) return '路径在工作区之外，已拒绝打开'
     return shell.openPath(fp)
   })
   // 面板内文件查看器：读文件内容（UTF-8，上限 512KB，二进制拒绝）
   ipcMain.handle('shell:read-file', (_e, p) => {
-    const fp = path.resolve(kernelCwd(), String(p))
+    const fp = workspacePath(p)
+    if (fp === null) return { ok: false, error: '路径在工作区之外，已拒绝读取' }
     try {
       const stat = fs.statSync(fp)
       if (stat.isDirectory()) return { ok: false, error: '这是一个目录' }
@@ -2042,6 +2060,8 @@ function registerIpc() {
     }
   })
   ipcMain.handle('shell:revert', async (_e, p, untracked) => {
+    const fp = workspacePath(p)
+    if (fp === null) return { ok: false, canceled: true, error: '路径在工作区之外' }
     const r = await dialog.showMessageBox(win, {
       type: 'warning',
       buttons: ['还原', '取消'],
@@ -2052,7 +2072,7 @@ function registerIpc() {
       detail: '该文件的未提交改动将丢失，恢复到最近一次提交（HEAD）。',
     })
     if (r.response !== 0) return { ok: false, canceled: true }
-    return { ok: revertFile(p, !!untracked), canceled: false }
+    return { ok: revertFile(fp, !!untracked), canceled: false }
   })
 
   /* ── 改动审阅的信任闭环：暂存 / 取消暂存 / 逐块丢弃 / 提交 / 推送 ──────────
@@ -2066,9 +2086,19 @@ function registerIpc() {
     ...opts,
   })
 
-  ipcMain.handle('shell:git-stage', (_e, p, hunk) => review.stage(p, hunk ?? null))
-  ipcMain.handle('shell:git-unstage', (_e, p, hunk) => review.unstage(p, hunk ?? null))
+  ipcMain.handle('shell:git-stage', (_e, p, hunk) => {
+    const fp = workspacePath(p)
+    if (fp === null) return { ok: false, error: '路径在工作区之外' }
+    return review.stage(fp, hunk ?? null)
+  })
+  ipcMain.handle('shell:git-unstage', (_e, p, hunk) => {
+    const fp = workspacePath(p)
+    if (fp === null) return { ok: false, error: '路径在工作区之外' }
+    return review.unstage(fp, hunk ?? null)
+  })
   ipcMain.handle('shell:git-revert-hunk', async (_e, p, hunk) => {
+    const fp = workspacePath(p)
+    if (fp === null) return { ok: false, canceled: true, error: '路径在工作区之外' }
     const r = await confirm({
       buttons: ['丢弃这一块', '取消'],
       title: '丢弃这一块改动',
@@ -2076,7 +2106,7 @@ function registerIpc() {
       detail: '只影响这一块，同文件的其它改动会保留。丢弃后无法撤销。',
     })
     if (r.response !== 0) return { ok: false, canceled: true }
-    return review.revertHunk(p, hunk)
+    return review.revertHunk(fp, hunk)
   })
   ipcMain.handle('shell:git-commit', (_e, message) => {
     const r = review.commit(message)

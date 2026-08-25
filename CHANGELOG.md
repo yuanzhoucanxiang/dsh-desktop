@@ -1,3 +1,16 @@
+## [0.1.26] - 2026-08-25
+
+### 修复：外壳 IPC 路径安全闸（插件越权面收口）
+
+- preload（window.dshShell）暴露在内核页面主世界，第三方内核插件 JS 与外壳同权；
+  shell:read-file / open-file 此前放行任意绝对路径 = 全盘任意文件读取、
+  openPath 可打开任意文件。新增 workspacePath() 包含闸：read-file / open-file /
+  revert / git-stage / git-unstage / git-revert-hunk 六个带路径入口统一收口到
+  内核工作区（审阅功能的正当域），工作区外一律拒绝。
+- 配套插件侧修复见 dsh-palis-theme-panel v0.2.0（CRT 层生命周期 + host 变更
+  轮询同步）。
+- 署名：ox-alpha（2026-08-25）
+
 # 变更历史（Changelog）
 
 > 按版本号记录用户可见的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，每条带署名。
