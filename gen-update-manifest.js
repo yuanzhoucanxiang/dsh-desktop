@@ -30,4 +30,7 @@ const yml = [
 ].join('\n')
 const out = path.join(path.dirname(exe), 'latest.yml')
 fs.writeFileSync(out, yml)
-console.log(`latest.yml -> ${out} (${buf.length} bytes)`)
+// 进度日志必须走 stderr：本脚本曾被 `node … > latest.yml` 重定向，stdout 日志行
+// 覆盖了刚写好的文件，污染的 YAML 让应用更新检查直接解析失败（2026-08-25 实故）。
+// stdout 只允许承载"文件内容本身"，日志一律 stderr——重定向怎么写都不会再自伤。
+console.error(`latest.yml -> ${out} (${buf.length} bytes)`)
