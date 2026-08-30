@@ -118,13 +118,24 @@ function fileOfArgs(name, args) {
   return typeof fp === 'string' && fp !== '' ? fp : null
 }
 
+// 路径安全闸：解析为绝对路径并检查是否落在 cwd 内。
+// revert 直接写盘/删文件——若会话事件的 file_path 穿越 cwd（../ 或绝对路径），
+// 会绕过工作区沙盒写/删任意文件（WORKLOG 〔98〕）。cwd 外的路径一律拒绝。
+function withinCwd(cwd, filePath) {
+  const abs = resolveAbs(cwd, filePath)
+  const root = cwd ? path.resolve(cwd) : path.resolve('.')
+  const rel = path.relative(root, abs)
+  return (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) ? abs : null
+}
+
 // 单条改动回退（在真实文件系统上执行逆操作）
 async function reverseChange(events, cwd, callSeq, call) {
   const name = call && call.data && call.data.name
   const args = parseArgs(call && call.data && call.data.arguments)
   const fp = fileOfArgs(name, args)
   if (!fp) return { ok: false, error: '无法确定文件路径' }
-  const abs = resolveAbs(cwd, fp)
+  const abs = withinCwd(cwd, fp)
+  if (abs === null) return { ok: false, error: '文件路径在工作区之外，已拒绝回退' }
   if (name === 'edit') {
     const newStr = args.new_string
     const oldStr = args.old_string
