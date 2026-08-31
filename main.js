@@ -29,7 +29,7 @@ const net = require('node:net')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
-const { pathToFileURL } = require('node:url')
+const { pathToFileURL, fileURLToPath } = require('node:url')
 const { createGitReview } = require('./lib/git-review')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
@@ -898,6 +898,48 @@ async function checkPluginUpdates() {
   return { at: new Date().toISOString(), results }
 }
 
+/**
+ * 导航/新窗防御（所有 BrowserWindow 统一套用，避免"这个窗口忘了、那个窗口漏了"）：
+ * · 外链（新窗）一律交给系统浏览器：仅 http/https 放行 openExternal，其余协议丢弃
+ * · 页内导航只放行本应用内容：内核页同源（isKernelPageUrl），本地页
+ *   （设置/预览）额外放行应用目录内的 file://（isAppFileUrl）
+ * 为什么必须收口：每个窗口都挂同一个 preload，导航后 dshShell 会重新注入——把窗口
+ * 导航到任意 file:// 或远程页（哪怕只是鼠标点了一个链接），等于把 IPC 全权交给
+ * 那页面的脚本。
+ */
+function isKernelPageUrl(url) {
+  try {
+    return state.ready && new URL(url).origin === new URL(state.url).origin
+  } catch {
+    return false
+  }
+}
+
+function isAppFileUrl(url) {
+  try {
+    if (!/^file:/i.test(url)) return false
+    const fp = path.resolve(fileURLToPath(url))
+    const root = path.resolve(app.getAppPath())
+    const rel = path.relative(root, fp)
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+  } catch {
+    return false
+  }
+}
+
+function hardenWindow(w, opts) {
+  const allowLocal = !!(opts && opts.allowLocal)
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  w.webContents.on('will-navigate', (e, url) => {
+    if (isKernelPageUrl(url) || (allowLocal && isAppFileUrl(url))) return
+    e.preventDefault()
+    if (/^https?:/i.test(url)) shell.openExternal(url)
+  })
+}
+
 /** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
 function openSettingsPanel(tab) {
   const target = tab === 'update' ? 'update' : 'plugins'
@@ -925,6 +967,7 @@ function openSettingsPanel(tab) {
     },
   })
   settingsWin.on('closed', () => { settingsWin = null })
+  hardenWindow(settingsWin, { allowLocal: true })
   // 注意：不能用 loadFile(path, { query })——路径含空格/反斜杠时拼出的 URL 会加载失败
   const url = pathToFileURL(SETTINGS_PATH)
   url.searchParams.set('tab', target)
@@ -1277,6 +1320,7 @@ function openSplashPreview(withError) {
     },
   })
   previewWin.on('closed', () => { previewWin = null })
+  hardenWindow(previewWin, { allowLocal: true })
   // 注意：不能用 loadFile(path, { query })—— 路径含空格/反斜杠时它拼出的 URL 会加载失败
   // （实测 ERR_FAILED）。一律 pathToFileURL 生成合法 file:// URL 再挂查询串。
   const url = pathToFileURL(SPLASH_PATH)
@@ -1327,10 +1371,7 @@ function openExtraWindow() {
   })
   extraWins.add(w)
   w.on('closed', () => extraWins.delete(w))
-  w.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  hardenWindow(w)
   w.loadURL(state.url).catch((err) => log(`extra window failed: ${err.message}`))
   return w
 }
@@ -1584,23 +1625,9 @@ function createWindow() {
     }
   })
 
-  // 外链一律交给系统浏览器，不在应用内打开
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  win.webContents.on('will-navigate', (e, url) => {
-    // origin 级比较（startsWith 前缀匹配会被 127.0.0.1:port.evil.com 类域名绕过）
-    let isOurs = false
-    try {
-      isOurs = url.startsWith('file://') ||
-        (state.ready && new URL(url).origin === new URL(state.url).origin)
-    } catch { isOurs = false }
-    if (!isOurs) {
-      e.preventDefault()
-      if (/^https?:/i.test(url)) shell.openExternal(url)
-    }
-  })
+  // 外链一律交给系统浏览器；页内导航只放行内核页同源（file:// 不再无条件放行，
+  // 否则带 dshShell 的 preload 会跟着导航落到任意本地/远程页面）
+  hardenWindow(win)
 
   win.on('closed', () => { win = null })
   return win

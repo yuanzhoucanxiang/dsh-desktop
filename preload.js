@@ -777,12 +777,24 @@ function injectReviewSidebar() {
         out.push(el)
       } else {
         const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)
-        const a = document.createElement('a')
-        a.textContent = lm[1]
-        a.href = lm[2]
-        a.target = '_blank'
-        a.rel = 'noreferrer'
-        out.push(a)
+        // href 会触发新窗（setWindowOpenHandler）或页内导航（will-navigate）：
+        // javascript: 会在带 dshShell 的上下文里执行，file: 会把 preload 带到
+        // 本地文件页——只放行安全协议，其余把链接降级成纯文本
+        if (lm && /^(https?|mailto):/i.test(lm[2])) {
+          const a = document.createElement('a')
+          a.textContent = lm[1]
+          a.href = lm[2]
+          a.target = '_blank'
+          a.rel = 'noreferrer'
+          out.push(a)
+        } else if (lm) {
+          const span = document.createElement('span')
+          span.textContent = lm[1]
+          span.title = '（仅允许 http / https / mailto 链接）'
+          out.push(span)
+        } else {
+          out.push(document.createTextNode(tok))
+        }
       }
       last = m.index + tok.length
     }

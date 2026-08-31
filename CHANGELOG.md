@@ -1,3 +1,23 @@
+## [0.1.30] - 2026-08-31
+
+### 修复：审阅侧栏 Markdown 链接 XSS + 窗口导航守卫收口 + 未跟踪文件还原失效
+
+- 审阅侧栏的 Markdown 渲染器把链接直接赋给 a.href——工作区内被审阅的
+  README 若含 `[x](javascript:...)` 链接，点击即在带 dshShell IPC 的内核
+  页面上下文执行脚本（可读任意工作区文件、改插件开关、提交/推送）。
+  改：链接只放行 http/https/mailto，其余协议降级为纯文本展示。
+- 导航守卫收口为统一的 hardenWindow()：主窗口 will-navigate 原对 file://
+  无条件放行（preload 随导航重新注入 dshShell，等于把 IPC 交给本地文件页
+  的脚本）；额外窗口（Ctrl+Shift+N）此前完全没有导航守卫；设置/预览窗口
+  同样缺失。现一律"内核页同源才放行、外链转系统浏览器"，本地页额外只放行
+  应用目录内的 file://。
+- 修复未跟踪文件「还原」静默失效：shell:revert 传的是绝对路径
+  （workspacePath 已解析），git-review 的 revertFile 又对它
+  path.join(cwd, abs)——path.join 遇绝对路径不重置，拼成 cwd\<abs> 畸形
+  路径，删除永远失败且无提示。改按"绝对就用绝对、相对才拼 cwd"，并补回归
+  单测。
+- 署名：ox-alpha（2026-08-31）
+
 ## [0.1.29] - 2026-08-26
 
 ### 修复：审阅桥 revert 路径穿越
