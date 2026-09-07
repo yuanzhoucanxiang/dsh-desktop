@@ -35,6 +35,11 @@ tar -czf "$HERE/dist/runtime.tar.gz" -C "$HERE" runtime
 cp "$HERE/runtime/runtime.json" "$HERE/dist/runtime-marker.json"
 echo "==> runtime packed ($(du -sh "$HERE/dist/runtime.tar.gz" | cut -f1))"
 
+# 1c. built-in plugins（见 builtin-plugins.json / scripts/prepare-builtin-plugins.mjs）：
+#     装出 stage 树到 dist/builtin-plugins，extraResources 打进 .app；失败必须挂掉
+echo "==> preparing builtin plugins (dist/builtin-plugins) ..."
+node "$HERE/scripts/prepare-builtin-plugins.mjs"
+
 # 2. dependencies (Electron darwin + electron-builder)
 if [ ! -d node_modules/electron ]; then
   echo "==> installing deps..."

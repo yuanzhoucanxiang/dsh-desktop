@@ -32,6 +32,11 @@ if ($LASTEXITCODE -ne 0) { throw "tar pack failed (exit $LASTEXITCODE)" }
 Copy-Item "$proj\runtime\runtime.json" "$proj\dist\runtime-marker.json" -Force
 Write-Host "runtime packed ($(([math]::Round((Get-Item "$proj\dist\runtime.tar.gz").Length/1MB,1))) MB)"
 
+# 2b. built-in plugins（见 builtin-plugins.json / scripts/prepare-builtin-plugins.mjs）：
+#     装出 stage 树到 dist/builtin-plugins，extraResources 打进安装包；失败必须挂掉
+& node "$proj\scripts\prepare-builtin-plugins.mjs"
+if ($LASTEXITCODE -ne 0) { throw "prepare-builtin-plugins.mjs failed (exit $LASTEXITCODE)" }
+
 # 3. package app (dir only -> dist/win-unpacked; no implicit publishing)
 # NOTE: PowerShell does NOT stop on a native command's non-zero exit
 # ($ErrorActionPreference does not cover native exes), so every step below checks

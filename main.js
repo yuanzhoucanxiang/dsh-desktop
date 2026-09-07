@@ -32,6 +32,7 @@ const os = require('node:os')
 const { pathToFileURL, fileURLToPath } = require('node:url')
 const { createGitReview } = require('./lib/git-review')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
+const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
 const { createSettingsStore } = require('./lib/settings-store')
 const { parsePatchList, effectiveDisabled, entryIdsForPackage, setEntryDisabled } = require('./lib/plugin-manager')
@@ -1170,11 +1171,40 @@ async function waitReady() {
     }
     if (await probeReady()) {
       state.ready = true
+      seedBuiltinsIfNeeded() // 后台：首启内置插件种子（只做一次，见函数注释）
       return
     }
     await sleep(500)
   }
   throw new Error(`内核在 ${Math.round(READY_TIMEOUT_MS / 1000)}s 内未就绪`)
+}
+
+/**
+ * 首启内置插件种子（打包版专属）：内核第一次跑完（loadProfile 会自愈式初始化
+ * profile）之后，把安装包里随 extraResources 内置的插件（resources/builtin-plugins）
+ * 种入 profile 并重启内核一次。stamp（userData/builtin-plugins-seeded.json）一次性：
+ * 首次跑完即封嘴，用户之后卸载/禁用内置插件不会被顶回来；老 profile（插件早已自装）
+ * 跑一遍是 no-op（只复制缺失包、清单只增补），不碰用户已有条目。
+ */
+async function seedBuiltinsIfNeeded() {
+  try {
+    const seedDir = path.join(process.resourcesPath, 'builtin-plugins')
+    const profileDir = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'profiles', 'web')
+    const stampPath = path.join(app.getPath('userData'), 'builtin-plugins-seeded.json')
+    if (!builtinNeedsSeed({ seedDir, profileDir, stampPath })) return
+    const r = builtinRunSeed({ seedDir, profileDir, stampPath })
+    if (!r.ok) {
+      log(`builtin seed failed: ${r.error}`)
+      return
+    }
+    if (r.addedPlugins.length) log(`builtin plugins seeded: ${r.addedPlugins.join(', ')}`)
+    if (r.changed && state.ready && !state.quitting) {
+      log('builtin plugins: 重启内核以加载新插件')
+      restartKernel()
+    }
+  } catch (err) {
+    log(`builtin seed failed: ${err && err.message ? err.message : err}`)
+  }
 }
 
 async function restartKernel() {

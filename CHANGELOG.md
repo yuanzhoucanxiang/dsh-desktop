@@ -1,3 +1,27 @@
+## [0.1.31] - 2026-09-07
+
+### 新增：内置插件（mac 版开箱即用）
+
+- 安装包随附 4 个插件（构建期锁定版本打进包）：
+  dsh-better-sidebar 0.15.2 / @nanmicoder/dsh-auto-mode 0.1.2 /
+  dsh-pet 0.1.4（npm registry）+ @dsh-local/palis-theme-panel 0.4.3
+  （自研，构建产物随其仓库 tag v0.4.3 的 Release 资产分发）。
+- 首启种子：内核第一次启动（loadProfile 自愈式初始化 profile）后，外壳把内置
+  插件种入 ~/.dsh/profiles/web——只复制缺失包、profile 清单只增补
+  （dependencies / bundles 原有条目与顺序原样保留）、加入 bundles 前逐个过
+  bundleBootable 体检、stamp 一次性（用户之后卸载内置插件不会被顶回来）。
+  种子有新增时静默重启内核一次，老 profile 全程 no-op。
+- 版本选型约束：插件 peer 的 @deepseek-ai/* 按运行时实际版本
+  （0.1.1-rc.1 族）钉死进 stage 树的 package.json——registry 自动解析会漂到
+  0.1.0/0.1.2-rc.1 等与内核不同代的版本（同 service 双版本同进程即冲突）。
+- 安装体积控制：客户端产物是 rolldown 单文件 bundle（服务端 import 闭包仅
+  schemastery/ws/@deepseek-ai/*），stage 树裁剪后 410MB → 62MB。
+- 构建集成：build.ps1 / build-macos.sh 调 scripts/prepare-builtin-plugins.mjs，
+  extraResources 增加 dist/builtin-plugins。
+- 包含 mac 构建管线修复（见日志〔100〕）：runtime.tar.gz/runtime.json 补齐、
+  latest-mac.yml 生成，v0.1.30 起 mac dmg 已随 tag 自动构建发布。
+- 署名：ox-alpha（2026-09-07）
+
 ## [0.1.30] - 2026-08-31
 
 ### 修复：审阅侧栏 Markdown 链接 XSS + 窗口导航守卫收口 + 未跟踪文件还原失效
