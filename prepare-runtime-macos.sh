@@ -32,5 +32,12 @@ mkdir -p "$RUNTIME/bin"
 cp "$NODE_REAL" "$RUNTIME/bin/node"
 chmod +x "$RUNTIME/bin/node"
 
-echo "==> runtime ready (dsh=$DSH_VERSION, node=$("$RUNTIME/bin/node" --version))"
-ls -l "$RUNTIME/bin/node" "$RUNTIME/node_modules/@deepseek-ai/dsh/lib/bin.js"
+# runtime.json: main.js 在校验/更新外部运行时副本时靠它比对（与 prepare-runtime.ps1 同构：
+# {dsh, node, builtAt}）。缺它时 build-macos.sh 打不出 runtime-marker.json，首次启动
+# ensureExternalRuntime 无法判定版本 → 每次都会重新解压。
+echo "==> writing runtime.json..."
+NODE_VER="$("$RUNTIME/bin/node" --version)"
+node -e "const fs=require('fs');fs.writeFileSync(process.argv[3],JSON.stringify({dsh:process.argv[2],node:process.argv[1],builtAt:new Date().toISOString()},null,2))" "$NODE_VER" "$DSH_VERSION" "$RUNTIME/runtime.json"
+
+echo "==> runtime ready (dsh=$DSH_VERSION, node=$NODE_VER)"
+ls -l "$RUNTIME/bin/node" "$RUNTIME/runtime.json" "$RUNTIME/node_modules/@deepseek-ai/dsh/lib/bin.js"
