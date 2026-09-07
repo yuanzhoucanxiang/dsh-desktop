@@ -1171,7 +1171,6 @@ async function waitReady() {
     }
     if (await probeReady()) {
       state.ready = true
-      seedBuiltinsIfNeeded() // 后台：首启内置插件种子（只做一次，见函数注释）
       return
     }
     await sleep(500)
@@ -2257,6 +2256,9 @@ async function bootKernel() {
   log(`ready at ${state.url}`)
   refreshMenus() // 就绪后"新窗口"等依赖内核的菜单项才可用
   pushThemeToKernel(themeId()) // 就绪后把当前皮肤同步给内核主题插件（重启内核同理）
+  // 首启内置插件种子：等整个启动流程（含 splash 交接）收尾再触发，避免它与
+  // restartKernel 并发打架（在 waitReady 里触发实测产生一次 ERR_ABORTED）。
+  seedBuiltinsIfNeeded()
 }
 
 /* ─────────────────────────────── UI 冒烟（真实窗口回归测试） ───────────────── */

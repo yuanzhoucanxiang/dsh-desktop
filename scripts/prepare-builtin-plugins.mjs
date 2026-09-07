@@ -26,7 +26,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, 'builtin-plugins.json'), 'utf8'))
 const OUT = process.env.DSH_BUILTIN_OUT || path.join(ROOT, 'dist', 'builtin-plugins')
-const NODE_MODULES = path.join(OUT, 'node_modules')
+// 树目录不叫 node_modules：electron-builder 的 extraResources 复制时默认跳过
+// 名为 node_modules 的子目录（实测 builtin-plugins 里只进了 manifest.json），
+// 用 packages/ 规避；种子逻辑按同一名字读取。
+const NODE_MODULES = path.join(OUT, 'packages') // 最终布局
+const NM_INSTALL = path.join(OUT, 'node_modules') // pnpm 安装产物（安装后 rename）
 
 // npm 官方 CLI（走 node 直跑，避免 .cmd shell 需要的 shell:true 及其弃用告警）
 const NPM_CLI = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
@@ -102,7 +106,7 @@ function installPnpm(plugins) {
   }
 
   return plugins.map((p) => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(NODE_MODULES, p.name, 'package.json'), 'utf8'))
+    const pkg = JSON.parse(fs.readFileSync(path.join(NM_INSTALL, p.name, "package.json"), "utf8"))
     if (pkg.version !== p.spec) {
       throw new Error(`${p.name}: 期望版本 ${p.spec}，实际装到了 ${pkg.version}`)
     }
@@ -114,7 +118,7 @@ function installPnpm(plugins) {
 function collectDeepseekPeers(plugins) {
   const names = new Set()
   for (const p of plugins) {
-    const pkg = JSON.parse(fs.readFileSync(path.join(NODE_MODULES, p.name, 'package.json'), 'utf8'))
+    const pkg = JSON.parse(fs.readFileSync(path.join(NM_INSTALL, p.name, "package.json"), "utf8"))
     for (const name of Object.keys(pkg.peerDependencies || {})) {
       if (name.startsWith('@deepseek-ai/')) names.add(name)
     }
@@ -195,11 +199,14 @@ function cleanHiddenNodes(plugin) {
 
 async function main() {
   fs.rmSync(OUT, { recursive: true, force: true })
-  fs.mkdirSync(NODE_MODULES, { recursive: true })
+  fs.mkdirSync(OUT, { recursive: true })
 
   const npmPlugins = CONFIG.plugins.filter((p) => p.source === 'npm')
   const ghPlugins = CONFIG.plugins.filter((p) => p.source === 'gh-release')
   const entries = [...installPnpm(npmPlugins)]
+  // pnpm 只能在 node_modules 里产物；装完后整树改名到 packages（规避 electron-builder
+  // 对名为 node_modules 的 extraResources 子目录的默认跳过）
+  fs.renameSync(NM_INSTALL, NODE_MODULES)
   for (const plugin of ghPlugins) entries.push(await installGhRelease(plugin))
   for (const plugin of CONFIG.plugins) cleanHiddenNodes(plugin)
   promoteDeepseekPeers()
