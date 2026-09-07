@@ -1,7 +1,8 @@
 'use strict'
 // 生成 Windows NSIS 更新清单 latest.yml（与 electron-builder 官方格式一致：
 // sha512 为 base64，files 含 url/sha512/size，顶层带 path/sha512/releaseDate）。
-// 用法：node gen-update-manifest.js <安装包.exe> [releaseDate]
+// 用法：node gen-update-manifest.js <安装包.exe> [releaseDate] [输出文件名]
+// 输出文件名缺省 latest.yml；mac 传 latest-mac.yml（electron-updater 按此名读取）。
 const fs = require('fs')
 const crypto = require('crypto')
 const path = require('path')
@@ -17,6 +18,7 @@ const buf = fs.readFileSync(exe)
 const sha512 = crypto.createHash('sha512').update(buf).digest('base64')
 const fileName = path.basename(exe)
 const releaseDate = process.argv[3] || new Date().toISOString()
+const outName = process.argv[4] || 'latest.yml'
 const yml = [
   `version: ${pkg.version}`,
   'files:',
@@ -28,7 +30,7 @@ const yml = [
   `releaseDate: '${releaseDate}'`,
   '',
 ].join('\n')
-const out = path.join(path.dirname(exe), 'latest.yml')
+const out = path.join(path.dirname(exe), outName)
 fs.writeFileSync(out, yml)
 // 进度日志必须走 stderr：本脚本曾被 `node … > latest.yml` 重定向，stdout 日志行
 // 覆盖了刚写好的文件，污染的 YAML 让应用更新检查直接解析失败（2026-08-25 实故）。

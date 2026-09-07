@@ -66,6 +66,14 @@ echo "==> app-update.yml written"
 echo "==> building dmg..."
 npx electron-builder --mac dmg --prepackaged "$APP" --publish never
 
+# 5b. mac 更新清单：--publish never 不产出 latest-mac.yml，但 electron-updater
+#     在 mac 上按 latest-mac.yml 检查/下载更新（缺它 = 检查更新 404）
+echo "==> generating latest-mac.yml ..."
+DMG="$(find "$HERE/dist" -maxdepth 1 -name '*.dmg' | head -1)"
+if [ -n "$DMG" ]; then
+  node "$HERE/gen-update-manifest.js" "$DMG" "" latest-mac.yml
+fi
+
 echo ""
 echo "BUILD_DONE"
 echo "Installer: $HERE/dist/"$(ls dist | grep -i dmg)
