@@ -103,11 +103,11 @@
       "id": "shell.profile-kernel-packages",
       "owner": "shell",
       "kind": "fs",
-      "what": "profile 里 plugins 解析装出的 @deepseek-ai/* 副本，必须与内核同版本族",
-      "expect": "profiles/web/node_modules/@deepseek-ai/* 的 major.minor 与内核一致",
+      "what": "profile 里的 @deepseek-ai/* 条目（多为指向运行时的链接）与被测内核是否同源",
+      "expect": "条目解析出的版本族与被测内核一致（正常安装态下二者同源，必然一致）",
       "probe": "profile-kernel-packages",
-      "fallback": "不同族 → 内核可能生成引用新子路径导出的 loader entry 而启动即崩（0.1.5-rc.1 实测 ERR_PACKAGE_PATH_NOT_EXPORTED）。升级路径必须包含「刷新插件树」这一步；新装环境无此问题",
-      "severity": "critical"
+      "fallback": "不一致 = profile 的链接指向的运行时「不是」正在被测的那一个。正常升级不受影响：安装版在同一条 runtime 路径上原地替换内容，链接跟随路径（已实测：同一路径 0.1.1→0.1.5 替换后照常启动）。出现红项只说明本次是在「用另一个目录的运行时做验证」——例如 dev 预览候选内核。正确姿势是给候选预览用独立 DSH_HOME（全新 profile 的链接会由内核指向它实际使用的运行时），而不是改共享 profile。若确要在共享 profile 上预览候选，需先把链接指向候选，验完再指回。",
+      "severity": "warn"
     },
     {
       "id": "shell.kernel-patch-hotreload",
