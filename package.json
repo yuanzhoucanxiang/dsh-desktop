@@ -25,7 +25,8 @@
     "atomic-file-test": "node lib/atomic-file.test.js",
     "selector-check": "node plugin-selector-check.js",
     "verify:kernel": "node scripts/verify-kernel-contract.mjs",
-    "verify:render": "node scripts/verify-render-invariants.mjs"
+    "verify:render": "node scripts/verify-render-invariants.mjs",
+    "verify:plugins": "node scripts/verify-plugin-compat.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",

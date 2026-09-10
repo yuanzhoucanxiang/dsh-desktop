@@ -71,85 +71,35 @@ function resolvePnpm() {
  * package.json 里把这些 peer 按「运行时实际版本」精确声明，与用户 profile 树
  * （当年解析恰好也是 rc.1）保持同一基线。
  */
+/**
+ * 与 dsh 官方安装姿势同构地装出扁平树，但**不装 @deepseek-ai\/* 的 peer**：
+ * 那些子包在 npm 上只到 0.0.1-rc.1（0.1.x 只随内核运行时分发，见 logs/2026-09-10.md 〔109〕），
+ * 让 pnpm 去装必然 ERR_PNPM_NO_MATCHING_VERSION。关掉 auto-install-peers 后，
+ * 插件运行时的 @deepseek-ai\/* 由 profile 的 healProfilesModuleFallback 链接指向
+ * "正在运行的那个内核"提供——既省事又天然版本一致（也避免种子把运行时链接遮蔽成旧副本）。
+ */
 function installPnpm(plugins) {
   const launcher = resolvePnpm()
   if (launcher === null) throw new Error('pnpm 不可用（corepack enable 也没成功），请先安装 pnpm')
   const registry = process.env.DSH_BUILTIN_REGISTRY || 'https://registry.npmjs.org'
   const regArgs = registry === 'https://registry.npmjs.org' ? [] : ['--registry', registry]
-  const pnpmArgs = ['--config.node-linker=hoisted', 'install', '--ignore-scripts', ...regArgs]
+  const pnpmArgs = ['--config.node-linker=hoisted', '--config.auto-install-peers=false', 'install', '--ignore-scripts', ...regArgs]
 
-  // 第一遍：只装插件 → 读它们的 peerDependencies（@deepseek-ai/* 名）
   const deps = {}
   for (const p of plugins) deps[p.name] = p.spec
   fs.rmSync(path.join(OUT, 'pnpm-lock.yaml'), { force: true })
   fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify({ name: 'dsh-builtin-plugins', private: true, dependencies: deps }, null, 2))
-  fs.writeFileSync(path.join(OUT, '.npmrc'), 'node-linker=hoisted\nstrict-peer-dependencies=false\n')
-  log(`pass 1: pnpm install ${Object.keys(deps).join(' ')} ...`)
+  fs.writeFileSync(path.join(OUT, '.npmrc'), 'node-linker=hoisted\nstrict-peer-dependencies=false\nauto-install-peers=false\n')
+  log(`pnpm install ${Object.keys(deps).join(' ')} ...`)
   run(launcher[0], [...launcher[1], ...pnpmArgs], { cwd: OUT })
 
-  // 第二遍：peer @deepseek-ai/* 按运行时实际版本钉死（见函数头注释）后重建
-  const runtimeNm = path.join(ROOT, 'runtime', 'node_modules')
-  let pinned = 0
-  for (const name of collectDeepseekPeers(plugins)) {
-    const pkgFile = path.join(runtimeNm, name, 'package.json')
-    if (fs.existsSync(pkgFile)) {
-      const ver = JSON.parse(fs.readFileSync(pkgFile, 'utf8')).version
-      deps[name] = ver
-      pinned++
-    }
-  }
-  if (pinned > 0) {
-    log(`pass 2: 钉死 ${pinned} 个 @deepseek-ai/* 到运行时版本，重装 ...`)
-    fs.rmSync(path.join(OUT, 'pnpm-lock.yaml'), { force: true })
-    fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify({ name: 'dsh-builtin-plugins', private: true, dependencies: deps }, null, 2))
-    run(launcher[0], [...launcher[1], ...pnpmArgs], { cwd: OUT })
-  }
-
   return plugins.map((p) => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(NM_INSTALL, p.name, "package.json"), "utf8"))
+    const pkg = JSON.parse(fs.readFileSync(path.join(NM_INSTALL, p.name, 'package.json'), 'utf8'))
     if (pkg.version !== p.spec) {
       throw new Error(`${p.name}: 期望版本 ${p.spec}，实际装到了 ${pkg.version}`)
     }
     return { name: p.name, version: pkg.version, source: 'npm' }
   })
-}
-
-/** 从各插件 package.json 收集 @deepseek-ai/* 开头的 peer 名（去重）。 */
-function collectDeepseekPeers(plugins) {
-  const names = new Set()
-  for (const p of plugins) {
-    const pkg = JSON.parse(fs.readFileSync(path.join(NM_INSTALL, p.name, "package.json"), "utf8"))
-    for (const name of Object.keys(pkg.peerDependencies || {})) {
-      if (name.startsWith('@deepseek-ai/')) names.add(name)
-    }
-  }
-  return names
-}
-
-/**
- * pnpm 11 hoisted 布局下 peer 依赖（@deepseek-ai/*）不会出现在顶层 node_modules，
- * 只待在 .pnpm 虚拟店——而插件 require 的解析链从插件目录向上只走顶层。
- * 把虚拟店里 @deepseek-ai+* 条目下的真实包目录提平到顶层（与用户 profile 树同构）。
- */
-function promoteDeepseekPeers() {
-  const pnpmDir = path.join(NODE_MODULES, '.pnpm')
-  const top = path.join(NODE_MODULES, '@deepseek-ai')
-  if (!fs.existsSync(pnpmDir)) return
-  fs.mkdirSync(top, { recursive: true })
-  let n = 0
-  for (const entry of fs.readdirSync(pnpmDir)) {
-    if (!entry.startsWith('@deepseek-ai+')) continue
-    const real = path.join(pnpmDir, entry, 'node_modules', '@deepseek-ai')
-    if (!fs.existsSync(real)) continue
-    for (const pkg of fs.readdirSync(real)) {
-      const target = path.join(top, pkg)
-      if (!fs.existsSync(target)) {
-        fs.cpSync(path.join(real, pkg), target, { recursive: true })
-        n++
-      }
-    }
-  }
-  log(`promoted ${n} @deepseek-ai/* peers to top level`)
 }
 
 /** 从 GitHub Release 下载构建产物 tarball；解压到 OUT 内再 rename（同卷）。 */
@@ -197,6 +147,55 @@ function cleanHiddenNodes(plugin) {
   fs.rmSync(path.join(dir, '.DS_Store'), { force: true })
 }
 
+const readPkg = (dir) => {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) } catch { return null }
+}
+
+/** 扫插件产物里的裸 import 名（服务端 lib/**，跳过 node: 与相对路径）。 */
+function bareImportsOf(pluginName) {
+  const root = path.join(NODE_MODULES, pluginName, 'lib')
+  const out = new Set()
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return
+    for (const e of fs.readdirSync(dir)) {
+      const p = path.join(dir, e)
+      const st = fs.statSync(p)
+      if (st.isDirectory()) { walk(p); continue }
+      if (!e.endsWith('.js')) continue
+      const text = fs.readFileSync(p, 'utf8')
+      for (const m of text.matchAll(/(?:from|import)\s*\(?\s*["']([a-z@][^"']*)["']/g)) {
+        const name = m[1]
+        if (name.startsWith('node:') || name.startsWith('.')) continue
+        out.add(name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0])
+      }
+    }
+  }
+  walk(root)
+  return out
+}
+
+/** 从种子（插件实测 import 的裸包）沿 dependencies/peerDependencies 求闭包。
+ *  注意**不要**从插件名起步：插件 package.json 常声明构建期/客户端依赖
+ *  （如 better-sidebar 声明的 mermaid，83MB），而服务端并不 import 它——只认实测 import。 */
+function dependencyClosure(pluginNames) {
+  const seeds = new Set()
+  for (const name of pluginNames) for (const imp of bareImportsOf(name)) seeds.add(imp)
+  const seen = new Set()
+  const queue = [...seeds]
+  while (queue.length) {
+    const name = queue.shift()
+    const dir = path.join(NODE_MODULES, name)
+    if (!fs.existsSync(dir)) continue // 由内核运行时或 scope 目录提供的（如 @deepseek-ai/*、react）
+    const pkg = readPkg(dir)
+    if (pkg === null) continue
+    seen.add(name)
+    for (const dep of [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.peerDependencies || {})]) {
+      if (!seen.has(dep)) queue.push(dep)
+    }
+  }
+  return seen
+}
+
 async function main() {
   fs.rmSync(OUT, { recursive: true, force: true })
   fs.mkdirSync(OUT, { recursive: true })
@@ -209,27 +208,25 @@ async function main() {
   fs.renameSync(NM_INSTALL, NODE_MODULES)
   for (const plugin of ghPlugins) entries.push(await installGhRelease(plugin))
   for (const plugin of CONFIG.plugins) cleanHiddenNodes(plugin)
-  promoteDeepseekPeers()
 
-  // 裁剪：npm 会把全量 dependencies 装成扁平树（0.15 版 better-sidebar 装出 410MB，
-  // 大头是 react-icons/mermaid/node-pty/@codemirror 等 client-only 或构建期依赖）。
-  // 依据：① client 侧产物 lib/client.js 是 rolldown 单文件 bundle（无外部 import，
-  // 29 处命中均为内联实现）；② 服务端 import 闭包只有 schemastery + ws + @deepseek-ai/*。
-  // 只保留：插件本体 + 服务端闭包 + @deepseek-ai 族（运行时同版本 peer 解析副本）。
-  // 若未来插件升级新增服务端裸依赖，须同步加进白名单（构建冒烟会炸给你看）。
-  const keepTops = new Set([
-    ...new Set(CONFIG.plugins.map((p) => p.name.split('/')[0])), // 插件及其 scope 目录
-    'schemastery',
-    'ws',
-    '@deepseek-ai', // promoteDeepseekPeers 提平出的插件 peer 副本
-  ])
+
+  // 裁剪：pnpm 会把全量 dependencies 装成扁平树（含 react-icons/mermaid/@codemirror 全家等
+  // client-only 或构建期依赖，实测 410MB）。保留集**从插件实际 import 推导**，不写死名字
+  // （写死的白名单会腐坏：palis 经 cordis 间接用到 cosmokit，漏掉就 Cannot find module）：
+  //   ① 扫各插件 lib/**/*.js 的裸 import 名（剥掉 node: 与相对路径）
+  //   ② 以「插件自身 + 这些裸名」为种子，沿每包的 dependencies/peerDependencies 求闭包
+  //   ③ 保留闭包内顶层条目（含 scope 目录）
+  // 依据：客户端产物是 rolldown 单文件 bundle（无外部 import），故服务端 import 闭包即依赖全貌。
+  const closure = dependencyClosure(CONFIG.plugins.map((p) => p.name))
+  const keepTops = new Set([...new Set(CONFIG.plugins.map((p) => p.name.split('/')[0]))])
+  for (const name of closure) keepTops.add(name.split('/')[0])
   let pruned = 0
   for (const entry of fs.readdirSync(NODE_MODULES)) {
     if (keepTops.has(entry)) continue
     fs.rmSync(path.join(NODE_MODULES, entry), { recursive: true, force: true })
     pruned++
   }
-  log(`pruned ${pruned} client-only/build 包（保留 ${keepTops.size} 顶层结点）`)
+  log(`pruned ${pruned} 个非依赖包（保留闭包 ${closure.size} 个 + scope 目录）`)
 
   // 只保留顶层插件及其扁平依赖；profile 种子不需要的杂项删掉
   for (const junk of ['.bin', '.package-lock.json', '.cache', '.modules.yaml']) {

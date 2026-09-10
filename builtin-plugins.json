@@ -19,9 +19,9 @@
       "name": "@dsh-local/palis-theme-panel",
       "source": "gh-release",
       "repo": "yuanzhoucanxiang/dsh-palis-theme-panel",
-      "ref": "v0.4.3",
-      "asset": "dsh-palis-theme-panel-0.4.3.tgz",
-      "version": "0.4.3"
+      "ref": "v0.5.8",
+      "asset": "dsh-palis-theme-panel-0.5.8.tgz",
+      "version": "0.5.8"
     }
   ]
 }
