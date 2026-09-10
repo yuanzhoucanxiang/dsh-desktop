@@ -70,6 +70,8 @@ let tray = null
 const state = {
   port: 0,
   url: '',
+  webUrl: '',    // 内核 stdout 报告的带一次性 token 的完整 URL（0.1.2 起 Web 启用 token 鉴权）
+  webCookie: '', // 用启动 token 换来的签名会话 cookie（内核侧 /api 调用凭证）
   child: null,
   ready: false,
   restarting: false,
@@ -296,10 +298,18 @@ async function ensureExternalRuntime() {
   try {
     await fs.promises.rename(extracted, local)
   } catch (err) {
+    // 换不进去最常见的原因是 local 里还有进程占着文件（EPERM/EBUSY，比如上次
+    // 的内核没退干净）。先尽力把备份捞回原位，再检查现有运行时是否完整——
+    // 完整就降级沿用、照常启动（标记不变，下次启动还会重试解包，锁释放后自愈）；
+    // 只在「本地真的没内核可用」时才让启动失败。
     if (fs.existsSync(backup) && !fs.existsSync(local)) {
       await fs.promises.rename(backup, local).catch(() => {})
     }
     await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
+    if (complete(local)) {
+      log(`WARN: 内核运行时切换失败（${err.message}），沿用现有运行时继续启动`)
+      return
+    }
     throw new Error(`内核运行时切换失败：${err.message}`)
   }
   await fs.promises.rm(stage, { recursive: true, force: true }).catch(() => {})
@@ -1068,6 +1078,8 @@ async function startKernel() {
   await ensureExternalRuntime() // 打包后：保证内核从外部副本启动（见 ensureExternalRuntime 注释）
   state.port = await freePort()
   state.url = `http://127.0.0.1:${state.port}`
+  state.webUrl = '' // token 随每次启动轮换，等本轮 stdout 的 dsh web 行刷新
+  state.webCookie = ''
   const bin = resolveDshBin()
   const isJsLauncher = bin.endsWith('.js')
   const launcher = isJsLauncher ? resolveNodeExe() : bin
@@ -1098,7 +1110,11 @@ async function startKernel() {
     child.once('error', reject)
   })
 
-  child.stdout.on('data', (d) => log(decodeChunk(d)))
+  child.stdout.on('data', (d) => {
+    const text = decodeChunk(d)
+    log(text)
+    captureWebUrl(text)
+  })
   child.stderr.on('data', (d) => log(decodeChunk(d)))
   child.on('error', (err) => {
     log(`kernel spawn error: ${err.message}`)
@@ -1151,10 +1167,46 @@ function waitChildExit(child, maxMs) {
 
 /* ─────────────────────────────── 就绪探测 ─────────────────────────────────── */
 
+/**
+ * 0.1.2 起内核对 Web 界面启用一次性 token 鉴权：启动行 `dsh web: <url?token=…>`
+ * 是拿到启动 token 的唯一入口。抓到后存 state.webUrl——窗口加载与 /api 换 cookie 都靠它。
+ * 同一内核进程只认自己的 token；内核重启（换端口）后由新一轮 stdout 刷新。
+ */
+function captureWebUrl(text) {
+  const m = /dsh web: (https?:\/\/\S+)/.exec(text)
+  if (!m) return
+  const u = m[1].replace(/\x1b\[[0-9;]*m/g, '').trim()
+  if (u.startsWith(state.url)) state.webUrl = u
+}
+
+/** 内核页面加载地址：优先带 token 的完整 URL（0.1.2+），老内核回退裸 origin。 */
+function kernelPageUrl() {
+  return state.webUrl || state.url
+}
+
+/**
+ * 外壳侧 /api 调用走内核浏览器鉴权：首次用启动 token 换一次签名 cookie
+ * （GET webUrl → 303 + set-cookie），之后带 cookie 直达。老内核无鉴权：
+ * webUrl 是裸 URL、set-cookie 为空，退化为普通直连，行为与从前一致。
+ */
+async function kernelApiFetch(path, init = {}) {
+  if (!state.webCookie && state.webUrl) {
+    try {
+      const r = await fetch(state.webUrl, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
+      const sc = r.headers.get('set-cookie') || ''
+      state.webCookie = sc.split(';')[0]
+    } catch { /* 换 cookie 失败不挡路——请求照样发，由状态码说话 */ }
+  }
+  const headers = { ...(init.headers || {}) }
+  if (state.webCookie) headers.cookie = state.webCookie
+  return fetch(`${state.url}${path}`, { ...init, headers })
+}
+
 async function probeReady() {
   try {
-    const res = await fetch(`${state.url}/`, { signal: AbortSignal.timeout(2500) })
-    return res.ok
+    const res = await fetch(`${state.url}/`, { signal: AbortSignal.timeout(2500), redirect: 'manual' })
+    // 0.1.2 起未带 cookie 的 / 恒为 401——服务本身已就绪，鉴权是预期行为
+    return res.ok || res.status === 401 || res.status === 303
   } catch {
     return false
   }
@@ -1217,12 +1269,14 @@ async function restartKernel() {
     await startKernelUntilReady({ degradePatch: false })
     if (win && !win.isDestroyed()) {
       win.webContents.send('shell:kernel-status', { alive: true })
-      if (win.webContents.getURL().startsWith('http')) win.webContents.reload()
+      // 内核重启换了端口与 token（0.1.2 起每次启动轮换），旧地址已死——
+      // 必须 loadURL 新地址，不能 reload()（reload 只会重新请求旧端口）。
+      if (win.webContents.getURL().startsWith('http')) win.loadURL(kernelPageUrl())
       else {
         // 错误态重启成功：同样走"合环 → 淡出 → 交接"，不硬切
         await sleep(READY_HOLD_MS)
         await playSplashExit()
-        await win.loadURL(state.url)
+        await win.loadURL(kernelPageUrl())
       }
     }
   } catch (err) {
@@ -1283,7 +1337,7 @@ async function handoffFromSplash() {
 function pushThemeToKernel(theme) {
   if (!state.ready || !state.url) return
   const value = theme === 'palis' ? 'palis' : ''
-  fetch(`${state.url}/api/palis-theme`, {
+  kernelApiFetch('/api/palis-theme', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ theme: value }),
@@ -1401,7 +1455,7 @@ function openExtraWindow() {
   extraWins.add(w)
   w.on('closed', () => extraWins.delete(w))
   hardenWindow(w)
-  w.loadURL(state.url).catch((err) => log(`extra window failed: ${err.message}`))
+  w.loadURL(kernelPageUrl()).catch((err) => log(`extra window failed: ${err.message}`))
   return w
 }
 
@@ -2118,7 +2172,7 @@ function registerIpc() {
   ipcMain.handle('shell:revert-change', async (_e, sessionId, callId) => {
     if (!state.ready || !state.url) return { ok: false, error: '内核未就绪' }
     try {
-      const res = await fetch(`${state.url}/api/review-bridge/revert`, {
+      const res = await kernelApiFetch('/api/review-bridge/revert', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sessionId, callId }),
@@ -2239,7 +2293,7 @@ async function bootKernel() {
 
   if (!UI_SMOKE) await handoffFromSplash() // 观感交接：最短展示 + 合环停顿 + 淡出
 
-  await win.loadURL(state.url)
+  await win.loadURL(kernelPageUrl())
 
   if (UI_SMOKE) {
     const results = await runUiSmoke(win)
@@ -2300,7 +2354,7 @@ async function runUiSmoke(win) {
 
   // 0) 全界面主题联动：palis-theme 插件应已随补丁注入内核
   try {
-    await fetch(`${state.url}/api/palis-theme`, {
+    await kernelApiFetch('/api/palis-theme', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ theme: 'palis' }),
@@ -2317,7 +2371,7 @@ async function runUiSmoke(win) {
   check('crt overlay mounted', await js(`document.getElementById('palis-theme-crt') !== null`))
   // 回退验证：外壳皮肤必须是可逆的
   try {
-    await fetch(`${state.url}/api/palis-theme`, {
+    await kernelApiFetch('/api/palis-theme', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ theme: '' }),
