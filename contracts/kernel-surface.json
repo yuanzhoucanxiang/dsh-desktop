@@ -214,7 +214,8 @@
       "kind": "render",
       "what": "渲染环境不变量：① 装饰层宿主包含块 = 视口；② 宿主到 body 之间无元素建立包含块（transform/filter/will-change/contain）；③ 圆形动效不得走合成层缩放；④ 分数 DPR（实测 2.73）下不得出现采样变形",
       "expect": "四项不变量在实时渲染下成立（静态截图看不出来，必须逐帧测）",
-      "probe": "pending",
+      "probe": "render-invariants",
+      "runner": "scripts/verify-render-invariants.mjs（npm run verify:render 或 verify:kernel --render；Hermetic 起内核+主题，headless Chrome DPR 2.73 仿真，40 帧采样 + LayerTree）",
       "fallback": "违反 → 自动降级（关闭天体/图形层，保留令牌换肤）并显式报告，绝不静默渲染变形",
       "severity": "critical"
     }

@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-10T10:53:40.783Z",
+  "dpr": 2.73,
+  "results": [
+    {
+      "id": "render.env",
+      "status": "pass",
+      "detail": "主题启用接口 POST /api/palis-theme → 200"
+    },
+    {
+      "id": "render.containing-block",
+      "status": "pass",
+      "detail": "装饰层祖先链干净（7 个元素受检）"
+    },
+    {
+      "id": "render.viewport-anchor",
+      "status": "pass",
+      "detail": "所有 fixed 装饰层与视口严丝合缝"
+    },
+    {
+      "id": "render.circle-aspect",
+      "status": "pass",
+      "detail": "40 帧内圆形元素宽高恒等（DPR 2.7300000190734863）"
+    },
+    {
+      "id": "render.dpr",
+      "status": "pass",
+      "detail": "DPR 仿真生效：devicePixelRatio=2.7300000190734863"
+    },
+    {
+      "id": "render.compositing",
+      "status": "warn",
+      "detail": "LayerTree 未上报层（无头模式下合成信息可能不可用）"
+    }
+  ],
+  "criticalFails": []
+}

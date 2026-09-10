@@ -1,0 +1,381 @@
+#!/usr/bin/env node
+'use strict'
+
+/**
+ * 渲染不变量验收（契约 theme.render-invariants 的探针实现）。
+ *
+ *   node scripts/verify-render-invariants.mjs [--json <out>] [--keep] [--dpr 2.73]
+ *
+ * 为什么单独一个脚本：其余契约探针是协议/文件级的、秒级、无浏览器；这一条必须
+ * 真起浏览器 + 真渲染 + 逐帧采样，才能看见「静态截图看不出来」的那类破坏——
+ * 0.1.2 内核那次球体/月面/声纳变形就是这一类（DOM 契约全中、截图逐像素是正圆，
+ * 只有实时合成路径可见）。
+ *
+ * 四项不变量（对应契约 detail）：
+ *   ① 装饰层宿主的包含块 = 视口
+ *   ② 宿主到 body 之间没有元素建立包含块（transform/filter/will-change/contain/perspective）
+ *      —— 这条是根因检查：一旦内核给某个包裹层加了这些，我们的 absolute 层会改按新
+ *      包含块解析、fixed 层会被捕获在那个祖先里，几何随之漂移/拉伸
+ *   ③ 圆形动效不得走合成层缩放（合成层位图逐帧缩放 = 分数 DPR 下读作"不圆"）
+ *   ④ 分数 DPR（本机实测 2.73）下不得出现几何变形
+ *
+ * Hermetic：独立 DSH_HOME（临时目录，junction 挂入主题插件）+ 随机端口 + 临时
+ * Chrome profile，绝不碰用户实例。
+ */
+
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import net from 'node:net'
+import { spawn, spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(__dirname, '..')
+const PALIS = process.env.DSH_PALIS_DIR || path.resolve(ROOT, '..', 'dsh-palis-theme-panel')
+const CHROME_CANDIDATES = [
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  'google-chrome',
+]
+
+const args = process.argv.slice(2)
+const opt = {
+  json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
+  keep: args.includes('--keep'),
+  dpr: args.includes('--dpr') ? Number(args[args.indexOf('--dpr') + 1]) : 2.73,
+  timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
+}
+
+const results = []
+const record = (id, status, detail) => results.push({ id, status, detail: detail || '' })
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/* 主题注入的装饰层（类名取自 palis-theme-panel 的 client 注入代码） */
+const CIRCULAR = ['.palis-globe-sphere', '.palis-globe-canvas', '.palis-sonar i', '.palis-sonar s', '.fm-disc', '.fm-ring']
+const ANCHORED = ['.palis-crt-sweep', '.palis-frame', '.palis-globe', '.palis-sonar', '.palis-statusbar', '.palis-starfield', '.palis-glyphs', '.palis-sonar b', '.palis-globe-sat']
+
+const freePort = () => new Promise((resolve, reject) => {
+  const srv = net.createServer()
+  srv.once('error', reject)
+  srv.listen(0, '127.0.0.1', () => {
+    const p = srv.address().port
+    srv.close(() => resolve(p))
+  })
+})
+
+function resolveRuntime() {
+  for (const dir of [path.join(ROOT, 'runtime'), path.join(process.env.LOCALAPPDATA || '', 'DeepSeek Harness Desktop', 'runtime')]) {
+    if (!dir) continue
+    const node = process.platform === 'win32' ? path.join(dir, 'node.exe') : path.join(dir, 'bin', 'node')
+    const bin = path.join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    if (fs.existsSync(node) && fs.existsSync(bin)) return { dir, node, bin }
+  }
+  return null
+}
+
+function findChrome() {
+  for (const c of CHROME_CANDIDATES) {
+    if (c.includes('/') && !fs.existsSync(c)) continue
+    return c
+  }
+  return null
+}
+
+/* ── 浏览器内取样的表达式 ─────────────────────────────────────────────── */
+
+/** 沿祖先链找"建立包含块"的元素（不变量① ②的根因检查）。 */
+const EVAL_ANCESTORS = `(${(sels) => {
+  const report = {}
+  for (const sel of sels) {
+    const el = document.querySelector(sel)
+    if (!el) { report[sel] = { missing: true }; continue }
+    const style = getComputedStyle(el)
+    const bad = []
+    let node = el.parentElement
+    while (node && node !== document.documentElement) {
+      const cs = getComputedStyle(node)
+      const hit = (prop, value) => bad.push({ prop, value, node: node.tagName.toLowerCase() + (node.id ? '#' + node.id : '') })
+      if (cs.transform !== 'none') hit('transform', cs.transform)
+      if (cs.filter !== 'none') hit('filter', cs.filter)
+      if (cs.backdropFilter && cs.backdropFilter !== 'none') hit('backdrop-filter', cs.backdropFilter)
+      if (cs.perspective !== 'none') hit('perspective', cs.perspective)
+      if (/transform|filter|perspective/.test(cs.willChange || '')) hit('will-change', cs.willChange)
+      if (/layout|paint|strict|content/.test(cs.contain || '')) hit('contain', cs.contain)
+      node = node.parentElement
+    }
+    report[sel] = { position: style.position, bad }
+  }
+  return report
+}})(${JSON.stringify(ANCHORED)})`
+
+/** 视口锚定检查：fixed 层应与视口严丝合缝（被捕获时会明显不符）。 */
+const EVAL_VIEWPORT = `(${(sels) => {
+  const report = {}
+  for (const sel of sels) {
+    const el = document.querySelector(sel)
+    if (!el) { report[sel] = { missing: true }; continue }
+    const cs = getComputedStyle(el)
+    if (cs.position !== 'fixed') { report[sel] = { skip: cs.position }; continue }
+    const r = el.getBoundingClientRect()
+    report[sel] = {
+      left: +r.left.toFixed(1), top: +r.top.toFixed(1),
+      w: +r.width.toFixed(1), h: +r.height.toFixed(1),
+      iw: innerWidth, ih: innerHeight,
+    }
+  }
+  return report
+}})(${JSON.stringify(ANCHORED)})`
+
+/** 逐帧几何采样（不变量③ ④）：动画进行中宽高是否恒等、是否漂移。 */
+const EVAL_FRAMES = `(${(async (sels, frames) => {
+  const snap = () => {
+    const out = {}
+    for (const sel of sels) {
+      const el = document.querySelector(sel)
+      if (!el) { out[sel] = null; continue }
+      const r = el.getBoundingClientRect()
+      out[sel] = { w: +r.width.toFixed(2), h: +r.height.toFixed(2), l: +r.left.toFixed(2), t: +r.top.toFixed(2) }
+    }
+    return out
+  }
+  const series = []
+  for (let i = 0; i < frames; i++) {
+    await new Promise((r) => requestAnimationFrame(() => r()))
+    series.push(snap())
+  }
+  return { dpr: devicePixelRatio, series }
+})})(${JSON.stringify(CIRCULAR)}, 40)`
+
+async function main() {
+  const rt = resolveRuntime()
+  if (!rt) { record('render.env', 'fail', '未找到可用运行时'); return report() }
+  if (!fs.existsSync(path.join(PALIS, 'lib', 'client.js'))) {
+    record('render.env', 'fail', `主题插件构建产物缺失：${path.join(PALIS, 'lib', 'client.js')}（先 npm run build）`)
+    return report()
+  }
+  const chrome = findChrome()
+  if (!chrome) { record('render.env', 'skip', '未找到 Chrome，渲染探针跳过'); return report() }
+
+  /* Hermetic 沙箱：空 home + 主题插件（junction 与真实 profile 同构） */
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-render-'))
+  const home = path.join(sandbox, 'home')
+  const profileDir = path.join(home, 'profiles', 'web')
+  const nm = path.join(profileDir, 'node_modules', '@dsh-local')
+  fs.mkdirSync(nm, { recursive: true })
+  fs.symlinkSync(PALIS, path.join(nm, 'palis-theme-panel'), 'junction')
+  fs.writeFileSync(path.join(profileDir, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-web',
+    private: true,
+    dependencies: { '@dsh-local/palis-theme-panel': `link:${PALIS}` },
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@dsh-local/palis-theme-panel'] } },
+  }, null, 2))
+
+  const port = await freePort()
+  const base = `http://127.0.0.1:${port}`
+  const kernel = spawn(rt.node, [rt.bin, '--profile', 'web', '--port', String(port), '--no-open'], {
+    cwd: home,
+    env: { ...process.env, DSH_HOME: home },
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let kernelOut = ''
+  kernel.stdout.on('data', (b) => { kernelOut += b.toString('utf8') })
+  kernel.stderr.on('data', (b) => { kernelOut += b.toString('utf8') })
+
+  const teardown = async (cs) => {
+    try { cs?.kill() } catch {}
+    await sleep(500)
+    for (const c of [cs, kernel]) {
+      if (c && c.exitCode === null && process.platform === 'win32') {
+        try { spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }) } catch {}
+      }
+    }
+    if (!opt.keep) { try { fs.rmSync(sandbox, { recursive: true, force: true }) } catch {} }
+  }
+
+  // 就绪
+  const dl = Date.now() + opt.timeout * 1000
+  let ready = false
+  while (Date.now() < dl) {
+    if (kernel.exitCode !== null) break
+    try { await fetch(base, { redirect: 'manual', signal: AbortSignal.timeout(2500) }); ready = true; break } catch { await sleep(500) }
+  }
+  if (!ready) {
+    record('render.env', 'fail', `内核未就绪（exit=${kernel.exitCode}）${/error|Error/.test(kernelOut) ? '：' + kernelOut.split('\n').filter((l) => /error/i.test(l)).slice(0, 2).join(' | ') : ''}`)
+    await teardown(null)
+    return report()
+  }
+
+  // 打开主题（插件的 /api/palis-theme 契约：POST {theme:'palis'} → enabled=true）
+  try {
+    const r = await fetch(`${base}/api/palis-theme`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ theme: 'palis' }),
+      signal: AbortSignal.timeout(8000),
+    })
+    record('render.env', r.ok ? 'pass' : 'fail', `主题启用接口 POST /api/palis-theme → ${r.status}`)
+  } catch (err) {
+    record('render.env', 'fail', `主题启用失败：${err.message}`)
+  }
+
+  /* Chrome + CDP */
+  const cdpPort = await freePort()
+  const profile = path.join(sandbox, 'chrome')
+  fs.mkdirSync(profile, { recursive: true })
+  const cs = spawn(chrome, [
+    '--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`,
+    '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--window-size=1600,900', 'about:blank',
+  ], { stdio: 'ignore' })
+
+  let ws
+  try {
+    let target = null
+    for (let i = 0; i < 60 && !target; i++) {
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
+        target = list.find((t) => t.type === 'page')
+      } catch {}
+      if (!target) await sleep(250)
+    }
+    if (!target) throw new Error('CDP 未就绪')
+
+    ws = new WebSocket(target.webSocketDebuggerUrl)
+    await new Promise((r, j) => { ws.onopen = r; ws.onerror = () => j(new Error('ws 连接失败')) })
+    let id = 0
+    const pending = new Map()
+    const layers = []
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data)
+      if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+      if (msg.method === 'LayerTree.layerTreeDidChange' || msg.method === 'LayerTree.layerPainted') {
+        for (const layer of msg.params?.layers || []) layers.push(layer)
+      }
+    }
+    const send = (method, params = {}) => new Promise((resolve) => {
+      const mid = ++id
+      pending.set(mid, resolve)
+      ws.send(JSON.stringify({ id: mid, method, params }))
+    })
+    const evalJs = async (expr) => {
+      const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
+      return r.result?.result?.value
+    }
+
+    await send('Page.enable')
+    await send('Runtime.enable')
+    await send('DOM.enable')
+    await send('LayerTree.enable')
+    await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: opt.dpr, mobile: false })
+    await send('Page.navigate', { url: `${base}/` })
+
+    // 等装饰层出现（主题客户端按 revision 轮询，启用后 1-3s 注入）
+    let mounted = false
+    for (let i = 0; i < 40 && !mounted; i++) {
+      await sleep(500)
+      mounted = (await evalJs(`!!document.querySelector('.palis-globe, .palis-sonar')`)) === true
+    }
+    if (!mounted) {
+      record('render.invariants', 'fail', '等不到装饰层挂载（主题是否启用？）')
+      await teardown(cs)
+      return report()
+    }
+    await sleep(1200) // 让动画进入稳态
+
+    /* 不变量① ②：包含块 */
+    const anc = await evalJs(EVAL_ANCESTORS)
+    const violations = []
+    for (const [sel, info] of Object.entries(anc || {})) {
+      if (!info || info.missing) continue
+      for (const b of info.bad || []) violations.push(`${sel} ← ${b.node} {${b.prop}: ${String(b.value).slice(0, 40)}}`)
+    }
+    record('render.containing-block', violations.length === 0 ? 'pass' : 'fail',
+      violations.length === 0
+        ? `装饰层祖先链干净（${Object.values(anc || {}).filter((v) => v && !v.missing).length} 个元素受检）`
+        : `祖先建立包含块：${violations.slice(0, 3).join('；')}${violations.length > 3 ? ` …共 ${violations.length} 处` : ''}`)
+
+    /* 不变量①：fixed 层与视口对位
+       判据：横向通栏（left≈0 且 width≈视口宽）+ 垂直贴顶或贴底。
+       为什么这样判：fixed 层被祖先"捕获"时，它会改按那个祖先的盒子解析，
+       典型表现就是不再通栏、或不再贴边——而不是非要满屏才算对。 */
+    const vp = await evalJs(EVAL_VIEWPORT)
+    const mis = []
+    for (const [sel, info] of Object.entries(vp || {})) {
+      if (!info || info.missing || info.skip) continue
+      const flushLeft = Math.abs(info.left) <= 2 && Math.abs(info.w - info.iw) <= 2
+      const flushEdge = Math.abs(info.top) <= 2 || Math.abs(info.top + info.h - info.ih) <= 2
+      if (!flushLeft || !flushEdge) {
+        mis.push(`${sel} 实际 ${info.w}×${info.h}@(${info.left},${info.top})，视口 ${info.iw}×${info.ih}`)
+      }
+    }
+    record('render.viewport-anchor', mis.length === 0 ? 'pass' : 'fail',
+      mis.length === 0 ? '所有 fixed 装饰层与视口严丝合缝' : mis.slice(0, 2).join('；'))
+
+    /* 不变量③ ④：逐帧几何（40 帧） */
+    const frames = await evalJs(EVAL_FRAMES)
+    const dprOk = Math.abs((frames?.dpr || 0) - opt.dpr) < 0.01
+    const bad = []
+    const unstable = []
+    for (const [sel, vals] of Object.entries((frames?.series || []).length ? transpose(frames.series) : {})) {
+      const present = vals.filter(Boolean)
+      if (!present.length) continue
+      const worst = Math.max(...present.map((v) => Math.abs(v.w - v.h)))
+      const wRange = Math.max(...present.map((v) => v.w)) - Math.min(...present.map((v) => v.w))
+      if (worst > 1.5) bad.push(`${sel} 宽高差最大 ${worst.toFixed(2)}px`)
+      if (wRange > present[0].w * 0.5) unstable.push(`${sel} 宽度抖动 ${wRange.toFixed(1)}px`)
+    }
+    record('render.circle-aspect', bad.length === 0 ? 'pass' : 'fail',
+      bad.length === 0
+        ? `40 帧内圆形元素宽高恒等（DPR ${frames?.dpr}）`
+        : `宽高不等（=拉伸）：${bad.join('；')}`)
+    record('render.dpr', dprOk ? 'pass' : 'warn',
+      dprOk ? `DPR 仿真生效：devicePixelRatio=${frames?.dpr}` : `DPR 未按 ${opt.dpr} 生效（实测 ${frames?.dpr}）`)
+
+    /* 不变量③：合成层 */
+    const transformLayers = layers.filter((l) => l.transform && !/^\[?1, ?0, ?0, ?1, ?0, ?0\]?$/.test(String(l.transform)))
+    record('render.compositing', layers.length === 0 ? 'warn' : (transformLayers.length === 0 ? 'pass' : 'warn'),
+      layers.length === 0
+        ? 'LayerTree 未上报层（无头模式下合成信息可能不可用）'
+        : `合成层 ${layers.length} 个，其中带非恒等 transform ${transformLayers.length} 个`)
+
+    await teardown(cs)
+  } catch (err) {
+    record('render.invariants', 'fail', `探针异常：${err && err.message ? err.message : String(err)}`)
+    await teardown(cs)
+  }
+  return report()
+}
+
+/** 帧序列 → 按选择器转置。 */
+function transpose(series) {
+  const out = {}
+  for (const frame of series) {
+    for (const [sel, val] of Object.entries(frame || {})) {
+      if (!out[sel]) out[sel] = []
+      out[sel].push(val)
+    }
+  }
+  return out
+}
+
+function report() {
+  const sevCritical = new Set(['render.containing-block', 'render.viewport-anchor', 'render.circle-aspect', 'render.invariants', 'render.env'])
+  const width = Math.max(...results.map((r) => r.id.length))
+  console.log(`\n渲染不变量验收（DPR 仿真 ${opt.dpr}，40 帧采样）\n`)
+  for (const r of results) console.log(`  [${r.status.toUpperCase()}] ${r.id.padEnd(width)}  ${r.detail}`)
+  const crit = results.filter((r) => r.status === 'fail' && sevCritical.has(r.id))
+  if (opt.json) {
+    fs.mkdirSync(path.dirname(path.resolve(opt.json)), { recursive: true })
+    fs.writeFileSync(opt.json, JSON.stringify({ at: new Date().toISOString(), dpr: opt.dpr, results, criticalFails: crit.map((r) => r.id) }, null, 2))
+    console.log(`\n  报告已写入 ${opt.json}`)
+  }
+  console.log(crit.length === 0 ? '\nRENDER_INVARIANTS_OK' : `\nRENDER_INVARIANTS_FAIL ${crit.map((r) => r.id).join(' ')}`)
+  process.exit(crit.length === 0 ? 0 : 1)
+}
+
+main().catch(async (err) => {
+  record('render.invariants', 'fail', err && err.stack ? err.stack.split('\n')[0] : String(err))
+  report()
+})

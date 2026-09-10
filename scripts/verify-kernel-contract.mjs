@@ -36,6 +36,7 @@ const args = process.argv.slice(2)
 const opt = {
   json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
   keep: args.includes('--keep'),
+  render: args.includes('--render'),
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
 
@@ -295,6 +296,22 @@ async function main() {
     else if (files === 0) record(id, 'warn', '扫描集为空（前端产物路径可能变了）')
     else if (missing.length === 0) record(id, 'pass', `${row.detail.items.length} 项全部命中（扫 ${files} 个文件）`)
     else record(id, 'fail', `缺失/改名：${missing.join(', ')}（扫 ${files} 个文件）`)
+  }
+
+  /* 渲染不变量：委托 scripts/verify-render-invariants.mjs（需浏览器 + 真渲染 + 逐帧采样，
+     与其余协议级探针不同层，故单独脚本；--render 时本套件代为执行并汇总结果） */
+  if (opt.render) {
+    const tmp = path.join(os.tmpdir(), `dsh-render-report-${Date.now()}.json`)
+    const r = spawnSync(process.execPath, [path.join(__dirname, 'verify-render-invariants.mjs'), '--json', tmp], {
+      stdio: 'inherit', windowsHide: true, timeout: (opt.timeout + 240) * 1000,
+    })
+    let fails = []
+    try { fails = JSON.parse(fs.readFileSync(tmp, 'utf8')).criticalFails || [] } catch {}
+    try { fs.rmSync(tmp, { force: true }) } catch {}
+    record('theme.render-invariants', r.status === 0 ? 'pass' : 'fail',
+      r.status === 0 ? '四项不变量全部成立（详见 verify:render 输出）' : `不变量被破坏：${fails.join(', ') || `退出码 ${r.status}`}`)
+  } else {
+    record('theme.render-invariants', 'skip', '需 --render（或单独 npm run verify:render）')
   }
 
   /* 探针：真实已装 profile 的插件（只读，不碰用户实例）——空 home 的检查是空转的，
