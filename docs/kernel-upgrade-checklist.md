@@ -59,7 +59,7 @@ node scripts/verify-plugin-compat.mjs   --runtime <候选>                    # 
 | @dsh-local/palis-theme-panel | ✓ 0.5.8（双写，0.4.3 亦可） | ✓ **0.5.8** | 0.4.3 及更早撞 `settingsNamespace` 缺失 |
 | dsh-better-sidebar | ✓ 0.15.2（含本仓 fork 的动效修复） | 需 **0.18.0** | 0.15.2 同样撞 `settingsNamespace`；换 0.18.0 = 丢 fork 修复，需先移植 |
 | dsh-pet | ✓ 0.1.4 | ✓ 0.1.4 | — |
-| @nanmicoder/dsh-auto-mode | ✓ 0.1.2 | ✗（0.1.2 缺 `effectivePermissionPreset`；**0.1.7 自带版本守卫拒绝 0.1.5 并拖垮内核**） | 采纳 0.1.5 时须先移除或等上游 |
+| @nanmicoder/dsh-auto-mode | —（**已于 2026-09-10 从内置集移除**，本机 profile 亦已卸载） | ✗ | 历史结论：0.1.2 缺 `effectivePermissionPreset`；0.1.7 自带版本守卫拒绝未知内核并拖垮内核。若将来要重新引入，先确认其支持的 Harness 版本集合 |
 
 插件与内核的兼容性只能实测（peer 范围是声明，不是事实）。
 
