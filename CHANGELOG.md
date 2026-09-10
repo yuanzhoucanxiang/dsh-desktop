@@ -2,31 +2,31 @@
 
 ### 新增：内核升级工程化（契约 + 验收套件 + 升级手册）
 
-- **内核接触面契约** （18 条：依赖什么 / 期望什么 / 怎么探针 /
-  坏了怎么降级），配套可执行验收 （Hermetic 独立 DSH_HOME +
+- **内核接触面契约** `contracts/kernel-surface.json`（18 条：依赖什么 / 期望什么 / 怎么探针 /
+  坏了怎么降级），配套可执行验收 `npm run verify:kernel`（Hermetic 独立 DSH_HOME +
   随机端口，critical 失败即退出码 1；pending 行显式报未接入）。基线快照存
-  ，升级时 diff 即知变了什么。
-- **渲染不变量探针** ：headless Chrome + DPR 仿真 + 40 帧几何采样 +
+  `contracts/baselines/`，升级时 diff 即知"变了什么"。
+- **渲染不变量探针** `npm run verify:render`：headless Chrome + DPR 仿真 + 40 帧几何采样 +
   LayerTree，检查祖先包含块 / fixed 层视口对位 / 圆形宽高恒等 / 输入区主题。
-  把 0.1.2 那类静态截图看不出来、只有实时合成可见的变形变成跑一次就点名。
-- **插件 × 内核实测**  + 候选内核入口
-  （装任意内核版本到工作区外验收，不动已安装实例）。
-- **升级运行手册** ：何时跟版、四条照跑的命令、
+  把 0.1.2 那类"静态截图看不出来、只有实时合成可见"的变形变成跑一次就点名。
+- **插件 × 内核实测** `npm run verify:plugins` + 候选内核入口
+  `scripts/prepare-candidate-runtime.mjs`（装任意内核版本到工作区外验收，不动已安装实例）。
+- **升级运行手册** `docs/kernel-upgrade-checklist.md`：何时跟版、四条照跑的命令、
   实测版本矩阵、回滚姿势、安全网与工具索引。
 
 ### 变更：内置插件集 4 → 3（移除 auto-mode）
 
-- 移除 ：实测其在 0.1.5-rc.1 上不可用（0.1.2 缺
-  ；0.1.7 自带版本守卫拒绝未知内核版本并拖垮内核启动）。
+- 移除 `@nanmicoder/dsh-auto-mode`：实测其在 0.1.5-rc.1 上不可用（0.1.2 缺
+  `effectivePermissionPreset`；0.1.7 自带版本守卫拒绝未知内核版本并拖垮内核启动）。
   内置集现为 dsh-better-sidebar 0.15.2 / dsh-pet 0.1.4 / palis-theme-panel 0.5.8。
-- 既装实例不受影响：插件种子是一次性封嘴（userData 的 ）。
+- 既装实例不受影响：插件种子是一次性封嘴（userData 的 `builtin-plugins-seeded.json`）。
 
 ### 修复
 
 - 内置插件树裁剪：改为按插件**实测 import** 推导依赖闭包（原写死名单漏了 palis 经 cordis
-  间接到 ，会 Cannot find module），且不再从插件名起步（否则拖进仅声明未使用的
+  间接到 `cosmokit`，会 Cannot find module），且不再从插件名起步（否则拖进仅声明未使用的
   mermaid 全家 300MB）。
-- 内置插件树不再携带 ：这些子包 npm 上只到 0.0.1-rc.1（0.1.x 随内核分发），
+- 内置插件树不再携带 `@deepseek-ai/*`：这些子包 npm 上只到 0.0.1-rc.1（0.1.x 随内核分发），
   pnpm 的 auto-install-peers 去装必然失败；改由 profile 的运行时链接提供——既省事又天然
   版本一致，也避免种子用旧副本遮蔽运行时链接。
 - 署名：ox-alpha（2026-09-10）
