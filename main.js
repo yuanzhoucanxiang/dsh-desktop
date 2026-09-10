@@ -316,6 +316,17 @@ async function ensureExternalRuntime() {
   log(`kernel runtime ready at ${local}（上一版备份于 ${backup}）`)
 }
 
+/** 当前运行时的内核版本（runtime.json 的 dsh 字段）；读不到返回空串。
+ *  用途：主题角标/状态栏的"外壳·内核·主题"三方对账（`shell:get-state`）。 */
+function kernelVersion() {
+  try {
+    const meta = readRuntimeMeta(path.join(runtimeRoot(), 'runtime.json'))
+    return meta && typeof meta.dsh === 'string' ? meta.dsh : ''
+  } catch {
+    return ''
+  }
+}
+
 function runtimeRoot() {
   if (app.isPackaged) {
     const local = externalRuntimeDir()
@@ -2093,6 +2104,7 @@ function createTray() {
 function registerIpc() {
   ipcMain.handle('shell:get-state', () => ({
     version: app.getVersion(),
+    kernelVersion: kernelVersion(), // 主题角标/状态栏要做"外壳·内核·主题"三方对账，故一并给出
     theme: themeId(),
     phase: state.phase,
     message: state.message,
