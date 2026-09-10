@@ -105,11 +105,33 @@ function installPnpm(plugins) {
 /** 从 GitHub Release 下载构建产物 tarball；解压到 OUT 内再 rename（同卷）。 */
 async function installGhRelease(plugin) {
   const url = `https://github.com/${plugin.repo}/releases/download/${plugin.ref}/${encodeURIComponent(plugin.asset)}`
-  log(`download ${url}`)
-  const res = await fetch(url, { redirect: 'follow' })
-  if (!res.ok) throw new Error(`${plugin.asset}: HTTP ${res.status}`)
+  const cacheDir = process.env.DSH_BUILTIN_CACHE || path.join(os.tmpdir(), 'dsh-builtin-cache')
+  const cached = path.join(cacheDir, plugin.asset)
   const tgz = path.join(os.tmpdir(), `builtin-${Date.now()}-${plugin.asset}`)
-  fs.writeFileSync(tgz, Buffer.from(await res.arrayBuffer()))
+  fs.mkdirSync(cacheDir, { recursive: true })
+  let ok = false
+  if (fs.existsSync(cached) && fs.statSync(cached).size > 1024) {
+    log(`use cache ${cached}`)
+    fs.copyFileSync(cached, tgz)
+    ok = true
+  } else {
+    log(`download ${url}`)
+    try {
+      const res = await fetch(url, { redirect: 'follow' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      fs.writeFileSync(tgz, Buffer.from(await res.arrayBuffer()))
+      ok = fs.statSync(tgz).size > 1024
+      if (ok) fs.copyFileSync(tgz, cached)
+    } catch (err) {
+      log(`download failed: ${err.message}`)
+      if (fs.existsSync(cached) && fs.statSync(cached).size > 1024) {
+        log(`use stale cache ${cached}`)
+        fs.copyFileSync(cached, tgz)
+        ok = true
+      }
+    }
+  }
+  if (!ok) throw new Error(`${plugin.asset}: download failed and no cache`)
   try {
     const tar = process.platform === 'win32' && process.env.SystemRoot
       ? path.join(process.env.SystemRoot, 'System32', 'tar.exe')
