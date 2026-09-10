@@ -37,6 +37,7 @@ const opt = {
   json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
   keep: args.includes('--keep'),
   render: args.includes('--render'),
+  runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
 
@@ -46,10 +47,13 @@ const record = (id, status, detail) => results.push({ id, status, detail: detail
 /* ── 运行时定位 ─────────────────────────────────────────────────────────── */
 
 function resolveRuntime() {
+  // --runtime：在候选内核（如 scripts/prepare-candidate-runtime.mjs 装出的树）上验收，
+  // 不必动已安装实例——这是"内核升级前先跑契约"的入口。
   const candidates = [
+    opt.runtime,
     path.join(ROOT, 'runtime'), // 开发树
     path.join(process.env.LOCALAPPDATA || '', 'DeepSeek Harness Desktop', 'runtime'), // 已安装实例
-  ]
+  ].filter(Boolean)
   for (const dir of candidates) {
     if (!dir) continue
     const node = process.platform === 'win32' ? path.join(dir, 'node.exe') : path.join(dir, 'bin', 'node')
@@ -119,6 +123,7 @@ let child = null
 let sandbox = ''
 let base = ''
 let launchLine = ''
+let errLaunchLine = ''
 let stdoutAll = ''
 
 async function main() {
@@ -166,45 +171,65 @@ async function main() {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  // stdout 按行装配（跨 chunk 半行先攒着）
-  let carry = ''
-  const onData = (buf) => {
-    const text = buf.toString('utf8')
-    stdoutAll += text
-    const lines = (carry + text).split(/\r?\n/)
-    carry = lines.pop() || ''
-    for (const line of lines) {
-      const m = /dsh web: (https?:\/\/\S+)/.exec(line.replace(/\x1b\[[0-9;]*m/g, ''))
-      if (m && !launchLine) launchLine = m[1].trim()
+  // stdout 按行装配（跨 chunk 半行先攒着）；stderr 同样装配，用于诊断
+  // "启动行跑到 stderr 去了"这种外壳读不到的情况（外壳只读 stdout）。
+  const wireLine = (which) => {
+    let carry = ''
+    return (buf) => {
+      const text = buf.toString('utf8')
+      stdoutAll += text
+      const lines = (carry + text).split(/\r?\n/)
+      carry = lines.pop() || ''
+      for (const line of lines) {
+        const m = /dsh web: (https?:\/\/\S+)/.exec(line.replace(/\x1b\[[0-9;]*m/g, ''))
+        if (m) {
+          if (which === 'out' && !launchLine) launchLine = m[1].trim()
+          if (which === 'err' && !errLaunchLine) errLaunchLine = m[1].trim()
+        }
+      }
     }
   }
-  child.stdout.on('data', onData)
-  child.stderr.on('data', (b) => { stdoutAll += b.toString('utf8') })
+  child.stdout.on('data', wireLine('out'))
+  child.stderr.on('data', wireLine('err'))
 
-  // 就绪等待：任何应答即视为服务已起（就绪语义见 shell.http-root 契约）
+  // 就绪等待：只有 200/401/303 才算就绪（与外壳 probeReady 同语义）。
+  // 关键实测（0.1.5-rc.1）：端口会先于应用挂载开始应答（404），随后才转 401——
+  // "任何应答即就绪"会在应用还没挂上时就误判，进而漏掉启动行。
+  const ACCEPT = new Set([200, 401, 303])
   const deadline = Date.now() + opt.timeout * 1000
   let ready = false
   let readyStatus = 0
+  let lastStatus = 0
   while (Date.now() < deadline) {
     if (child.exitCode !== null) break
     try {
       const res = await fetch(`${base}/`, { redirect: 'manual', signal: AbortSignal.timeout(2500) })
-      readyStatus = res.status
-      ready = true
-      break
-    } catch { await sleep(500) }
+      lastStatus = res.status
+      if (ACCEPT.has(res.status)) { ready = true; readyStatus = res.status; break }
+    } catch {}
+    await sleep(500)
   }
 
   if (!ready) {
-    record('shell.http-root', 'fail', child.exitCode !== null ? `内核提前退出 code=${child.exitCode}` : `超时未应答（${opt.timeout}s）`)
+    record('shell.http-root', 'fail', child.exitCode !== null
+      ? `内核提前退出 code=${child.exitCode}`
+      : `超时未出现可接受的就绪码（${opt.timeout}s，最后看到 ${lastStatus || '无应答'}）`)
     await finish()
     return report()
   }
 
+  // 启动行可能晚于端口就绪（0.1.5 实测：端口先答 404，约 1s 后才打印）：给一段宽限
+  for (let i = 0; i < 20 && !launchLine && !errLaunchLine; i++) await sleep(500)
+
   /* 探针：启动行 */
-  record('shell.launch-line',
-    launchLine ? 'pass' : 'fail',
-    launchLine ? `${launchLine.replace(/token=[^&]+/, 'token=<redacted>')}${/token=/.test(launchLine) ? ' [含 token]' : ' [无 token：老内核]'}` : 'stdout 未见可解析的 dsh web 行（外壳的 token 抓取会静默失效）')
+  if (launchLine) {
+    record('shell.launch-line', 'pass',
+      `${launchLine.replace(/token=[^&]+/, 'token=<redacted>')}${/token=/.test(launchLine) ? ' [含 token]' : ' [无 token：老内核]'}`)
+  } else if (errLaunchLine) {
+    record('shell.launch-line', 'fail', '启动行出现在 stderr——外壳只读 stdout，会静默抓不到 token')
+  } else {
+    record('shell.launch-line', 'fail', 'stdout 未见可解析的 dsh web 行（外壳的 token 抓取会静默失效）')
+  }
 
   /* 探针：补丁与插件挂载 */
   const mounted = /\[review-bridge\] loaded/.test(stdoutAll)
@@ -302,7 +327,9 @@ async function main() {
      与其余协议级探针不同层，故单独脚本；--render 时本套件代为执行并汇总结果） */
   if (opt.render) {
     const tmp = path.join(os.tmpdir(), `dsh-render-report-${Date.now()}.json`)
-    const r = spawnSync(process.execPath, [path.join(__dirname, 'verify-render-invariants.mjs'), '--json', tmp], {
+    const childArgs = [path.join(__dirname, 'verify-render-invariants.mjs'), '--json', tmp]
+    if (opt.runtime) childArgs.push('--runtime', opt.runtime)
+    const r = spawnSync(process.execPath, childArgs, {
       stdio: 'inherit', windowsHide: true, timeout: (opt.timeout + 240) * 1000,
     })
     let fails = []
@@ -331,6 +358,39 @@ async function main() {
         : `${plugins.length} 个已装插件${bad.length ? `，不可加载：${bad.join(', ')}` : '均可加载'}（${plugins.join(', ')}）`)
   } else {
     record('env.installed-plugins', 'skip', `未找到 ${realManifest}`)
+  }
+
+  /* 探针：profile 里的 @deepseek-ai/* 副本与内核版本族一致性。
+     为什么必须查：装插件时会把内核包按 pnpm 解析装进 profile
+     （profiles/web/node_modules/@deepseek-ai），内核升级后这些副本仍是旧版，而内核
+     会生成引用"新版本才有的子路径导出"的 loader entry——0.1.5-rc.1 实测：
+     import '@deepseek-ai/dsh-tool-subagent/model-selection-settings' 撞上 profile 里
+     0.1.1 的旧副本，启动即 ERR_PACKAGE_PATH_NOT_EXPORTED。新装环境无此问题，
+     只有"既存 profile"会踩——所以这是一条专门给升级路径准备的探针。
+     判定用数字三元组（只忽略 -rc.N 预发布后缀）：0.1.1 与 0.1.5 必须判为不同族
+     ——按 major.minor 比会把它们折叠成同一个 "0.1" 而漏报（首版就写错刻度，实测才逮到）。 */
+  const fam = (v) => String(v || '').replace(/^v/, '').split('-')[0]
+  const readVer = (p) => {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')).version } catch { return '' }
+  }
+  const kernelPkgs = path.join(rt.dir, 'node_modules', '@deepseek-ai')
+  const profilePkgs = path.join(realHome, 'profiles', 'web', 'node_modules', '@deepseek-ai')
+  if (fs.existsSync(profilePkgs)) {
+    const skew = []
+    let compared = 0
+    for (const name of fs.readdirSync(profilePkgs)) {
+      const inProfile = readVer(path.join(profilePkgs, name, 'package.json'))
+      const inKernel = readVer(path.join(kernelPkgs, name, 'package.json'))
+      if (!inProfile || !inKernel) continue
+      compared++
+      if (fam(inProfile) !== fam(inKernel)) skew.push(`${name} profile=${inProfile} 内核=${inKernel}`)
+    }
+    record('shell.profile-kernel-packages', skew.length === 0 ? 'pass' : 'fail',
+      skew.length === 0
+        ? `profile 的 ${compared} 个内核包副本与内核同版本族`
+        : `profile 内 ${skew.length} 个内核包副本与内核不同族（升级内核前必须刷新插件树，否则内核启动可能失败）：${skew.slice(0, 3).join('；')}${skew.length > 3 ? ` …共 ${skew.length} 个` : ''}`)
+  } else {
+    record('shell.profile-kernel-packages', 'skip', 'profile 无 @deepseek-ai 副本（全新环境）')
   }
 
   await finish()

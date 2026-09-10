@@ -56,7 +56,7 @@
       "what": "就绪判定：GET / 的应答码集合",
       "expect": "200（无鉴权内核）或 401/303（0.1.2+ 有鉴权，服务应答即就绪）",
       "probe": "http-root",
-      "fallback": "出现集合外状态（如 5xx）→ 视为未就绪；超时 → 启动失败浮层",
+      "fallback": "必须轮询到 200/401/303 才算就绪；只看『有应答』会在应用挂载前误判（0.1.5-rc.1 实测：端口先答 404，约 1s 后才转 401 并打印启动行）。出现集合外状态或超时 → 启动失败浮层",
       "severity": "critical"
     },
     {
@@ -98,6 +98,16 @@
       "probe": "plugin-route",
       "fallback": "不可达 → 会话改动「撤销」不可用（其余审阅功能仍在）",
       "severity": "warn"
+    },
+    {
+      "id": "shell.profile-kernel-packages",
+      "owner": "shell",
+      "kind": "fs",
+      "what": "profile 里 plugins 解析装出的 @deepseek-ai/* 副本，必须与内核同版本族",
+      "expect": "profiles/web/node_modules/@deepseek-ai/* 的 major.minor 与内核一致",
+      "probe": "profile-kernel-packages",
+      "fallback": "不同族 → 内核可能生成引用新子路径导出的 loader entry 而启动即崩（0.1.5-rc.1 实测 ERR_PACKAGE_PATH_NOT_EXPORTED）。升级路径必须包含「刷新插件树」这一步；新装环境无此问题",
+      "severity": "critical"
     },
     {
       "id": "shell.kernel-patch-hotreload",

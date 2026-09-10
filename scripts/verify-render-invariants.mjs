@@ -45,6 +45,7 @@ const opt = {
   json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
   keep: args.includes('--keep'),
   dpr: args.includes('--dpr') ? Number(args[args.indexOf('--dpr') + 1]) : 2.73,
+  runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
 
@@ -66,7 +67,8 @@ const freePort = () => new Promise((resolve, reject) => {
 })
 
 function resolveRuntime() {
-  for (const dir of [path.join(ROOT, 'runtime'), path.join(process.env.LOCALAPPDATA || '', 'DeepSeek Harness Desktop', 'runtime')]) {
+  // --runtime：在候选内核上验收（见 scripts/prepare-candidate-runtime.mjs）
+  for (const dir of [opt.runtime, path.join(ROOT, 'runtime'), path.join(process.env.LOCALAPPDATA || '', 'DeepSeek Harness Desktop', 'runtime')].filter(Boolean)) {
     if (!dir) continue
     const node = process.platform === 'win32' ? path.join(dir, 'node.exe') : path.join(dir, 'bin', 'node')
     const bin = path.join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -181,8 +183,20 @@ async function main() {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let kernelOut = ''
-  kernel.stdout.on('data', (b) => { kernelOut += b.toString('utf8') })
-  kernel.stderr.on('data', (b) => { kernelOut += b.toString('utf8') })
+  let launchUrl = ''
+  let carry = ''
+  const wire = (buf) => {
+    const text = buf.toString('utf8')
+    kernelOut += text
+    const lines = (carry + text).split(/\r?\n/)
+    carry = lines.pop() || ''
+    for (const line of lines) {
+      const m = /dsh web: (https?:\/\/\S+)/.exec(line.replace(/\x1b\[[0-9;]*m/g, ''))
+      if (m && !launchUrl) launchUrl = m[1].trim()
+    }
+  }
+  kernel.stdout.on('data', wire)
+  kernel.stderr.on('data', wire)
 
   const teardown = async (cs) => {
     try { cs?.kill() } catch {}
@@ -195,18 +209,32 @@ async function main() {
     if (!opt.keep) { try { fs.rmSync(sandbox, { recursive: true, force: true }) } catch {} }
   }
 
-  // 就绪
+  // 就绪：只有 200/401/303 才算（与外壳 probeReady 同语义；0.1.5 端口会先答 404）
+  const ACCEPT = new Set([200, 401, 303])
   const dl = Date.now() + opt.timeout * 1000
   let ready = false
+  let last = 0
   while (Date.now() < dl) {
     if (kernel.exitCode !== null) break
-    try { await fetch(base, { redirect: 'manual', signal: AbortSignal.timeout(2500) }); ready = true; break } catch { await sleep(500) }
+    try {
+      const res = await fetch(base, { redirect: 'manual', signal: AbortSignal.timeout(2500) })
+      last = res.status
+      if (ACCEPT.has(res.status)) { ready = true; break }
+    } catch {}
+    await sleep(500)
   }
   if (!ready) {
-    record('render.env', 'fail', `内核未就绪（exit=${kernel.exitCode}）${/error|Error/.test(kernelOut) ? '：' + kernelOut.split('\n').filter((l) => /error/i.test(l)).slice(0, 2).join(' | ') : ''}`)
+    record('render.env', 'fail', `内核未就绪（exit=${kernel.exitCode}，最后状态 ${last || '无应答'}）${/error/i.test(kernelOut) ? '：' + kernelOut.split('\n').filter((l) => /error/i.test(l)).slice(0, 2).join(' | ') : ''}`)
     await teardown(null)
     return report()
   }
+  // 启动行可能晚于端口就绪（0.1.5 实测约 1s）
+  for (let i = 0; i < 20 && !launchUrl; i++) await sleep(500)
+  // 页面地址：有 token 就用带 token 的（内核 0.1.2+ 的入口；浏览器凭它换 cookie），
+  // 否则退回裸 origin（老内核）。拿裸 URL 导航会在 0.1.2+ 上停在 401 页 → 无内核 UI。
+  const pageUrl = launchUrl || `${base}/`
+  record('render.auth', launchUrl ? 'pass' : 'warn',
+    launchUrl ? '启动行含一次性 token，页面按带 token 地址加载' : '启动行无 token，按裸地址加载（老内核）')
 
   // 打开主题（插件的 /api/palis-theme 契约：POST {theme:'palis'} → enabled=true）
   try {
@@ -269,7 +297,7 @@ async function main() {
     await send('DOM.enable')
     await send('LayerTree.enable')
     await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: opt.dpr, mobile: false })
-    await send('Page.navigate', { url: `${base}/` })
+    await send('Page.navigate', { url: pageUrl })
 
     // 等装饰层出现（主题客户端按 revision 轮询，启用后 1-3s 注入）
     let mounted = false
