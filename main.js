@@ -92,6 +92,7 @@ const state = {
   patchMode: 'full', // 内核补丁模式：full=审阅桥+内置插件 / bridge=仅审阅桥 / none=无补丁
   quarantined: [],   // 本次会话被自动隔离的坏插件名（用于汇总提示）
   pluginProblems: null, // 插件体检发现的异常条数（null=尚未体检）；托盘/左下角入口据此亮标
+  agentBusy: false,   // 内核是否正在跑回合（审阅流 turn/start·end 驱动；窗口标题/托盘提示消费）
 }
 
 /* ─────────────────────────────── 设置持久化 ───────────────────────────────── */
@@ -101,13 +102,14 @@ const DEFAULT_UPDATE_REPO = 'yuanzhoucanxiang/dsh-desktop' // 默认 GitHub 更�
 const DEFAULT_SETTINGS = {
   autoLaunch: false,      // 开机自启
   closeToTray: true,      // 关闭窗口时最小化到托盘（而非退出）
-  workspace: '',          // 内核工作目录；空 = 用默认（主目录）
+  workspace: '',          // 内核工作目录；空 = ~/dsh-workspace（不再默认整个主目录）
   windowBounds: null,     // { x, y, width, height, maximized }
   updateRepo: '',         // GitHub 更新源 owner/repo（空 = 用 DEFAULT_UPDATE_REPO）
   updateUrl: '',          // generic 更新源 URL（优先级低于 updateRepo）
   panelWidth: 360,        // 审阅侧边栏宽度（用户拖拽调整后持久化）
   theme: 'deep',          // 外壳皮肤：deep=深海·单光环 / seascape=海景·Seascape
   notifyOnTurnEnd: true,  // 回合完成时发系统通知（仅在主窗口失焦时）
+  notifyCommand: '',      // 回合完成时执行的外部命令（空=不执行）；支持 {files} {cwd} 占位
   globalHotkey: 'Control+Alt+D', // 全局唤起热键（空字符串 = 关闭）
 }
 
@@ -151,10 +153,25 @@ function saveSettings() {
 // 注意：必须先初始化 settingsStore 再读设置（loadSettings 依赖它）。
 let settings = loadSettings()
 
+/**
+ * 内核启动目录。优先级：环境变量 > 用户显式设置 > ~/dsh-workspace。
+ * 为什么不再默认主目录：workspacePath 闸门把「工作区内」等同于 shell IPC
+ * （readFile / revert / open-file）的合法范围——落在 home 等于把 SSH 密钥、
+ * 设置文件等一并纳入可读/可删面。收成专用子目录后，正当用途（审阅侧栏）
+ * 不受影响；要拿 home 当工作区，托盘/菜单「设置工作目录…」显式选一次即可。
+ */
+function defaultWorkspace() {
+  const dir = path.join(os.homedir(), 'dsh-workspace')
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch { /* 建不了就用字面路径，后续启动内核会自己报错 */ }
+  return dir
+}
+
 function kernelCwd() {
   if (process.env.DSH_DESKTOP_CWD) return process.env.DSH_DESKTOP_CWD
   if (settings.workspace && fs.existsSync(settings.workspace)) return settings.workspace
-  return os.homedir()
+  return defaultWorkspace()
 }
 
 /**
@@ -164,11 +181,22 @@ function kernelCwd() {
  * 插件开了全盘文件读取（乃至 shell.openPath 打开任意文件）的能力。这些 API 的
  * 正当用途是审阅侧栏（工作区内文件的查看/还原），因此统一在此判定：
  * 工作区内 -> 返回解析后的绝对路径；工作区外 -> 返回 null（调用方拒绝）。
+ *
+ * realpath：path.resolve 不跟 symlink/junction——工作区内一个指向 ~/.ssh 的
+ * 链接会让 path.relative 判"在内"，实际读写却落在目标上。先解析真实路径再比对
+ * （目标不存在时 realpath 会抛，此时退回字面路径比对，保持"新建文件"语义）。
  */
 function workspacePath(input) {
   const root = path.resolve(kernelCwd())
-  const fp = path.resolve(root, String(input ?? ''))
-  const rel = path.relative(root, fp)
+  let fp = path.resolve(root, String(input ?? ''))
+  try {
+    fp = fs.realpathSync(fp)
+  } catch { /* 不存在/不可达：按字面路径判定，调用方在 open/read 时再报错 */ }
+  let rootReal = root
+  try {
+    rootReal = fs.realpathSync(root)
+  } catch { /* 工作区根不可 realpath（极罕见）：退回字面 root */ }
+  const rel = path.relative(rootReal, fp)
   const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
   return inside ? fp : null
 }
@@ -375,7 +403,7 @@ function dshHome() {
  * 启动即崩（2026-08-24 实测）。皮肤联动的内核侧归属 = palis-theme-panel bundle，
  * 扁平内置版（plugin/palis-theme/ 源码保留）只是未启用的备选实现。
  */
-const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings']
+const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings', 'writing-mode']
 
 function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)
@@ -495,12 +523,52 @@ function readSessionChanges() {
 /* ───────────────────── 回合完成通知（后台感知：失焦时才提醒） ─────────────────
  * 数据来自审阅桥写的 review-events.ndjson（内核零修改，外壳只读）。
  * 只在"主窗口没有焦点"时弹系统通知 —— 盯着屏幕时不打扰，这是 Codex 的 notify 思路。
+ * 同一条流还驱动「运行中」状态（窗口标题/托盘）与可选的外部命令钩子。
  */
+function setAgentBusy(busy) {
+  if (state.agentBusy === busy) return
+  state.agentBusy = busy
+  try {
+    if (win && !win.isDestroyed()) {
+      win.setTitle(busy ? `● ${APP_NAME}` : APP_NAME)
+    }
+  } catch {}
+  refreshTray()
+}
+
+/** 回合完成时执行用户配置的外部命令（webhook / 提示音 / 写日志）。 */
+function runNotifyHook(files) {
+  const raw = String(settings.notifyCommand || '').trim()
+  if (!raw) return
+  const cwd = kernelCwd()
+  const cmd = raw
+    .replaceAll('{files}', String(files))
+    .replaceAll('{cwd}', cwd)
+    .replaceAll('{workspace}', cwd)
+  try {
+    // 用户自配命令：走 shell 解释；detached+unref 让它独立于外壳生命周期
+    const child = spawn(cmd, {
+      shell: true,
+      cwd,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.unref()
+    child.on('error', (err) => log(`notifyCommand failed: ${err.message}`))
+    log(`notifyCommand: ${cmd}`)
+  } catch (err) {
+    log(`notifyCommand spawn failed: ${err.message}`)
+  }
+}
+
 function startTurnWatcher() {
   if (SMOKE || UI_SMOKE) return // 冒烟不弹系统通知
   if (state.turnTimer) clearInterval(state.turnTimer)
   state.turnTimer = setInterval(() => {
-    if (!settings.notifyOnTurnEnd || !state.reviewStreamPath) return
+    if (!state.reviewStreamPath) return
+    const watching = settings.notifyOnTurnEnd || !!settings.notifyCommand
+    if (!watching && !state.agentBusy) return
     let size = 0
     try {
       size = fs.statSync(state.reviewStreamPath).size
@@ -521,6 +589,7 @@ function startTurnWatcher() {
       return
     }
     state.turnOffset = size
+    let started = 0
     let ended = 0
     let files = 0
     for (const line of chunk.split('\n')) {
@@ -529,14 +598,20 @@ function startTurnWatcher() {
       try { e = JSON.parse(line) } catch { continue }
       if (!e) continue
       if (e.kind === 'tool-call' && e.file) files++
+      if (e.kind === 'turn-start') started++
       if (e.kind === 'turn-end') ended++
     }
+    if (started) setAgentBusy(true)
     if (!ended) return
+    // 一轮结束：若本块里 start 数 >= end 数，说明还有进行中的回合
+    setAgentBusy(started > ended)
     // 首次扫描（外壳刚起来时读到历史事件）不提醒，避免"补课式"轰炸
     if (!state.turnPrimed) {
       state.turnPrimed = true
       return
     }
+    if (settings.notifyCommand) runNotifyHook(files)
+    if (!settings.notifyOnTurnEnd) return
     const focused = !!win && !win.isDestroyed() && win.isFocused()
     if (focused) return
     notifyTurnEnd(files)
@@ -965,7 +1040,7 @@ function hardenWindow(w, opts) {
 
 /** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
 function openSettingsPanel(tab) {
-  const target = tab === 'update' ? 'update' : 'plugins'
+  const target = ['update', 'notify', 'plugins'].includes(tab) ? tab : 'plugins'
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.show()
     settingsWin.focus()
@@ -2033,6 +2108,7 @@ function buildTrayMenu() {
     { type: 'separator' },
     { label: '重启内核', click: () => restartKernel() },
     { label: '设置（插件 / 软件更新）…', click: () => openSettingsPanel() },
+    { label: '通知钩子命令…', click: () => openSettingsPanel('notify') },
     { label: '设置工作目录…', click: () => pickWorkspace() },
     { label: '打开日志', click: () => shell.openPath(state.logPath || path.join(app.getPath('userData'), 'kernel.log')) },
     { label: '检查更新…', click: () => openSettingsPanel('update') },
@@ -2084,8 +2160,9 @@ function buildTrayMenu() {
 function refreshTray() {
   if (!tray) return
   tray.setContextMenu(buildTrayMenu())
-  const ws = settings.workspace ? ` · ${settings.workspace}` : ''
-  tray.setToolTip(APP_NAME + ws)
+  const ws = settings.workspace ? ` · ${path.basename(settings.workspace)}` : ''
+  const busy = state.agentBusy ? ' · ● 运行中' : ''
+  tray.setToolTip(APP_NAME + busy + ws)
 }
 
 function createTray() {
@@ -2114,6 +2191,8 @@ function registerIpc() {
     workspace: kernelCwd(),
     lastError: state.lastError,
     logTail: state.logTail.join('\n'),
+    agentBusy: state.agentBusy,
+    notifyCommand: settings.notifyCommand || '',
   }))
   ipcMain.handle('shell:changes', () => collectChanges())
   ipcMain.handle('shell:git-init', () => gitInit())
@@ -2124,6 +2203,17 @@ function registerIpc() {
     settings.panelWidth = n
     saveSettings()
     return n
+  })
+  // 通知钩子：设置面板读写外部命令（回合完成时 spawn）
+  ipcMain.handle('shell:notify-command', (_e, cmd) => {
+    if (cmd === undefined) return { ok: true, command: settings.notifyCommand || '' }
+    settings.notifyCommand = String(cmd || '').trim()
+    saveSettings()
+    return { ok: true, command: settings.notifyCommand }
+  })
+  ipcMain.handle('shell:notify-command-test', () => {
+    runNotifyHook(0)
+    return { ok: true, command: settings.notifyCommand || '' }
   })
   // 插件体检面板：只读报告 / registry 更新比对 / 恢复被隔离插件（内部会重启内核）
   ipcMain.handle('shell:plugins-report', () => pluginReportForRenderer(runPluginInspection()))
@@ -2149,12 +2239,28 @@ function registerIpc() {
   ipcMain.handle('shell:update-get', () => ({ appVersion: app.getVersion(), ...updateStatus }))
   ipcMain.handle('shell:update-check', () => runUpdateCheck(true).catch(() => updateStatus))
   ipcMain.handle('shell:update-download', () => downloadUpdateWithRetry())
-  ipcMain.handle('shell:update-install', () => { installUpdateNow(); return { ok: true } })
+  ipcMain.handle('shell:update-install', async () => {
+    if (!state.updateReady) return { ok: false, error: '没有待安装的更新' }
+    const r = await confirm({
+      type: 'question',
+      buttons: ['重启并安装', '取消'],
+      title: '安装更新',
+      message: `现在安装 ${state.updateReady.version}？`,
+      detail: '应用会立即退出并启动安装器，当前会话将中断。',
+    })
+    if (r.response !== 0) return { ok: false, canceled: true }
+    installUpdateNow()
+    return { ok: true }
+  })
+  // 审阅栏「打开文件」：只在资源管理器里定位，不走 shell.openPath。
+  // openPath 会按系统关联直接执行 .bat/.cmd/.exe/.js 等——工作区内放一个
+  // 恶意脚本，任何插件 JS 调 openFile 即可触发执行。showItemInFolder 只选中，
+  // 不启动，满足「在哪儿」的正当用途，又不给执行面。
   ipcMain.handle('shell:open-file', (_e, p) => {
-    // 审阅流里的路径多为绝对路径：先经工作区闸（插件越权面收口，见 workspacePath），再解析
     const fp = workspacePath(p)
     if (fp === null) return '路径在工作区之外，已拒绝打开'
-    return shell.openPath(fp)
+    shell.showItemInFolder(fp)
+    return ''
   })
   // 面板内文件查看器：读文件内容（UTF-8，上限 512KB，二进制拒绝）
   ipcMain.handle('shell:read-file', (_e, p) => {
@@ -2233,6 +2339,20 @@ function registerIpc() {
     if (fp === null) return { ok: false, error: '路径在工作区之外' }
     return review.unstage(fp, hunk ?? null)
   })
+  // 全部暂存：可逆，不打扰；全部丢弃：破坏性，必须确认
+  ipcMain.handle('shell:git-stage-all', () => review.stageAll())
+  ipcMain.handle('shell:git-revert-all', async () => {
+    const c = review.changes()
+    if (!c.isGit || c.files.length === 0) return { ok: false, error: '没有可丢弃的改动' }
+    const r = await confirm({
+      buttons: ['全部丢弃', '取消'],
+      title: '丢弃全部改动',
+      message: `确定丢弃工作区全部 ${c.files.length} 个文件的未提交改动吗？`,
+      detail: '跟踪文件将还原到 HEAD，未跟踪的新文件会被删除。丢弃后无法撤销。',
+    })
+    if (r.response !== 0) return { ok: false, canceled: true }
+    return review.revertAll()
+  })
   ipcMain.handle('shell:git-revert-hunk', async (_e, p, hunk) => {
     const fp = workspacePath(p)
     if (fp === null) return { ok: false, canceled: true, error: '路径在工作区之外' }
@@ -2274,11 +2394,35 @@ function registerIpc() {
       finishBootError(err)
     })
   })
-  ipcMain.on('shell:restart-kernel', () => { restartKernel() })
+  // 退出/重启内核：内核页面主世界的任何插件 JS 都能调这两个 IPC（preload 同权）。
+  // 无确认等于让 XSS/恶意插件一键杀掉用户正在用的会话——必须过原生确认框。
+  // 程序内部退出走 state.quitting + app.quit() 直连，不经过这里，不受影响。
+  ipcMain.on('shell:restart-kernel', async () => {
+    const r = await confirm({
+      type: 'question',
+      buttons: ['重启内核', '取消'],
+      title: '重启内核',
+      message: '确定要重启内核吗？',
+      detail: '当前会话将中断，未保存的对话上下文可能丢失。',
+    })
+    if (r.response !== 0) return
+    restartKernel()
+  })
   ipcMain.on('shell:copy-log', () => {
     clipboard.writeText(state.logTail.join('\n'))
   })
-  ipcMain.on('shell:quit', () => { state.quitting = true; app.quit() })
+  ipcMain.on('shell:quit', async () => {
+    const r = await confirm({
+      type: 'question',
+      buttons: ['退出', '取消'],
+      title: '退出应用',
+      message: '确定要退出 DeepSeek Harness Desktop 吗？',
+      detail: '内核与当前会话会一并关闭。',
+    })
+    if (r.response !== 0) return
+    state.quitting = true
+    app.quit()
+  })
 }
 
 /* ─────────────────────────────── 启动流程 ─────────────────────────────────── */

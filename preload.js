@@ -51,10 +51,14 @@ contextBridge.exposeInMainWorld('dshShell', {
   revertChange: (sessionId, callId) => ipcRenderer.invoke('shell:revert-change', sessionId, callId),
   // 改动审阅信任闭环（逐文件/逐块）：hunk 传 null = 整个文件
   gitStage: (p, hunk) => ipcRenderer.invoke('shell:git-stage', p, hunk),
+  gitStageAll: () => ipcRenderer.invoke('shell:git-stage-all'),
+  gitRevertAll: () => ipcRenderer.invoke('shell:git-revert-all'),
   gitUnstage: (p, hunk) => ipcRenderer.invoke('shell:git-unstage', p, hunk),
   gitRevertHunk: (p, hunk) => ipcRenderer.invoke('shell:git-revert-hunk', p, hunk),
   gitCommit: (message) => ipcRenderer.invoke('shell:git-commit', message),
   gitPush: () => ipcRenderer.invoke('shell:git-push'),
+  notifyCommand: (cmd) => ipcRenderer.invoke('shell:notify-command', cmd),
+  notifyCommandTest: () => ipcRenderer.invoke('shell:notify-command-test'),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),
@@ -196,6 +200,7 @@ const PALIS_CHROME = `
     color: #d7dce8;
   }
   html[data-dsh-skin="palis"] #dsh-review-head button { border-radius: 0; }
+  html[data-dsh-skin="palis"] #dsh-review-branch { border-radius: 0; }
   html[data-dsh-skin="palis"] #dsh-review-mode button {
     font-family: inherit;
     border-radius: 0;
@@ -350,6 +355,15 @@ function injectReviewSidebar() {
     #${S}-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,transparent);flex:none;}
     #${S}-title{font-size:15px;font-weight:650;letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;}
     #${S}-ws{font-size:11px;color:var(--dsw-alias-label-tertiary,#6f7a99);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #${S}-bulk{display:none;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+    #${S}-bulk.dsh-on{display:flex;}
+    #${S}-branch{font:11px/1.3 Consolas,"Cascadia Mono",monospace;color:var(--dsw-alias-brand-primary,#8ecbff);
+      background:var(--dsw-alias-interactive-bg-hover,transparent);border:1px solid var(--dsw-alias-border-l2,transparent);
+      border-radius:6px;padding:2px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    #${S}-bulk-btn{font-size:11px;color:var(--dsw-alias-label-secondary,#8b93ad);background:none;
+      border:1px solid var(--dsw-alias-border-l2,transparent);border-radius:6px;padding:3px 8px;cursor:pointer;}
+    #${S}-bulk-btn:hover{color:var(--dsw-alias-label-primary,#e6e9ff);border-color:var(--dsw-alias-brand-primary,transparent);}
+    #${S}-bulk-btn:disabled{opacity:.5;cursor:default;}
     #${S}-head button{background:none;border:none;color:var(--dsw-alias-label-tertiary,#8b93ad);cursor:pointer;font-size:13px;padding:2px 6px;}
     #${S}-head button:hover{color:var(--dsw-alias-label-primary,#e6e9ff);}
     #${S}-body{flex:1;overflow-y:auto;padding:8px 0;}
@@ -520,7 +534,22 @@ function injectReviewSidebar() {
   const ws = document.createElement('div')
   ws.id = `${S}-ws`
   ws.textContent = '…'
-  head.append(titleRow, modeRow, ws)
+  // Git 视图批量操作条（分支名 + 全部暂存/全部丢弃）
+  const bulkRow = document.createElement('div')
+  bulkRow.id = `${S}-bulk`
+  const branchBadge = document.createElement('span')
+  branchBadge.id = `${S}-branch`
+  branchBadge.title = '当前分支'
+  const stageAllBtn = document.createElement('button')
+  stageAllBtn.id = `${S}-bulk-btn`
+  stageAllBtn.textContent = '全部暂存'
+  stageAllBtn.title = 'git add -A（可逆）'
+  const revertAllBtn = document.createElement('button')
+  revertAllBtn.id = `${S}-bulk-btn`
+  revertAllBtn.textContent = '全部丢弃'
+  revertAllBtn.title = '丢弃全部未提交改动（会弹确认）'
+  bulkRow.append(branchBadge, stageAllBtn, revertAllBtn)
+  head.append(titleRow, modeRow, ws, bulkRow)
 
   const body = document.createElement('div')
   body.id = `${S}-body`
@@ -727,8 +756,8 @@ function injectReviewSidebar() {
 
   function openFileBtn(file) {
     const b = document.createElement('button')
-    b.textContent = '打开'
-    b.title = '在系统编辑器中打开该文件'
+    b.textContent = '定位'
+    b.title = '在资源管理器中显示该文件（不执行）'
     b.addEventListener('click', async (e) => {
       e.stopPropagation()
       await ipcRenderer.invoke('shell:open-file', file)
@@ -1023,6 +1052,21 @@ function injectReviewSidebar() {
 
   function renderGit() {
     ws.textContent = data.workspace || '（未知工作目录）'
+    // 批量操作条：有未提交改动时出现；分支徽章常显（Git 视图）
+    if (data.isGit && data.files && data.files.length > 0) {
+      bulkRow.classList.add('dsh-on')
+      branchBadge.textContent = data.branch || '（无分支）'
+      branchBadge.title = `当前分支：${data.branch || '未知'}`
+      stageAllBtn.disabled = false
+      revertAllBtn.disabled = false
+    } else if (data.isGit) {
+      bulkRow.classList.add('dsh-on')
+      branchBadge.textContent = data.branch || '（无分支）'
+      stageAllBtn.disabled = true
+      revertAllBtn.disabled = true
+    } else {
+      bulkRow.classList.remove('dsh-on')
+    }
     body.textContent = ''
     if (!data.isGit) {
       const empty = document.createElement('div')
@@ -1422,6 +1466,27 @@ function injectReviewSidebar() {
     }
   }
 
+  /* ── 批量：全部暂存（可逆）/ 全部丢弃（主进程确认） ── */
+  stageAllBtn.addEventListener('click', async () => {
+    stageAllBtn.disabled = true
+    stageAllBtn.textContent = '…'
+    const r = await ipcRenderer.invoke('shell:git-stage-all')
+    stageAllBtn.textContent = '全部暂存'
+    stageAllBtn.disabled = false
+    if (r && r.ok) showToast('已暂存全部改动')
+    else showToast((r && r.error) || '全部暂存失败', true)
+    refresh()
+  })
+  revertAllBtn.addEventListener('click', async () => {
+    revertAllBtn.disabled = true
+    const r = await ipcRenderer.invoke('shell:git-revert-all')
+    revertAllBtn.disabled = false
+    if (r && r.canceled) return
+    if (r && r.ok) showToast(r.note || '已丢弃全部改动')
+    else showToast((r && r.error) || '全部丢弃失败', true)
+    refresh()
+  })
+
   /* ── 提交 / 推送（都只作用于已暂存内容；推送由主进程二次确认） ────────────── */
 
   commitBtn.addEventListener('click', async () => {
@@ -1459,8 +1524,10 @@ function injectReviewSidebar() {
   function render() {
     commitRow.classList.remove('dsh-on') // 只有 Git 视图会把它打开
     if (view) { renderViewer(); return }
-    if (mode === 'session') renderSession()
-    else renderGit()
+    if (mode === 'session') {
+      bulkRow.classList.remove('dsh-on')
+      renderSession()
+    } else renderGit()
   }
 
   async function refresh() {

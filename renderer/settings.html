@@ -14,6 +14,7 @@
   <nav class="tabs" id="tabs">
     <button type="button" data-tab="plugins" class="tab">插件</button>
     <button type="button" data-tab="update" class="tab">软件更新 <span id="update-dot" class="tab-dot hidden"></span></button>
+    <button type="button" data-tab="notify" class="tab">通知</button>
   </nav>
 </header>
 
@@ -79,6 +80,33 @@
 
   <footer class="page-foot">
     应用启动后会在后台自动检查并下载更新：下载完成时用系统通知提醒，不打断你；不点「重启并安装」也没关系，下次退出应用时会自动装上。
+  </footer>
+</main>
+
+<main id="page-notify" class="page hidden">
+  <div class="page-head">
+    <p class="sub">回合结束时，除系统通知外，还可执行一条外部命令（webhook / 提示音 / 写日志）</p>
+  </div>
+
+  <section class="card neutral-card">
+    <div class="card-title">完成钩子命令</div>
+    <p class="hint" style="margin:0 0 10px">
+      留空则不执行。支持占位符：<code>{files}</code> 本轮回合改动的文件数、
+      <code>{cwd}</code> / <code>{workspace}</code> 当前工作目录。
+      以系统 shell 解释，独立于外壳进程运行。
+    </p>
+    <div class="card-actions" style="align-items:center;gap:8px">
+      <input id="notify-cmd" type="text" spellcheck="false"
+             placeholder="例如：curl -X POST https://example.com/hook -d files={files}"
+             style="flex:1;min-width:200px;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);background:var(--bg,#111);color:inherit;font:12px/1.4 Consolas,monospace">
+      <button id="btn-notify-save" type="button" class="primary">保存</button>
+      <button id="btn-notify-test" type="button">试跑一次</button>
+    </div>
+    <span class="hint" id="notify-hint"></span>
+  </section>
+
+  <footer class="page-foot">
+    系统通知开关在托盘菜单「回合完成时通知」。钩子与系统通知相互独立：可只开钩子、只开通知，或两者都开。
   </footer>
 </main>
 

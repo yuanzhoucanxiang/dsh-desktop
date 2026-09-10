@@ -297,10 +297,23 @@ module.exports = {
       }
     }
 
+    // 只接受回环对端：与 palis-theme 同口径（以 socket 对端为准，Host 头可伪造）。
+    // 内核绑 127.0.0.1 时远程本来到不了，但本机任意进程/浏览器标签页都能 POST——
+    // 缺这道闸等于把「按 sessionId/callId 回退文件」开放给本机任意调用方。
+    const isLoopbackRequest = (req) => {
+      const addr = String(req?.socket?.remoteAddress ?? '')
+      return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
+    }
+
     ctx.webServer.register({
       kind: 'exact',
       path: '/api/review-bridge/revert',
       handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) {
+          res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ ok: false, error: 'forbidden' }))
+          return
+        }
         let body = {}
         try {
           const chunks = []

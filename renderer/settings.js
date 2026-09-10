@@ -40,12 +40,13 @@ function timeOf(iso) {
 /* ─────────────────────────────── 页签 ─────────────────────────────────── */
 
 function switchTab(tab) {
-  const target = tab === 'update' ? 'update' : 'plugins'
+  const target = ['plugins', 'update', 'notify'].includes(tab) ? tab : 'plugins'
   for (const btn of document.querySelectorAll('.tab')) {
     btn.classList.toggle('active', btn.dataset.tab === target)
   }
   $('page-plugins').classList.toggle('hidden', target !== 'plugins')
   $('page-update').classList.toggle('hidden', target !== 'update')
+  $('page-notify').classList.toggle('hidden', target !== 'notify')
 }
 for (const btn of document.querySelectorAll('.tab')) {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab))
@@ -381,6 +382,35 @@ if (window.dshShell) {
   })
   $('btn-download').addEventListener('click', () => { window.dshShell.updateDownload().catch(() => {}) })
   $('btn-install').addEventListener('click', () => { window.dshShell.updateInstall().catch(() => {}) })
+}
+
+/* ───────────────────────────── 通知钩子页 ─────────────────────────────── */
+
+async function loadNotify() {
+  if (!window.dshShell || !window.dshShell.notifyCommand) return
+  try {
+    const r = await window.dshShell.notifyCommand()
+    if (r && r.ok) $('notify-cmd').value = r.command || ''
+  } catch {}
+}
+
+if (window.dshShell && window.dshShell.notifyCommand) {
+  $('btn-notify-save').addEventListener('click', async () => {
+    const r = await window.dshShell.notifyCommand($('notify-cmd').value)
+    if (r && r.ok) {
+      $('notify-hint').textContent = r.command ? `已保存：${r.command}` : '已清空（不执行钩子）'
+    } else {
+      $('notify-hint').textContent = '保存失败'
+    }
+  })
+  $('btn-notify-test').addEventListener('click', async () => {
+    await window.dshShell.notifyCommand($('notify-cmd').value)
+    const r = await window.dshShell.notifyCommandTest()
+    $('notify-hint').textContent = r && r.ok
+      ? (r.command ? `已触发试跑：${r.command}` : '命令为空，未执行')
+      : '试跑失败'
+  })
+  loadNotify()
 }
 
 refresh()

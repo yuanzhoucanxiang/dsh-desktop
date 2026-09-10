@@ -1,3 +1,36 @@
+## [0.1.36] - 2026-09-10
+
+### 新增：写作模式内置插件
+
+- **写作模式**（`@dsh-local/writing-mode`）：右下角一键切入全屏写作工作台——
+  左文档库 / 中专注 Markdown 编辑器 / 右 AI 助手（润色·续写·大纲·压缩·扩写，
+  可插入文末或「发送到会话」）。文档落 `~/dsh-writing/`；Esc / 退出钮回到编码布局。
+  走官方 `shell.overlay` 槽位，内核零修改。随桌面启动自动同步并注入。
+- 署名：ox-alpha（2026-09-10）
+
+### 新增：审阅批量操作 · 运行中状态 · 通知钩子
+
+- **审阅面板**：Git 视图显示当前分支徽章；「全部暂存」（`git add -A`，可逆）与
+  「全部丢弃」（确认后还原跟踪文件并删除未跟踪文件）。
+- **运行中状态**：审阅流 `turn/start`/`turn/end` 驱动——忙时窗口标题前缀 `●`，
+  托盘提示带「运行中」。
+- **通知钩子**：设置 →「通知」页配置回合完成时执行的外部命令（占位符
+  `{files}` `{cwd}`/`{workspace}`），可试跑；与系统通知相互独立。
+- 署名：ox-alpha（2026-09-10）
+
+### 安全：外壳 IPC 攻击面收口
+
+- **默认工作区**从主目录收成 `~/dsh-workspace`（不存在则创建）。要拿 home 当工作区，
+  托盘/菜单「设置工作目录…」显式选一次。原因：`workspacePath` 闸门把工作区等同于
+  shell IPC 合法范围，落在 home 会把 SSH 密钥等纳入可读/可删面。
+- **`shell:open-file`** 改为 `showItemInFolder`（资源管理器定位），不再 `openPath`
+  按系统关联执行 `.bat/.cmd/.exe/.js` 等。
+- **`shell:quit` / `shell:restart-kernel` / `shell:update-install`** 补原生确认框；
+  托盘/菜单与程序内部直连路径不受影响。
+- **`workspacePath`** 判定前 `realpathSync`，防工作区内 symlink/junction 逃逸。
+- **review-bridge** `/api/review-bridge/revert` 补回环校验（socket 对端，与 palis 同口径）。
+- 署名：ox-alpha（2026-09-10）
+
 ## [0.1.35] - 2026-09-10
 
 ### 新增：内核版本对账 + 视觉打磨工具链

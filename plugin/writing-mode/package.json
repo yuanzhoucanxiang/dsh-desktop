@@ -1,0 +1,25 @@
+{
+  "name": "@dsh-local/writing-mode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "写作模式：全屏写作工作台（文档库 / 专注编辑器 / AI 助手），与编码会话布局切换",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}
