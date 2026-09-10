@@ -45,6 +45,7 @@ const opt = {
   json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
   keep: args.includes('--keep'),
   dpr: args.includes('--dpr') ? Number(args[args.indexOf('--dpr') + 1]) : 2.73,
+  shot: args.includes('--shot') ? args[args.indexOf('--shot') + 1] : '',
   runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
@@ -310,7 +311,49 @@ async function main() {
       await teardown(cs)
       return report()
     }
-    await sleep(1200) // 让动画进入稳态
+    // 等开机自检覆盖层退场（主题 boot 默认开，约 3-4s 序列）再进入稳态
+    await sleep(opt.shot ? 5000 : 1200)
+
+    /* 输入区主题（双写验收）：0.1.1 是 [data-composer-seat] textarea，
+       0.1.5 起是 [data-composer-input]（contenteditable[role=textbox]）。
+       两代任一存在，都必须带上 PALIS 的写作区样式（底色 #0a0a0a）——
+       这条同时验证"主题对两代内核都生效"，是双写选择器的回归闸。 */
+    const composer = await evalJs(`(() => {
+      const cands = ['[data-composer-input]', '[data-composer-seat] textarea']
+      for (const sel of cands) {
+        const el = document.querySelector(sel)
+        if (!el) continue
+        const cs = getComputedStyle(el)
+        const fg = getComputedStyle(document.documentElement).getPropertyValue('--palis-fg').trim()
+        return { sel, bg: cs.backgroundColor, fill: cs.webkitTextFillColor, fgVar: fg || '(未取到)', font: cs.fontFamily.split(',')[0] }
+      }
+      return { missing: true }
+    })()`)
+    if (composer && !composer.missing) {
+      const ok = composer.bg === 'rgb(10, 10, 10)'
+      record('render.composer-theme', ok ? 'pass' : 'fail',
+        ok
+          ? `${composer.sel} 已带 PALIS 写作区底色（bg=${composer.bg}，字体 ${composer.font}）`
+          : `${composer.sel} 未套上主题底色（bg=${composer.bg}，期望 rgb(10,10,10)）——双写选择器可能没命中`)
+    } else {
+      record('render.composer-theme', 'warn', '未找到写作区元素（两代选择器都没命中）')
+    }
+
+    /* 目检留证：整屏截图（--shot），供人工看主题观感（探针只判不变量，判不了"好不好看"） */
+    if (opt.shot) {
+      try {
+        const r = await send('Page.captureScreenshot', { format: 'png' })
+        if (r.result?.data) {
+          fs.mkdirSync(path.dirname(path.resolve(opt.shot)), { recursive: true })
+          fs.writeFileSync(opt.shot, Buffer.from(r.result.data, 'base64'))
+          record('render.shot', 'pass', `截图已存 ${opt.shot}`)
+        } else {
+          record('render.shot', 'warn', '截图失败（captureScreenshot 无数据）')
+        }
+      } catch (err) {
+        record('render.shot', 'warn', `截图异常：${err.message}`)
+      }
+    }
 
     /* 不变量① ②：包含块 */
     const anc = await evalJs(EVAL_ANCESTORS)

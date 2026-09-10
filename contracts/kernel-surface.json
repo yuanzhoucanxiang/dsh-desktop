@@ -195,14 +195,17 @@
           "data-conversation-scroll",
           "data-composer-card",
           "data-composer-seat",
-          "data-input-mirror",
           "data-input-scroll",
-          "data-input-backdrop",
           "data-chat-flow",
           "data-chat-flow-kind",
           "data-chat-flow-key",
           "data-ds-dark-theme"
-        ]
+        ],
+        "eitherOr": [
+          ["data-input-backdrop", "data-composer-input"],
+          ["data-input-mirror", "data-composer-placeholder"]
+        ],
+        "eitherOrNote": "输入区在 0.1.5 被重构（textarea → div[role=textbox][data-composer-input]、mirror → placeholder）。主题对这两处做双写，故两代锚点任一存在即可；每组都缺失才说明锚点真没了。"
       },
       "probe": "dom-anchors",
       "fallback": "锚点改名 → 对应主题功能自动关闭（不得崩），并在此探针里红项报出",

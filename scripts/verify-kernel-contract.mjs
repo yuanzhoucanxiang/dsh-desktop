@@ -104,16 +104,21 @@ function expandScan(patterns) {
   return out
 }
 
-/** 在扫描集里找缺失的名字（改名检测）。 */
-function scanForMissing(patterns, items) {
+/** 在扫描集里找缺失的名字（改名检测）。eitherOr 组内任一存在即算命中（双写语义）。 */
+function scanForMissing(patterns, items, eitherOr) {
   const names = items || []
-  if (names.length === 0) return { files: 0, missing: [], empty: true }
+  const groups = eitherOr || []
+  if (names.length === 0 && groups.length === 0) return { files: 0, missing: [], empty: true }
   const files = expandScan(patterns)
   const texts = files.map((f) => {
     try { return fs.readFileSync(f, 'utf8') } catch { return '' }
   })
-  const missing = names.filter((name) => !texts.some((t) => t.includes(name)))
-  return { files: files.length, missing, empty: false }
+  const has = (name) => texts.some((t) => t.includes(name))
+  const missing = names.filter((name) => !has(name))
+  for (const group of groups) {
+    if (!group.some(has)) missing.push(`任一（${group.join(' / ')}）`)
+  }
+  return { files: files.length, missing, empty: false, total: names.length + groups.length }
 }
 
 /* ── 主流程 ─────────────────────────────────────────────────────────────── */
@@ -316,11 +321,11 @@ async function main() {
   for (const id of ['theme.design-tokens', 'theme.module-loader', 'theme.dom-anchors']) {
     const row = byId[id]
     if (!row || !row.detail || !row.detail.scan) { record(id, 'warn', '契约行缺少 detail.scan，无法扫描'); continue }
-    const { files, missing, empty } = scanForMissing(row.detail.scan, row.detail.items)
+    const { files, missing, empty, total } = scanForMissing(row.detail.scan, row.detail.items, row.detail.eitherOr)
     if (empty) record(id, 'warn', '契约行未列 items，探针无对象')
     else if (files === 0) record(id, 'warn', '扫描集为空（前端产物路径可能变了）')
-    else if (missing.length === 0) record(id, 'pass', `${row.detail.items.length} 项全部命中（扫 ${files} 个文件）`)
-    else record(id, 'fail', `缺失/改名：${missing.join(', ')}（扫 ${files} 个文件）`)
+    else if (missing.length === 0) record(id, 'pass', `${total} 项全部命中（扫 ${files} 个文件）`)
+    else record(id, 'fail', `缺失/改名：${missing.join('、')}（扫 ${files} 个文件）`)
   }
 
   /* 渲染不变量：委托 scripts/verify-render-invariants.mjs（需浏览器 + 真渲染 + 逐帧采样，
