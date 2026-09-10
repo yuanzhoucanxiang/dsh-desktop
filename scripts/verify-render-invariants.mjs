@@ -48,6 +48,7 @@ const opt = {
   shot: args.includes('--shot') ? args[args.indexOf('--shot') + 1] : '',
   evalFile: args.includes('--eval-file') ? args[args.indexOf('--eval-file') + 1] : '',
   shotSel: args.includes('--shot-sel') ? args[args.indexOf('--shot-sel') + 1] : '',
+  settle: args.includes('--settle') ? Number(args[args.indexOf('--settle') + 1]) : 0,
   runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
@@ -313,8 +314,17 @@ async function main() {
       await teardown(cs)
       return report()
     }
-    // 等开机自检覆盖层退场（主题 boot 默认开，约 3-4s 序列）再进入稳态
-    await sleep(opt.shot ? 5000 : 1200)
+    // 全新 home 首启会有内核的「内测声明」/「API Key」模态，会盖住画面——挂载后立刻点掉，
+    // 这样它不会把 --shot 的取景时间推后（主题的开机自检只活 2.5s，时机很紧）
+    await evalJs(`(() => {
+      const hit = [...document.querySelectorAll('button')].find((b) => /继续|确定|知道|同意|开始|稍后/.test(b.textContent || ''))
+      if (hit) { hit.click(); return true }
+      return false
+    })()`)
+
+    // 等开机自检覆盖层退场（主题 boot 默认开，约 3-4s 序列）再进入稳态。
+    // --settle 可覆盖：抓"覆盖层还在屏上"的瞬间（如开机自检内容）时用短等待。
+    await sleep(opt.settle > 0 ? opt.settle : opt.shot ? 5000 : 1200)
 
     /* 输入区主题（双写验收）：0.1.1 是 [data-composer-seat] textarea，
        0.1.5 起是 [data-composer-input]（contenteditable[role=textbox]）。
@@ -358,13 +368,6 @@ async function main() {
     /* 目检留证：整屏截图（--shot），供人工看主题观感（探针只判不变量，判不了"好不好看"） */
     if (opt.shot) {
       try {
-        // 全新 home 首启会有内核的「内测声明」模态，会盖住输入区——先点掉再截图
-        await evalJs(`(() => {
-          const hit = [...document.querySelectorAll('button')].find((b) => /继续|确定|知道|同意|开始/.test(b.textContent || ''))
-          if (hit) { hit.click(); return true }
-          return false
-        })()`)
-        await sleep(1500)
         // --shot-sel：只截该元素并放大 2×（视觉打磨时放大看细节，别在缩放图上误判）
         let clip
         if (opt.shotSel) {
