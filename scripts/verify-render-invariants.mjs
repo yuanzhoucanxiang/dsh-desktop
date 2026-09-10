@@ -46,6 +46,8 @@ const opt = {
   keep: args.includes('--keep'),
   dpr: args.includes('--dpr') ? Number(args[args.indexOf('--dpr') + 1]) : 2.73,
   shot: args.includes('--shot') ? args[args.indexOf('--shot') + 1] : '',
+  evalFile: args.includes('--eval-file') ? args[args.indexOf('--eval-file') + 1] : '',
+  shotSel: args.includes('--shot-sel') ? args[args.indexOf('--shot-sel') + 1] : '',
   runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
@@ -339,10 +341,37 @@ async function main() {
       record('render.composer-theme', 'warn', '未找到写作区元素（两代选择器都没命中）')
     }
 
+    /* 临时查询：--eval-file 指定的表达式，在实时页面里求值并打印
+       （做视觉打磨时用来量任意元素的几何/计算样式，不必每次写新脚本） */
+    if (opt.evalFile) {
+      try {
+        const expr = fs.readFileSync(opt.evalFile, 'utf8')
+        const value = await evalJs(expr)
+        console.log('\n--- eval-file 结果 ---')
+        console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 1))
+        console.log('--- 结束 ---\n')
+      } catch (err) {
+        record('render.eval', 'warn', `eval-file 失败：${err.message}`)
+      }
+    }
+
     /* 目检留证：整屏截图（--shot），供人工看主题观感（探针只判不变量，判不了"好不好看"） */
     if (opt.shot) {
       try {
-        const r = await send('Page.captureScreenshot', { format: 'png' })
+        // 全新 home 首启会有内核的「内测声明」模态，会盖住输入区——先点掉再截图
+        await evalJs(`(() => {
+          const hit = [...document.querySelectorAll('button')].find((b) => /继续|确定|知道|同意|开始/.test(b.textContent || ''))
+          if (hit) { hit.click(); return true }
+          return false
+        })()`)
+        await sleep(1500)
+        // --shot-sel：只截该元素并放大 2×（视觉打磨时放大看细节，别在缩放图上误判）
+        let clip
+        if (opt.shotSel) {
+          const box = await evalJs(`(() => { const el = document.querySelector(${JSON.stringify(opt.shotSel)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
+          if (box && box.width > 0) clip = { ...box, scale: 2 }
+        }
+        const r = await send('Page.captureScreenshot', clip ? { format: 'png', clip } : { format: 'png' })
         if (r.result?.data) {
           fs.mkdirSync(path.dirname(path.resolve(opt.shot)), { recursive: true })
           fs.writeFileSync(opt.shot, Buffer.from(r.result.data, 'base64'))
