@@ -49,6 +49,7 @@ const opt = {
   evalFile: args.includes('--eval-file') ? args[args.indexOf('--eval-file') + 1] : '',
   shotSel: args.includes('--shot-sel') ? args[args.indexOf('--shot-sel') + 1] : '',
   settle: args.includes('--settle') ? Number(args[args.indexOf('--settle') + 1]) : 0,
+  shotScale: args.includes('--shot-scale') ? Number(args[args.indexOf('--shot-scale') + 1]) : 2,
   runtime: args.includes('--runtime') ? args[args.indexOf('--runtime') + 1] : '',
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
@@ -372,7 +373,7 @@ async function main() {
         let clip
         if (opt.shotSel) {
           const box = await evalJs(`(() => { const el = document.querySelector(${JSON.stringify(opt.shotSel)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
-          if (box && box.width > 0) clip = { ...box, scale: 2 }
+          if (box && box.width > 0) clip = { ...box, scale: opt.shotScale }
         }
         const r = await send('Page.captureScreenshot', clip ? { format: 'png', clip } : { format: 'png' })
         if (r.result?.data) {
