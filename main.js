@@ -624,8 +624,9 @@ function kernelEnv() {
  * "禁用一个插件 + 通知用户（托盘可一键恢复）"。
  */
 
-/** 内核核心 bundle，永不隔离（摘了也救不回来，反而必挂）。 */
-const CORE_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+/** 内核核心 bundle，永不隔离（摘了也救不回来，反而必挂）——定义在 lib/profile-inspect
+ *  作为单一来源，契约验收套件共用同一份，避免两处漂移。 */
+const CORE_BUNDLES = require('./lib/profile-inspect').CORE_BUNDLES
 
 function quarantineFile() {
   return path.join(app.getPath('userData'), 'disabled-bundles.json')

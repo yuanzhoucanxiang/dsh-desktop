@@ -23,7 +23,8 @@
     "git-review-test": "node lib/git-review.test.js",
     "profile-inspect-test": "node lib/profile-inspect.test.js",
     "atomic-file-test": "node lib/atomic-file.test.js",
-    "selector-check": "node plugin-selector-check.js"
+    "selector-check": "node plugin-selector-check.js",
+    "verify:kernel": "node scripts/verify-kernel-contract.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",

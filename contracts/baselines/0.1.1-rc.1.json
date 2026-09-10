@@ -1,0 +1,79 @@
+{
+  "at": "2026-09-10T10:51:00.579Z",
+  "kernel": "0.1.1-rc.1",
+  "results": [
+    {
+      "id": "shell.runtime-layout",
+      "status": "pass",
+      "detail": "E:\\Deepseek harness\\dsh-desktop\\runtime"
+    },
+    {
+      "id": "shell.runtime-marker",
+      "status": "pass",
+      "detail": "dsh=0.1.1-rc.1 node=v26.1.0"
+    },
+    {
+      "id": "shell.launch-line",
+      "status": "pass",
+      "detail": "http://127.0.0.1:8165 [无 token：老内核]"
+    },
+    {
+      "id": "shell.cli-and-patch-boot",
+      "status": "pass",
+      "detail": "--profile/--patch/--port/--no-open 被接受，补丁内 file:// 插件行已加载"
+    },
+    {
+      "id": "shell.http-root",
+      "status": "pass",
+      "detail": "GET / → 200"
+    },
+    {
+      "id": "shell.http-api-auth",
+      "status": "pass",
+      "detail": "未启用鉴权（/api 无 cookie → 404）"
+    },
+    {
+      "id": "shell.plugin-route",
+      "status": "pass",
+      "detail": "POST /api/review-bridge/revert → 409"
+    },
+    {
+      "id": "shell.profile-manifest",
+      "status": "pass",
+      "detail": "内核在空 home 自动初始化：bundles=[@deepseek-ai/dsh-base, @deepseek-ai/dsh-web-app]"
+    },
+    {
+      "id": "shell.plugin-bundle-decl",
+      "status": "pass",
+      "detail": "0 个插件 bundle 均可加载（跳过 2 个内核自带）"
+    },
+    {
+      "id": "theme.design-tokens",
+      "status": "pass",
+      "detail": "13 项全部命中（扫 2 个文件）"
+    },
+    {
+      "id": "theme.module-loader",
+      "status": "pass",
+      "detail": "1 项全部命中（扫 2 个文件）"
+    },
+    {
+      "id": "theme.dom-anchors",
+      "status": "pass",
+      "detail": "12 项全部命中（扫 101 个文件）"
+    },
+    {
+      "id": "env.installed-plugins",
+      "status": "pass",
+      "detail": "5 个已装插件均可加载（@dsh-external/dsh-super-injector, @dsh-local/palis-theme-panel, @nanmicoder/dsh-auto-mode, dsh-better-sidebar, dsh-pet）"
+    }
+  ],
+  "pending": [
+    "shell.kernel-patch-hotreload",
+    "shell.settings-rpc",
+    "shell.log-encoding",
+    "theme.slots-api",
+    "theme.render-invariants"
+  ],
+  "criticalFails": []
+}
