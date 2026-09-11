@@ -32,6 +32,13 @@ window.__ModuleLoader__.load({
       exit: '退出写作',
       docs: '文档库',
       newDoc: '新建',
+      newProject: '新建项目',
+      projTitle: '项目名',
+      projPremise: '一句话前提',
+      projTemplate: '模板',
+      create: '创建',
+      cancel: '取消',
+      created: '已创建项目',
       untitled: '未命名',
       save: '保存',
       saved: '已保存',
@@ -102,6 +109,13 @@ window.__ModuleLoader__.load({
       exit: 'Exit writing',
       docs: 'Library',
       newDoc: 'New',
+      newProject: 'New project',
+      projTitle: 'Title',
+      projPremise: 'Premise',
+      projTemplate: 'Template',
+      create: 'Create',
+      cancel: 'Cancel',
+      created: 'Project created',
       untitled: 'Untitled',
       save: 'Save',
       saved: 'Saved',
@@ -449,11 +463,144 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag)
     }
 
-    async function api(route, opts) {
-      const url = route ? `${API}?route=${encodeURIComponent(route)}` : API
-      const res = await fetch(url, opts)
-      return res.json().catch(() => ({ ok: false }))
+    async function api(route, opts, query) {
+      const params = new URLSearchParams({ route, ...query })
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), route === 'assist' ? 90000 : 15000)
+      try {
+        const res = await fetch(`${API}?${params}`, { ...opts, signal: controller.signal })
+        return await res.json().catch(() => ({ ok: false, error: 'invalid-response' }))
+      } finally { clearTimeout(timer) }
     }
+
+    // One document identity owns its buffer, base revision and serialized writes.
+    // Pure controller: exercised through the real HTTP handler in verify:writing.
+    function createEditorSession(io, recovered) {
+      let state = { path: null, content: '', revision: null, edit: 0, dirty: false, status: 'idle', error: '', loading: false }
+      let generation = 0
+      let saving = null
+      let creating = false
+      const listeners = new Set()
+      const notify = (patch) => {
+        state = { ...state, ...patch }
+        try { io.backup?.(state.dirty ? { path: state.path, content: state.content, revision: state.revision } : recovered || null) }
+        catch { state = { ...state, error: '恢复草稿暂存失败，请保存后再退出。' } }
+        for (const fn of listeners) fn(state)
+      }
+      const errorText = (err) => {
+        const code = err?.message || String(err)
+        return code === 'document-conflict' ? '文件已在别处修改。当前文字已保留，请另存新版后再比较。'
+          : code === 'revision-required' ? '读写协议已更新，请刷新页面后重新打开文稿。'
+          : code === 'historical-version' ? '这是历史稿，请另存新版。'
+          : `操作失败，当前文字已保留：${code}`
+      }
+      async function result(promise) {
+        const data = await promise
+        if (!data?.ok || !data.doc) throw new Error(data?.error || 'invalid-response')
+        return data.doc
+      }
+      const adopt = (doc) => notify({ path: doc.path, content: doc.content, revision: doc.revision, edit: state.edit + 1, dirty: false, status: 'idle', loading: false, error: '' })
+      const session = {
+        get: () => state,
+        subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) },
+        change(value) {
+          if (state.loading || !state.path) return
+          notify({ content: typeof value === 'function' ? value(state.content) : value, edit: state.edit + 1, dirty: true, status: 'idle', error: '' })
+        },
+        async flush() {
+          if (saving) { const ok = await saving; return ok ? session.flush() : false }
+          if (!state.dirty || !state.path) return true
+          const snapshot = state
+          notify({ status: 'saving', error: '' })
+          saving = (async () => {
+            try {
+              const doc = await result(io.save({ path: snapshot.path, content: snapshot.content, revision: snapshot.revision }))
+              const dirty = state.edit !== snapshot.edit
+              notify({ revision: doc.revision, dirty, status: dirty ? 'idle' : 'saved' })
+              io.saved?.(doc)
+              return true
+            } catch (err) {
+              notify({ status: 'error', error: errorText(err) })
+              return false
+            }
+          })()
+          const ok = await saving
+          saving = null
+          return ok && state.dirty ? session.flush() : ok
+        },
+        async open(target) {
+          if (creating) return false
+          if (!target || (state.path === target && !state.error)) return true
+          const token = ++generation
+          notify({ loading: true })
+          if (!await session.flush()) { if (token === generation) notify({ loading: false }); return false }
+          if (token !== generation) return false
+          try {
+            const doc = await result(io.read(target))
+            if (token !== generation) return false
+            adopt(doc)
+            if (recovered?.path === doc.path) {
+              const draft = recovered
+              recovered = null
+              if (draft.content !== doc.content) notify({ content: draft.content, revision: draft.revision, dirty: true, edit: state.edit + 1, status: 'error', error: '已恢复未保存文字。请保存；如原文件已变化，请另存新版。' })
+            }
+            return true
+          } catch (err) {
+            if (token === generation) {
+              // A removed/moved original must not erase its recovered buffer.
+              if (!state.path && recovered?.path === target) {
+                notify({ path: target, content: recovered.content, revision: recovered.revision, dirty: true })
+                recovered = null
+              }
+              notify({ loading: false, status: 'error', error: errorText(err) })
+            }
+            return false
+          }
+        },
+        async create(root, title) {
+          if (creating) return false
+          const token = ++generation
+          notify({ loading: true })
+          if (!await session.flush()) { if (token === generation) notify({ loading: false }); return false }
+          if (token !== generation) return false
+          creating = true
+          try {
+            const doc = await result(io.save({ root, title, content: '# ' + title + '\n\n', revision: null }))
+            io.saved?.(doc)
+            if (token !== generation) return false
+            adopt(doc)
+            return true
+          } catch (err) { if (token === generation) notify({ loading: false, status: 'error', error: errorText(err) }); return false }
+          finally { creating = false }
+        },
+        async version() {
+          if (!state.path || state.loading) return false
+          creating = true
+          ++generation
+          notify({ loading: true })
+          if (saving) await saving
+          const snapshot = state
+          try {
+            const doc = await result(io.version({ path: snapshot.path, content: snapshot.content }))
+            adopt(doc)
+            io.saved?.(doc)
+            return true
+          } catch (err) { notify({ loading: false, status: 'error', error: errorText(err) }); return false }
+          finally { creating = false }
+        },
+        async close() {
+          if (creating) return false
+          ++generation // invalidate a pending file read
+          notify({ loading: true })
+          const ok = await session.flush()
+          notify({ loading: false })
+          return ok
+        },
+      }
+      return session
+    }
+    exports.createEditorSession = createEditorSession
+    exports.api = api
 
     function applyBodyAttr(active) {
       try {
@@ -475,8 +622,13 @@ window.__ModuleLoader__.load({
       }
     }
     let modeActive = readActiveLS()
+    let closeGuard = null
     const modeListeners = new Set()
     function setModeActive(next) {
+      if (!next && modeActive && closeGuard) { void closeGuard(); return }
+      commitModeActive(next)
+    }
+    function commitModeActive(next) {
       if (modeActive === next) return
       modeActive = next
       try {
@@ -600,16 +752,40 @@ window.__ModuleLoader__.load({
       const [roots, setRoots] = react.useState([])
       const [tree, setTree] = react.useState([])
       const [activeRoot, setActiveRoot] = react.useState(null)
-      const [filePath, setFilePath] = react.useState(() => {
+      const editorRef = react.useRef(null)
+      if (!editorRef.current) {
+        let recovered = null
+        let recoveryKey = 'dsh-writing-recovery'
         try {
-          return localStorage.getItem(LS_FILE) || null
-        } catch {
-          return null
-        }
-      })
-      const [content, setContent] = react.useState('')
-      const [dirty, setDirty] = react.useState(false)
-      const [saveState, setSaveState] = react.useState('idle')
+          let id = sessionStorage.getItem('dsh-writing-window')
+          if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('dsh-writing-window', id) }
+          recoveryKey += ':' + id
+          recovered = JSON.parse(localStorage.getItem(recoveryKey) || 'null')
+          if (!recovered) {
+            const last = localStorage.getItem(LS_FILE)
+            const drafts = Object.keys(localStorage).filter(k => k.startsWith('dsh-writing-recovery:'))
+              .map(k => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } })
+              .filter(d => d?.path === last).sort((a, b) => b.updatedAt - a.updatedAt)
+            recovered = drafts[0] || null
+          }
+        } catch {}
+        const post = (route, body) => api(route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        editorRef.current = createEditorSession({
+          read: path => api('get', undefined, { path }),
+          save: body => post('save', body),
+          version: body => post('version', body),
+          backup: draft => {
+            if (draft) localStorage.setItem(recoveryKey, JSON.stringify({ ...draft, updatedAt: Date.now() }))
+            else localStorage.removeItem(recoveryKey)
+          },
+        }, recovered)
+      }
+      const editor = editorRef.current
+      const [documentState, setDocumentState] = react.useState(editor.get)
+      react.useEffect(() => editor.subscribe(setDocumentState), [editor])
+      const { path: filePath, content, dirty, status: saveState } = documentState
+      const setContent = value => editor.change(value)
+      const setFilePath = path => { void editor.open(path) }
       const [aiOpen, setAiOpen] = react.useState(true)
       const [aiOut, setAiOut] = react.useState('')
       const [aiBusy, setAiBusy] = react.useState(false)
@@ -629,6 +805,11 @@ window.__ModuleLoader__.load({
       const [ledgerOpen, setLedgerOpen] = react.useState(false)
       const [newDocMode, setNewDocMode] = react.useState(false)
       const [newDocName, setNewDocName] = react.useState('')
+      const [projMode, setProjMode] = react.useState(false)
+      const [projTitle, setProjTitle] = react.useState('')
+      const [projPremise, setProjPremise] = react.useState('')
+      const [projTemplate, setProjTemplate] = react.useState('novel')
+      const [templates, setTemplates] = react.useState([])
       const [addRootMode, setAddRootMode] = react.useState(false)
       const [addRootPath, setAddRootPath] = react.useState('')
       const [flash, setFlash] = react.useState('')
@@ -638,6 +819,7 @@ window.__ModuleLoader__.load({
         void loadPrefs()
       }, [active])
       const taRef = react.useRef(null)
+      const aiTarget = react.useRef(null)
       const saveTimer = react.useRef(0)
       const fileInputRef = react.useRef(null)
       const runGateRef = react.useRef(() => {})
@@ -664,9 +846,9 @@ window.__ModuleLoader__.load({
         for (const root of tree) {
           for (const proj of root.projects || []) {
             for (const f of proj.files || []) {
-              if (!String(f.rel).startsWith('draft/')) continue
+              if (f.abs.replace(/[\\/][^\\/]+$/, '').toLowerCase() !== filePath.replace(/[\\/][^\\/]+$/, '').toLowerCase()) continue
               const n = f.name
-              if (!n.startsWith(base + '-v') || !n.toLowerCase().endsWith(ext.toLowerCase())) continue
+              if (n.replace(/-v\d+(\.[^.]+)?$/i, '').toLowerCase() !== base.toLowerCase() || !n.toLowerCase().endsWith(ext.toLowerCase())) continue
               const v = versionOf(n)
               if (v == null) continue
               out.push({ v, abs: f.abs, name: n })
@@ -718,125 +900,60 @@ window.__ModuleLoader__.load({
         void refreshTree()
       }, [active, refreshTree])
 
-      const loadFile = react.useCallback(async (absPath) => {
-        if (!absPath) return
-        const data = await api('get&path=' + encodeURIComponent(absPath))
-        if (data.ok && data.doc) {
-          setContent(data.doc.content || '')
-          setDirty(false)
-          setSaveState('idle')
-          setGate(null)
-          setGateErr('')
-          setLedger(null)
-          // 仅在路径真正变化时回写，避免触发 load 死循环
-          if (data.doc.path !== absPath) {
-            setFilePath(data.doc.path)
-          }
-          void api('ledger', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ path: data.doc.path }),
-          })
-            .then((d) => {
-              if (d.ok) setLedger(d.ledger)
-            })
-            .catch(() => {})
-          try {
-            localStorage.setItem(LS_FILE, data.doc.path)
-          } catch {}
-        }
-      }, [])
+      const persist = react.useCallback(() => editor.flush(), [editor])
+      const saveAsNewVersion = () => editor.version()
 
       react.useEffect(() => {
-        if (!active || !filePath) return
-        void loadFile(filePath)
-      }, [active, filePath, loadFile])
-
-      const persist = react.useCallback(async () => {
-        if (!filePath) return
-        setSaveState('saving')
-        const data = await api('save', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path: filePath, content }),
-        })
-        if (data.ok && data.doc) {
-          setFilePath(data.doc.path)
-          setDirty(false)
-          setSaveState('saved')
-          void refreshTree()
-          const ext = String(data.doc.path).toLowerCase().split('.').pop()
-          if (
-            getPrefs().autoGate &&
-            (ext === 'md' || ext === 'markdown' || ext === 'fountain')
-          ) {
-            try {
-              runGateRef.current()
-            } catch {}
-          }
-        } else {
-          setSaveState('idle')
-        }
-      }, [filePath, content, refreshTree])
-
-      /** 文件名 vN → vN+1（无版本号则追加 -v2）。返回新绝对路径或 null。 */
-      function nextVersionPath(abs) {
-        if (!abs) return null
-        const m = String(abs).match(/^(.*?)(-v(\d+))?(\.[^.]+)$/i)
-        if (!m) return null
-        const [, base, , ver, ext] = m
-        const n = ver ? Number(ver) + 1 : 2
-        return `${base}-v${n}${ext}`
-      }
-
-      async function saveAsNewVersion() {
-        if (!filePath) return
-        const next = nextVersionPath(filePath)
-        if (!next) return
-        setSaveState('saving')
-        const data = await api('save', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path: next, content }),
-        })
-        if (data.ok && data.doc) {
-          setFilePath(data.doc.path)
-          setDirty(false)
-          setSaveState('saved')
-          void refreshTree()
-          try {
-            localStorage.setItem(LS_FILE, data.doc.path)
-          } catch {}
-        } else {
-          setSaveState('idle')
-        }
-      }
+        if (!active || editor.get().path) return
+        try { const p = localStorage.getItem(LS_FILE); if (p) void editor.open(p) } catch {}
+      }, [active, editor])
 
       react.useEffect(() => {
-        if (!active || !dirty || !filePath) return
-        window.clearTimeout(saveTimer.current)
-        saveTimer.current = window.setTimeout(() => {
-          void persist()
-        }, prefs.autoSaveMs || 800)
+        closeGuard = async () => { if (await editor.close()) commitModeActive(false) }
+        const protect = e => {
+          if (!editor.get().dirty && editor.get().status !== 'saving') return
+          e.preventDefault()
+          e.returnValue = ''
+        }
+        window.addEventListener('beforeunload', protect)
+        return () => { closeGuard = null; window.removeEventListener('beforeunload', protect) }
+      }, [editor])
+
+      react.useEffect(() => {
+        if (!filePath) return
+        let cancelled = false
+        setGate(null); setGateErr(''); setLedger(null); setDiffLines(null)
+        try { localStorage.setItem(LS_FILE, filePath) } catch {}
+        void refreshTree().catch(err => flashMsg(err.message))
+        void api('ledger', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: filePath }),
+        }).then(d => { if (!cancelled && d.ok) setLedger(d.ledger) }).catch(() => {})
+        return () => { cancelled = true }
+      }, [filePath, documentState.revision, refreshTree])
+
+      react.useEffect(() => {
+        if (!active || !dirty || !filePath || documentState.loading || documentState.status === 'error') return
+        saveTimer.current = window.setTimeout(() => { void persist() }, prefs.autoSaveMs || 800)
         return () => window.clearTimeout(saveTimer.current)
-      }, [active, dirty, filePath, persist, prefs.autoSaveMs])
+      }, [active, dirty, filePath, content, documentState.loading, documentState.status, persist, prefs.autoSaveMs])
 
       react.useEffect(() => {
         if (!active) return
-        const onKey = (e) => {
+        const onKey = e => {
           if (e.key === 'Escape') {
+            if (newDocMode || addRootMode) return
             close()
-            return
           }
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault()
-            if (e.shiftKey) void saveAsNewVersion()
-            else if (filePath) void persist()
+            if (e.shiftKey) void editor.version()
+            else void persist()
           }
         }
         window.addEventListener('keydown', onKey)
         return () => window.removeEventListener('keydown', onKey)
-      }, [active, filePath, persist])
+      }, [active, newDocMode, addRootMode, editor, persist])
 
       function flashMsg(msg) {
         setFlash(String(msg || ''))
@@ -892,24 +1009,44 @@ window.__ModuleLoader__.load({
         setNewDocName(T.untitled)
       }
 
-      function commitNewDoc() {
-        const root =
-          roots.find((r) => r.path === activeRoot && !r.missing) ||
-          roots.find((r) => !r.missing)
+      function openProjectMode() {
+        setProjMode(true)
+        setProjTitle('')
+        setProjPremise('')
+        void api('templates')
+          .then((d) => {
+            if (d.ok) setTemplates(d.templates || [])
+          })
+          .catch(() => {})
+      }
+
+      async function commitProject() {
+        const data = await api('create-project', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            title: projTitle,
+            premise: projPremise,
+            templateId: projTemplate,
+          }),
+        })
+        setProjMode(false)
+        if (!data.ok) {
+          flashMsg(data.error === 'project-exists' ? '同名项目已存在' : '创建失败：' + (data.error || ''))
+          return
+        }
+        flashMsg(T.created + '：' + (data.project?.name || ''))
+        void refreshTree()
+      }
+
+      async function commitNewDoc() {
+        const root = roots.find(r => r.path === activeRoot && !r.missing) || roots.find(r => !r.missing)
         if (!root) return
         const name = (newDocName || T.untitled).trim() || T.untitled
-        const base = name.replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 40) || T.untitled
-        const stamp = Date.now().toString(36)
-        const abs = root.path.replace(/[\\/]+$/, '') + '\\' + base + '-' + stamp + '.md'
-        setContent('# ' + name + '\n\n')
-        setFilePath(abs)
-        setDirty(true)
-        setSaveState('idle')
-        setNewDocMode(false)
-        setNewDocName('')
-        try {
-          taRef.current && taRef.current.focus()
-        } catch {}
+        if (await editor.create(root.path, name)) {
+          setNewDocMode(false); setNewDocName('')
+          taRef.current?.focus()
+        }
       }
 
       function selectionText() {
@@ -924,6 +1061,8 @@ window.__ModuleLoader__.load({
       }
 
       async function runAssist(action) {
+        const snapshot = editor.get()
+        const selection = taRef.current ? { start: taRef.current.selectionStart, end: taRef.current.selectionEnd } : { start: 0, end: 0 }
         const isRec = action === 'research' || action === 'spark'
         const text = selectionText()
         if (!isRec && !text.trim()) {
@@ -946,6 +1085,11 @@ window.__ModuleLoader__.load({
             }),
           })
           if (data.ok) {
+            if (editor.get().path !== snapshot.path || editor.get().edit !== snapshot.edit) {
+              flashMsg('文稿已切换或修改，本次 AI 结果未应用。')
+              return
+            }
+            aiTarget.current = { path: snapshot.path, edit: snapshot.edit, ...selection }
             setAiOut(data.result || '')
             return
           }
@@ -998,34 +1142,35 @@ window.__ModuleLoader__.load({
 
       // 打开文件后自动跑一次门禁
       react.useEffect(() => {
-        if (!active || !filePath) return
+        if (!active || !filePath || !prefs.autoGate) return
         const ext = String(filePath).toLowerCase().split('.').pop()
         if (ext !== 'md' && ext !== 'markdown' && ext !== 'fountain') return
         void runGate()
-      }, [active, filePath]) // 故意不含 content：只在打开时跑
+      }, [active, filePath, documentState.revision, prefs.autoGate])
 
       function applyInsert() {
         if (!aiOut) return
+        if (isHistoryDoc || !aiTarget.current || aiTarget.current.path !== filePath || aiTarget.current.edit !== editor.get().edit) {
+          flashMsg('文稿已变化或为历史稿，请重新生成；历史稿请先另存新版。')
+          return
+        }
         setContent((c) => (c.endsWith('\n') ? c : c + '\n') + '\n' + aiOut + '\n')
-        setDirty(true)
       }
 
       function applyReplace() {
         if (!aiOut) return
-        const ta = taRef.current
-        if (!ta) {
-          setContent(aiOut)
-          setDirty(true)
+        const target = aiTarget.current
+        if (isHistoryDoc || !target || target.path !== filePath || target.edit !== editor.get().edit) {
+          flashMsg('文稿已变化，请重新选择并生成。')
           return
         }
-        const s = ta.selectionStart
-        const e = ta.selectionEnd
+        const s = target.start
+        const e = target.end
         if (typeof s === 'number' && typeof e === 'number' && e > s) {
           setContent(content.slice(0, s) + aiOut + content.slice(e))
         } else {
-          setContent(aiOut)
+          flashMsg('生成前没有选区，请使用“插入文末”。')
         }
-        setDirty(true)
       }
 
       async function copyPath() {
@@ -1075,10 +1220,11 @@ window.__ModuleLoader__.load({
       }
 
       function maxVersionInGroup(files) {
-        let max = 0
+        const max = new Map()
         for (const f of files || []) {
           const v = versionOf(f.name)
-          if (v != null && v > max) max = v
+          const key = f.abs.replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()
+          if (v != null) max.set(key, Math.max(max.get(key) || 0, v))
         }
         return max
       }
@@ -1095,7 +1241,8 @@ window.__ModuleLoader__.load({
       // 文件行（带版本徽标）
       function fileButton(f, maxVer) {
         const ver = versionOf(f.name)
-        const isHist = ver != null && maxVer > 0 && ver < maxVer
+        const latest = maxVer instanceof Map ? maxVer.get(f.abs.replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()) : 0
+        const isHist = ver != null && ver < latest
         return jsx.jsx(
           'button',
           {
@@ -1173,8 +1320,8 @@ window.__ModuleLoader__.load({
         const idx = versionSeries.findIndex((s) => s.abs === filePath)
         const prev = versionSeries[idx - 1]
         if (!prev) return
-        const a = await api('get&path=' + encodeURIComponent(prev.abs))
-        const b = await api('get&path=' + encodeURIComponent(filePath))
+        const a = await api('get', undefined, { path: prev.abs })
+        const b = await api('get', undefined, { path: filePath })
         if (!a.ok || !b.ok) return
         setDiffLines(lineDiff(a.doc.content, b.doc.content))
         setDiffLabel(`v${prev.v} → v${curVerNum}`)
@@ -1235,13 +1382,14 @@ window.__ModuleLoader__.load({
         close()
       }
 
+      const notice = documentState.error || flash
       return jsx.jsx('div', {
         className: 'dshWmRoot',
         role: 'dialog',
         'aria-label': T.toggle,
         children: [
-          flash
-            ? jsx.jsx('div', { className: 'dshWmFlash', children: flash }, 'flash')
+          notice
+            ? jsx.jsx('div', { className: 'dshWmFlash', role: 'alert', children: notice }, 'flash')
             : null,
           jsx.jsx(
             'div',
@@ -1390,6 +1538,12 @@ window.__ModuleLoader__.load({
                             jsx.jsx('button', {
                               type: 'button',
                               className: 'dshWmBtn',
+                              onClick: openProjectMode,
+                              children: T.newProject,
+                            }),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn',
                               onClick: createDocInRoot,
                               children: T.newDoc,
                             }),
@@ -1397,6 +1551,82 @@ window.__ModuleLoader__.load({
                         },
                         'dh'
                       ),
+                      projMode
+                        ? jsx.jsx(
+                            'div',
+                            {
+                              style: {
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6,
+                                padding: '0 10px 10px',
+                              },
+                              children: [
+                                jsx.jsx('input', {
+                                  className: 'dshWmSearch',
+                                  style: { margin: 0 },
+                                  value: projTitle,
+                                  autoFocus: true,
+                                  placeholder: T.projTitle,
+                                  onChange: (e) => setProjTitle(e.target.value),
+                                }),
+                                jsx.jsx('input', {
+                                  className: 'dshWmSearch',
+                                  style: { margin: 0 },
+                                  value: projPremise,
+                                  placeholder: T.projPremise,
+                                  onChange: (e) => setProjPremise(e.target.value),
+                                }),
+                                jsx.jsx(
+                                  'select',
+                                  {
+                                    className: 'dshWmSearch',
+                                    style: { margin: 0 },
+                                    value: projTemplate,
+                                    onChange: (e) => setProjTemplate(e.target.value),
+                                    children: (templates.length
+                                      ? templates
+                                      : [
+                                          { id: 'novel', name: '小说 · 长篇连载' },
+                                          { id: 'shortdrama', name: '短剧 · 竖屏' },
+                                          { id: 'screenplay', name: '电影 / 剧集' },
+                                        ]
+                                    ).map((t) =>
+                                      jsx.jsx(
+                                        'option',
+                                        { value: t.id, children: t.name },
+                                        t.id
+                                      )
+                                    ),
+                                  },
+                                  'tmpl'
+                                ),
+                                jsx.jsx(
+                                  'div',
+                                  {
+                                    style: { display: 'flex', gap: 6 },
+                                    children: [
+                                      jsx.jsx('button', {
+                                        type: 'button',
+                                        className: 'dshWmBtn is-primary',
+                                        onClick: () => void commitProject(),
+                                        children: T.create,
+                                      }),
+                                      jsx.jsx('button', {
+                                        type: 'button',
+                                        className: 'dshWmBtn',
+                                        onClick: () => setProjMode(false),
+                                        children: T.cancel,
+                                      }),
+                                    ],
+                                  },
+                                  'pb'
+                                ),
+                              ],
+                            },
+                            'proj'
+                          )
+                        : null,
                       newDocMode
                         ? jsx.jsx(
                             'div',
@@ -1690,10 +1920,10 @@ window.__ModuleLoader__.load({
                             className: 'dshWmEditor',
                             value: content,
                             spellCheck: false,
+                            readOnly: documentState.loading || isHistoryDoc,
                             placeholder: filePath ? '开始写…' : '# …',
                             onChange: (e) => {
                               setContent(e.target.value)
-                              setDirty(true)
                             },
                           }),
                         },

@@ -1,0 +1,205 @@
+{
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-audit-20260911\\fixtures-ofzuSV",
+  "results": [
+    {
+      "name": "read-route-encoded-as-one-value",
+      "reproduced": true,
+      "evidence": {
+        "capturedUrl": "/api/writing-mode?route=get%26path%3DC%253A%255CUsers%255CDL%255CAppData%255CLocal%255CTemp%255Cdsh-writing-audit-20260911%255Cfixtures-ofzuSV%255Clibrary%255Cproject%255Cdraft%255Cnovel%255C%25E7%25AC%25AC1%25E7%25AB%25A0-v1.md",
+        "actual": {
+          "ok": false,
+          "error": "unknown-route"
+        },
+        "controlStatus": 200
+      }
+    },
+    {
+      "name": "save-new-version-overwrites-existing",
+      "reproduced": true,
+      "evidence": {
+        "target": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-audit-20260911\\fixtures-ofzuSV\\library\\project\\draft\\novel\\第1章-v2.md",
+        "status": 200
+      }
+    },
+    {
+      "name": "new-root-document-not-listed",
+      "reproduced": true,
+      "evidence": {
+        "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-audit-20260911\\fixtures-ofzuSV\\library\\新建独立文稿-mtwpxyeq.md",
+        "listed": false
+      }
+    },
+    {
+      "name": "research-reads-outside-library",
+      "reproduced": true,
+      "evidence": {
+        "status": 200,
+        "sentinelReturned": true
+      }
+    },
+    {
+      "name": "bible-treated-as-novel-chapter",
+      "reproduced": true,
+      "evidence": {
+        "kind": "novel",
+        "failures": [
+          {
+            "ok": false,
+            "label": "字数",
+            "detail": "CJK=11（1800-3200）"
+          },
+          {
+            "ok": false,
+            "label": "章末钩子落栏",
+            "detail": "末行：世界规则：日落后禁止通行。"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fountain-ascii-quotes-pass",
+      "reproduced": true,
+      "evidence": {
+        "gate": {
+          "kind": "fountain",
+          "rows": [
+            {
+              "ok": true,
+              "label": "场景标题",
+              "detail": "1 个"
+            },
+            {
+              "ok": true,
+              "label": "角色提示行",
+              "detail": "1（@ 1）"
+            },
+            {
+              "ok": true,
+              "label": "对白行",
+              "detail": "1 行"
+            },
+            {
+              "ok": true,
+              "label": "转场",
+              "detail": "1 个"
+            },
+            {
+              "ok": true,
+              "label": "对白不加引号",
+              "detail": "无"
+            },
+            {
+              "ok": true,
+              "label": "中文角色用 @",
+              "detail": "无裸名"
+            }
+          ],
+          "pass": true,
+          "fail": 0,
+          "extra": {
+            "scenes": 1,
+            "dialogueLines": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "fountain-cli-host-disagreement",
+      "reproduced": true,
+      "evidence": {
+        "cli": "# 剧本结构检查：C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-audit-20260911\\fixtures-ofzuSV\\divergent.fountain\nPASS  场景标题  1 个（含 INT./EXT. 或 内景/外景）\nPASS  角色提示行  1 个（@ 强制 1、拉丁大写 0）\nFAIL  对白行  0 行\nPASS  转场  1 个\nPASS  对白不加引号  无\nPASS  中文角色提示用 @  无裸名\n\n章节标记：# 1 个｜括号提示：0 处\n体量：非空 5 行，估算 1 页（约 1 分钟银幕时间）\n\n结论：1 项未达标\n",
+        "host": {
+          "kind": "fountain",
+          "rows": [
+            {
+              "ok": true,
+              "label": "场景标题",
+              "detail": "1 个"
+            },
+            {
+              "ok": true,
+              "label": "角色提示行",
+              "detail": "1（@ 1）"
+            },
+            {
+              "ok": true,
+              "label": "对白行",
+              "detail": "2 行"
+            },
+            {
+              "ok": true,
+              "label": "转场",
+              "detail": "1 个"
+            },
+            {
+              "ok": false,
+              "label": "对白不加引号",
+              "detail": "第 5 行"
+            },
+            {
+              "ok": true,
+              "label": "中文角色用 @",
+              "detail": "无裸名"
+            }
+          ],
+          "pass": false,
+          "fail": 1,
+          "extra": {
+            "scenes": 1,
+            "dialogueLines": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "ledger-picks-old-version-by-mtime",
+      "reproduced": true,
+      "evidence": {
+        "latestDraft": {
+          "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-audit-20260911\\fixtures-ofzuSV\\library\\project\\draft\\novel\\第1章-v1.md",
+          "name": "第1章-v1.md"
+        }
+      }
+    },
+    {
+      "name": "model-route-uses-last-created-session",
+      "reproduced": true,
+      "evidence": {
+        "provider": "unrelated-provider",
+        "model": "unrelated-model",
+        "source": "session"
+      }
+    },
+    {
+      "name": "host-accepts-cross-origin-plain-post",
+      "reproduced": true,
+      "evidence": {
+        "status": 200,
+        "note": "Direct handler probe; no browser exploit attempted."
+      }
+    },
+    {
+      "name": "multi-text-block-keeps-only-last",
+      "reproduced": true,
+      "evidence": {
+        "ok": true,
+        "text": "第二段",
+        "route": {
+          "provider": "mock",
+          "model": "mock"
+        }
+      }
+    },
+    {
+      "name": "save-response-clears-newer-dirty-edit",
+      "reproduced": true,
+      "evidence": {
+        "sent": "请求发出时旧内容",
+        "currentEditor": "编辑后的新内容",
+        "dirty": false,
+        "saveState": "saved",
+        "note": "Extracted production callback with deferred API response; not a browser E2E."
+      }
+    }
+  ]
+}

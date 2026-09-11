@@ -410,7 +410,27 @@ function syncBuiltinPlugin(name) {
   if (!fs.existsSync(path.join(src, 'package.json'))) return false
   const dest = path.join(dshHome(), 'profiles', 'node_modules', '@dsh-local', name)
   let synced = false
-  for (const file of ['package.json', 'index.js', 'client.js']) {
+  /** 递归收集相对路径（跳过 node_modules / 点目录）。 */
+  const walk = (rel) => {
+    const abs = path.join(src, rel)
+    let ents
+    try {
+      ents = fs.readdirSync(abs, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    const out = []
+    for (const ent of ents) {
+      if (ent.name.startsWith('.') || ent.name === 'node_modules') continue
+      const child = rel ? path.join(rel, ent.name) : ent.name
+      if (ent.isDirectory()) out.push(...walk(child))
+      else if (ent.isFile() && /\.(js|mjs|cjs|json|md|yml)$/.test(ent.name)) out.push(child)
+    }
+    return out
+  }
+  const files = walk('')
+  if (!files.includes('package.json')) return false
+  for (const file of files) {
     const s = path.join(src, file)
     const d = path.join(dest, file)
     try {

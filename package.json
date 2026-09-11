@@ -97,7 +97,9 @@
         "filter": [
           "package.json",
           "index.js",
-          "client.js"
+          "client.js",
+          "lib/*",
+          "CONTRACT.md"
         ]
       },
       {
