@@ -23,6 +23,13 @@ import {
   ensureCompanionPreset,
 } from './lib/store.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
+import {
+  readMemory,
+  applyMemoryOp,
+  injectableItems,
+  memoryError,
+} from './lib/project-memory.js'
+import { readCheckpoint, writeCheckpoint, listCheckpoints } from './lib/draft-checkpoints.js'
 import fs from 'node:fs'
 import { listTemplates, renderTemplate } from './lib/templates.js'
 
@@ -449,6 +456,116 @@ export function apply(ctx) {
             project: { name: dirName, path: target.abs, template: tmpl.id, files: written },
             tree: scanTree(cfg),
           })
+          return
+        }
+
+        if (req.method === 'GET' && route === 'memory') {
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const proj = findProjectRoot(target.abs) || path.dirname(target.abs)
+          if (resolveUnderRoots(proj, roots) === null) {
+            writeJson(res, 400, { ok: false, error: 'project-outside-roots' })
+            return
+          }
+          try {
+            const { memory, etag } = readMemory(proj)
+            writeJson(res, 200, {
+              ok: true,
+              project: proj,
+              memory,
+              etag,
+              injectable: injectableItems(memory),
+            })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+          }
+          return
+        }
+
+        if (req.method === 'POST' && route === 'memory') {
+          const parsed = await readJsonBody(req)
+          if (parsed === null) {
+            writeJson(res, 400, { ok: false, error: 'invalid-json' })
+            return
+          }
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(parsed?.path || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const proj = findProjectRoot(target.abs) || path.dirname(target.abs)
+          if (resolveUnderRoots(proj, roots) === null) {
+            writeJson(res, 400, { ok: false, error: 'project-outside-roots' })
+            return
+          }
+          try {
+            const { memory, etag } = applyMemoryOp(proj, {
+              op: parsed.op,
+              baseRevision: parsed.baseRevision,
+              baseEtag: parsed.baseEtag,
+              id: parsed.id,
+              item: parsed.item,
+            })
+            writeJson(res, 200, {
+              ok: true,
+              project: proj,
+              memory,
+              etag,
+              injectable: injectableItems(memory),
+            })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+          }
+          return
+        }
+
+        if (req.method === 'GET' && route === 'draft') {
+          const project = url.searchParams.get('project') || ''
+          const windowId = url.searchParams.get('window') || 'default'
+          // project must be under a library root when non-empty
+          if (project) {
+            const t = resolveUnderRoots(project, effectiveRoots(cfg))
+            if (!t) {
+              writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+              return
+            }
+          }
+          const checkpoint = readCheckpoint(project, windowId)
+          const all = listCheckpoints(project)
+          writeJson(res, 200, { ok: true, checkpoint, checkpoints: all.slice(0, 8) })
+          return
+        }
+
+        if (req.method === 'POST' && route === 'draft') {
+          const parsed = await readJsonBody(req)
+          if (parsed === null) {
+            writeJson(res, 400, { ok: false, error: 'invalid-json' })
+            return
+          }
+          const project = String(parsed.project || '')
+          const windowId = String(parsed.windowId || 'default')
+          if (project) {
+            const t = resolveUnderRoots(project, effectiveRoots(cfg))
+            if (!t) {
+              writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+              return
+            }
+          }
+          try {
+            const r = writeCheckpoint(project, windowId, {
+              text: parsed.text,
+              reference: parsed.reference,
+              revision: parsed.revision,
+            })
+            writeJson(res, 200, r)
+          } catch (err) {
+            writeJson(res, 500, { ok: false, error: String(err?.message || err) })
+          }
           return
         }
 

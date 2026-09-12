@@ -21,12 +21,29 @@ const sharedBody = shared
   .replace(/^[\s\S]*?export function createEditorSession/, 'function createEditorSession')
   .replace(/\nexport /g, '\n')
 
+const ctxSrc = read('plugin/writing-mode/src/shared/context-builder.js')
+const ctxBody = ctxSrc
+  .replace(/^[\s\S]*?export function buildPreparedTurn/, 'function buildPreparedTurn')
+  .split('export function memoryHint')[0]
+  .replace(/^function buildPreparedTurn[\s\S]*?function memoryHint[\s\S]*$/m, '')
+
+// rebuild cleanly: just take both exported functions as local
+const ctxClean = [
+  ctxSrc.match(/export function buildPreparedTurn[\s\S]*?(?=\nexport function memoryHint)/)?.[0] || '',
+  ctxSrc.match(/export function memoryHint[\s\S]*$/)?.[0] || '',
+]
+  .join('\n')
+  .replace(/export function/g, 'function')
+
 const anchor = '    // createEditorSession comes from src/shared/editor-session.js (build inlines it)\n'
 if (!entry.includes(anchor)) {
-  console.error('entry.js missing editor-session anchor — update build-writing-client.mjs')
+  console.error('entry.js missing editor-session anchor')
   process.exit(1)
 }
-entry = entry.replace(anchor, sharedBody.trimEnd() + '\n' + anchor)
+entry = entry.replace(
+  anchor,
+  sharedBody.trimEnd() + '\n' + ctxClean.trimEnd() + '\n' + anchor
+)
 
 const banner = `/**
  * GENERATED FILE — do not hand-edit.

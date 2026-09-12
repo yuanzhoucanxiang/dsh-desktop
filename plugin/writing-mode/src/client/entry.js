@@ -60,8 +60,127 @@
     }
     exports.ensureCompanionSession = ensureCompanionSession
 
-    // Conversation history stays in Harness. Only unsent local references live here.
-    const companionDrafts = new Map()
+    // Conversation history stays in Harness. Unsent text lives in host checkpoints.
+    const companionDrafts = new Map() // in-memory cache of last known checkpoint
+    let companionWindowId = null
+    try {
+      let id = sessionStorage.getItem('dsh-writing-window')
+      if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('dsh-writing-window', id) }
+      companionWindowId = id
+    } catch { companionWindowId = 'default' }
+
+    async function loadCompanionDraft(project) {
+      try {
+        const data = await api('draft', undefined, { project, window: companionWindowId })
+        if (data.ok && data.checkpoint) {
+          const cached = { text: data.checkpoint.text || '', reference: data.checkpoint.reference || null }
+          companionDrafts.set(project, cached)
+          return cached
+        }
+      } catch {}
+      const fallback = companionDrafts.get(project) || { text: '', reference: null }
+      companionDrafts.set(project, fallback)
+      return fallback
+    }
+    exports.loadCompanionDraft = loadCompanionDraft
+
+    function persistCompanionDraft(project) {
+      const cached = companionDrafts.get(project) || { text: '', reference: null }
+      void api('draft', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          project,
+          windowId: companionWindowId,
+          text: cached.text,
+          reference: cached.reference,
+        }),
+      }).catch(() => {})
+    }
+
+    async function loadProjectMemory(path) {
+      try {
+        const data = await api('memory', undefined, { path })
+        if (data.ok) return data
+      } catch {}
+      return { ok: false, memory: { items: [] }, injectable: [] }
+    }
+
+    function CompanionMemoryPanel({ path }) {
+      const [state, setState] = react.useState({ loading: true, items: [], etag: '', revision: 0, error: '' })
+      const [draftText, setDraftText] = react.useState('')
+      const refresh = react.useCallback(async () => {
+        if (!path) { setState({ loading: false, items: [], etag: '', revision: 0, error: '' }); return }
+        const data = await loadProjectMemory(path)
+        if (data.ok) {
+          setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '' })
+        } else {
+          setState({ loading: false, items: [], etag: '', revision: 0, error: '备忘不可用' })
+        }
+      }, [path])
+      react.useEffect(() => { void refresh() }, [refresh])
+      async function post(op, body) {
+        const data = await api('memory', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path, op, baseEtag: state.etag, ...body }),
+        })
+        if (data.ok) {
+          setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '' })
+          setDraftText('')
+        } else if (data.error === 'etag-conflict' || data.error === 'revision-conflict') {
+          await refresh()
+          setState(s => ({ ...s, error: '备忘已在别处修改，已刷新，请重试' }))
+        } else {
+          setState(s => ({ ...s, error: String(data.error || 'failed') }))
+        }
+      }
+      return jsx.jsxs('div', { className: 'dshWmMemory', children: [
+        jsx.jsx('div', { className: 'dshWmCompanionEmpty', style: { padding: '8px 10px', textAlign: 'left', lineHeight: 1.5 }, children: '作者确认后的设定/偏好才会被自动带入对话。AI 建议默认是候选，不会当成事实。' }),
+        jsx.jsxs('div', { className: 'dshWmAiActions', style: { padding: '0 10px 6px' }, children: [
+          jsx.jsx('input', {
+            className: 'dshWmSearch',
+            style: { margin: 0, flex: 1 },
+            placeholder: '写下一条设定或偏好…',
+            value: draftText,
+            onChange: e => setDraftText(e.target.value),
+            onKeyDown: e => {
+              if (e.key === 'Enter' && draftText.trim()) void post('add', { item: { kind: 'fact', status: 'confirmed', text: draftText, source: { kind: 'author' } } })
+            },
+          }),
+          jsx.jsx('button', {
+            className: 'dshWmBtn is-primary',
+            disabled: !draftText.trim(),
+            onClick: () => void post('add', { item: { kind: 'fact', status: 'confirmed', text: draftText, source: { kind: 'author' } } }),
+            children: '记下',
+          }),
+        ] }),
+        state.error ? jsx.jsx('div', { className: 'dshWmCompanionError', style: { margin: '0 10px' }, children: state.error }) : null,
+        jsx.jsx('div', { className: 'dshWmMemoryList', children: state.items.slice().reverse().map(it => jsx.jsxs('div', {
+          className: 'dshWmMemoryItem is-' + it.status,
+          children: [
+            jsx.jsxs('div', { className: 'dshWmMemoryMeta', children: [
+              jsx.jsx('span', { className: 'dshWmMemoryKind', children: it.kind === 'preference' ? '偏好' : it.kind === 'open-question' ? '待定' : '设定' }),
+              jsx.jsx('span', { className: 'dshWmMemoryStatus', children: it.status }),
+            ] }),
+            jsx.jsx('div', { className: 'dshWmMemoryText', children: it.text }),
+            jsx.jsxs('div', { className: 'dshWmMemoryActions', children: [
+              it.status !== 'confirmed' && it.status !== 'retracted' && it.status !== 'resolved'
+                ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void post('update', { id: it.id, item: { status: 'confirmed', text: it.text } }), children: '确认' })
+                : null,
+              it.status === 'confirmed' || it.status === 'proposed'
+                ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void post('retract', { id: it.id }), children: '撤回' })
+                : null,
+              it.kind === 'open-question' && it.status === 'confirmed'
+                ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void post('resolve', { id: it.id }), children: '已解决' })
+                : null,
+            ] }),
+          ],
+        }, it.id)),
+        }),
+      ] })
+    }
+
     const emptyCompanionSnapshot = Object.freeze({})
     const noSubscribe = () => () => {}
     const emptySnapshot = () => emptyCompanionSnapshot
@@ -131,6 +250,7 @@
       const [reference, setReference] = react.useState(cached.reference)
       const [busy, setBusy] = react.useState(false)
       const [error, setError] = react.useState('')
+      const [memOpen, setMemOpen] = react.useState(false)
       const alive = react.useRef(true)
       const sending = react.useRef(false)
       const id = binding.sessionId
@@ -142,14 +262,26 @@
       const needsFullComposer = Boolean(input.imageIds?.length || input.claim || draft.trimStart().startsWith('/'))
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
+      react.useEffect(() => {
+        let cancelled = false
+        void loadCompanionDraft(project).then(c => {
+          if (!cancelled && !info) {
+            setLocalDraft(c.text)
+            setReference(c.reference)
+          }
+        })
+        return () => { cancelled = true }
+      }, [project, info])
       function updateDraft(text) {
         if (info) info.props.inputActions.setDraft(text)
         else setLocalDraft(text)
-        companionDrafts.set(project, { ...companionDrafts.get(project), text })
+        companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), text })
+        persistCompanionDraft(project)
       }
       function updateReference(value) {
         setReference(value)
-        companionDrafts.set(project, { ...companionDrafts.get(project), reference: value })
+        companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), reference: value })
+        persistCompanionDraft(project)
       }
       async function fullConversation() {
         if (sending.current) return
@@ -179,17 +311,34 @@
             targetInfo.props.inputActions.setDraft(companionDrafts.get(project)?.text || sentDraft)
             setBinding(next)
           }
-          const content = sentDraft + (sentReference ? '\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n' + sentReference.text : '')
+          const content = (() => {
+            // Optional confirmed memory snapshot (context-builder)
+            try {
+              const mem = null // memory injected via prepared body when available
+              const prepared = typeof buildPreparedTurn === 'function'
+                ? buildPreparedTurn({
+                    message: sentDraft,
+                    reference: sentReference ? { label: sentReference.label, text: sentReference.text } : null,
+                    memoryItems: mem,
+                    projectKey: project,
+                  })
+                : null
+              if (prepared) return prepared.body
+            } catch {}
+            return sentDraft + (sentReference ? '\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n' + sentReference.text : '')
+          })()
           const result = await target.prompt([{ type: 'text', text: content }], 'queue')
           if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
           // Do not erase anything typed while the request was being admitted.
           if (targetInfo.hooks.input.getSnapshot().draft === sentDraft) {
             targetInfo.props.inputActions.setDraft('')
-            companionDrafts.set(project, { ...companionDrafts.get(project), text: '' })
+            companionDrafts.set(project, { text: '', reference: companionDrafts.get(project)?.reference })
+            persistCompanionDraft(project)
             if (alive.current) setLocalDraft('')
           }
-          if (companionDrafts.get(project)?.reference === sentReference) {
-            companionDrafts.set(project, { ...companionDrafts.get(project), reference: null })
+          if ((companionDrafts.get(project)?.reference || null) === sentReference) {
+            companionDrafts.set(project, { text: companionDrafts.get(project)?.text || '', reference: null })
+            persistCompanionDraft(project)
             if (alive.current) setReference(null)
           }
         } catch (err) { if (alive.current) setError(err.message || String(err)) }
@@ -199,8 +348,10 @@
       return jsx.jsxs('div', { className: 'dshWmCompanion', children: [
         jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
           jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
+          jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setMemOpen(v => !v), children: memOpen ? '收起备忘' : '项目备忘' }),
           jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
         ] }),
+        memOpen ? jsx.jsx(CompanionMemoryPanel, { path: project }) : null,
         jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
         failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
         needsFullComposer ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), children: '在完整会话中发送附件或使用指令 ↗' }) : null,
@@ -498,6 +649,15 @@
       '.dshWmActivity{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:12px;line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}',
       '.dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-size:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:12px;color:var(--dsw-alias-label-secondary);padding:10px 0;}',
       '.dshWmCompanionError{padding:10px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;max-height:120px;overflow:auto;}',
+      '.dshWmMemory{border-bottom:1px solid var(--dsw-alias-border-l2);max-height:220px;display:flex;flex-direction:column;}',
+      '.dshWmMemoryList{overflow:auto;flex:1;padding:0 10px 8px;}',
+      '.dshWmMemoryItem{padding:6px 8px;margin-bottom:6px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);font-size:12px;}',
+      '.dshWmMemoryItem.is-retracted{opacity:.55;}',
+      '.dshWmMemoryItem.is-resolved{opacity:.75;}',
+      '.dshWmMemoryMeta{display:flex;gap:6px;margin-bottom:2px;font-size:10px;color:var(--dsw-alias-label-tertiary);}',
+      '.dshWmMemoryKind{font-weight:700;color:var(--dsw-alias-label-secondary);}',
+      '.dshWmMemoryText{line-height:1.45;color:var(--dsw-alias-label-primary);}',
+      '.dshWmMemoryActions{display:flex;gap:6px;margin-top:4px;}',
       '.dshWmCompose{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:12px;}.dshWmCompose:focus-within{border-color:var(--dsw-alias-label-tertiary);}.dshWmChatInput{display:block;box-sizing:border-box;width:100%;min-height:88px;max-height:200px;resize:vertical;border:0;outline:none;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;line-height:1.7;}.dshWmChatInput::placeholder{color:var(--dsw-alias-label-tertiary);}',
       '.dshWmComposeFoot{display:flex;align-items:center;gap:8px;margin-top:8px;}.dshWmInputHint{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);}.dshWmSend{margin-left:auto;flex-shrink:0;width:30px;height:30px;border:0;border-radius:8px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-size:21px;cursor:pointer;}.dshWmSend:disabled{opacity:.25;cursor:default;}',
       '.dshWmReference{display:flex;align-items:start;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l2);padding-bottom:10px;margin-bottom:10px;font-size:12px;color:var(--dsw-alias-label-secondary);}.dshWmReference details{flex:1;min-width:0;}',
