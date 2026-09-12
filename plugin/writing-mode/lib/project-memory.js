@@ -123,8 +123,8 @@ function isOwnerAlive(owner) {
 
 /**
  * Exclusive lock.
- * Reclaim uses rename-to-tombstone then token verify, so a reclaimer never
- * unlinks a lock that another process already replaced (T01).
+ * W01: never move/unlink a lock we do not own. If owner PID is not alive,
+ * return lock-stale after timeout instead of creating an acquire gap.
  */
 function withFileLock(file, fn) {
   const lock = lockMetaPath(file)
@@ -146,42 +146,6 @@ function withFileLock(file, fn) {
     }
   }
 
-  /**
-   * Atomic-ish reclaim: rename lock to a unique tombstone.
-   * If the moved file is not the owner we observed, restore it.
-   */
-  const tryReclaimStale = () => {
-    const observed = readLockOwner(lock)
-    if (!observed) return false
-    if (isOwnerAlive(observed)) return false
-    const tomb = `${lock}.steal.${process.pid}.${randomUUID()}`
-    try {
-      fs.renameSync(lock, tomb)
-    } catch {
-      return false
-    }
-    let moved = ''
-    try {
-      moved = fs.readFileSync(tomb, 'utf8').trim()
-    } catch {}
-    if (moved !== observed) {
-      // We moved a lock that was not the dead owner we saw — restore if possible.
-      try {
-        fs.renameSync(tomb, lock)
-      } catch {
-        // Cannot restore (someone recreated lock): discard only if still not ours
-        try {
-          if (readLockOwner(tomb) !== observed) fs.unlinkSync(tomb)
-        } catch {}
-      }
-      return false
-    }
-    try {
-      fs.unlinkSync(tomb)
-    } catch {}
-    return true
-  }
-
   for (;;) {
     if (tryAcquire()) break
     const owner = readLockOwner(lock)
@@ -191,9 +155,11 @@ function withFileLock(file, fn) {
       while (Date.now() < waitUntil) {}
       continue
     }
-    // Only reclaim when owner PID is not alive; never unlink based on mtime alone.
-    tryReclaimStale()
-    if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
+    // Owner process gone or unreadable — do NOT steal (would open an acquire gap).
+    // Surface a recoverable diagnostic; operator/admin can clear the lock file.
+    if (Date.now() > deadline) throw memoryError('lock-stale', 503)
+    const waitUntil = Date.now() + 40
+    while (Date.now() < waitUntil) {}
   }
 
   const my = token

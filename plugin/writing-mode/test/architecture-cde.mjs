@@ -119,9 +119,21 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
   ok('stale draft rev rejected', stale?.message === 'draft-rev-conflict', stale?.message)
   ok('disk keeps new text', readCheckpoint(proj, 'w1')?.text === 'hello draft')
   writeCheckpoint(proj, 'w1', { text: '', reference: null, baseRev: 1 })
-  ok('draft cleared', readCheckpoint(proj, 'w1') === null)
-  writeCheckpoint(proj, 'w1', { text: 'again', baseRev: 0 })
-  ok('list includes draft', listCheckpoints(proj).length >= 1)
+  const cleared = readCheckpoint(proj, 'w1')
+  ok('clear tombstone keeps rev', cleared != null && cleared.rev === 2 && cleared.cleared === true, JSON.stringify(cleared && { rev: cleared.rev, cleared: cleared.cleared }))
+  // W03: baseRev=0 after clear must be rejected
+  const old0 = (() => {
+    try {
+      writeCheckpoint(proj, 'w1', { text: 'zombie', baseRev: 0 })
+      return null
+    } catch (e) {
+      return e
+    }
+  })()
+  ok('pre-clear baseRev rejected after clear', old0?.message === 'draft-rev-conflict', old0?.message)
+  // Next draft uses returned rev
+  writeCheckpoint(proj, 'w1', { text: 'next draft', baseRev: 2 })
+  ok('next draft after clear saves', readCheckpoint(proj, 'w1')?.text === 'next draft')
   const noRev = (() => {
     try {
       writeCheckpoint(proj, 'w1', { text: 'no-rev' })

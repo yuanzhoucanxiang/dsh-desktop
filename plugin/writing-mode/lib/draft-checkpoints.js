@@ -39,6 +39,7 @@ export function readCheckpoint(project, windowId) {
     return {
       ...data,
       rev: Number(data.rev) || 0,
+      cleared: Boolean(data.cleared),
     }
   } catch {
     return null
@@ -76,10 +77,22 @@ export function writeCheckpoint(project, windowId, draft) {
       }
     : null
   if (!text && !reference) {
-    try {
-      fs.rmSync(file, { force: true })
-    } catch {}
-    return { ok: true, cleared: true, rev: storedRev + 1 }
+    // W03: clear is a version bump tombstone, never a protocol reset.
+    const nextRevClear = storedRev + 1
+    const data = {
+      schemaVersion: SCHEMA,
+      project: String(project || ''),
+      windowId: String(windowId || 'default'),
+      text: '',
+      reference: null,
+      rev: nextRevClear,
+      cleared: true,
+      updatedAt: new Date().toISOString(),
+    }
+    const tmp = file + '.' + randomUUID() + '.tmp'
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+    fs.renameSync(tmp, file)
+    return { ok: true, cleared: true, rev: nextRevClear, checkpoint: data }
   }
   const nextRev = storedRev + 1
   const data = {

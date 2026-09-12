@@ -70,7 +70,7 @@
     } catch { companionWindowId = 'default' }
 
     async function loadCompanionDraft(project) {
-      // Do NOT mutate shared cache here — adopt only after generation check (T02).
+      // Do NOT mutate shared cache here — adopt only after generation check (T02/W02).
       try {
         const data = await api('draft', undefined, { project, window: companionWindowId })
         if (data.ok && data.checkpoint) {
@@ -89,28 +89,32 @@
 
     const draftSaveQueue = new Map() // project -> Promise chain
 
-    function persistCompanionDraft(project, onStatus, baseRev) {
-      const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-      const payload = {
-        project,
-        windowId: companionWindowId,
-        text: cached.text,
-        reference: cached.reference,
-        // T03: send the revision we believe we are editing
-        baseRev: baseRev !== undefined ? baseRev : cached.rev ?? 0,
-      }
+    /**
+     * W02: payload.baseRev is read from cache at execution time (not enqueue time).
+     * Success always advances confirmed server rev, even if local text moved on.
+     */
+    function persistCompanionDraft(project, onStatus) {
       const prev = draftSaveQueue.get(project) || Promise.resolve()
       const next = prev.then(async () => {
+        const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        const payload = {
+          project,
+          windowId: companionWindowId,
+          text: cached.text,
+          reference: cached.reference,
+          baseRev: cached.rev ?? 0,
+        }
         const data = await api('draft', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        if (data?.ok && data.checkpoint) {
-          // Only accept if this is still the latest local content
-          const now = companionDrafts.get(project)
-          if (now && now.text === payload.text && (now.reference || null) === (payload.reference || null)) {
-            now.rev = data.checkpoint.rev ?? now.rev ?? 0
+        if (data?.ok) {
+          const rev = data.checkpoint?.rev ?? data.rev
+          if (Number.isInteger(rev)) {
+            const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+            // Advance server baseline without clobbering newer local content fields
+            companionDrafts.set(project, { ...now, rev })
           }
         }
         if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
@@ -300,13 +304,24 @@
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
       const recoveryGen = react.useRef(0)
+      const recoveryDone = react.useRef(false)
       react.useEffect(() => {
         let cancelled = false
         const started = recoveryGen.current
+        recoveryDone.current = false
         void loadCompanionDraft(project).then((c) => {
           if (cancelled) return
-          // T02: adopt atomically only if no user edit / project switch happened
-          if (recoveryGen.current !== started) return
+          if (recoveryGen.current !== started) {
+            // W02: still adopt server rev baseline even if user typed during recovery
+            if (Number.isInteger(c.rev) && c.rev > 0) {
+              const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+              if ((prev.rev ?? 0) < c.rev) {
+                companionDrafts.set(project, { ...prev, rev: c.rev })
+              }
+            }
+            recoveryDone.current = true
+            return
+          }
           const adopt = { text: c.text, reference: c.reference, rev: c.rev || 0 }
           companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), ...adopt })
           if (c.reference) setReference((prev) => prev || c.reference)
@@ -317,6 +332,7 @@
               if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
             } catch {}
           }
+          recoveryDone.current = true
         })
         return () => { cancelled = true }
       }, [project])
@@ -386,25 +402,28 @@
           if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定：' + memWarning)
           const result = await target.prompt([{ type: 'text', text: prepared.body }], 'queue')
           if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
-          // Clear only the exact draft/reference that was submitted (T03).
+          // W03: one protected clear after send; tombstone advances rev
           const nowDraft = targetInfo.hooks.input.getSnapshot().draft
-          if (nowDraft === sentDraft || nowDraft === '' || nowDraft == null) {
+          const draftCleared = nowDraft === sentDraft || nowDraft === '' || nowDraft == null
+          const nowRef = companionDrafts.get(project)?.reference || null
+          const refCleared = !nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)
+          if (draftCleared) {
             targetInfo.props.inputActions.setDraft('')
-            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-            companionDrafts.set(project, { text: '', reference: prev.reference || null, rev: prev.rev ?? 0 })
-            persistCompanionDraft(project, () => {}, prev.rev ?? 0)
             if (alive.current) setLocalDraft('')
           }
-          const nowRef = companionDrafts.get(project)?.reference || null
-          if (!nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)) {
+          if (refCleared && alive.current) setReference(null)
+          if (draftCleared || refCleared) {
             const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
             companionDrafts.set(project, {
-              text: prev.text || '',
-              reference: null,
+              text: draftCleared ? '' : prev.text || '',
+              reference: refCleared ? null : prev.reference || null,
               rev: prev.rev ?? 0,
             })
-            persistCompanionDraft(project, () => {}, prev.rev ?? 0)
-            if (alive.current) setReference(null)
+            persistCompanionDraft(project, (st) => {
+              if (st && String(st).startsWith('error:') && alive.current) {
+                setError('发送后清除草稿失败：' + String(st).slice(6))
+              }
+            })
           }
         } catch (err) { if (alive.current) setError(err.message || String(err)) }
         finally { sending.current = false; if (alive.current) setBusy(false) }
