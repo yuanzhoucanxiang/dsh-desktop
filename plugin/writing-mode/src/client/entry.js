@@ -88,12 +88,18 @@
     exports.loadCompanionDraft = loadCompanionDraft
 
     const draftSaveQueue = new Map() // project -> Promise chain
+    const companionRecoveryState = new Map() // project -> 'pending' | 'done'
 
     /**
      * W02: payload.baseRev is read from cache at execution time (not enqueue time).
      * Success always advances confirmed server rev, even if local text moved on.
+     * Recovery pending defers POSTs until server baseline exists.
      */
     function persistCompanionDraft(project, onStatus) {
+      if (companionRecoveryState.get(project) === 'pending') {
+        if (onStatus) onStatus('deferred')
+        return Promise.resolve({ ok: false, error: 'recovery-pending', deferred: true })
+      }
       const prev = draftSaveQueue.get(project) || Promise.resolve()
       const next = prev.then(async () => {
         const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
@@ -113,17 +119,21 @@
           const rev = data.checkpoint?.rev ?? data.rev
           if (Number.isInteger(rev)) {
             const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-            // Advance server baseline without clobbering newer local content fields
             companionDrafts.set(project, { ...now, rev })
           }
+        } else if (data?.error === 'draft-rev-conflict') {
+          try {
+            const cur = await api('draft', undefined, { project, window: companionWindowId })
+            if (cur?.ok && Number.isInteger(cur.checkpoint?.rev)) {
+              const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+              companionDrafts.set(project, { ...now, rev: cur.checkpoint.rev })
+            }
+          } catch {}
         }
         if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
         return data
       })
-      draftSaveQueue.set(
-        project,
-        next.catch(() => {})
-      )
+      draftSaveQueue.set(project, next.catch(() => {}))
       return next
     }
 
@@ -304,35 +314,35 @@
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
       const recoveryGen = react.useRef(0)
-      const recoveryDone = react.useRef(false)
       react.useEffect(() => {
         let cancelled = false
         const started = recoveryGen.current
-        recoveryDone.current = false
+        companionRecoveryState.set(project, 'pending')
         void loadCompanionDraft(project).then((c) => {
           if (cancelled) return
-          if (recoveryGen.current !== started) {
-            // W02: still adopt server rev baseline even if user typed during recovery
-            if (Number.isInteger(c.rev) && c.rev > 0) {
-              const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-              if ((prev.rev ?? 0) < c.rev) {
-                companionDrafts.set(project, { ...prev, rev: c.rev })
-              }
+          // Always adopt server baseline rev (even if user typed during recovery)
+          if (Number.isInteger(c.rev)) {
+            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+            if ((prev.rev ?? 0) < c.rev) {
+              companionDrafts.set(project, { ...prev, rev: c.rev })
             }
-            recoveryDone.current = true
-            return
           }
-          const adopt = { text: c.text, reference: c.reference, rev: c.rev || 0 }
-          companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), ...adopt })
-          if (c.reference) setReference((prev) => prev || c.reference)
-          const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
-          if (!nativeDraft && c.text) {
-            setLocalDraft(c.text)
-            try {
-              if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
-            } catch {}
+          if (recoveryGen.current === started) {
+            if (c.reference) setReference((prev) => prev || c.reference)
+            const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
+            if (!nativeDraft && c.text) {
+              setLocalDraft(c.text)
+              try {
+                if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
+              } catch {}
+            }
           }
-          recoveryDone.current = true
+          companionRecoveryState.set(project, 'done')
+          // Flush any edits made while recovery was pending
+          const cached = companionDrafts.get(project)
+          if (cached && (cached.text || cached.reference)) {
+            persistCompanionDraft(project)
+          }
         })
         return () => { cancelled = true }
       }, [project])
