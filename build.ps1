@@ -11,6 +11,10 @@ $ErrorActionPreference = 'Stop'
 $proj = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $proj
 
+# 0. writing-mode client product must be fresh before packaging
+& node "$proj/scripts/build-writing-client.mjs"
+if ($LASTEXITCODE -ne 0) { throw "build-writing-client.mjs failed (exit $LASTEXITCODE)" }
+
 # 1. prepare self-contained runtime (global dsh tree + node.exe) if missing
 if (-not (Test-Path "$proj\runtime\node.exe")) {
   & powershell -ExecutionPolicy Bypass -File "$proj\prepare-runtime.ps1"

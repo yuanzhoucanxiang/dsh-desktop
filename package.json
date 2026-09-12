@@ -30,11 +30,14 @@
     "verify:writing": "node scripts/verify-writing-mode.mjs",
     "verify:writing-ui": "electron scripts/verify-writing-ui.cjs",
     "verify:writing-chat": "electron scripts/verify-writing-chat.cjs",
-    "verify:writing-native": "electron scripts/verify-writing-native.cjs"
+    "verify:writing-native": "electron scripts/verify-writing-native.cjs",
+    "build:writing": "node scripts/build-writing-client.mjs",
+    "verify:writing-build": "node scripts/verify-writing-build.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.0"
   },
   "dependencies": {
     "electron-updater": "^6.6.2"
