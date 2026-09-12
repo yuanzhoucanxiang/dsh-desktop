@@ -47,6 +47,24 @@ export function configFile() {
   return path.join(home, CONFIG_NAME)
 }
 
+// A local, editable preset, based on the pinned kernel's standard tool set.
+// Never replace a user's existing customization.
+export function ensureCompanionPreset() {
+  const id = 'writing-companion'
+  const file = path.join(path.dirname(configFile()), '.agent-presets', id, 'agent.cordis.yml')
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    try { atomicWrite(file, fs.readFileSync(new URL('./companion.cordis.yml', import.meta.url), 'utf8'), { exclusive: true }) }
+    catch (err) { if (err.code !== 'EEXIST') throw err }
+  }
+  const metadata = path.join(path.dirname(file), 'preset.yml')
+  if (!fs.existsSync(metadata)) {
+    try { atomicWrite(metadata, 'name: 写作伙伴\ndescription: 与作者持续交流，按需使用工具与项目资料。\n', { exclusive: true }) }
+    catch (err) { if (err.code !== 'EEXIST') throw err }
+  }
+  return id
+}
+
 export function readConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(configFile(), 'utf8').replace(/^\uFEFF/, ''))
@@ -61,6 +79,7 @@ export function readConfig() {
         })),
       activeRoot: typeof raw?.activeRoot === 'string' ? raw.activeRoot : null,
       prefs: normalizePrefs(raw?.prefs),
+      companions: raw?.companions && typeof raw.companions === 'object' && !Array.isArray(raw.companions) ? raw.companions : {},
     }
   } catch {
     return { roots: [], activeRoot: null, prefs: { ...DEFAULT_PREFS } }
@@ -74,6 +93,7 @@ export function writeConfig(cfg) {
     roots: cfg.roots || [],
     activeRoot: cfg.activeRoot ?? null,
     prefs: normalizePrefs(cfg.prefs),
+    companions: cfg.companions || {},
   }
   atomicWrite(file, JSON.stringify(out, null, 2))
   return out

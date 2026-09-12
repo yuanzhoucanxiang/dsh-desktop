@@ -184,6 +184,65 @@ try {
     } } }, { userText: 'test', route })
     assert.equal(result.text, '甲乙')
   })
+  await test('原生伙伴：项目隔离、重进复用、预设持久化且不覆盖自定义', async () => {
+    const doc = await create('伙伴-v1.md', '稿件')
+    const byId = {}, drafts = {}, opened = []
+    let creates = 0, selections = 0, submissions = 0
+    const sessions = {
+      refresh: async () => {}, list: { getSnapshot: () => ({ byId }) },
+      create: async opts => {
+        assert.equal(opts.workspaceId, 'workspace-test'); assert.equal('reuseWorkspaceBlank' in opts, false)
+        const id = 'companion-' + ++creates; byId[id] = { id }; drafts[id] = ''; return id
+      },
+      open: id => opened.push(id), noteAgentPreset: () => {},
+      provideInfo: id => ({ hooks: { input: { getSnapshot: () => ({ draft: drafts[id] }) } }, props: { inputActions: { setDraft: text => { drafts[id] = text }, submit: () => submissions++ } } }),
+    }
+    const connection = { agentPresets: { select: async ({ agentPreset }) => { selections++; assert.equal(agentPreset, 'writing-companion'); return { result: { ok: true, value: { agentPreset } } } } } }
+    const workspaces = { create: async ({ path: dir }) => { assert.ok(path.isAbsolute(dir)); return { workspaceId: 'workspace-test' } } }
+    const first = await client.ensureCompanionSession(sessions, doc.path, () => true, connection, workspaces)
+    client.appendCompanionDraft(sessions, first.sessionId, '我已有的想法')
+    client.appendCompanionDraft(sessions, first.sessionId, '选区快照')
+    const second = await client.ensureCompanionSession(sessions, path.join(project, 'project.md'), () => true, connection, workspaces)
+    assert.equal(first.sessionId, second.sessionId); assert.equal(creates, 1); assert.equal(selections, 1)
+    assert.match(drafts[first.sessionId], /我已有的想法\n\n选区快照$/); assert.equal(submissions, 0)
+    const presetFile = path.join(path.dirname(store.configFile()), '.agent-presets/writing-companion/agent.cordis.yml')
+    assert.match(fs.readFileSync(presetFile, 'utf8'), /不强制阶段/)
+    fs.appendFileSync(presetFile, '\n# customized\n')
+    await post('companion', { path: doc.path, prepare: true })
+    assert.match(fs.readFileSync(presetFile, 'utf8'), /# customized/)
+    await post('prefs', { fontSize: 18 })
+    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.sessionId)
+    assert.equal((await post('companion', { path: os.tmpdir(), prepare: true })).ok, false)
+    const before = opened.length
+    assert.equal(await client.ensureCompanionSession(sessions, doc.path, () => false, connection, workspaces), null)
+    assert.equal(opened.length, before)
+    const secondProject = path.join(root, '另一部作品')
+    fs.mkdirSync(secondProject, { recursive: true })
+    const otherDoc = path.join(secondProject, 'project.md'); fs.writeFileSync(otherDoc, '另一部作品')
+    let stillCurrent = true
+    const entered = deferred(), release = deferred()
+    const originalCreate = sessions.create
+    sessions.create = async opts => { entered.resolve(); await release.promise; return originalCreate(opts) }
+    const connecting = client.ensureCompanionSession(sessions, otherDoc, () => stillCurrent, connection, workspaces)
+    await entered.promise; stillCurrent = false; release.resolve()
+    assert.equal(await connecting, null); assert.equal(opened.length, before)
+    const other = await client.api('companion', undefined, { path: otherDoc })
+    assert.notEqual(other.sessionId, first.sessionId)
+    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.sessionId)
+    assert.equal(drafts[other.sessionId], '')
+  })
+  await test('伙伴或外部编辑：干净稿刷新，未保存稿保留并提示冲突', async () => {
+    const doc = await create('外部刷新-v1.md', '初稿')
+    const editor = client.createEditorSession(baseIo)
+    await editor.open(doc.path)
+    fs.writeFileSync(doc.path, '外部改稿')
+    await editor.refresh(); assert.equal(editor.get().content, '外部改稿')
+    editor.change('正在输入')
+    fs.writeFileSync(doc.path, '外部再改')
+    await editor.refresh(); assert.equal(editor.get().content, '正在输入'); assert.equal(editor.get().status, 'error')
+    assert.equal(await editor.flush(), false)
+    assert.equal(fs.readFileSync(doc.path, 'utf8'), '外部再改')
+  })
 } finally {
   await new Promise(resolve => server.close(resolve))
   fs.writeFileSync(path.join(home, 'results.json'), JSON.stringify(results, null, 2))

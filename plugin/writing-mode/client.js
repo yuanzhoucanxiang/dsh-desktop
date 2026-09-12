@@ -26,6 +26,227 @@ window.__ModuleLoader__.load({
     const API = '/api/writing-mode'
     const LS_KEY = 'dsh-writing-mode-active'
     const LS_FILE = 'dsh-writing-mode-file'
+    let sessionRuntime = null
+    let nativeApi = null
+    let workspaceRuntime = null
+
+    function appendCompanionDraft(sessions, id, text) {
+      const info = sessions.provideInfo(id)
+      if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error('原生输入框尚未就绪，请稍后重试')
+      const draft = info.hooks.input.getSnapshot().draft || ''
+      info.props.inputActions.setDraft(draft ? draft + '\n\n' + text : text)
+    }
+    exports.appendCompanionDraft = appendCompanionDraft
+
+    async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = nativeApi, workspaces = workspaceRuntime) {
+      if (!sessions) throw new Error('Harness 会话服务尚未就绪')
+      const binding = await api('companion', undefined, { path })
+      if (!binding.ok) throw new Error(binding.error)
+      await sessions.refresh()
+      if (!isCurrent()) return null
+      let id = binding.sessionId
+      if (!id || !sessions.list.getSnapshot().byId[id]) {
+        const prepared = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, prepare: true }) })
+        if (!prepared.ok) throw new Error(prepared.error)
+        if (!connection?.agentPresets?.select || !workspaces) throw new Error('Harness 未提供原生角色或工作区服务，请检查内核版本')
+        if (!isCurrent()) return null
+        const workspace = await workspaces.create({ path: binding.project })
+        if (!isCurrent()) return null
+        id = await sessions.create({ workspaceId: workspace.workspaceId })
+        const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset })
+        if (!selected.result.ok) throw new Error(selected.result.error.message)
+        sessions.noteAgentPreset(id, selected.result.value.agentPreset)
+        const data = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, sessionId: id }) })
+        if (!data.ok) throw new Error('会话已创建，但项目关联未保存：' + data.error)
+      }
+      if (!isCurrent()) return null
+      sessions.open(id)
+      // Reload the native role picker after the confirmed session becomes current.
+      await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, prepare: true }) })
+      if (!isCurrent()) return null
+      return { ...binding, sessionId: id }
+    }
+    exports.ensureCompanionSession = ensureCompanionSession
+
+    // Conversation history stays in Harness. Only unsent local references live here.
+    const companionDrafts = new Map()
+    const emptyCompanionSnapshot = Object.freeze({})
+    const noSubscribe = () => () => {}
+    const emptySnapshot = () => emptyCompanionSnapshot
+    function useCompanionStore(store) {
+      const subscribe = react.useCallback(fn => store ? store.subscribe(fn) : noSubscribe(), [store])
+      const snapshot = react.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store])
+      return react.useSyncExternalStore(subscribe, snapshot)
+    }
+    function companionRows(snapshot) {
+      const chat = snapshot.chat
+      if (!chat) return []
+      return chat.order.flatMap(key => {
+        const node = chat.nodes.get(key)
+        if (!node || node.visibility === 'hidden') return []
+        const data = node.data || {}
+        const textOf = parts => (parts || []).filter(p => p.kind === 'text' || p.type === 'text').map(p => p.text || '').join('')
+        if (node.kind === 'user' || node.kind === 'steering') {
+          const [text, reference] = textOf(data.content).split('\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n')
+          return [{ key, kind: 'user', text: text || '附件消息（在完整会话中查看）', reference }]
+        }
+        if (node.kind === 'assistant-step') {
+          const text = textOf(data.blocks)
+          return text ? [{ key, kind: 'assistant', text }] : []
+        }
+        if (node.kind === 'turn-tail') return [] // footer of the same assistant step
+        if (node.kind === 'tool-call') return [{ key, kind: 'detail', text: '工具活动', detail: data }]
+        if (node.kind === 'turn-error') return [{ key, kind: 'error', text: data.failure?.message || '这次回复未能完成，请查看完整会话。' }]
+        return [{ key, kind: 'detail', text: node.kind === 'context' ? '补充上下文' : '会话活动', detail: data }]
+      })
+    }
+    exports.companionRows = companionRows
+
+    function CompanionTranscript({ snapshot, onFull }) {
+      const rows = companionRows(snapshot)
+      const scroll = react.useRef(null)
+      const follow = react.useRef(true)
+      react.useLayoutEffect(() => { if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight }, [snapshot])
+      return jsx.jsxs('div', { className: 'dshWmConversation', ref: scroll, onScroll: e => {
+        const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 70
+      }, children: [
+        snapshot.hasMore ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: onFull, children: '查看更早的对话 ↗' }) : null,
+        !rows.length ? jsx.jsxs('div', { className: 'dshWmCompanionEmpty', children: [
+          jsx.jsx('span', { className: 'dshWmCompanionMark', children: '✦' }),
+          jsx.jsx('h3', { children: '故事，慢慢聊。' }),
+          jsx.jsx('p', { children: '一个人物、一段卡住的情节，\n或一个还没成形的念头。' }),
+        ] }) : rows.map(row => row.kind === 'detail' ? jsx.jsxs('details', { className: 'dshWmActivity', children: [
+          jsx.jsx('summary', { children: row.text }), jsx.jsx('pre', { children: JSON.stringify(row.detail, null, 2) }),
+        ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind, children: [
+          jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
+          jsx.jsx('div', { className: 'dshWmMessageText', children: row.text }),
+          row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
+        ] }, row.key)),
+        (snapshot.queue || []).map(row => jsx.jsx('div', { className: 'dshWmActivity', children: '等待回复后发送 · ' + (row.text || row.preview || '消息') }, row.id)),
+        (snapshot.pending || []).map(wait => jsx.jsxs('div', { className: 'dshWmRequest', children: [
+          jsx.jsx('strong', { children: wait.kind === 'approval' ? '有一项操作需要你授权' : '写作伙伴有个问题想确认' }),
+          jsx.jsx('button', { className: 'dshWmQuiet', onClick: onFull, children: '查看并处理 ↗' }),
+        ] }, wait.key)),
+        snapshot.running ? jsx.jsx('div', { className: 'dshWmThinking', role: 'status', children: '正在回应…' }) : null,
+      ] })
+    }
+    function CompanionChat({ initialBinding, path, contextText, onExit }) {
+      const sessions = sessionRuntime
+      const [binding, setBinding] = react.useState(initialBinding)
+      const project = binding.project
+      const cached = companionDrafts.get(project) || { text: '', reference: null }
+      const [localDraft, setLocalDraft] = react.useState(cached.text)
+      const [reference, setReference] = react.useState(cached.reference)
+      const [busy, setBusy] = react.useState(false)
+      const [error, setError] = react.useState('')
+      const alive = react.useRef(true)
+      const sending = react.useRef(false)
+      const id = binding.sessionId
+      const session = id ? sessions?.binding(id)?.session : null
+      const info = id ? sessions?.provideInfo(id) : null
+      const snapshot = useCompanionStore(session)
+      const input = useCompanionStore(info?.hooks?.input)
+      const draft = info ? input.draft || '' : localDraft
+      const needsFullComposer = Boolean(input.imageIds?.length || input.claim || draft.trimStart().startsWith('/'))
+      react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+      react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
+      function updateDraft(text) {
+        if (info) info.props.inputActions.setDraft(text)
+        else setLocalDraft(text)
+        companionDrafts.set(project, { ...companionDrafts.get(project), text })
+      }
+      function updateReference(value) {
+        setReference(value)
+        companionDrafts.set(project, { ...companionDrafts.get(project), reference: value })
+      }
+      async function fullConversation() {
+        if (sending.current) return
+        sending.current = true; setBusy(true)
+        try {
+          const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current)
+          if (!next || !alive.current) return
+          if (!id && draft) appendCompanionDraft(sessions, next.sessionId, draft)
+          sessions.open(next.sessionId)
+          setBinding(next)
+          onExit()
+        } catch (err) { if (alive.current) setError(err.message) }
+        finally { sending.current = false; if (alive.current) setBusy(false) }
+      }
+      async function send() {
+        if (sending.current || !draft.trim()) return
+        if (needsFullComposer) { void fullConversation(); return }
+        sending.current = true; setBusy(true); setError('')
+        const sentDraft = draft, sentReference = reference
+        try {
+          const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current)
+          if (!next || !alive.current) return
+          const target = sessions.binding(next.sessionId)?.session
+          if (!target) throw new Error('会话尚未就绪，请重试')
+          const targetInfo = sessions.provideInfo(next.sessionId)
+          if (!id) {
+            targetInfo.props.inputActions.setDraft(companionDrafts.get(project)?.text || sentDraft)
+            setBinding(next)
+          }
+          const content = sentDraft + (sentReference ? '\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n' + sentReference.text : '')
+          const result = await target.prompt([{ type: 'text', text: content }], 'queue')
+          if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
+          // Do not erase anything typed while the request was being admitted.
+          if (targetInfo.hooks.input.getSnapshot().draft === sentDraft) {
+            targetInfo.props.inputActions.setDraft('')
+            companionDrafts.set(project, { ...companionDrafts.get(project), text: '' })
+            if (alive.current) setLocalDraft('')
+          }
+          if (companionDrafts.get(project)?.reference === sentReference) {
+            companionDrafts.set(project, { ...companionDrafts.get(project), reference: null })
+            if (alive.current) setReference(null)
+          }
+        } catch (err) { if (alive.current) setError(err.message || String(err)) }
+        finally { sending.current = false; if (alive.current) setBusy(false) }
+      }
+      const failure = error || snapshot.openError?.message || snapshot.promptError?.error?.message
+      return jsx.jsxs('div', { className: 'dshWmCompanion', children: [
+        jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
+          jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
+          jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
+        ] }),
+        jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
+        failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
+        needsFullComposer ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), children: '在完整会话中发送附件或使用指令 ↗' }) : null,
+        jsx.jsxs('div', { className: 'dshWmCompose', children: [
+          reference ? jsx.jsxs('div', { className: 'dshWmReference', children: [
+            jsx.jsxs('details', { children: [jsx.jsx('summary', { children: reference.label }), jsx.jsx('pre', { children: reference.text })] }),
+            jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '移除稿件引用', onClick: () => updateReference(null), children: '×' }),
+          ] }) : null,
+          jsx.jsx('textarea', { className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: '说说你正在想的…', value: draft, disabled: !sessions, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send() }
+          } }),
+          jsx.jsxs('div', { className: 'dshWmComposeFoot', children: [
+            jsx.jsx('button', { className: 'dshWmQuiet', disabled: !sessions, onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
+            jsx.jsx('span', { className: 'dshWmInputHint', children: 'Shift + Enter 换行' }),
+            snapshot.running ? jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '停止回复', onClick: () => void session.cancel().catch(err => setError(err.message)), children: '停止' }) : null,
+            jsx.jsx('button', { className: 'dshWmSend', disabled: !sessions || busy || !draft.trim(), onClick: () => void send(), 'aria-label': snapshot.running ? '排队发送' : '发送', title: snapshot.running ? '在本次回复后发送' : '发送', children: busy ? '…' : '↑' }),
+          ] }),
+        ] }),
+      ] })
+    }
+    function WritingCompanion({ path, contextText, onExit }) {
+      const [result, setResult] = react.useState(null)
+      const [retry, setRetry] = react.useState(0)
+      react.useEffect(() => {
+        let active = true
+        if (path) void api('companion', undefined, { path }).then(async data => {
+          if (data.ok && data.sessionId && sessionRuntime) {
+            await sessionRuntime.refresh()
+            if (!sessionRuntime.list.getSnapshot().byId[data.sessionId]) data.sessionId = null
+          }
+          if (active) setResult({ path, ...data })
+        }).catch(err => { if (active) setResult({ path, error: err.message }) })
+        return () => { active = false }
+      }, [path, retry])
+      if (!path || result?.path !== path) return jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' })
+      if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] })
+      return jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, onExit }, result.project)
+    }
 
     const zh = {
       toggle: '写作模式',
@@ -45,7 +266,7 @@ window.__ModuleLoader__.load({
       saving: '保存中…',
       delete: '删除',
       confirmDelete: '删除这篇文档？',
-      ai: 'AI 助手',
+      ai: '写作伙伴',
       polish: '润色',
       continue: '续写',
       outline: '大纲',
@@ -275,7 +496,22 @@ window.__ModuleLoader__.load({
       '  border-right:1px solid var(--dsw-alias-border-l2);',
       '  background:var(--dsw-alias-bg-layer-1);',
       '}',
-      '.dshWmSide.is-ai{width:312px;border-right:none;border-left:1px solid var(--dsw-alias-border-l2);}',
+      '.dshWmSide.is-ai{width:clamp(360px,34vw,560px);border-right:none;border-left:1px solid var(--dsw-alias-border-l2);}',
+      '.dshWmCompanion{display:flex;flex-direction:column;flex:1;min-height:0;padding:0 16px 16px;gap:12px;}',
+      '.dshWmConversationHead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-alias-label-tertiary);}.dshWmConversationHead>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+      '.dshWmQuiet{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;padding:5px 2px;cursor:pointer;white-space:nowrap;}.dshWmQuiet:hover{color:var(--dsw-alias-label-primary);}.dshWmQuiet:disabled{opacity:.4;cursor:default;}',
+      '.dshWmConversation{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 2px;scrollbar-width:thin;}',
+      '.dshWmCompanionEmpty{padding:clamp(30px,12vh,130px) 16px 30px;color:var(--dsw-alias-label-secondary);line-height:1.9;white-space:pre-line;}.dshWmCompanionEmpty h3{font-size:21px;font-weight:500;margin:16px 0 8px;color:var(--dsw-alias-label-primary);}.dshWmCompanionEmpty p{font-size:13px;margin:0;}.dshWmCompanionMark{font-size:24px;opacity:.6;}',
+      '.dshWmMessage{margin:0 0 26px;}.dshWmMessageWho{display:block;font-size:11px;color:var(--dsw-alias-label-tertiary);margin-bottom:8px;}.dshWmMessageText{font-size:14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;}.dshWmMessage.is-user{padding:12px 14px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);}.dshWmMessage.is-error{color:var(--dsw-alias-state-error-primary);}',
+      '.dshWmActivity{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:12px;line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}',
+      '.dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-size:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:12px;color:var(--dsw-alias-label-secondary);padding:10px 0;}',
+      '.dshWmCompanionError{padding:10px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;max-height:120px;overflow:auto;}',
+      '.dshWmCompose{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:12px;}.dshWmCompose:focus-within{border-color:var(--dsw-alias-label-tertiary);}.dshWmChatInput{display:block;box-sizing:border-box;width:100%;min-height:88px;max-height:200px;resize:vertical;border:0;outline:none;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;line-height:1.7;}.dshWmChatInput::placeholder{color:var(--dsw-alias-label-tertiary);}',
+      '.dshWmComposeFoot{display:flex;align-items:center;gap:8px;margin-top:8px;}.dshWmInputHint{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);}.dshWmSend{margin-left:auto;flex-shrink:0;width:30px;height:30px;border:0;border-radius:8px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-size:21px;cursor:pointer;}.dshWmSend:disabled{opacity:.25;cursor:default;}',
+      '.dshWmReference{display:flex;align-items:start;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l2);padding-bottom:10px;margin-bottom:10px;font-size:12px;color:var(--dsw-alias-label-secondary);}.dshWmReference details{flex:1;min-width:0;}',
+      '.dshWmSide.is-ai>.dshWmSideHead{gap:22px;padding:14px 18px 10px;}.dshWmTab{font:inherit;font-size:13px;padding:4px 0 8px;background:none;border:0;border-bottom:2px solid transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;}.dshWmTab.is-on{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-label-primary);}',
+      '@media(max-width:1250px){.dshWmInputHint{display:none;}}',
+
       '.dshWmSideHead{',
       '  display:flex;align-items:center;gap:6px;padding:12px 12px 8px;flex:none;',
       '  font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);',
@@ -453,7 +689,7 @@ window.__ModuleLoader__.load({
       '  line-height:calc(var(--dsh-wm-line-height,1.95) + 0.1);max-width:720px;',
       '}',
       'body[data-writing-focus="1"] .dshWmDocChrome{max-width:720px;}',
-      'body[data-writing-mode][data-writing-lib="0"] .dshWmSide:not(.is-ai){display:none;}',
+      'html[data-writing-mode] body[data-writing-lib="0"] .dshWmSide:not(.is-ai){display:none;}',
     ].join('\n')
     const TAG = 'dsh-writing-mode-css'
     if (typeof document !== 'undefined' && !document.getElementById(TAG)) {
@@ -506,6 +742,19 @@ window.__ModuleLoader__.load({
         change(value) {
           if (state.loading || !state.path) return
           notify({ content: typeof value === 'function' ? value(state.content) : value, edit: state.edit + 1, dirty: true, status: 'idle', error: '' })
+        },
+        async refresh() {
+          if (!state.path || state.loading || saving || creating) return false
+          const snapshot = state
+          const token = generation
+          try {
+            const doc = await result(io.read(snapshot.path))
+            if (token !== generation || state.revision !== snapshot.revision || state.edit !== snapshot.edit || saving || creating) return false
+            if (doc.revision === state.revision) return true
+            if (state.dirty) notify({ status: 'error', error: '文件已在别处修改。当前输入已保留，请另存新版后比较。' })
+            else adopt(doc)
+            return true
+          } catch { return false }
         },
         async flush() {
           if (saving) { const ok = await saving; return ok ? session.flush() : false }
@@ -787,6 +1036,7 @@ window.__ModuleLoader__.load({
       const setContent = value => editor.change(value)
       const setFilePath = path => { void editor.open(path) }
       const [aiOpen, setAiOpen] = react.useState(true)
+      const [aiTab, setAiTab] = react.useState('companion')
       const [aiOut, setAiOut] = react.useState('')
       const [aiBusy, setAiBusy] = react.useState(false)
       const [aiErr, setAiErr] = react.useState('')
@@ -900,8 +1150,37 @@ window.__ModuleLoader__.load({
         void refreshTree()
       }, [active, refreshTree])
 
+      react.useEffect(() => {
+        if (!active || !sessionRuntime) return
+        let running = new Set()
+        const update = () => {
+          const snapshot = sessionRuntime.list.getSnapshot()
+          const next = new Set(Object.values(snapshot.byId).filter(s => s.running).map(s => s.id))
+          if (Array.from(running).some(id => !next.has(id))) {
+            void refreshTree().catch(() => {})
+            void editor.refresh()
+          }
+          running = next
+        }
+        update()
+        return sessionRuntime.list.subscribe(update)
+      }, [active, editor, refreshTree])
+
       const persist = react.useCallback(() => editor.flush(), [editor])
       const saveAsNewVersion = () => editor.version()
+
+      react.useEffect(() => {
+        if (!active) return
+        let reading = false
+        const refresh = async () => {
+          if (reading) return
+          reading = true
+          try { await editor.refresh() } finally { reading = false }
+        }
+        const timer = window.setInterval(refresh, 2000)
+        window.addEventListener('focus', refresh)
+        return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh) }
+      }, [active, editor])
 
       react.useEffect(() => {
         if (!active || editor.get().path) return
@@ -1329,43 +1608,26 @@ window.__ModuleLoader__.load({
 
       const isReviewFile = /(^|[\\/])reviews[\\/]/i.test(String(filePath || ''))
 
-      function fillComposer(prompt) {
+      async function fillComposer(prompt) {
+        const source = editor.get().path
         try {
-          const ta = document.querySelector(
-            '[data-composer-seat] textarea, [data-composer-input]'
-          )
-          if (!ta) return false
-          const proto =
-            ta.tagName === 'TEXTAREA'
-              ? HTMLTextAreaElement.prototype
-              : HTMLInputElement.prototype
-          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-          if (setter) setter.call(ta, prompt)
-          else ta.value = prompt
-          ta.dispatchEvent(new Event('input', { bubbles: true }))
-          ta.dispatchEvent(new Event('change', { bubbles: true }))
+          const next = await ensureCompanionSession(sessionRuntime, source || activeRoot, () => editor.get().path === source && getModeActive())
+          if (!next) return false
+          appendCompanionDraft(sessionRuntime, next.sessionId, prompt)
+          setAiOpen(true); setAiTab('companion'); setFocus(false)
+          flashMsg('已追加到写作伙伴输入框，补充想法后发送')
           return true
-        } catch {
-          return false
-        }
+        } catch (err) { flashMsg(err.message); setAiErr(err.message); return false }
       }
-
-      function sendToChat() {
+      async function sendToChat() {
         const payload = aiOut || selectionText()
         const prompt = payload
           ? `请作为写作助手处理下面的文稿：\n\n${payload}`
           : `请作为写作助手，帮我完善当前文稿。`
-        const ok = fillComposer(prompt)
-        if (!ok) {
-          flashMsg('未找到主输入框，请手动复制文本到会话')
-          setAiErr('未找到主输入框，请手动复制')
-          return
-        }
-        flashMsg('已填入主会话输入框')
-        close()
+        await fillComposer(prompt)
       }
 
-      function sendReviewToChat() {
+      async function sendReviewToChat() {
         const prompt =
           '请作为写作主理，严格按下列评审报告修订对应文稿（只改 draft/bible/outline/state，报告本身不要改）。\n' +
           '先读报告与 draft 当前版本，再输出修改计划并执行；完成后把新版本号写入 project.md。\n\n' +
@@ -1374,12 +1636,7 @@ window.__ModuleLoader__.load({
           '\n\n=== 报告路径 ===\n' +
           filePath +
           '\n'
-        const ok = fillComposer(prompt)
-        if (!ok) {
-          flashMsg('未找到主输入框，请手动复制评审内容')
-          return
-        }
-        close()
+        await fillComposer(prompt)
       }
 
       const notice = documentState.error || flash
@@ -2027,8 +2284,20 @@ window.__ModuleLoader__.load({
                       {
                         className: 'dshWmSide is-ai',
                         children: [
-                          jsx.jsx('div', { className: 'dshWmSideHead', children: T.ai }, 'ah'),
-                          jsx.jsx(
+                          jsx.jsxs('div', { className: 'dshWmSideHead', children: [
+                            jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'companion' ? ' is-on' : ''), onClick: () => setAiTab('companion'), children: T.ai }),
+                            jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'tools' ? ' is-on' : ''), onClick: () => setAiTab('tools'), children: '文字工具' }),
+                          ] }, 'ah'),
+                          aiTab === 'companion' && !focus ? jsx.jsx(WritingCompanion, {
+                            path: filePath || activeRoot,
+                            contextText: () => {
+                              const selected = taRef.current && taRef.current.selectionEnd > taRef.current.selectionStart
+                              const text = selected ? content.slice(taRef.current.selectionStart, taRef.current.selectionEnd) : content
+                              return { label: (selected ? '选区 · ' : '稿件 · ') + (filePath || '未命名').split(/[\\/]/).pop() + ' · ' + text.length + ' 字', text: '当前文件：' + (filePath || '未命名') + '\n以下是' + (selected ? '选中的片段' : '编辑器中的稿件快照') + '（可能尚未保存），请以我随后补充的想法为准：\n\n' + text }
+                            },
+                            onExit: close,
+                          }, 'companion') : null,
+                          aiTab === 'tools' ? jsx.jsx(
                             'div',
                             {
                               className: 'dshWmAiBody',
@@ -2351,7 +2620,7 @@ window.__ModuleLoader__.load({
                               ],
                             },
                             'ab'
-                          ),
+                          ) : null,
                         ],
                       },
                       'ai'
@@ -2666,7 +2935,7 @@ window.__ModuleLoader__.load({
                       onChange: (e) =>
                         void savePrefs({ aiMode: e.target.value === 'custom' ? 'custom' : 'harness' }),
                       children: [
-                        jsx.jsx('option', { value: 'harness', children: 'Harness 默认（跟当前会话）' }, 'h'),
+                        jsx.jsx('option', { value: 'harness', children: 'Harness 全局默认（文字工具）' }, 'h'),
                         jsx.jsx('option', { value: 'custom', children: '自定义 Provider / Model' }, 'c'),
                       ],
                     }
@@ -2676,7 +2945,7 @@ window.__ModuleLoader__.load({
                     children:
                       prefs.aiMode === 'custom'
                         ? '润色/续写/找资料走下面配置的模型'
-                        : '优先用会话 requestHeader 的模型，否则 deepseek-v4-flash',
+                        : '文字工具使用 Harness 全局默认模型；写作伙伴使用其原生会话模型',
                   }),
                 ],
               },
@@ -2786,8 +3055,11 @@ window.__ModuleLoader__.load({
       )
     }
 
-    const inject = ['slots']
+    const inject = ['slots', 'sessions', 'connection', 'workspaces']
     function apply(ctx) {
+      sessionRuntime = ctx.sessions || null
+      nativeApi = ctx.connection?.api || null
+      workspaceRuntime = ctx.workspaces || null
       try {
         ensureDomFloat()
       } catch (err) {

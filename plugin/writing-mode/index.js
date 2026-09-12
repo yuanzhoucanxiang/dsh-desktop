@@ -20,13 +20,14 @@ import {
   createVersion,
   deleteDoc,
   findProjectRoot,
+  ensureCompanionPreset,
 } from './lib/store.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
 import fs from 'node:fs'
 import { listTemplates, renderTemplate } from './lib/templates.js'
 
 export const name = 'writing-mode'
-/** webServer=文档库 API；llm=辅助写作（缺 llm 时 assist 501，不拖垮插件树）。 */
+/** webServer=文档库 API；llm=文字工具；agentDefaultModel=全局工具模型选择。 */
 export const inject = ['webServer', 'llm', 'agentDefaultModel']
 
 const API = '/api/writing-mode'
@@ -120,6 +121,32 @@ export function apply(ctx) {
           return
         }
 
+        if ((req.method === 'GET' || req.method === 'POST') && route === 'companion') {
+          const body = req.method === 'POST' ? await readJsonBody(req) : { path: url.searchParams.get('path') }
+          cfg = readConfig()
+          const target = body && resolveUnderRoots(body.path, effectiveRoots(cfg))
+          if (!target || !fs.existsSync(target.abs)) return writeJson(res, 400, { ok: false, error: 'bad-path' })
+          const directory = fs.statSync(target.abs).isDirectory()
+          const project = findProjectRoot(directory ? path.join(target.abs, 'project.md') : target.abs) || (directory ? target.abs : path.dirname(target.abs))
+          const key = process.platform === 'win32' ? project.toLowerCase() : project
+          if (req.method === 'POST' && body.prepare === true) {
+            try {
+              const preset = ensureCompanionPreset()
+              // Native preset pickers refresh their roster/current label on this
+              // public notification; installing files alone does not notify them.
+              c.emit?.('settings/document-updated', 'agent-presets')
+              return writeJson(res, 200, { ok: true, preset })
+            }
+            catch (err) { return writeJson(res, 500, { ok: false, error: String(err.message) }) }
+          }
+          if (req.method === 'POST') {
+            if (typeof body.sessionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(body.sessionId)) return writeJson(res, 400, { ok: false, error: 'bad-session-id' })
+            cfg.companions = { ...cfg.companions, [key]: body.sessionId }
+            try { writeConfig(cfg) } catch (err) { return writeJson(res, 500, { ok: false, error: String(err.message) }) }
+          }
+          return writeJson(res, 200, { ok: true, project, sessionId: cfg.companions?.[key] || null })
+        }
+
         if (req.method === 'GET' && route === 'tree') {
           writeJson(res, 200, { ok: true, tree: scanTree(cfg) })
           return
@@ -166,6 +193,7 @@ export function apply(ctx) {
                   ? path.resolve(parsed.activeRoot)
                   : null,
               prefs: cfg.prefs,
+              companions: cfg.companions,
             }
           } else if (mode === 'add') {
             if (typeof parsed.path !== 'string' || !path.isAbsolute(parsed.path)) {

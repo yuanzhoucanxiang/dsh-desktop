@@ -26,7 +26,11 @@
     "selector-check": "node plugin-selector-check.js",
     "verify:kernel": "node scripts/verify-kernel-contract.mjs",
     "verify:render": "node scripts/verify-render-invariants.mjs",
-    "verify:plugins": "node scripts/verify-plugin-compat.mjs"
+    "verify:plugins": "node scripts/verify-plugin-compat.mjs",
+    "verify:writing": "node scripts/verify-writing-mode.mjs",
+    "verify:writing-ui": "electron scripts/verify-writing-ui.cjs",
+    "verify:writing-chat": "electron scripts/verify-writing-chat.cjs",
+    "verify:writing-native": "electron scripts/verify-writing-native.cjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",
