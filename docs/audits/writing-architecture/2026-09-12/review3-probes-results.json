@@ -1,0 +1,80 @@
+{
+  "reviewedCommit": "b66d194",
+  "results": [
+    {
+      "name": "N01 GET/POST reject outside junction",
+      "result": "PASS",
+      "evidence": {
+        "get": 400,
+        "post": 400,
+        "bytesPreserved": true
+      }
+    },
+    {
+      "name": "N02 first-create race and null/empty tokens",
+      "result": "PASS",
+      "evidence": {
+        "invalidStatus": 428,
+        "contenders": [
+          {
+            "code": 0,
+            "out": "{\"ok\":true,\"revision\":1,\"texts\":[\"first\"]}\n",
+            "err": ""
+          },
+          {
+            "code": 2,
+            "out": "{\"ok\":false,\"error\":\"revision-conflict\",\"status\":409}\n",
+            "err": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "N03 library root equals project root",
+      "result": "PASS",
+      "evidence": {
+        "status": 200
+      }
+    },
+    {
+      "name": "Supplied 10/10 in disposable repo copy",
+      "result": "PASS",
+      "evidence": {
+        "exit": 0,
+        "output": "PASS resolveProjectDir A is project A C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-tX4UI9\\lib\\A\nPASS resolveProjectDir B is project B C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-tX4UI9\\lib\\B\nPASS A has sentinel \nPASS B does not have A sentinel \nPASS B memory file not sharing A path \nPASS corrupt structure rejected bad-memory\nPASS corrupt file not wiped \nPASS junction write rejected state-dir-escape leaked=false\nPASS junction read rejected state-dir-escape\nPASS verify fails on stale without overwrite status=1 stillStale=true\n\n10 passed, 0 failed\n"
+      }
+    },
+    {
+      "name": "N04 observed live holder older than 10s is not stolen",
+      "result": "PASS",
+      "evidence": {
+        "otherStatus": 503,
+        "holder": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"alive\"]}\n",
+          "err": ""
+        }
+      }
+    },
+    {
+      "name": "T01 stale-lock reclaim uses old owner and deletes replacement live lock",
+      "result": "REPRODUCED",
+      "evidence": {
+        "a": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"reclaimerA\"]}\n",
+          "err": ""
+        },
+        "b": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"holderB\"]}\n",
+          "err": ""
+        },
+        "finalTexts": [
+          "base",
+          "holderB"
+        ]
+      }
+    }
+  ]
+}

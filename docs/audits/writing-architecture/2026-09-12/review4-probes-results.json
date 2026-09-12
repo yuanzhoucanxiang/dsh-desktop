@@ -1,0 +1,96 @@
+{
+  "reviewedCommit": "606f21f",
+  "results": [
+    {
+      "name": "N01 GET/POST reject outside junction",
+      "result": "PASS",
+      "evidence": {
+        "get": 400,
+        "post": 400,
+        "bytesPreserved": true
+      }
+    },
+    {
+      "name": "N02 first-create race and null/empty tokens",
+      "result": "PASS",
+      "evidence": {
+        "invalidStatus": 428,
+        "contenders": [
+          {
+            "code": 0,
+            "out": "{\"ok\":true,\"revision\":1,\"texts\":[\"first\"]}\n",
+            "err": ""
+          },
+          {
+            "code": 2,
+            "out": "{\"ok\":false,\"error\":\"revision-conflict\",\"status\":409}\n",
+            "err": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "N03 library root equals project root",
+      "result": "PASS",
+      "evidence": {
+        "status": 200
+      }
+    },
+    {
+      "name": "Supplied 10/10 in disposable repo copy",
+      "result": "PASS",
+      "evidence": {
+        "exit": 0,
+        "output": "PASS resolveProjectDir A is project A C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-yGpygn\\lib\\A\nPASS resolveProjectDir B is project B C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-yGpygn\\lib\\B\nPASS A has sentinel \nPASS B does not have A sentinel \nPASS B memory file not sharing A path \nPASS corrupt structure rejected bad-memory\nPASS corrupt file not wiped \nPASS junction write rejected state-dir-escape leaked=false\nPASS junction read rejected state-dir-escape\nPASS verify fails on stale without overwrite status=1 stillStale=true\n\n10 passed, 0 failed\n"
+      }
+    },
+    {
+      "name": "N04 observed live holder older than 10s is not stolen",
+      "result": "PASS",
+      "evidence": {
+        "otherStatus": 503,
+        "holder": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"alive\"]}\n",
+          "err": ""
+        }
+      }
+    },
+    {
+      "name": "W01 moving a replacement live lock opens acquisition gap",
+      "result": "REPRODUCED",
+      "evidence": {
+        "a": {
+          "code": 2,
+          "out": "{\"ok\":false,\"error\":\"revision-conflict\",\"status\":409}\n",
+          "err": ""
+        },
+        "b": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"holderB\"]}\n",
+          "err": ""
+        },
+        "c": {
+          "code": 0,
+          "out": "{\"ok\":true,\"revision\":2,\"texts\":[\"base\",\"holderC\"]}\n",
+          "err": ""
+        },
+        "ownerAfterRestore": "98240:4dbd3193-b850-4232-b50b-666e8d11efb8",
+        "finalTexts": [
+          "base",
+          "holderB"
+        ]
+      }
+    },
+    {
+      "name": "W03 deletion resets revision and reaccepts stale baseRev zero",
+      "result": "REPRODUCED",
+      "evidence": {
+        "clearReturnedRev": 2,
+        "nextCorrectRevRejected": 409,
+        "oldBaseZeroAccepted": true,
+        "storedText": "DELAYED_BEFORE_FIRST_SAVE"
+      }
+    }
+  ]
+}

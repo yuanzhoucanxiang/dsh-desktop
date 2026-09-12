@@ -1,0 +1,84 @@
+{
+  "reviewedCommit": "ca57547",
+  "results": [
+    {
+      "name": "F01 sibling projects",
+      "result": "PASS",
+      "evidence": {
+        "aProject": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review2-tJ1eiS\\library\\A",
+        "bItems": 0
+      }
+    },
+    {
+      "name": "F02 default budget in generated bundle",
+      "result": "PASS",
+      "evidence": {
+        "budget": 6000,
+        "memoryRevisionRetained": null
+      }
+    },
+    {
+      "name": "F06 malformed object preserves exact bytes",
+      "result": "PASS",
+      "evidence": {
+        "unchanged": true
+      }
+    },
+    {
+      "name": "F07 text/source history and F08 oversize rejection",
+      "result": "PASS",
+      "evidence": {
+        "beforeTextRetained": true,
+        "sourceRetained": true,
+        "oversizeStatus": 413
+      }
+    },
+    {
+      "name": "F09 and supplied 9 checks run in disposable repo copy",
+      "result": "PASS",
+      "evidence": {
+        "exit": 0,
+        "output": "PASS resolveProjectDir A is project A C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-RcAWDo\\lib\\A\nPASS resolveProjectDir B is project B C:\\Users\\DL\\AppData\\Local\\Temp\\wm-f01-RcAWDo\\lib\\B\nPASS A has sentinel \nPASS B does not have A sentinel \nPASS B memory file not sharing A path \nPASS corrupt structure rejected bad-memory\nPASS corrupt file not wiped \nPASS junction escape rejected or blocked state-dir-escape leaked=false\nPASS verify fails on stale without overwrite status=1 stillStale=true\n\n9 passed, 0 failed\n"
+      }
+    },
+    {
+      "name": "N01 GET reads through state junction despite POST guard",
+      "result": "REPRODUCED",
+      "evidence": {
+        "readStatus": 200,
+        "leaked": "OUTSIDE_SENTINEL",
+        "writeStatus": 400
+      }
+    },
+    {
+      "name": "N02 empty/null optimistic tokens bypass required validation",
+      "result": "REPRODUCED",
+      "evidence": {
+        "status": 200,
+        "revision": 3
+      }
+    },
+    {
+      "name": "N03 library root itself is a project but cannot write",
+      "result": "REPRODUCED",
+      "evidence": {
+        "read": 200,
+        "write": 400,
+        "error": "path-outside-roots"
+      }
+    },
+    {
+      "name": "N04 live holder older than 10 seconds is stolen; committed edit lost",
+      "result": "REPRODUCED",
+      "evidence": {
+        "bothSucceeded": true,
+        "otherRevision": 2,
+        "holderOutput": "[\"base\",\"holder\"]\n",
+        "finalTexts": [
+          "base",
+          "holder"
+        ]
+      }
+    }
+  ]
+}

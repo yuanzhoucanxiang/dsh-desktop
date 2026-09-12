@@ -1,34 +1,73 @@
 # 写作模式整合策划案
 
-> 版本：v0.5 · 2026-09-12（v0.1.38 发布同步）\
+> 版本：v0.6 · 2026-09-12（架构分支四轮复核后）\
 > 范围：原生写作伙伴会话（`writing-companion`）+ 桌面工作台（`writing-mode`）；`writing-studio` 留作按需采用的严格流程\
 > 原则：预设管协助方式，UI 管写作交互；文件与会话接口见 `plugin/writing-mode/CONTRACT.md`\
-> v0.5：独立写作对话 UI，不嵌入 Harness 欢迎页与输入区。根据作者要求，以自然的持续对话为主，按需调用 Harness 能力。已随桌面版 v0.1.38 发布；真实模型体验的未验收边界仍保留。
+> v0.6：记录 `feat/writing-mode-architecture` 阶段 A–E 与 F/N/T/W 四轮返工；正式安装包仍为 v0.1.38，分支未合并。
 
 > 版本管理：仓库副本 `dsh-desktop/docs/writing-mode-plan.md` 与本地 `E:\剧本\写作模式-策划案.md` 同步；修改任一处需同步另一处并更新工作日志。
 
 ---
 
-## 0. 当前状态一览（2026-09-12）
+## 0. 当前状态一览（2026-09-12 架构分支）
 
 | 层 | 状态 |
 |---|---|
-| writing-companion | 新的自然交流预设；使用 Harness 原生工具与项目会话，不硬设阶段、轮数或配额 |
-| writing-studio 预设 | 旧严格流程保留；三轮放行不是所有写作对话的默认规则 |
-| writing-mode UI | 默认右栏为持续对话；文字工具与检查可选；冲突与历史稿保护已补强 |
-| 验证脚本 | 源码回归与原生 UI 验收见当日日志；CLI checker 尚未统一实现，不能声称无漂移 |
-| 发布 | https://github.com/yuanzhoucanxiang/dsh-desktop/releases/tag/v0.1.38 |
+| writing-companion | 自然交流预设；Harness 原生工具与项目会话 |
+| writing-studio 预设 | 旧严格流程保留；三轮放行非默认 |
+| writing-mode UI | 右栏持续对话 + 文字工具；备忘/草稿 checkpoint 已接线 |
+| **架构分支** | `feat/writing-mode-architecture` @ `53223df`：Stage A/E + 四轮复核 F/N/T/W 返工 |
+| 验证脚本 | p1 7/7 · review-f01-f06 10/10 · architecture-cde 25/25 · verify:writing-build PASS |
+| 发布 | 正式包仍为 **v0.1.38**；架构分支 **未合并 / 未发版** |
 
-### 0.1 host 分层（已落地）
+### 0.0a 架构分支进度（feat/writing-mode-architecture）
+
+| 阶段 | 状态 | 要点 |
+|---|---|---|
+| A 模块/构建 | 部分完成 | `src/client/entry.js` + `src/shared/editor-session.js`；`npm run build:writing` / `verify:writing-build`（不覆盖产物） |
+| B 会话适配 | 沿用现有 | `ensureCompanionSession` + companion 路由；未做独立 adapter facade |
+| C 草稿恢复 | 已实现 | `draft-checkpoints` schema 2 + **baseRev 单调**；恢复 pending 时 defer POST |
+| D 项目备忘 | 已实现 | `project-memory`：双 token、锁不抢、读写 realpath 边界、历史快照 |
+| E 上下文 | 已实现 | `context-builder`；send 读入 confirmed 备忘进 preparedTurn |
+| F 集成 | 未完成 | 30 项逐项验收、打包可见预览、真实模型未做 |
+
+#### 四轮复核收口（审查报告见 `docs/audits/writing-architecture/2026-09-12/`）
+
+| 轮次 | 问题 | 修复提交 |
+|---|---|---|
+| review | F01–F10 | `6ee2539` |
+| review2 | N01–N07 | `b66d194` |
+| review3 | T01–T03 | `606f21f` |
+| review4 | W01–W03 | `757ff26` + 自查 `53223df` |
+
+关键不变量（已写入实现与测试）：
+
+1. **锁**：owner PID 存活则不抢；死后 `lock-stale`，无取得空档  
+2. **备忘**：`baseRevision`+`baseEtag` 必填；GET/POST 同路径边界  
+3. **草稿**：`baseRev` 执行时读取；清除写 **tombstone**（rev 递增）  
+4. **恢复**：pending 不 POST；adopt rev 后 flush；迟到结果不写 UI/缓存  
+
+#### 仍开放
+
+- entry feature 拆分与独立 Harness adapter  
+- 备忘历史 UI / 候选确认  
+- 30 项验收矩阵 + 打包字节 + 可见隔离预览  
+- 真实模型体验（方案 §12）  
+- 合并 main 与 v0.1.39 发布（审查通过后）
+
+### 0.1 host 分层
 
 ```
 plugin/writing-mode/
-  CONTRACT.md       唯一契约（目录 / prefs / HTTP / gate）
-  lib/store.js      库根、扫描、读写、路径安全
+  CONTRACT.md       目录 / prefs / HTTP / gate
+  lib/store.js      库根、扫描、读写、路径安全、resolveProjectDir
   lib/domain.js     门禁、台账、AI 路由与补全
+  lib/project-memory.js     项目备忘（锁 / token / 历史）
+  lib/draft-checkpoints.js  未发送草稿 checkpoint（rev 协议）
+  lib/companion.cordis.yml  写作伙伴人格
+  src/client/entry.js       模块化前端源（构建产物 client.js）
+  src/shared/editor-session.js / context-builder.js
   index.js          cordis inject + /api/writing-mode
-  client.js         shell.overlay UI + 原生 sessions/workspaces/connection
-  lib/companion.cordis.yml  写作伙伴人格与原生工具组成
 ```
 
 ### 0.2 AI 底座

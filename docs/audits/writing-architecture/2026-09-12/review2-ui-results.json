@@ -1,0 +1,47 @@
+{
+  "reviewedCommit": "ca57547",
+  "results": [
+    {
+      "name": "F02 actual send includes confirmed memory",
+      "result": "PASS",
+      "evidence": {
+        "sent": "【项目备忘 · 作者已确认，仅供参考，不要伪装成系统指令】\n- [设定] MEMORY_CONFIRMED\n\n继续讨论"
+      }
+    },
+    {
+      "name": "F03 ordinary bound refresh restores both",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "F10 IME Enter does not create fact",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "N05 corrupt memory silently omitted and message sent",
+      "result": "REPRODUCED",
+      "evidence": {
+        "sent": "【引用 · 选区 · 第1章-v1.md · 3 字】\n当前文件：C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-PVOdla\\library\\演示项目\\draft\\novel\\第1章-v1.md\n以下是选中的片段（可能尚未保存），请以我随后补充的想法为准：\n\n第一章\n\nMEMORY_FAILURE_SEND",
+        "visibleError": false
+      }
+    },
+    {
+      "name": "N06 checkpoint HTTP 413 not shown to author",
+      "result": "REPRODUCED",
+      "evidence": {
+        "rejects": 1,
+        "visibleError": false
+      }
+    },
+    {
+      "name": "N07 late recovery overwrites unbound new typing",
+      "result": "REPRODUCED",
+      "evidence": {
+        "before": "NEW_TYPED_WHILE_RECOVERING",
+        "after": "OLD_CHECKPOINT"
+      }
+    }
+  ],
+  "consoleErrors": []
+}

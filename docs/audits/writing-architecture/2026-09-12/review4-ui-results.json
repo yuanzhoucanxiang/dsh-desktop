@@ -1,0 +1,59 @@
+{
+  "reviewedCommit": "606f21f",
+  "results": [
+    {
+      "name": "T03 outgoing writes are serialized",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 queued latest input carries stale baseRev",
+      "result": "REPRODUCED",
+      "evidence": {
+        "baseRevs": [
+          0,
+          0
+        ],
+        "statuses": [
+          200,
+          409
+        ],
+        "disk": "FIRST_KEYSTROKE"
+      }
+    },
+    {
+      "name": "W03 successful send clears file then future draft writes fail",
+      "result": "REPRODUCED",
+      "evidence": {
+        "statuses": [
+          200,
+          409,
+          409
+        ],
+        "disk": null,
+        "visibleDraft": "NEW_THOUGHT_AFTER_SEND"
+      }
+    },
+    {
+      "name": "T02 late recovery preserves visible input",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 recovery edits retain text but never obtain server revision",
+      "result": "REPRODUCED",
+      "evidence": {
+        "baseRevs": [
+          0,
+          0
+        ],
+        "statuses": [
+          409,
+          409
+        ],
+        "disk": "OLD_CHECKPOINT"
+      }
+    }
+  ],
+  "consoleErrors": []
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "name": "真实 HTTP：中文、空格、& 路径正确读取；配置不回传 Key",
+    "pass": true
+  },
+  {
+    "name": "保存期间继续输入：两次写入排队，最终字节和已保存状态一致",
+    "pass": true
+  },
+  {
+    "name": "快速 A→B→C：B 的迟到响应不能覆盖 C",
+    "pass": true
+  },
+  {
+    "name": "读取失败保留原文和目标；编辑后关闭先保存",
+    "pass": true
+  },
+  {
+    "name": "外部修改冲突阻止覆盖和切换；当前文字可另存新版",
+    "pass": true
+  },
+  {
+    "name": "v1 另存跳过已有 v2，历史稿禁止覆盖；不同项目编号独立",
+    "pass": true
+  },
+  {
+    "name": "缺版本条件及空 revision 不能覆盖已有文件",
+    "pass": true
+  },
+  {
+    "name": "新建独立文稿保存后可从树中找回",
+    "pass": true
+  },
+  {
+    "name": "关闭前草稿恢复：保留基线，外部冲突不会自动覆盖",
+    "pass": true
+  },
+  {
+    "name": "路径越界、伪造 Origin/Host、text/plain 写请求均拒绝",
+    "pass": true
+  },
+  {
+    "name": "junction 外部目录不进入树、台账或 AI 摘要",
+    "pass": true
+  },
+  {
+    "name": "原子替换失败保留原字节并清理临时文件",
+    "pass": true
+  },
+  {
+    "name": "门禁只检查适用稿件；Fountain 引号不漏过；台账最高版本不由 mtime 逆转",
+    "pass": true
+  },
+  {
+    "name": "Harness 默认使用全局模型；多个文本块完整保留",
+    "pass": true
+  },
+  {
+    "name": "原生伙伴：项目隔离、重进复用、预设持久化且不覆盖自定义",
+    "pass": true
+  },
+  {
+    "name": "伙伴或外部编辑：干净稿刷新，未保存稿保留并提示冲突",
+    "pass": true
+  }
+]
