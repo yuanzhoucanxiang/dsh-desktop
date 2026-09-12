@@ -10,6 +10,8 @@
 
 - 策划案 v0.5 纳入 `docs/writing-mode-plan.md`，核对独立 UI、会话接口和验收边界，与外部策划案同步。— 署名：Codex / GPT-6
 
+- Windows / macOS arm64 产物与更新清单已发布；打包验收及旧主题冒烟断言的补充核验见 `docs/audits/release-v0.1.38/`。— 署名：Codex / GPT-6
+
 ## [0.1.37] - 2026-09-11
 
 ### 写作模式（内置插件 writing-mode）

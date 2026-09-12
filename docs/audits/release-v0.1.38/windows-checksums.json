@@ -1,0 +1,17 @@
+[
+  {
+    "name": "dsh-desktop-0.1.38-setup.exe",
+    "size": 229782818,
+    "sha256": "86e89b3ce8d36d9d92dd33f912160a3d141362fdff4b8755cd0799d50a3c8460"
+  },
+  {
+    "name": "dsh-desktop-0.1.38-setup.exe.blockmap",
+    "size": 242537,
+    "sha256": "bc0b160136915cfeb3df5e0751c47086844b27a2550a0cf6a0518004980d4111"
+  },
+  {
+    "name": "latest.yml",
+    "size": 354,
+    "sha256": "7f3413b0d98f4ff5e5767c86f5069c45d418eae28ad4749544f5b1a8e5a855a2"
+  }
+]

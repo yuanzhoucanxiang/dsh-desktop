@@ -1,9 +1,9 @@
 # 写作模式整合策划案
 
-> 版本：v0.5 · 2026-09-12（推送前一致性核对）\
+> 版本：v0.5 · 2026-09-12（v0.1.38 发布同步）\
 > 范围：原生写作伙伴会话（`writing-companion`）+ 桌面工作台（`writing-mode`）；`writing-studio` 留作按需采用的严格流程\
 > 原则：预设管协助方式，UI 管写作交互；文件与会话接口见 `plugin/writing-mode/CONTRACT.md`\
-> v0.5：独立写作对话 UI，不嵌入 Harness 欢迎页与输入区。根据作者要求，以自然的持续对话为主，按需调用 Harness 能力。当前为未发布源码与隔离预览；已发布版本仍为 v0.1.37。
+> v0.5：独立写作对话 UI，不嵌入 Harness 欢迎页与输入区。根据作者要求，以自然的持续对话为主，按需调用 Harness 能力。已随桌面版 v0.1.38 发布；真实模型体验的未验收边界仍保留。
 
 > 版本管理：仓库副本 `dsh-desktop/docs/writing-mode-plan.md` 与本地 `E:\剧本\写作模式-策划案.md` 同步；修改任一处需同步另一处并更新工作日志。
 
@@ -17,7 +17,7 @@
 | writing-studio 预设 | 旧严格流程保留；三轮放行不是所有写作对话的默认规则 |
 | writing-mode UI | 默认右栏为持续对话；文字工具与检查可选；冲突与历史稿保护已补强 |
 | 验证脚本 | 源码回归与原生 UI 验收见当日日志；CLI checker 尚未统一实现，不能声称无漂移 |
-| 发布 | https://github.com/yuanzhoucanxiang/dsh-desktop/releases/tag/v0.1.37 |
+| 发布 | https://github.com/yuanzhoucanxiang/dsh-desktop/releases/tag/v0.1.38 |
 
 ### 0.1 host 分层（已落地）
 
@@ -75,7 +75,7 @@ plugin/writing-mode/
 |---|---|---|---|
 | Agent 预设 writing-studio | `~/.dsh/.agent-presets/writing-studio/` | 真项目跑通；3 轮放行已写死 | 工具面未挂 check-*.mjs |
 | 验证通道 | `E:\剧本\验证\` | gates/fountain/runner | 未自动进 preset |
-| UI 插件 writing-mode | `dsh-desktop/plugin/writing-mode/` | **v0.1.37 已发布**；独立写作伙伴、模板和资料入口在当前源码 | 导出 Compile、资料质量验收、better-sidebar、真实模型体验 |
+| UI 插件 writing-mode | `dsh-desktop/plugin/writing-mode/` | **v0.1.38 已发布**；包含独立写作伙伴、模板和资料入口 | 导出 Compile、资料质量验收、better-sidebar、真实模型体验 |
 | 内置接线 | BUILTIN + extraResources + **递归同步 lib/** | dist 已带上分层 host | — |
 
 ---
@@ -329,7 +329,17 @@ plugin/writing-mode/
 - 已移除原生中心栏停靠和整套欢迎页；专用 UI 包含项目栏、聊天记录、可移除稿件引用及底部输入。
 - 原生会话承担模型、工具、队列与上下文管理；授权/提问和复杂输入提供完整会话入口，不自动批准。
 - 测试证据：host/controller 16 项、编辑器 4 组、聊天 fixture 4 组、真实内核 3 组通过。真实内核验证 turns=0，fixture 不代表真实模型回复质量。
-- 日志索引已更新至〔138〕；回归报告和实际窗口截图位于 `docs/audits/writing-mode-2026-09-12/`。
-- 本次提交包括 v0.4/v0.5 尚未提交的源码、测试、日志、契约和本策划案仓库副本；推送到 main，不创建版本 tag 或应用 Release。
+- 日志索引已更新至〔140〕；回归报告和实际窗口截图位于 `docs/audits/writing-mode-2026-09-12/`。
+- v0.5 首次源码提交包括源码、测试、日志、契约和本策划案仓库副本；随后作者授权发布，结果见 §16。
 
 署名：Codex / GPT-6（v0.5 UI 与推送前核对 · 2026-09-12）。
+
+## 16. v0.1.38 发布记录（2026-09-12）
+
+- Release：https://github.com/yuanzhoucanxiang/dsh-desktop/releases/tag/v0.1.38 ，已设为 Latest。
+- tag 对应发布提交 `ebe452c7bf075797c8cea3fcf715bcb004c01fc5`。Windows 安装包、blockmap、latest.yml 与 macOS arm64 DMG、latest-mac.yml 共 5 个产物已上传。
+- Windows 包内版本、写作插件 11 个资源与源码比对、启动冒烟和远端资产 SHA256 校验通过。macOS Actions `34673962641` 成功，未在 Windows 上声称完成 macOS 原生启动验收。
+- 旧 UI 冒烟存在读取 html 主题令牌和旧 CRT id 的过时断言；按当前 body 令牌与 `.palis-crt-sweep` 实测开启/关闭通过。测试原始失败及补充证据见 `docs/audits/release-v0.1.38/`。
+- 真实模型多轮自然度、长期设定保持、工具改稿和多窗口并发边界继续开放，不因发布而改记为已验收。
+
+署名：Codex / GPT-6（发布同步 · 2026-09-12）。

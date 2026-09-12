@@ -1,0 +1,6 @@
+{
+  "seenOn": true,
+  "seenOff": true,
+  "exitCode": 1,
+  "stdout": "\r\nChecking for update\nGenerated new staging user ID: 7c49443b-cec1-56f3-a152-ada2c4b7e523\nUpdate for version 0.1.38 is not available (latest version: 0.1.38, downgrade is disallowed).\nUI_SMOKE_FAIL: kernel token overridden to #0a0a0a | crt overlay mounted\n"
+}
