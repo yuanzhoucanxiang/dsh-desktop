@@ -3,20 +3,11 @@
  * Returns immutable preparedTurn (frozen).
  */
 
-const DEFAULT_BUDGET = 6000
-
-/**
- * @param {object} input
- * @param {string} input.message - author text (never truncated by us as "protection" of internals; we only budget memory)
- * @param {{label?:string,text?:string,path?:string,revision?:string|null}|null} [input.reference]
- * @param {Array<{id:string,kind:string,text:string,status:string}>} [input.memoryItems]
- * @param {number} [input.budget]
- * @param {string} [input.projectKey]
- */
 export function buildPreparedTurn(input) {
   const message = String(input?.message ?? '')
   const reference = input?.reference || null
-  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : DEFAULT_BUDGET
+  // Default budget lives on the parameter so inlined client bundles always have it.
+  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : 6000
   const items = (input?.memoryItems || []).filter(
     (it) => it && it.status === 'confirmed' && (it.kind === 'fact' || it.kind === 'preference')
   )

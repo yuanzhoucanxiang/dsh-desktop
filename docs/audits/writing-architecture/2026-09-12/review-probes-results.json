@@ -1,0 +1,123 @@
+{
+  "repo": "E:\\Deepseek harness\\dsh-desktop",
+  "reviewedCommit": "cb99ae7",
+  "results": [
+    {
+      "name": "R1 project-directory UI path writes parent and leaks across siblings",
+      "reproduced": true,
+      "evidence": {
+        "storedIn": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review-1ALqjY\\library",
+        "siblingSees": "A_ONLY_SENTINEL",
+        "filePathItems": 0
+      }
+    },
+    {
+      "name": "R2 generated context builder loses DEFAULT_BUDGET",
+      "reproduced": true,
+      "evidence": {
+        "error": "DEFAULT_BUDGET is not defined"
+      }
+    },
+    {
+      "name": "R3 memory state junction writes outside configured root",
+      "reproduced": true,
+      "evidence": {
+        "status": 200,
+        "outsideFile": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review-1ALqjY\\outside\\writing-memory.json"
+      }
+    },
+    {
+      "name": "R4 update destroys historical text and source coordinates",
+      "reproduced": true,
+      "evidence": {
+        "changes": [
+          {
+            "at": "2026-09-12T10:48:15.727Z",
+            "op": "add",
+            "id": "15cd1b3f-2feb-4ee2-87be-ced7df14d619",
+            "kind": "fact",
+            "status": "proposed"
+          },
+          {
+            "at": "2026-09-12T10:48:15.728Z",
+            "op": "update",
+            "id": "15cd1b3f-2feb-4ee2-87be-ced7df14d619",
+            "status": "proposed"
+          }
+        ],
+        "retainedSource": {
+          "kind": "assistant"
+        }
+      }
+    },
+    {
+      "name": "R5 valid JSON with malformed items is silently replaced",
+      "reproduced": true,
+      "evidence": {
+        "revision": 4,
+        "items": [
+          {
+            "id": "484263c8-593f-4763-b650-a0f88b5aa42a",
+            "kind": "fact",
+            "status": "proposed",
+            "text": "new",
+            "source": {
+              "kind": "author"
+            },
+            "createdAt": "2026-09-12T10:48:15.730Z",
+            "updatedAt": "2026-09-12T10:48:15.730Z",
+            "confirmedAt": null,
+            "resolvedAt": null,
+            "retractedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "R6 draft silently truncates explicit reference",
+      "reproduced": true,
+      "evidence": {
+        "inputLength": 80001,
+        "savedLength": 80000,
+        "referenceKeys": [
+          "label",
+          "text",
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "R7 build verifier repairs stale product and returns success",
+      "reproduced": true,
+      "evidence": {
+        "exit": 0,
+        "mutated": true,
+        "rebuiltMatchesReviewedProduct": true,
+        "stdout": "PASS deterministic rebuild\nbuilt plugin\\writing-mode\\client.js (155084 bytes, 3379 lines)\nPASS node --check client.js\n"
+      }
+    },
+    {
+      "name": "R8 two processes accept same etag and lose one edit",
+      "reproduced": true,
+      "evidence": {
+        "workers": [
+          {
+            "code": 0,
+            "out": "{\"revision\":2}\n",
+            "err": ""
+          },
+          {
+            "code": 0,
+            "out": "{\"revision\":2}\n",
+            "err": ""
+          }
+        ],
+        "finalRevision": 2,
+        "finalTexts": [
+          "base",
+          "a"
+        ]
+      }
+    }
+  ]
+}

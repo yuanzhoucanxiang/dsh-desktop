@@ -1,0 +1,33 @@
+{
+  "reviewedCommit": "cb99ae7",
+  "fixture": "real React/client/HTTP; stable native-shaped store; no model",
+  "findings": [
+    {
+      "name": "UI1 confirmed memory absent from actual prompt",
+      "reproduced": true,
+      "evidence": {
+        "sent": "继续讨论"
+      }
+    },
+    {
+      "name": "UI2 bound-session reload ignores existing checkpoint and reference",
+      "reproduced": true,
+      "evidence": {
+        "checkpointText": "UNSENT_DRAFT_SENTINEL",
+        "checkpointReference": "当前文件：C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-301fON\\library\\演示项目\\draft\\novel\\第1章-v1.md\n以下是选中的片段（可能尚未保存），请以我随后补充的想法为准：\n\n第一章",
+        "restored": {
+          "draft": "",
+          "reference": false
+        }
+      }
+    },
+    {
+      "name": "UI3 IME composing Enter creates confirmed fact",
+      "reproduced": true,
+      "evidence": {
+        "status": "confirmed"
+      }
+    }
+  ],
+  "consoleErrors": []
+}

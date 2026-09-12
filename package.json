@@ -32,7 +32,10 @@
     "verify:writing-chat": "electron scripts/verify-writing-chat.cjs",
     "verify:writing-native": "electron scripts/verify-writing-native.cjs",
     "build:writing": "node scripts/build-writing-client.mjs",
-    "verify:writing-build": "node scripts/verify-writing-build.mjs"
+    "verify:writing-build": "node scripts/verify-writing-build.mjs",
+    "test:writing-f": "node plugin/writing-mode/test/review-f01-f06.mjs",
+    "test:writing-cde": "node plugin/writing-mode/test/architecture-cde.mjs",
+    "test:writing-p1": "node plugin/writing-mode/test/p1-regression.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",

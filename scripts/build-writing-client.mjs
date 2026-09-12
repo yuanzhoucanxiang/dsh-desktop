@@ -64,6 +64,9 @@ ${entry}
 })
 `
 
-const outFile = path.join(root, 'plugin/writing-mode/client.js')
+const outFile = process.env.WM_BUILD_OUT
+  ? path.resolve(process.env.WM_BUILD_OUT)
+  : path.join(root, 'plugin/writing-mode/client.js')
+fs.mkdirSync(path.dirname(outFile), { recursive: true })
 fs.writeFileSync(outFile, factory, 'utf8')
 console.log(`built ${path.relative(root, outFile)} (${factory.length} bytes, ${factory.split('\n').length} lines)`)

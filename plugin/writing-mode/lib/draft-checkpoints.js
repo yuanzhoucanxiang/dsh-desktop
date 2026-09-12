@@ -1,6 +1,6 @@
 /**
- * Durable unsent-draft checkpoints under $DSH_HOME/writing-mode/drafts/
- * Bucket by project key + windowId. Not a second chat authority.
+ * Durable unsent-draft checkpoints.
+ * Refuses silent truncation; clears by deleting file when empty.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,8 +8,8 @@ import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 
 export const SCHEMA = 1
-const MAX_TEXT = 200000
-const MAX_REF = 80000
+export const MAX_TEXT = 500000
+export const MAX_REF = 200000
 
 function draftRoot() {
   const home = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -26,6 +26,10 @@ function draftFile(project, windowId) {
   return path.join(draftRoot(), bucketKey(project, windowId) + '.json')
 }
 
+export function draftError(code, status = 400) {
+  return Object.assign(new Error(code), { status, code })
+}
+
 export function readCheckpoint(project, windowId) {
   const file = draftFile(project, windowId)
   try {
@@ -40,12 +44,17 @@ export function readCheckpoint(project, windowId) {
 export function writeCheckpoint(project, windowId, draft) {
   const file = draftFile(project, windowId)
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const text = String(draft?.text || '').slice(0, MAX_TEXT)
+  const text = String(draft?.text || '')
+  if (text.length > MAX_TEXT) throw draftError('draft-too-large', 413)
+  const refText = draft?.reference ? String(draft.reference.text || '') : null
+  if (refText && refText.length > MAX_REF) throw draftError('reference-too-large', 413)
   const reference = draft?.reference
     ? {
         label: String(draft.reference.label || '引用').slice(0, 200),
-        text: String(draft.reference.text || '').slice(0, MAX_REF),
+        text: refText,
         path: draft.reference.path ? String(draft.reference.path).slice(0, 500) : null,
+        revision: draft.reference.revision ?? null,
+        selection: draft.reference.selection || null,
       }
     : null
   if (!text && !reference) {

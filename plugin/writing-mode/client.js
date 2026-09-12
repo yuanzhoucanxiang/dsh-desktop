@@ -157,7 +157,11 @@ window.__ModuleLoader__.load({
             value: draftText,
             onChange: e => setDraftText(e.target.value),
             onKeyDown: e => {
-              if (e.key === 'Enter' && draftText.trim()) void post('add', { item: { kind: 'fact', status: 'confirmed', text: draftText, source: { kind: 'author' } } })
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return
+              if (e.key === 'Enter' && !e.shiftKey && draftText.trim()) {
+                e.preventDefault()
+                void post('add', { item: { kind: 'fact', status: 'confirmed', text: draftText, source: { kind: 'author' } } })
+              }
             },
           }),
           jsx.jsx('button', {
@@ -276,14 +280,23 @@ window.__ModuleLoader__.load({
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
       react.useEffect(() => {
         let cancelled = false
+        let loadSeq = 0
+        const seq = ++loadSeq
         void loadCompanionDraft(project).then(c => {
-          if (!cancelled && !info) {
+          if (cancelled || seq !== loadSeq) return
+          // Always restore reference (not in native store).
+          if (c.reference) setReference(prev => prev || c.reference)
+          // Restore text only when native draft is empty (native is authority when bound).
+          const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
+          if (!nativeDraft && c.text) {
             setLocalDraft(c.text)
-            setReference(c.reference)
+            try {
+              if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
+            } catch {}
           }
         })
         return () => { cancelled = true }
-      }, [project, info])
+      }, [project])
       function updateDraft(text) {
         if (info) info.props.inputActions.setDraft(text)
         else setLocalDraft(text)
@@ -323,33 +336,33 @@ window.__ModuleLoader__.load({
             targetInfo.props.inputActions.setDraft(companionDrafts.get(project)?.text || sentDraft)
             setBinding(next)
           }
-          const content = (() => {
-            // Optional confirmed memory snapshot (context-builder)
-            try {
-              const mem = null // memory injected via prepared body when available
-              const prepared = typeof buildPreparedTurn === 'function'
-                ? buildPreparedTurn({
-                    message: sentDraft,
-                    reference: sentReference ? { label: sentReference.label, text: sentReference.text } : null,
-                    memoryItems: mem,
-                    projectKey: project,
-                  })
-                : null
-              if (prepared) return prepared.body
-            } catch {}
-            return sentDraft + (sentReference ? '\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n' + sentReference.text : '')
-          })()
-          const result = await target.prompt([{ type: 'text', text: content }], 'queue')
+          const memData = await loadProjectMemory(project)
+          const memoryItems = memData.ok ? memData.memory?.items || [] : []
+          const prepared = buildPreparedTurn({
+            message: sentDraft,
+            reference: sentReference
+              ? { label: sentReference.label, text: sentReference.text, path: sentReference.path, revision: sentReference.revision }
+              : null,
+            memoryItems,
+            projectKey: project,
+            memoryRevision: memData.ok ? memData.memory?.revision : null,
+          })
+          const result = await target.prompt([{ type: 'text', text: prepared.body }], 'queue')
           if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
-          // Do not erase anything typed while the request was being admitted.
-          if (targetInfo.hooks.input.getSnapshot().draft === sentDraft) {
+          // Clear only the exact draft/reference that was submitted.
+          const nowDraft = targetInfo.hooks.input.getSnapshot().draft
+          if (nowDraft === sentDraft || nowDraft === '' || nowDraft == null) {
             targetInfo.props.inputActions.setDraft('')
-            companionDrafts.set(project, { text: '', reference: companionDrafts.get(project)?.reference })
+            companionDrafts.set(project, { text: '', reference: companionDrafts.get(project)?.reference || null })
             persistCompanionDraft(project)
             if (alive.current) setLocalDraft('')
           }
-          if ((companionDrafts.get(project)?.reference || null) === sentReference) {
-            companionDrafts.set(project, { text: companionDrafts.get(project)?.text || '', reference: null })
+          const nowRef = companionDrafts.get(project)?.reference || null
+          if (!nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)) {
+            companionDrafts.set(project, {
+              text: companionDrafts.get(project)?.text || '',
+              reference: null,
+            })
             persistCompanionDraft(project)
             if (alive.current) setReference(null)
           }
@@ -1013,7 +1026,8 @@ window.__ModuleLoader__.load({
 function buildPreparedTurn(input) {
   const message = String(input?.message ?? '')
   const reference = input?.reference || null
-  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : DEFAULT_BUDGET
+  // Default budget lives on the parameter so inlined client bundles always have it.
+  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : 6000
   const items = (input?.memoryItems || []).filter(
     (it) => it && it.status === 'confirmed' && (it.kind === 'fact' || it.kind === 'preference')
   )

@@ -275,13 +275,46 @@ export function readTextOrNull(p) {
 
 export function findProjectRoot(absPath) {
   const roots = effectiveRoots(readConfig())
-  let dir = path.dirname(path.resolve(String(absPath || '')))
+  const start = path.resolve(String(absPath || ''))
+  try {
+    if (fs.existsSync(start) && fs.statSync(start).isDirectory()) {
+      if (readTextOrNull(path.join(start, 'project.md')) !== null) {
+        return start
+      }
+    }
+  } catch {}
+  let dir = fs.existsSync(start) && fs.statSync(start).isDirectory() ? start : path.dirname(start)
   for (let i = 0; i < 8; i++) {
-    if (!resolveUnderRoots(dir, roots)) return null
     if (readTextOrNull(path.join(dir, 'project.md')) !== null) return dir
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
+  }
+  return null
+}
+
+/** Canonical project dir for a file or directory path under a library root. */
+export function resolveProjectDir(absPath, roots = effectiveRoots(readConfig())) {
+  const start = path.resolve(String(absPath || ''))
+  const asDir = (() => {
+    try {
+      return fs.existsSync(start) && fs.statSync(start).isDirectory()
+    } catch {
+      return false
+    }
+  })()
+  const proj = findProjectRoot(asDir ? start : start)
+  if (proj) {
+    const inside =
+      resolveUnderRoots(proj, roots) !== null ||
+      resolveUnderRoots(path.join(proj, 'project.md'), roots) !== null
+    if (!inside) return null
+    return proj
+  }
+  // Non-project leaf: use parent folder if it is inside roots
+  const parent = path.dirname(start)
+  if (resolveUnderRoots(parent, roots) || resolveUnderRoots(path.join(parent, 'x.md'), roots)) {
+    return parent
   }
   return null
 }

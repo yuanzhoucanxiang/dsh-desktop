@@ -72,6 +72,17 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
     }
   })()
   ok('bad etag rejected', bad?.message === 'etag-conflict', bad?.message)
+
+  // After data exists, mutating without optimistic token must fail
+  const noTok = (() => {
+    try {
+      applyMemoryOp(proj, { op: 'add', item: { kind: 'fact', status: 'proposed', text: 'no-token' } })
+      return null
+    } catch (e) {
+      return e
+    }
+  })()
+  ok('revision required when file non-empty', noTok?.message === 'revision-required', noTok?.message)
 }
 
 /* Draft checkpoints */

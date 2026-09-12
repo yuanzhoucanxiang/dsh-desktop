@@ -20,6 +20,7 @@ import {
   createVersion,
   deleteDoc,
   findProjectRoot,
+  resolveProjectDir,
   ensureCompanionPreset,
 } from './lib/store.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
@@ -461,14 +462,11 @@ export function apply(ctx) {
 
         if (req.method === 'GET' && route === 'memory') {
           const roots = effectiveRoots(cfg)
-          const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
-          if (target === null) {
+          const raw = url.searchParams.get('path') || ''
+          const target = resolveUnderRoots(raw, roots)
+          const proj = target ? resolveProjectDir(target.abs, roots) : null
+          if (!proj) {
             writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-            return
-          }
-          const proj = findProjectRoot(target.abs) || path.dirname(target.abs)
-          if (resolveUnderRoots(proj, roots) === null) {
-            writeJson(res, 400, { ok: false, error: 'project-outside-roots' })
             return
           }
           try {
@@ -494,23 +492,23 @@ export function apply(ctx) {
           }
           const roots = effectiveRoots(cfg)
           const target = resolveUnderRoots(parsed?.path || '', roots)
-          if (target === null) {
+          const proj = target ? resolveProjectDir(target.abs, roots) : null
+          if (!proj) {
             writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
             return
           }
-          const proj = findProjectRoot(target.abs) || path.dirname(target.abs)
-          if (resolveUnderRoots(proj, roots) === null) {
-            writeJson(res, 400, { ok: false, error: 'project-outside-roots' })
-            return
-          }
           try {
-            const { memory, etag } = applyMemoryOp(proj, {
-              op: parsed.op,
-              baseRevision: parsed.baseRevision,
-              baseEtag: parsed.baseEtag,
-              id: parsed.id,
-              item: parsed.item,
-            })
+            const { memory, etag } = applyMemoryOp(
+              proj,
+              {
+                op: parsed.op,
+                baseRevision: parsed.baseRevision,
+                baseEtag: parsed.baseEtag,
+                id: parsed.id,
+                item: parsed.item,
+              },
+              { libraryRoots: roots.map((r) => r.real).filter(Boolean) }
+            )
             writeJson(res, 200, {
               ok: true,
               project: proj,
@@ -564,7 +562,7 @@ export function apply(ctx) {
             })
             writeJson(res, 200, r)
           } catch (err) {
-            writeJson(res, 500, { ok: false, error: String(err?.message || err) })
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
           }
           return
         }
