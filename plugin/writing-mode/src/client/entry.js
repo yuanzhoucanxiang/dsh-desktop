@@ -84,7 +84,7 @@
     }
     exports.loadCompanionDraft = loadCompanionDraft
 
-    function persistCompanionDraft(project) {
+    function persistCompanionDraft(project, onStatus) {
       const cached = companionDrafts.get(project) || { text: '', reference: null }
       void api('draft', {
         method: 'POST',
@@ -95,15 +95,22 @@
           text: cached.text,
           reference: cached.reference,
         }),
-      }).catch(() => {})
+      })
+        .then((data) => {
+          if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
+        })
+        .catch((err) => {
+          if (onStatus) onStatus(`error:${err?.message || 'save-failed'}`)
+        })
     }
 
     async function loadProjectMemory(path) {
       try {
         const data = await api('memory', undefined, { path })
-        if (data.ok) return data
-      } catch {}
-      return { ok: false, memory: { items: [] }, injectable: [] }
+        return data
+      } catch (err) {
+        return { ok: false, error: String(err?.message || 'memory-load-failed'), memory: { items: [] }, injectable: [] }
+      }
     }
 
     function CompanionMemoryPanel({ path }) {
@@ -123,7 +130,13 @@
         const data = await api('memory', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path, op, baseEtag: state.etag, ...body }),
+          body: JSON.stringify({
+            path,
+            op,
+            baseEtag: state.etag,
+            baseRevision: state.revision,
+            ...body,
+          }),
         })
         if (data.ok) {
           setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '' })
@@ -266,15 +279,15 @@
       const needsFullComposer = Boolean(input.imageIds?.length || input.claim || draft.trimStart().startsWith('/'))
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
+      const recoveryGen = react.useRef(0)
       react.useEffect(() => {
         let cancelled = false
-        let loadSeq = 0
-        const seq = ++loadSeq
-        void loadCompanionDraft(project).then(c => {
-          if (cancelled || seq !== loadSeq) return
-          // Always restore reference (not in native store).
-          if (c.reference) setReference(prev => prev || c.reference)
-          // Restore text only when native draft is empty (native is authority when bound).
+        const started = recoveryGen.current
+        void loadCompanionDraft(project).then((c) => {
+          if (cancelled) return
+          // Late recovery must not overwrite user edits made after this request started
+          if (recoveryGen.current !== started) return
+          if (c.reference) setReference((prev) => prev || c.reference)
           const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
           if (!nativeDraft && c.text) {
             setLocalDraft(c.text)
@@ -286,15 +299,25 @@
         return () => { cancelled = true }
       }, [project])
       function updateDraft(text) {
+        recoveryGen.current++
         if (info) info.props.inputActions.setDraft(text)
         else setLocalDraft(text)
         companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), text })
-        persistCompanionDraft(project)
+        persistCompanionDraft(project, (st) => {
+          if (st && String(st).startsWith('error:') && alive.current) {
+            setError('草稿未能保存：' + String(st).slice(6) + '（刷新后可能丢失未发送内容）')
+          }
+        })
       }
       function updateReference(value) {
+        recoveryGen.current++
         setReference(value)
         companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), reference: value })
-        persistCompanionDraft(project)
+        persistCompanionDraft(project, (st) => {
+          if (st && String(st).startsWith('error:') && alive.current) {
+            setError('引用未能保存：' + String(st).slice(6))
+          }
+        })
       }
       async function fullConversation() {
         if (sending.current) return
@@ -326,6 +349,7 @@
           }
           const memData = await loadProjectMemory(project)
           const memoryItems = memData.ok ? memData.memory?.items || [] : []
+          const memWarning = memData.ok ? '' : String(memData.error || 'memory-unavailable')
           const prepared = buildPreparedTurn({
             message: sentDraft,
             reference: sentReference
@@ -335,6 +359,7 @@
             projectKey: project,
             memoryRevision: memData.ok ? memData.memory?.revision : null,
           })
+          if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定：' + memWarning)
           const result = await target.prompt([{ type: 'text', text: prepared.body }], 'queue')
           if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
           // Clear only the exact draft/reference that was submitted.

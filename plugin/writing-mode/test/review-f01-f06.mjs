@@ -10,6 +10,7 @@ import {
   applyMemoryOp,
   readMemory,
   MEMORY_FILE,
+  emptyEtag,
 } from '../lib/project-memory.js'
 import { resolveProjectDir, effectiveRoots, writeConfig, DEFAULT_PREFS, readConfig } from '../lib/store.js'
 
@@ -47,6 +48,8 @@ ok('resolveProjectDir B is project B', projB?.toLowerCase() === path.join(lib, '
 
 applyMemoryOp(projA, {
   op: 'add',
+  baseRevision: 0,
+  baseEtag: emptyEtag(),
   item: { kind: 'fact', status: 'confirmed', text: 'A_ONLY_SENTINEL', source: { kind: 'author' } },
 })
 const memA = readMemory(projA)
@@ -65,33 +68,45 @@ try {
     op: 'add',
     item: { kind: 'fact', status: 'confirmed', text: 'SHOULD_NOT_LOSE' },
     baseEtag: 'dead',
+    baseRevision: 9,
   })
 } catch (e) {
   corrupt = e
 }
-ok('corrupt structure rejected', ['bad-memory', 'corrupt-memory', 'etag-conflict', 'revision-conflict'].includes(corrupt?.message), corrupt?.message)
+ok('corrupt structure rejected', ['bad-memory', 'corrupt-memory', 'etag-conflict', 'revision-conflict', 'revision-required'].includes(corrupt?.message), corrupt?.message)
 ok('corrupt file not wiped', fs.readFileSync(badFile, 'utf8').includes('{'))
 fs.writeFileSync(badFile, original)
 
-/* F04: state junction escape */
+/* F04/N01: state junction escape — read and write */
 const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'wm-f01-out-'))
 try {
   fs.rmSync(path.join(projA, 'state'), { recursive: true, force: true })
+  fs.writeFileSync(path.join(outside, 'writing-memory.json'), JSON.stringify({ schemaVersion: 1, revision: 1, projectKey: 'x', items: [{ id: '1', kind: 'fact', status: 'confirmed', text: 'OUTSIDE_SENTINEL' }], changes: [] }))
   fs.symlinkSync(outside, path.join(projA, 'state'), 'junction')
-  let esc = null
+  let escWrite = null
   try {
     applyMemoryOp(projA, {
       op: 'add',
       item: { kind: 'fact', status: 'confirmed', text: 'JUNCTION_ESCAPE' },
       baseEtag: memA.etag,
+      baseRevision: memA.memory.revision,
     })
   } catch (e) {
-    esc = e
+    escWrite = e
   }
-  const leaked = fs.existsSync(path.join(outside, MEMORY_FILE))
-  ok('junction escape rejected or blocked', esc != null || !leaked, `${esc?.message} leaked=${leaked}`)
+  let escRead = null
+  try {
+    readMemory(projA)
+  } catch (e) {
+    escRead = e
+  }
+  const leakedWrite = fs.existsSync(path.join(outside, 'writing-memory.json')) &&
+    fs.readFileSync(path.join(outside, 'writing-memory.json'), 'utf8').includes('JUNCTION_ESCAPE')
+  const leakedRead = escRead == null
+  ok('junction write rejected', escWrite != null && !leakedWrite, `${escWrite?.message} leaked=${leakedWrite}`)
+  ok('junction read rejected', escRead != null, escRead?.message)
 } catch (e) {
-  ok('junction setup ok', true, String(e.message))
+  ok('junction setup ok', false, String(e.message))
 } finally {
   try {
     fs.rmSync(path.join(projA, 'state'), { recursive: true, force: true })

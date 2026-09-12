@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { readMemory, applyMemoryOp, injectableItems } from '../lib/project-memory.js'
+import { readMemory, applyMemoryOp, injectableItems, emptyEtag } from '../lib/project-memory.js'
 import { readCheckpoint, writeCheckpoint, listCheckpoints } from '../lib/draft-checkpoints.js'
 import { buildPreparedTurn, memoryHint } from '../src/shared/context-builder.js'
 
@@ -32,6 +32,8 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
 {
   const r1 = applyMemoryOp(proj, {
     op: 'add',
+    baseRevision: 0,
+    baseEtag: emptyEtag(),
     item: { kind: 'fact', status: 'proposed', text: '她收到信后没有拆开。', source: { kind: 'assistant' } },
   })
   ok('memory add proposed', r1.memory.items.length === 1 && r1.memory.items[0].status === 'proposed')
@@ -42,6 +44,7 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
     op: 'update',
     id,
     baseEtag: r1.etag,
+    baseRevision: r1.memory.revision,
     item: { status: 'confirmed' },
   })
   ok('confirm with etag', r2.memory.items[0].status === 'confirmed')
@@ -49,13 +52,13 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
 
   let conflict = null
   try {
-    applyMemoryOp(proj, { op: 'retract', id, baseEtag: r1.etag })
+    applyMemoryOp(proj, { op: 'retract', id, baseEtag: r1.etag, baseRevision: r2.memory.revision })
   } catch (e) {
     conflict = e
   }
   ok('stale etag conflicts', conflict?.message === 'etag-conflict', conflict?.message)
 
-  const r3 = applyMemoryOp(proj, { op: 'retract', id, baseEtag: r2.etag })
+  const r3 = applyMemoryOp(proj, { op: 'retract', id, baseEtag: r2.etag, baseRevision: r2.memory.revision })
   ok('retract', r3.memory.items[0].status === 'retracted')
   ok('retracted not injectable', injectableItems(r3.memory).length === 0)
 
@@ -65,6 +68,7 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
         op: 'add',
         item: { kind: 'fact', status: 'proposed', text: 'x' },
         baseEtag: 'deadbeef',
+        baseRevision: r3.memory.revision,
       })
       return null
     } catch (e) {
@@ -83,6 +87,22 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
     }
   })()
   ok('revision required when file non-empty', noTok?.message === 'revision-required', noTok?.message)
+
+  // Empty-string / null tokens are invalid
+  const nullTok = (() => {
+    try {
+      applyMemoryOp(proj, {
+        op: 'add',
+        item: { kind: 'fact', status: 'proposed', text: 'null-tok' },
+        baseRevision: null,
+        baseEtag: '',
+      })
+      return null
+    } catch (e) {
+      return e
+    }
+  })()
+  ok('null/empty tokens rejected', nullTok?.message === 'revision-required', nullTok?.message)
 }
 
 /* Draft checkpoints */

@@ -470,7 +470,9 @@ export function apply(ctx) {
             return
           }
           try {
-            const { memory, etag } = readMemory(proj)
+            const { memory, etag } = readMemory(proj, {
+              libraryRoots: roots.map((r) => r.real).filter(Boolean),
+            })
             writeJson(res, 200, {
               ok: true,
               project: proj,
@@ -479,7 +481,7 @@ export function apply(ctx) {
               injectable: injectableItems(memory),
             })
           } catch (err) {
-            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
           }
           return
         }
@@ -517,7 +519,7 @@ export function apply(ctx) {
               injectable: injectableItems(memory),
             })
           } catch (err) {
-            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
           }
           return
         }

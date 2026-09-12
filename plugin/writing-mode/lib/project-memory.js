@@ -1,13 +1,14 @@
 /**
  * Project memory store.
  * - File: <projectRoot>/state/writing-memory.json
- * - Strict schema; corrupt/unknown files never become empty writes
- * - Cross-process lock around read-modify-write
- * - Changes keep item snapshots for history restore
- * - All realpaths of file + parent must stay under project root / library
+ * - Strict schema; corrupt files never become empty writes
+ * - Cross-process lock with owner identity (no mtime-only steal)
+ * - Read and write both verify realpath boundaries
+ * - Changes keep before/after snapshots
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 
 export const MEMORY_SCHEMA = 1
@@ -30,6 +31,11 @@ function etagOf(buf) {
   return createHash('sha256').update(buf).digest('hex')
 }
 
+/** Empty-file etag protocol for first create. */
+export function emptyEtag() {
+  return etagOf(Buffer.from(JSON.stringify(emptyMemory()), 'utf8'))
+}
+
 export function emptyMemory() {
   return {
     schemaVersion: MEMORY_SCHEMA,
@@ -48,48 +54,133 @@ function assertSafeWithin(rootReal, absReal, label) {
   }
 }
 
-function lockPath(file) {
+/** Verify project dir, state parent and memory file all stay inside project (+ optional library). */
+function assertMemoryPathSafe(projectDir, opts = {}) {
+  const projectReal = fs.realpathSync(projectDir)
+  const file = memoryPath(projectReal)
+  const stateDir = path.dirname(file)
+  let stateReal
+  try {
+    stateReal = fs.realpathSync(stateDir)
+  } catch {
+    // If state is a broken/escaping junction, realpath fails or we create then recheck.
+    try {
+      fs.mkdirSync(stateDir, { recursive: true })
+    } catch (err) {
+      throw memoryError('state-dir-unavailable', 500)
+    }
+    stateReal = fs.realpathSync(stateDir)
+  }
+  assertSafeWithin(projectReal, stateReal, 'state-dir-escape')
+
+  if (fs.existsSync(file)) {
+    const fileReal = fs.realpathSync(file)
+    assertSafeWithin(projectReal, fileReal, 'memory-file-escape')
+  }
+  // Library root may equal project root (author sets work folder as library).
+  if (opts.libraryRoots?.length) {
+    const inLib = opts.libraryRoots.some((r) => {
+      if (!r) return false
+      const rel = path.relative(r, projectReal)
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+    })
+    if (!inLib) throw memoryError('path-outside-roots', 400)
+  }
+  return { projectReal, file, stateReal }
+}
+
+/* ── Cross-process lock with owner ───────────────────────────────────── */
+
+function lockMetaPath(file) {
   return file + '.lock'
 }
 
+function ownerToken() {
+  return `${process.pid}:${randomUUID()}`
+}
+
+function readLockOwner(lock) {
+  try {
+    return fs.readFileSync(lock, 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+function isOwnerAlive(owner) {
+  if (!owner) return false
+  const pid = Number(String(owner).split(':')[0])
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  if (pid === process.pid) return true
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM means process exists but we cannot signal it
+    return err?.code === 'EPERM'
+  }
+}
+
+/**
+ * Exclusive lock. Never unlinks a lock whose owner PID still exists.
+ * Crash recovery: if owner PID is dead AND file age > 5s, steal once.
+ */
 function withFileLock(file, fn) {
-  const lock = lockPath(file)
+  const lock = lockMetaPath(file)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
-  const deadline = Date.now() + 3000
-  let fd
+  const token = ownerToken()
+  const deadline = Date.now() + 5000
+  let fd = null
   for (;;) {
     try {
       fd = fs.openSync(lock, 'wx')
+      fs.writeSync(fd, token)
+      fs.fsyncSync(fd)
+      // keep fd open as ownership proof for this process
       break
     } catch (err) {
       if (err.code !== 'EEXIST') throw memoryError('lock-failed', 500)
-      // Stale lock: older than 10s and we cannot prove holder alive
+      const owner = readLockOwner(lock)
+      if (isOwnerAlive(owner)) {
+        if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
+        const waitUntil = Date.now() + 20
+        while (Date.now() < waitUntil) {}
+        continue
+      }
+      // Owner PID dead: only then consider steal after short grace
       try {
         const st = fs.statSync(lock)
-        if (Date.now() - st.mtimeMs > 10000) {
-          // try steal once
-          fs.unlinkSync(lock)
+        if (Date.now() - st.mtimeMs < 5000) {
+          if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
           continue
         }
-      } catch {}
-      if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
-      // busy wait briefly
-      const waitUntil = Date.now() + 25
-      while (Date.now() < waitUntil) {}
+        fs.unlinkSync(lock)
+        continue
+      } catch (e) {
+        if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
+      }
     }
   }
+  const my = token
   try {
-    const token = randomUUID()
-    fs.writeSync(fd, token)
-    fs.fsyncSync(fd)
+    // Verify we still own before critical section
+    if (readLockOwner(lock) !== my) throw memoryError('lock-lost', 503)
     return fn()
   } finally {
     try {
-      fs.closeSync(fd)
-    } catch {}
-    try {
-      fs.unlinkSync(lock)
+      if (readLockOwner(lock) === my) {
+        try {
+          fs.closeSync(fd)
+        } catch {}
+        try {
+          fs.unlinkSync(lock)
+        } catch {}
+      } else {
+        try {
+          fs.closeSync(fd)
+        } catch {}
+      }
     } catch {}
   }
 }
@@ -108,15 +199,15 @@ function validateExistingMemory(data) {
   return data
 }
 
-export function readMemory(projectDir) {
-  const file = memoryPath(projectDir)
+export function readMemory(projectDir, opts = {}) {
+  const { projectReal, file } = assertMemoryPathSafe(projectDir, opts)
   let raw
   try {
     raw = fs.readFileSync(file)
   } catch (err) {
     if (err.code === 'ENOENT') {
       const empty = emptyMemory()
-      return { ok: true, memory: empty, etag: etagOf(JSON.stringify(empty)) }
+      return { ok: true, memory: empty, etag: emptyEtag() }
     }
     throw memoryError('read-failed', 500)
   }
@@ -127,7 +218,15 @@ export function readMemory(projectDir) {
     throw memoryError('corrupt-memory', 500)
   }
   const memory = validateExistingMemory(data)
+  memory.projectKey = memory.projectKey || projectReal
   return { ok: true, memory, etag: etagOf(raw) }
+}
+
+function normalizeToken(v) {
+  if (v === undefined || v === null) return null
+  const s = String(v).trim()
+  if (!s) return null
+  return s
 }
 
 function pushChange(memory, change) {
@@ -158,49 +257,29 @@ function validateItemInput(input, existing = null) {
 }
 
 /**
- * @param {string} projectDir
- * @param {{op:string, baseRevision?:number, baseEtag?:string, id?:string, item?:object}} args
- * @param {{libraryRoots?:string[]}} [opts] allowed root reals for path checks
+ * Mutate memory under lock. Requires BOTH baseRevision and baseEtag
+ * (or empty-file protocol: baseRevision 0 + emptyEtag()).
  */
 export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item }, opts = {}) {
-  const projectReal = fs.realpathSync(projectDir)
-  const file = memoryPath(projectReal)
-  // Final path + parent must stay under projectReal (blocks junction escape of state/)
-  const fileParent = path.dirname(file)
-  let parentReal
-  try {
-    parentReal = fs.realpathSync(fileParent)
-  } catch {
-    // state/ may not exist yet — create under project then re-check
-    fs.mkdirSync(fileParent, { recursive: true })
-    parentReal = fs.realpathSync(fileParent)
+  const { projectReal, file } = assertMemoryPathSafe(projectDir, opts)
+
+  const revTok = normalizeToken(baseRevision)
+  const etagTok = normalizeToken(baseEtag)
+  if (revTok === null || etagTok === null) {
+    throw memoryError('revision-required', 428)
   }
-  assertSafeWithin(projectReal, parentReal, 'state-dir-escape')
-  if (fs.existsSync(file)) {
-    const fileReal = fs.realpathSync(file)
-    assertSafeWithin(projectReal, fileReal, 'memory-file-escape')
-  }
-  if (opts.libraryRoots?.length) {
-    const inLib = opts.libraryRoots.some((r) => {
-      const rel = path.relative(r, projectReal)
-      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
-    })
-    if (!inLib) throw memoryError('path-outside-roots', 400)
+  const revNum = Number(revTok)
+  if (!Number.isInteger(revNum) || revNum < 0) {
+    throw memoryError('bad-revision', 400)
   }
 
   return withFileLock(file, () => {
-    const current = readMemory(projectReal)
-    if (baseRevision !== undefined && baseRevision !== null && baseRevision !== '') {
-      if (Number(baseRevision) !== current.memory.revision) {
-        throw memoryError('revision-conflict', 409)
-      }
+    const current = readMemory(projectReal, opts)
+    if (revNum !== current.memory.revision) {
+      throw memoryError('revision-conflict', 409)
     }
-    if (baseEtag && baseEtag !== current.etag) {
+    if (etagTok !== current.etag) {
       throw memoryError('etag-conflict', 409)
-    }
-    // Require at least one optimistic token when file already has data
-    if (current.memory.revision > 0 && baseEtag === undefined && baseRevision === undefined) {
-      throw memoryError('revision-required', 428)
     }
 
     const memory = structuredClone(current.memory)
@@ -234,7 +313,15 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
     } else if (op === 'update' || op === 'restore') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
-      const validated = validateItemInput({ ...item, kind: item?.kind ?? target.kind, status: item?.status ?? target.status, text: item?.text ?? target.text }, target)
+      const validated = validateItemInput(
+        {
+          kind: item?.kind ?? target.kind,
+          status: item?.status ?? target.status,
+          text: item?.text ?? target.text,
+          source: item?.source,
+        },
+        target
+      )
       const before = { text: target.text, status: target.status, source: target.source }
       target.kind = validated.kind
       target.status = validated.status
@@ -247,7 +334,13 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
       }
       if (target.status === 'confirmed' && !target.confirmedAt) target.confirmedAt = now
       if (op === 'restore' && validated.status === 'confirmed') target.confirmedAt = now
-      pushChange(memory, { op, id: target.id, status: target.status, before, after: { text: target.text, status: target.status, source: target.source } })
+      pushChange(memory, {
+        op,
+        id: target.id,
+        status: target.status,
+        before,
+        after: { text: target.text, status: target.status, source: target.source },
+      })
     } else if (op === 'retract') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
@@ -255,7 +348,12 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
       target.status = 'retracted'
       target.retractedAt = now
       target.updatedAt = now
-      pushChange(memory, { op: 'retract', id: target.id, before, after: { text: target.text, status: target.status, source: target.source } })
+      pushChange(memory, {
+        op: 'retract',
+        id: target.id,
+        before,
+        after: { text: target.text, status: target.status, source: target.source },
+      })
     } else if (op === 'resolve') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
@@ -263,16 +361,21 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
       target.status = 'resolved'
       target.resolvedAt = now
       target.updatedAt = now
-      pushChange(memory, { op: 'resolve', id: target.id, before, after: { text: target.text, status: target.status, source: target.source } })
+      pushChange(memory, {
+        op: 'resolve',
+        id: target.id,
+        before,
+        after: { text: target.text, status: target.status, source: target.source },
+      })
     } else {
       throw memoryError('bad-op')
     }
 
     const payload = Buffer.from(JSON.stringify(memory, null, 2), 'utf8')
-    const tmp = path.join(fileParent, '.' + randomUUID() + '.tmp')
+    const tmp = path.join(path.dirname(file), `.${randomUUID()}.tmp`)
     fs.writeFileSync(tmp, payload)
-    // Re-check parent still safe at commit time
-    assertSafeWithin(projectReal, fs.realpathSync(fileParent), 'state-dir-escape')
+    // Re-verify boundary at commit
+    assertMemoryPathSafe(projectReal, opts)
     fs.renameSync(tmp, file)
     return { memory, etag: etagOf(payload) }
   })
@@ -284,7 +387,6 @@ export function injectableItems(memory, { kinds = ['fact', 'preference'] } = {})
   )
 }
 
-/** Find historical snapshot text for restore. */
 export function findHistorySnapshot(memory, id) {
   const changes = memory?.changes || []
   for (let i = changes.length - 1; i >= 0; i--) {
@@ -294,3 +396,6 @@ export function findHistorySnapshot(memory, id) {
   const item = (memory?.items || []).find((it) => it.id === id)
   return item ? { text: item.text, status: item.status, source: item.source } : null
 }
+
+// silence unused import lint
+void os
