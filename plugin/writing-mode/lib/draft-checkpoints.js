@@ -1,13 +1,14 @@
 /**
- * Durable unsent-draft checkpoints.
- * Refuses silent truncation; clears by deleting file when empty.
+ * Durable unsent-draft checkpoints with per-bucket revision (T03).
+ * POST requires baseRev matching stored rev (or 0 for new).
+ * Queue on client serializes writes; backend still rejects stale baseRev.
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 
-export const SCHEMA = 1
+export const SCHEMA = 2
 export const MAX_TEXT = 500000
 export const MAX_REF = 200000
 
@@ -34,16 +35,33 @@ export function readCheckpoint(project, windowId) {
   const file = draftFile(project, windowId)
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (data.schemaVersion !== SCHEMA) return null
-    return data
+    if (data.schemaVersion !== SCHEMA && data.schemaVersion !== 1) return null
+    return {
+      ...data,
+      rev: Number(data.rev) || 0,
+    }
   } catch {
     return null
   }
 }
 
+/**
+ * @param {string} project
+ * @param {string} windowId
+ * @param {{text?:string, reference?:object|null, baseRev?:number|null}} draft
+ */
 export function writeCheckpoint(project, windowId, draft) {
   const file = draftFile(project, windowId)
   fs.mkdirSync(path.dirname(file), { recursive: true })
+  const current = readCheckpoint(project, windowId)
+  const storedRev = current?.rev ?? 0
+  const baseRev = draft?.baseRev
+  if (baseRev === undefined || baseRev === null || !Number.isInteger(Number(baseRev))) {
+    throw draftError('draft-rev-required', 428)
+  }
+  if (Number(baseRev) !== storedRev) {
+    throw draftError('draft-rev-conflict', 409)
+  }
   const text = String(draft?.text || '')
   if (text.length > MAX_TEXT) throw draftError('draft-too-large', 413)
   const refText = draft?.reference ? String(draft.reference.text || '') : null
@@ -61,15 +79,16 @@ export function writeCheckpoint(project, windowId, draft) {
     try {
       fs.rmSync(file, { force: true })
     } catch {}
-    return { ok: true, cleared: true }
+    return { ok: true, cleared: true, rev: storedRev + 1 }
   }
+  const nextRev = storedRev + 1
   const data = {
     schemaVersion: SCHEMA,
     project: String(project || ''),
     windowId: String(windowId || 'default'),
     text,
     reference,
-    revision: draft?.revision ?? null,
+    rev: nextRev,
     updatedAt: new Date().toISOString(),
   }
   const tmp = file + '.' + randomUUID() + '.tmp'

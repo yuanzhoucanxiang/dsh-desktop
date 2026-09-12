@@ -122,49 +122,82 @@ function isOwnerAlive(owner) {
 }
 
 /**
- * Exclusive lock. Never unlinks a lock whose owner PID still exists.
- * Crash recovery: if owner PID is dead AND file age > 5s, steal once.
+ * Exclusive lock.
+ * Reclaim uses rename-to-tombstone then token verify, so a reclaimer never
+ * unlinks a lock that another process already replaced (T01).
  */
 function withFileLock(file, fn) {
   const lock = lockMetaPath(file)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
   const token = ownerToken()
-  const deadline = Date.now() + 5000
+  const deadline = Date.now() + 8000
   let fd = null
-  for (;;) {
+
+  const tryAcquire = () => {
     try {
       fd = fs.openSync(lock, 'wx')
       fs.writeSync(fd, token)
       fs.fsyncSync(fd)
-      // keep fd open as ownership proof for this process
-      break
+      return true
     } catch (err) {
-      if (err.code !== 'EEXIST') throw memoryError('lock-failed', 500)
-      const owner = readLockOwner(lock)
-      if (isOwnerAlive(owner)) {
-        if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
-        const waitUntil = Date.now() + 20
-        while (Date.now() < waitUntil) {}
-        continue
-      }
-      // Owner PID dead: only then consider steal after short grace
-      try {
-        const st = fs.statSync(lock)
-        if (Date.now() - st.mtimeMs < 5000) {
-          if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
-          continue
-        }
-        fs.unlinkSync(lock)
-        continue
-      } catch (e) {
-        if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
-      }
+      if (err.code === 'EEXIST') return false
+      throw memoryError('lock-failed', 500)
     }
   }
+
+  /**
+   * Atomic-ish reclaim: rename lock to a unique tombstone.
+   * If the moved file is not the owner we observed, restore it.
+   */
+  const tryReclaimStale = () => {
+    const observed = readLockOwner(lock)
+    if (!observed) return false
+    if (isOwnerAlive(observed)) return false
+    const tomb = `${lock}.steal.${process.pid}.${randomUUID()}`
+    try {
+      fs.renameSync(lock, tomb)
+    } catch {
+      return false
+    }
+    let moved = ''
+    try {
+      moved = fs.readFileSync(tomb, 'utf8').trim()
+    } catch {}
+    if (moved !== observed) {
+      // We moved a lock that was not the dead owner we saw — restore if possible.
+      try {
+        fs.renameSync(tomb, lock)
+      } catch {
+        // Cannot restore (someone recreated lock): discard only if still not ours
+        try {
+          if (readLockOwner(tomb) !== observed) fs.unlinkSync(tomb)
+        } catch {}
+      }
+      return false
+    }
+    try {
+      fs.unlinkSync(tomb)
+    } catch {}
+    return true
+  }
+
+  for (;;) {
+    if (tryAcquire()) break
+    const owner = readLockOwner(lock)
+    if (isOwnerAlive(owner)) {
+      if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
+      const waitUntil = Date.now() + 20
+      while (Date.now() < waitUntil) {}
+      continue
+    }
+    // Only reclaim when owner PID is not alive; never unlink based on mtime alone.
+    tryReclaimStale()
+    if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
+  }
+
   const my = token
   try {
-    // Verify we still own before critical section
     if (readLockOwner(lock) !== my) throw memoryError('lock-lost', 503)
     return fn()
   } finally {

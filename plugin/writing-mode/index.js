@@ -560,11 +560,11 @@ export function apply(ctx) {
             const r = writeCheckpoint(project, windowId, {
               text: parsed.text,
               reference: parsed.reference,
-              revision: parsed.revision,
+              baseRev: parsed.baseRev,
             })
             writeJson(res, 200, r)
           } catch (err) {
-            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
           }
           return
         }

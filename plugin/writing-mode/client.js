@@ -82,38 +82,57 @@ window.__ModuleLoader__.load({
     } catch { companionWindowId = 'default' }
 
     async function loadCompanionDraft(project) {
+      // Do NOT mutate shared cache here — adopt only after generation check (T02).
       try {
         const data = await api('draft', undefined, { project, window: companionWindowId })
         if (data.ok && data.checkpoint) {
-          const cached = { text: data.checkpoint.text || '', reference: data.checkpoint.reference || null }
-          companionDrafts.set(project, cached)
-          return cached
+          return {
+            text: data.checkpoint.text || '',
+            reference: data.checkpoint.reference || null,
+            rev: data.checkpoint.rev ?? 0,
+          }
         }
-      } catch {}
-      const fallback = companionDrafts.get(project) || { text: '', reference: null }
-      companionDrafts.set(project, fallback)
-      return fallback
+        return { text: '', reference: null, rev: 0 }
+      } catch {
+        return { text: '', reference: null, rev: 0 }
+      }
     }
     exports.loadCompanionDraft = loadCompanionDraft
 
-    function persistCompanionDraft(project, onStatus) {
-      const cached = companionDrafts.get(project) || { text: '', reference: null }
-      void api('draft', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          project,
-          windowId: companionWindowId,
-          text: cached.text,
-          reference: cached.reference,
-        }),
+    const draftSaveQueue = new Map() // project -> Promise chain
+
+    function persistCompanionDraft(project, onStatus, baseRev) {
+      const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+      const payload = {
+        project,
+        windowId: companionWindowId,
+        text: cached.text,
+        reference: cached.reference,
+        // T03: send the revision we believe we are editing
+        baseRev: baseRev !== undefined ? baseRev : cached.rev ?? 0,
+      }
+      const prev = draftSaveQueue.get(project) || Promise.resolve()
+      const next = prev.then(async () => {
+        const data = await api('draft', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (data?.ok && data.checkpoint) {
+          // Only accept if this is still the latest local content
+          const now = companionDrafts.get(project)
+          if (now && now.text === payload.text && (now.reference || null) === (payload.reference || null)) {
+            now.rev = data.checkpoint.rev ?? now.rev ?? 0
+          }
+        }
+        if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
+        return data
       })
-        .then((data) => {
-          if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
-        })
-        .catch((err) => {
-          if (onStatus) onStatus(`error:${err?.message || 'save-failed'}`)
-        })
+      draftSaveQueue.set(
+        project,
+        next.catch(() => {})
+      )
+      return next
     }
 
     async function loadProjectMemory(path) {
@@ -128,6 +147,7 @@ window.__ModuleLoader__.load({
     function CompanionMemoryPanel({ path }) {
       const [state, setState] = react.useState({ loading: true, items: [], etag: '', revision: 0, error: '' })
       const [draftText, setDraftText] = react.useState('')
+      const [busy, setBusy] = react.useState(false)
       const refresh = react.useCallback(async () => {
         if (!path) { setState({ loading: false, items: [], etag: '', revision: 0, error: '' }); return }
         const data = await loadProjectMemory(path)
@@ -179,7 +199,7 @@ window.__ModuleLoader__.load({
           }),
           jsx.jsx('button', {
             className: 'dshWmBtn is-primary',
-            disabled: !draftText.trim(),
+            disabled: !draftText.trim() || state.loading || busy || !state.etag,
             onClick: () => void post('add', { item: { kind: 'fact', status: 'confirmed', text: draftText, source: { kind: 'author' } } }),
             children: '记下',
           }),
@@ -297,8 +317,10 @@ window.__ModuleLoader__.load({
         const started = recoveryGen.current
         void loadCompanionDraft(project).then((c) => {
           if (cancelled) return
-          // Late recovery must not overwrite user edits made after this request started
+          // T02: adopt atomically only if no user edit / project switch happened
           if (recoveryGen.current !== started) return
+          const adopt = { text: c.text, reference: c.reference, rev: c.rev || 0 }
+          companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), ...adopt })
           if (c.reference) setReference((prev) => prev || c.reference)
           const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
           if (!nativeDraft && c.text) {
@@ -314,7 +336,8 @@ window.__ModuleLoader__.load({
         recoveryGen.current++
         if (info) info.props.inputActions.setDraft(text)
         else setLocalDraft(text)
-        companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), text })
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        companionDrafts.set(project, { ...prev, text })
         persistCompanionDraft(project, (st) => {
           if (st && String(st).startsWith('error:') && alive.current) {
             setError('草稿未能保存：' + String(st).slice(6) + '（刷新后可能丢失未发送内容）')
@@ -324,7 +347,8 @@ window.__ModuleLoader__.load({
       function updateReference(value) {
         recoveryGen.current++
         setReference(value)
-        companionDrafts.set(project, { ...(companionDrafts.get(project) || {}), reference: value })
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        companionDrafts.set(project, { ...prev, reference: value })
         persistCompanionDraft(project, (st) => {
           if (st && String(st).startsWith('error:') && alive.current) {
             setError('引用未能保存：' + String(st).slice(6))
@@ -374,21 +398,24 @@ window.__ModuleLoader__.load({
           if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定：' + memWarning)
           const result = await target.prompt([{ type: 'text', text: prepared.body }], 'queue')
           if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
-          // Clear only the exact draft/reference that was submitted.
+          // Clear only the exact draft/reference that was submitted (T03).
           const nowDraft = targetInfo.hooks.input.getSnapshot().draft
           if (nowDraft === sentDraft || nowDraft === '' || nowDraft == null) {
             targetInfo.props.inputActions.setDraft('')
-            companionDrafts.set(project, { text: '', reference: companionDrafts.get(project)?.reference || null })
-            persistCompanionDraft(project)
+            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+            companionDrafts.set(project, { text: '', reference: prev.reference || null, rev: prev.rev ?? 0 })
+            persistCompanionDraft(project, () => {}, prev.rev ?? 0)
             if (alive.current) setLocalDraft('')
           }
           const nowRef = companionDrafts.get(project)?.reference || null
           if (!nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)) {
+            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
             companionDrafts.set(project, {
-              text: companionDrafts.get(project)?.text || '',
+              text: prev.text || '',
               reference: null,
+              rev: prev.rev ?? 0,
             })
-            persistCompanionDraft(project)
+            persistCompanionDraft(project, () => {}, prev.rev ?? 0)
             if (alive.current) setReference(null)
           }
         } catch (err) { if (alive.current) setError(err.message || String(err)) }

@@ -105,15 +105,32 @@ fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
   ok('null/empty tokens rejected', nullTok?.message === 'revision-required', nullTok?.message)
 }
 
-/* Draft checkpoints */
+/* Draft checkpoints — T03 revision protocol */
 {
-  writeCheckpoint(proj, 'w1', { text: 'hello draft', reference: { label: '选区', text: 'sel' } })
+  writeCheckpoint(proj, 'w1', { text: 'hello draft', reference: { label: '选区', text: 'sel' }, baseRev: 0 })
   const c = readCheckpoint(proj, 'w1')
-  ok('draft roundtrip', c?.text === 'hello draft' && c.reference.text === 'sel')
-  writeCheckpoint(proj, 'w1', { text: '', reference: null })
+  ok('draft roundtrip', c?.text === 'hello draft' && c.reference.text === 'sel' && c.rev === 1)
+  let stale = null
+  try {
+    writeCheckpoint(proj, 'w1', { text: 'stale overwrite', baseRev: 0 })
+  } catch (e) {
+    stale = e
+  }
+  ok('stale draft rev rejected', stale?.message === 'draft-rev-conflict', stale?.message)
+  ok('disk keeps new text', readCheckpoint(proj, 'w1')?.text === 'hello draft')
+  writeCheckpoint(proj, 'w1', { text: '', reference: null, baseRev: 1 })
   ok('draft cleared', readCheckpoint(proj, 'w1') === null)
-  writeCheckpoint(proj, 'w1', { text: 'again' })
+  writeCheckpoint(proj, 'w1', { text: 'again', baseRev: 0 })
   ok('list includes draft', listCheckpoints(proj).length >= 1)
+  const noRev = (() => {
+    try {
+      writeCheckpoint(proj, 'w1', { text: 'no-rev' })
+      return null
+    } catch (e) {
+      return e
+    }
+  })()
+  ok('draft rev required', noRev?.message === 'draft-rev-required', noRev?.message)
 }
 
 /* Context builder */
