@@ -99,13 +99,32 @@ window.__ModuleLoader__.load({
     }
     exports.loadCompanionDraft = loadCompanionDraft
 
-    const draftSaveQueue = new Map() // project -> Promise chain
-    const companionRecoveryState = new Map() // project -> 'pending' | 'done'
-    const companionDraftDirty = new Map() // project -> bool (R02)
-    /** conflict: { remoteStatus: 'loading'|'valid'|'failed', remoteRev, remoteText, remoteReference, localText, localReference } */
+    const draftSaveQueue = new Map()
+    const companionRecoveryState = new Map()
+    const companionDraftDirty = new Map()
+    /** conflict: { remoteStatus, remoteRev, remoteText, remoteReference, localText, localReference } */
     const companionDraftConflict = new Map()
+    /**
+     * V01: observable save status — subscribers never need optional callbacks.
+     * phase: idle|pending|saving|saved|error|conflict
+     */
+    const companionDraftStatus = new Map() // project -> { phase, error, code, rev, textHash }
     const draftStatusListeners = new Set()
 
+    function setDraftStatus(project, patch) {
+      const prev = companionDraftStatus.get(project) || {
+        phase: 'idle',
+        error: '',
+        code: '',
+        rev: null,
+        textHash: '',
+      }
+      companionDraftStatus.set(project, { ...prev, ...patch })
+      notifyDraftStatus()
+    }
+    function getDraftStatus(project) {
+      return companionDraftStatus.get(project) || { phase: 'idle', error: '', code: '', rev: null, textHash: '' }
+    }
     function notifyDraftStatus() {
       for (const fn of draftStatusListeners) {
         try {
@@ -120,11 +139,16 @@ window.__ModuleLoader__.load({
     function isDraftConflict(project) {
       return Boolean(companionDraftConflict.get(project))
     }
+    function draftErrorText(code) {
+      if (code === 'draft-too-large') return '草稿过长，未能保存。请缩短后重试。'
+      if (code === 'reference-too-large') return '引用过长，未能保存。请缩短选区后重试。'
+      if (code === 'draft-conflict') return '草稿与另一处写入冲突，请选择保留本地或采用远端。'
+      if (code === 'draft-rev-conflict') return '草稿版本冲突，请刷新基线后重试。'
+      if (code === 'network') return '网络中断，草稿尚未保存。可重试保存。'
+      if (code === 'invalid-response') return '保存响应无效，草稿尚未确认落盘。'
+      return '草稿未能保存：' + (code || 'save-failed')
+    }
 
-    /**
-     * S01: apply a draft snapshot to the live input source (native store or local).
-     * Always used for conflict resolution so send() sees the author's choice.
-     */
     function applyDraftSnapshot(project, { text, reference }, appliers) {
       const t = String(text ?? '')
       const r = reference || null
@@ -140,10 +164,6 @@ window.__ModuleLoader__.load({
       notifyDraftStatus()
     }
 
-    /**
-     * R03/S01/S03: resolve conflict. keep-remote requires a VALID remote snapshot.
-     * appliers = { setLocalDraft, setReference, setNativeDraft }
-     */
     function resolveDraftConflict(project, mode, appliers) {
       const snap = companionDraftConflict.get(project)
       if (!snap) return Promise.resolve({ ok: false, error: 'no-conflict' })
@@ -154,11 +174,10 @@ window.__ModuleLoader__.load({
         }
         companionDraftConflict.delete(project)
         companionDraftDirty.set(project, true)
-        notifyDraftStatus()
+        setDraftStatus(project, { phase: 'pending', error: '', code: '' })
         return persistCompanionDraft(project)
       }
       if (mode === 'keep-remote') {
-        // S03: never adopt a failed/unknown remote read as empty content
         if (snap.remoteStatus !== 'valid' || !Number.isInteger(snap.remoteRev)) {
           return Promise.resolve({ ok: false, error: 'remote-not-valid' })
         }
@@ -171,13 +190,12 @@ window.__ModuleLoader__.load({
         companionDrafts.set(project, { ...prev, rev: snap.remoteRev })
         companionDraftConflict.delete(project)
         companionDraftDirty.set(project, false)
-        notifyDraftStatus()
+        setDraftStatus(project, { phase: 'saved', error: '', code: '', rev: snap.remoteRev })
         return Promise.resolve({ ok: true })
       }
       return Promise.resolve({ ok: false, error: 'bad-mode' })
     }
 
-    /** S03: retry remote fetch after conflict; only then mark snapshot valid. */
     async function retryDraftConflictRemote(project) {
       const snap = companionDraftConflict.get(project)
       if (!snap) return { ok: false, error: 'no-conflict' }
@@ -200,22 +218,25 @@ window.__ModuleLoader__.load({
       return { ok: false, error: 'remote-read-failed' }
     }
 
+    /** V01: all save paths publish phase/result; fetch errors become visible. */
     function persistCompanionDraft(project, onStatus) {
+      const cached0 = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+      const sentHash = String(cached0.text || '') + '|' + String(cached0.reference?.text || '')
       if (companionRecoveryState.get(project) === 'pending') {
+        setDraftStatus(project, { phase: 'pending', error: '', code: 'recovery-pending' })
         if (onStatus) onStatus('deferred')
-        notifyDraftStatus()
         return Promise.resolve({ ok: false, error: 'recovery-pending', deferred: true })
       }
       if (isDraftConflict(project)) {
+        setDraftStatus(project, { phase: 'conflict', error: draftErrorText('draft-conflict'), code: 'draft-conflict' })
         if (onStatus) onStatus('error:draft-conflict')
-        notifyDraftStatus()
         return Promise.resolve({ ok: false, error: 'draft-conflict' })
       }
-      const prev = draftSaveQueue.get(project) || Promise.resolve()
-      const next = prev.then(async () => {
+      const prevQ = draftSaveQueue.get(project) || Promise.resolve()
+      const next = prevQ.then(async () => {
         if (isDraftConflict(project)) {
+          setDraftStatus(project, { phase: 'conflict', error: draftErrorText('draft-conflict'), code: 'draft-conflict' })
           if (onStatus) onStatus('error:draft-conflict')
-          notifyDraftStatus()
           return { ok: false, error: 'draft-conflict' }
         }
         const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
@@ -226,21 +247,50 @@ window.__ModuleLoader__.load({
           reference: cached.reference,
           baseRev: cached.rev ?? 0,
         }
-        const data = await api('draft', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+        const hash = String(payload.text || '') + '|' + String(payload.reference?.text || '')
+        setDraftStatus(project, { phase: 'saving', error: '', code: '' })
+        let data
+        try {
+          data = await api('draft', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        } catch (err) {
+          // V01: network rejection is a visible error
+          setDraftStatus(project, {
+            phase: 'error',
+            error: draftErrorText('network'),
+            code: 'network',
+            textHash: hash,
+          })
+          if (onStatus) onStatus('error:network')
+          return { ok: false, error: 'network' }
+        }
         if (data?.ok) {
           const rev = data.checkpoint?.rev ?? data.rev
           if (Number.isInteger(rev)) {
             const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
             companionDrafts.set(project, { ...now, rev })
           }
-          companionDraftDirty.set(project, false)
-          notifyDraftStatus()
-        } else if (data?.error === 'draft-rev-conflict') {
-          // S03: remote read may fail — mark loading/failed, never fake empty valid
+          // Only clear dirty if this save still matches current local snapshot
+          const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+          const nowHash = String(now.text || '') + '|' + String(now.reference?.text || '')
+          if (nowHash === hash) {
+            companionDraftDirty.set(project, false)
+          }
+          setDraftStatus(project, {
+            phase: 'saved',
+            error: '',
+            code: '',
+            rev: Number.isInteger(rev) ? rev : null,
+            textHash: hash,
+          })
+          if (onStatus) onStatus('saved')
+          return data
+        }
+        const code = data?.error || 'save-failed'
+        if (code === 'draft-rev-conflict') {
           const conflict = {
             remoteStatus: 'loading',
             remoteRev: null,
@@ -250,7 +300,7 @@ window.__ModuleLoader__.load({
             localReference: cached.reference,
           }
           companionDraftConflict.set(project, conflict)
-          notifyDraftStatus()
+          setDraftStatus(project, { phase: 'conflict', error: draftErrorText('draft-conflict'), code: 'draft-conflict' })
           try {
             const cur = await api('draft', undefined, { project, window: companionWindowId })
             if (cur?.ok && cur.checkpoint && Number.isInteger(cur.checkpoint.rev)) {
@@ -271,8 +321,14 @@ window.__ModuleLoader__.load({
           if (onStatus) onStatus('error:draft-conflict')
           return data
         }
-        if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
-        if (!data?.ok) notifyDraftStatus()
+        // HTTP 4xx/5xx / invalid response → visible error, keep dirty
+        setDraftStatus(project, {
+          phase: 'error',
+          error: draftErrorText(code),
+          code,
+          textHash: hash,
+        })
+        if (onStatus) onStatus('error:' + code)
         return data
       })
       draftSaveQueue.set(project, next.catch(() => {}))
@@ -282,8 +338,11 @@ window.__ModuleLoader__.load({
     exports.resolveDraftConflict = resolveDraftConflict
     exports.retryDraftConflictRemote = retryDraftConflictRemote
     exports.subscribeDraftStatus = subscribeDraftStatus
+    exports.getDraftStatus = getDraftStatus
+    exports.persistCompanionDraft = persistCompanionDraft
     exports.__draftConflict = companionDraftConflict
     exports.__draftDirty = companionDraftDirty
+    exports.__draftStatus = companionDraftStatus
 
     async function loadProjectMemory(path) {
       try {
@@ -462,12 +521,17 @@ window.__ModuleLoader__.load({
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
       const recoveryGen = react.useRef(0)
-      const [draftUi, setDraftUi] = react.useState(() => ({ conflict: null, dirty: false }))
+      const [draftUi, setDraftUi] = react.useState(() => ({
+        conflict: null,
+        dirty: false,
+        status: { phase: 'idle', error: '', code: '' },
+      }))
       react.useEffect(() => {
         const read = () =>
           setDraftUi({
             conflict: companionDraftConflict.get(project) || null,
             dirty: Boolean(companionDraftDirty.get(project)),
+            status: getDraftStatus(project),
           })
         read()
         return subscribeDraftStatus(read)
@@ -502,10 +566,11 @@ window.__ModuleLoader__.load({
             companionDrafts.set(project, { ...prev, rev: c.rev })
           }
           companionRecoveryState.set(project, 'done')
-          // R02: flush if user edited during recovery — empty string is a valid save
+          // R02/V01: flush if dirty — do not clear dirty before successful persist
           if (companionDraftDirty.get(project)) {
-            companionDraftDirty.set(project, false)
             persistCompanionDraft(project)
+          } else {
+            setDraftStatus(project, { phase: 'saved', error: '', code: '' })
           }
         })
         return () => { cancelled = true }
@@ -662,6 +727,19 @@ window.__ModuleLoader__.load({
                   })
                 : null,
             ] })
+          : null,
+        draftUi.status.phase === 'error' && !draftUi.conflict
+          ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
+              draftUi.status.error,
+              jsx.jsx('button', {
+                className: 'dshWmQuiet',
+                onClick: () => void persistCompanionDraft(project),
+                children: '重试保存',
+              }),
+            ] })
+          : null,
+        draftUi.status.phase === 'saving'
+          ? jsx.jsx('div', { className: 'dshWmAiHint', role: 'status', children: '正在保存草稿…' })
           : null,
         failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
         needsFullComposer ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), children: '在完整会话中发送附件或使用指令 ↗' }) : null,
