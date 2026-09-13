@@ -88,5 +88,21 @@ const r2 = await mod.persistCompanionDraft(project)
 ok('413 visible', r2?.ok === false && String(mod.getDraftStatus(project).error).includes('过长'), JSON.stringify(mod.getDraftStatus(project)))
 ok('subscribers notified', events.includes('error') || events.includes('saved'), events.join(','))
 
+// X01: success after error clears status; no leftover draft error
+sandbox.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ ok: true, checkpoint: { rev: 6 } }),
+})
+mod.__draftDirty.set(project, true)
+const r3 = await mod.persistCompanionDraft(project)
+ok('retry after error succeeds', r3?.ok === true, JSON.stringify(r3))
+ok(
+  'X01 status cleared on success',
+  mod.getDraftStatus(project).phase === 'saved' && !mod.getDraftStatus(project).error,
+  JSON.stringify(mod.getDraftStatus(project))
+)
+ok('X01 dirty cleared on matching save', mod.__draftDirty.get(project) === false)
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
