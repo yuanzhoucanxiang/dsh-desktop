@@ -86,22 +86,57 @@
       }
     }
     exports.loadCompanionDraft = loadCompanionDraft
+    exports.resolveDraftConflict = resolveDraftConflict
+    exports.__draftConflict = companionDraftConflict
 
     const draftSaveQueue = new Map() // project -> Promise chain
     const companionRecoveryState = new Map() // project -> 'pending' | 'done'
+    const companionDraftDirty = new Map() // project -> bool (R02 explicit empty counts)
+    const companionDraftConflict = new Map() // project -> { local, remoteRev } | null (R03)
+
+    function isDraftConflict(project) {
+      return Boolean(companionDraftConflict.get(project))
+    }
 
     /**
-     * W02: payload.baseRev is read from cache at execution time (not enqueue time).
-     * Success always advances confirmed server rev, even if local text moved on.
-     * Recovery pending defers POSTs until server baseline exists.
+     * R03: after a real version conflict, auto-save is paused until resolve.
+     * Refreshing rev alone is NOT consent to overwrite another writer.
      */
+    function resolveDraftConflict(project, mode) {
+      const snap = companionDraftConflict.get(project)
+      if (!snap) return
+      if (mode === 'keep-local') {
+        // Author chose local content: adopt remote rev as base, then save
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        companionDrafts.set(project, { ...prev, rev: snap.remoteRev ?? prev.rev ?? 0 })
+      } else if (mode === 'keep-remote') {
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        companionDrafts.set(project, {
+          text: snap.remoteText ?? '',
+          reference: snap.remoteReference ?? null,
+          rev: snap.remoteRev ?? prev.rev ?? 0,
+        })
+      }
+      companionDraftConflict.delete(project)
+      companionDraftDirty.set(project, true)
+      return persistCompanionDraft(project)
+    }
+
     function persistCompanionDraft(project, onStatus) {
       if (companionRecoveryState.get(project) === 'pending') {
         if (onStatus) onStatus('deferred')
         return Promise.resolve({ ok: false, error: 'recovery-pending', deferred: true })
       }
+      if (isDraftConflict(project)) {
+        if (onStatus) onStatus('error:draft-conflict')
+        return Promise.resolve({ ok: false, error: 'draft-conflict' })
+      }
       const prev = draftSaveQueue.get(project) || Promise.resolve()
       const next = prev.then(async () => {
+        if (isDraftConflict(project)) {
+          if (onStatus) onStatus('error:draft-conflict')
+          return { ok: false, error: 'draft-conflict' }
+        }
         const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
         const payload = {
           project,
@@ -121,14 +156,29 @@
             const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
             companionDrafts.set(project, { ...now, rev })
           }
+          companionDraftDirty.set(project, false)
         } else if (data?.error === 'draft-rev-conflict') {
+          // R03: do NOT auto-adopt remote rev to overwrite
+          let remoteRev = null
+          let remoteText = ''
+          let remoteReference = null
           try {
             const cur = await api('draft', undefined, { project, window: companionWindowId })
-            if (cur?.ok && Number.isInteger(cur.checkpoint?.rev)) {
-              const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-              companionDrafts.set(project, { ...now, rev: cur.checkpoint.rev })
+            if (cur?.ok && cur.checkpoint) {
+              remoteRev = cur.checkpoint.rev
+              remoteText = cur.checkpoint.text || ''
+              remoteReference = cur.checkpoint.reference || null
             }
           } catch {}
+          companionDraftConflict.set(project, {
+            remoteRev,
+            remoteText,
+            remoteReference,
+            localText: cached.text,
+            localReference: cached.reference,
+          })
+          if (onStatus) onStatus('error:draft-conflict')
+          return data
         }
         if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
         return data
@@ -320,27 +370,33 @@
         companionRecoveryState.set(project, 'pending')
         void loadCompanionDraft(project).then((c) => {
           if (cancelled) return
-          // Always adopt server baseline rev (even if user typed during recovery)
-          if (Number.isInteger(c.rev)) {
-            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-            if ((prev.rev ?? 0) < c.rev) {
-              companionDrafts.set(project, { ...prev, rev: c.rev })
-            }
-          }
-          if (recoveryGen.current === started) {
-            if (c.reference) setReference((prev) => prev || c.reference)
+          const typedDuring = recoveryGen.current !== started
+          // R01: adopt full snapshot into cache (text + reference + rev) when no user edit
+          if (!typedDuring) {
             const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
+            const adoptText = nativeDraft || c.text || ''
+            const adoptRef = c.reference || null
+            companionDrafts.set(project, {
+              text: adoptText,
+              reference: adoptRef,
+              rev: Number.isInteger(c.rev) ? c.rev : 0,
+            })
+            if (adoptRef) setReference((prev) => prev || adoptRef)
             if (!nativeDraft && c.text) {
               setLocalDraft(c.text)
               try {
                 if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
               } catch {}
             }
+          } else if (Number.isInteger(c.rev)) {
+            // Still take server baseline; keep local text/reference from user edits
+            const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+            companionDrafts.set(project, { ...prev, rev: c.rev })
           }
           companionRecoveryState.set(project, 'done')
-          // Flush any edits made while recovery was pending
-          const cached = companionDrafts.get(project)
-          if (cached && (cached.text || cached.reference)) {
+          // R02: flush if user edited during recovery — empty string is a valid save
+          if (companionDraftDirty.get(project)) {
+            companionDraftDirty.set(project, false)
             persistCompanionDraft(project)
           }
         })
@@ -352,9 +408,16 @@
         else setLocalDraft(text)
         const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
         companionDrafts.set(project, { ...prev, text })
+        companionDraftDirty.set(project, true)
+        if (companionRecoveryState.get(project) === 'pending') return
         persistCompanionDraft(project, (st) => {
           if (st && String(st).startsWith('error:') && alive.current) {
-            setError('草稿未能保存：' + String(st).slice(6) + '（刷新后可能丢失未发送内容）')
+            const code = String(st).slice(6)
+            setError(
+              code === 'draft-conflict'
+                ? '草稿与另一处写入冲突。请在下方选择保留本地或采用远端后再继续。'
+                : '草稿未能保存：' + code + '（刷新后可能丢失未发送内容）'
+            )
           }
         })
       }
@@ -363,6 +426,8 @@
         setReference(value)
         const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
         companionDrafts.set(project, { ...prev, reference: value })
+        companionDraftDirty.set(project, true)
+        if (companionRecoveryState.get(project) === 'pending') return
         persistCompanionDraft(project, (st) => {
           if (st && String(st).startsWith('error:') && alive.current) {
             setError('引用未能保存：' + String(st).slice(6))
@@ -447,6 +512,28 @@
         ] }),
         memOpen ? jsx.jsx(CompanionMemoryPanel, { path: project }) : null,
         jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
+        companionDraftConflict.get(project)
+          ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
+              '草稿与另一处写入冲突，自动保存已暂停。',
+              jsx.jsx('button', {
+                className: 'dshWmQuiet',
+                onClick: () => void resolveDraftConflict(project, 'keep-local'),
+                children: '保留本地并覆盖',
+              }),
+              jsx.jsx('button', {
+                className: 'dshWmQuiet',
+                onClick: () => {
+                  const snap = companionDraftConflict.get(project)
+                  resolveDraftConflict(project, 'keep-remote')
+                  if (snap) {
+                    setLocalDraft(snap.remoteText || '')
+                    setReference(snap.remoteReference || null)
+                  }
+                },
+                children: '采用远端',
+              }),
+            ] })
+          : null,
         failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
         needsFullComposer ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), children: '在完整会话中发送附件或使用指令 ↗' }) : null,
         jsx.jsxs('div', { className: 'dshWmCompose', children: [
