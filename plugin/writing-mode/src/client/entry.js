@@ -86,13 +86,11 @@
       }
     }
     exports.loadCompanionDraft = loadCompanionDraft
-    exports.resolveDraftConflict = resolveDraftConflict
-    exports.__draftConflict = companionDraftConflict
 
     const draftSaveQueue = new Map() // project -> Promise chain
     const companionRecoveryState = new Map() // project -> 'pending' | 'done'
     const companionDraftDirty = new Map() // project -> bool (R02 explicit empty counts)
-    const companionDraftConflict = new Map() // project -> { local, remoteRev } | null (R03)
+    const companionDraftConflict = new Map() // project -> conflict snapshot | null (R03)
 
     function isDraftConflict(project) {
       return Boolean(companionDraftConflict.get(project))
@@ -186,6 +184,10 @@
       draftSaveQueue.set(project, next.catch(() => {}))
       return next
     }
+
+    exports.resolveDraftConflict = resolveDraftConflict
+    exports.__draftConflict = companionDraftConflict
+    exports.__draftDirty = companionDraftDirty
 
     async function loadProjectMemory(path) {
       try {
