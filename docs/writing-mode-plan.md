@@ -47,7 +47,7 @@
 3. **草稿**：`baseRev` 执行时读取；清除写 **tombstone**（rev 递增）  
 4. **恢复**：pending 不 POST；adopt rev 后 flush；迟到结果不写 UI/缓存  
 
-#### 仍开放
+#### 五轮收口（R01–R03）\n\n- 恢复完整快照采纳 · 显式空态 dirty flush · 409 冲突暂停与 keep-local/keep-remote\n\n#### 仍开放
 
 - entry feature 拆分与独立 Harness adapter  
 - 备忘历史 UI / 候选确认  
