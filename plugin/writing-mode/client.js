@@ -101,50 +101,121 @@ window.__ModuleLoader__.load({
 
     const draftSaveQueue = new Map() // project -> Promise chain
     const companionRecoveryState = new Map() // project -> 'pending' | 'done'
-    const companionDraftDirty = new Map() // project -> bool (R02 explicit empty counts)
-    const companionDraftConflict = new Map() // project -> conflict snapshot | null (R03)
+    const companionDraftDirty = new Map() // project -> bool (R02)
+    /** conflict: { remoteStatus: 'loading'|'valid'|'failed', remoteRev, remoteText, remoteReference, localText, localReference } */
+    const companionDraftConflict = new Map()
+    const draftStatusListeners = new Set()
 
+    function notifyDraftStatus() {
+      for (const fn of draftStatusListeners) {
+        try {
+          fn()
+        } catch {}
+      }
+    }
+    function subscribeDraftStatus(fn) {
+      draftStatusListeners.add(fn)
+      return () => draftStatusListeners.delete(fn)
+    }
     function isDraftConflict(project) {
       return Boolean(companionDraftConflict.get(project))
     }
 
     /**
-     * R03: after a real version conflict, auto-save is paused until resolve.
-     * Refreshing rev alone is NOT consent to overwrite another writer.
+     * S01: apply a draft snapshot to the live input source (native store or local).
+     * Always used for conflict resolution so send() sees the author's choice.
      */
-    function resolveDraftConflict(project, mode) {
-      const snap = companionDraftConflict.get(project)
-      if (!snap) return
-      if (mode === 'keep-local') {
-        // Author chose local content: adopt remote rev as base, then save
-        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-        companionDrafts.set(project, { ...prev, rev: snap.remoteRev ?? prev.rev ?? 0 })
-      } else if (mode === 'keep-remote') {
-        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-        companionDrafts.set(project, {
-          text: snap.remoteText ?? '',
-          reference: snap.remoteReference ?? null,
-          rev: snap.remoteRev ?? prev.rev ?? 0,
-        })
+    function applyDraftSnapshot(project, { text, reference }, appliers) {
+      const t = String(text ?? '')
+      const r = reference || null
+      const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+      companionDrafts.set(project, { ...prev, text: t, reference: r })
+      if (appliers?.setLocalDraft) appliers.setLocalDraft(t)
+      if (appliers?.setReference) appliers.setReference(r)
+      if (appliers?.setNativeDraft) {
+        try {
+          appliers.setNativeDraft(t)
+        } catch {}
       }
-      companionDraftConflict.delete(project)
-      companionDraftDirty.set(project, true)
-      return persistCompanionDraft(project)
+      notifyDraftStatus()
+    }
+
+    /**
+     * R03/S01/S03: resolve conflict. keep-remote requires a VALID remote snapshot.
+     * appliers = { setLocalDraft, setReference, setNativeDraft }
+     */
+    function resolveDraftConflict(project, mode, appliers) {
+      const snap = companionDraftConflict.get(project)
+      if (!snap) return Promise.resolve({ ok: false, error: 'no-conflict' })
+      if (mode === 'keep-local') {
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        if (Number.isInteger(snap.remoteRev)) {
+          companionDrafts.set(project, { ...prev, rev: snap.remoteRev })
+        }
+        companionDraftConflict.delete(project)
+        companionDraftDirty.set(project, true)
+        notifyDraftStatus()
+        return persistCompanionDraft(project)
+      }
+      if (mode === 'keep-remote') {
+        // S03: never adopt a failed/unknown remote read as empty content
+        if (snap.remoteStatus !== 'valid' || !Number.isInteger(snap.remoteRev)) {
+          return Promise.resolve({ ok: false, error: 'remote-not-valid' })
+        }
+        applyDraftSnapshot(
+          project,
+          { text: snap.remoteText || '', reference: snap.remoteReference || null },
+          appliers
+        )
+        const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
+        companionDrafts.set(project, { ...prev, rev: snap.remoteRev })
+        companionDraftConflict.delete(project)
+        companionDraftDirty.set(project, false)
+        notifyDraftStatus()
+        return Promise.resolve({ ok: true })
+      }
+      return Promise.resolve({ ok: false, error: 'bad-mode' })
+    }
+
+    /** S03: retry remote fetch after conflict; only then mark snapshot valid. */
+    async function retryDraftConflictRemote(project) {
+      const snap = companionDraftConflict.get(project)
+      if (!snap) return { ok: false, error: 'no-conflict' }
+      try {
+        const cur = await api('draft', undefined, { project, window: companionWindowId })
+        if (cur?.ok && cur.checkpoint && Number.isInteger(cur.checkpoint.rev)) {
+          companionDraftConflict.set(project, {
+            ...snap,
+            remoteStatus: 'valid',
+            remoteRev: cur.checkpoint.rev,
+            remoteText: cur.checkpoint.text || '',
+            remoteReference: cur.checkpoint.reference || null,
+          })
+          notifyDraftStatus()
+          return { ok: true }
+        }
+      } catch {}
+      companionDraftConflict.set(project, { ...snap, remoteStatus: 'failed' })
+      notifyDraftStatus()
+      return { ok: false, error: 'remote-read-failed' }
     }
 
     function persistCompanionDraft(project, onStatus) {
       if (companionRecoveryState.get(project) === 'pending') {
         if (onStatus) onStatus('deferred')
+        notifyDraftStatus()
         return Promise.resolve({ ok: false, error: 'recovery-pending', deferred: true })
       }
       if (isDraftConflict(project)) {
         if (onStatus) onStatus('error:draft-conflict')
+        notifyDraftStatus()
         return Promise.resolve({ ok: false, error: 'draft-conflict' })
       }
       const prev = draftSaveQueue.get(project) || Promise.resolve()
       const next = prev.then(async () => {
         if (isDraftConflict(project)) {
           if (onStatus) onStatus('error:draft-conflict')
+          notifyDraftStatus()
           return { ok: false, error: 'draft-conflict' }
         }
         const cached = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
@@ -167,30 +238,41 @@ window.__ModuleLoader__.load({
             companionDrafts.set(project, { ...now, rev })
           }
           companionDraftDirty.set(project, false)
+          notifyDraftStatus()
         } else if (data?.error === 'draft-rev-conflict') {
-          // R03: do NOT auto-adopt remote rev to overwrite
-          let remoteRev = null
-          let remoteText = ''
-          let remoteReference = null
-          try {
-            const cur = await api('draft', undefined, { project, window: companionWindowId })
-            if (cur?.ok && cur.checkpoint) {
-              remoteRev = cur.checkpoint.rev
-              remoteText = cur.checkpoint.text || ''
-              remoteReference = cur.checkpoint.reference || null
-            }
-          } catch {}
-          companionDraftConflict.set(project, {
-            remoteRev,
-            remoteText,
-            remoteReference,
+          // S03: remote read may fail — mark loading/failed, never fake empty valid
+          const conflict = {
+            remoteStatus: 'loading',
+            remoteRev: null,
+            remoteText: '',
+            remoteReference: null,
             localText: cached.text,
             localReference: cached.reference,
-          })
+          }
+          companionDraftConflict.set(project, conflict)
+          notifyDraftStatus()
+          try {
+            const cur = await api('draft', undefined, { project, window: companionWindowId })
+            if (cur?.ok && cur.checkpoint && Number.isInteger(cur.checkpoint.rev)) {
+              companionDraftConflict.set(project, {
+                ...conflict,
+                remoteStatus: 'valid',
+                remoteRev: cur.checkpoint.rev,
+                remoteText: cur.checkpoint.text || '',
+                remoteReference: cur.checkpoint.reference || null,
+              })
+            } else {
+              companionDraftConflict.set(project, { ...conflict, remoteStatus: 'failed' })
+            }
+          } catch {
+            companionDraftConflict.set(project, { ...conflict, remoteStatus: 'failed' })
+          }
+          notifyDraftStatus()
           if (onStatus) onStatus('error:draft-conflict')
           return data
         }
         if (onStatus) onStatus(data?.ok ? 'saved' : `error:${data?.error || 'save-failed'}`)
+        if (!data?.ok) notifyDraftStatus()
         return data
       })
       draftSaveQueue.set(project, next.catch(() => {}))
@@ -198,6 +280,8 @@ window.__ModuleLoader__.load({
     }
 
     exports.resolveDraftConflict = resolveDraftConflict
+    exports.retryDraftConflictRemote = retryDraftConflictRemote
+    exports.subscribeDraftStatus = subscribeDraftStatus
     exports.__draftConflict = companionDraftConflict
     exports.__draftDirty = companionDraftDirty
 
@@ -378,6 +462,16 @@ window.__ModuleLoader__.load({
       react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
       react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
       const recoveryGen = react.useRef(0)
+      const [draftUi, setDraftUi] = react.useState(() => ({ conflict: null, dirty: false }))
+      react.useEffect(() => {
+        const read = () =>
+          setDraftUi({
+            conflict: companionDraftConflict.get(project) || null,
+            dirty: Boolean(companionDraftDirty.get(project)),
+          })
+        read()
+        return subscribeDraftStatus(read)
+      }, [project])
       react.useEffect(() => {
         let cancelled = false
         const started = recoveryGen.current
@@ -526,26 +620,47 @@ window.__ModuleLoader__.load({
         ] }),
         memOpen ? jsx.jsx(CompanionMemoryPanel, { path: project }) : null,
         jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
-        companionDraftConflict.get(project)
+        draftUi.conflict
           ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
-              '草稿与另一处写入冲突，自动保存已暂停。',
+              draftUi.conflict.remoteStatus === 'valid'
+                ? '草稿与另一处写入冲突，自动保存已暂停。'
+                : draftUi.conflict.remoteStatus === 'failed'
+                  ? '冲突后无法读取远端草稿。'
+                  : '冲突处理中，正在读取远端草稿…',
               jsx.jsx('button', {
                 className: 'dshWmQuiet',
-                onClick: () => void resolveDraftConflict(project, 'keep-local'),
+                onClick: () =>
+                  void resolveDraftConflict(project, 'keep-local', {
+                    setLocalDraft,
+                    setReference,
+                    setNativeDraft: (t) => {
+                      if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t)
+                    },
+                  }),
                 children: '保留本地并覆盖',
               }),
-              jsx.jsx('button', {
-                className: 'dshWmQuiet',
-                onClick: () => {
-                  const snap = companionDraftConflict.get(project)
-                  resolveDraftConflict(project, 'keep-remote')
-                  if (snap) {
-                    setLocalDraft(snap.remoteText || '')
-                    setReference(snap.remoteReference || null)
-                  }
-                },
-                children: '采用远端',
-              }),
+              draftUi.conflict.remoteStatus === 'valid'
+                ? jsx.jsx('button', {
+                    className: 'dshWmQuiet',
+                    onClick: () => {
+                      void resolveDraftConflict(project, 'keep-remote', {
+                        setLocalDraft,
+                        setReference,
+                        setNativeDraft: (t) => {
+                          if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t)
+                        },
+                      })
+                    },
+                    children: '采用远端',
+                  })
+                : null,
+              draftUi.conflict.remoteStatus === 'failed'
+                ? jsx.jsx('button', {
+                    className: 'dshWmQuiet',
+                    onClick: () => void retryDraftConflictRemote(project),
+                    children: '重试读取远端',
+                  })
+                : null,
             ] })
           : null,
         failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
