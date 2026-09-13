@@ -571,16 +571,8 @@
         companionDrafts.set(project, { ...prev, text })
         companionDraftDirty.set(project, true)
         if (companionRecoveryState.get(project) === 'pending') return
-        persistCompanionDraft(project, (st) => {
-          if (st && String(st).startsWith('error:') && alive.current) {
-            const code = String(st).slice(6)
-            setError(
-              code === 'draft-conflict'
-                ? '草稿与另一处写入冲突。请在下方选择保留本地或采用远端后再继续。'
-                : '草稿未能保存：' + code + '（刷新后可能丢失未发送内容）'
-            )
-          }
-        })
+        // X01: draft save errors live only in companionDraftStatus (subscribed UI)
+        persistCompanionDraft(project)
       }
       function updateReference(value) {
         recoveryGen.current++
@@ -589,11 +581,7 @@
         companionDrafts.set(project, { ...prev, reference: value })
         companionDraftDirty.set(project, true)
         if (companionRecoveryState.get(project) === 'pending') return
-        persistCompanionDraft(project, (st) => {
-          if (st && String(st).startsWith('error:') && alive.current) {
-            setError('引用未能保存：' + String(st).slice(6))
-          }
-        })
+        persistCompanionDraft(project)
       }
       async function fullConversation() {
         if (sending.current) return
@@ -655,16 +643,14 @@
               reference: refCleared ? null : prev.reference || null,
               rev: prev.rev ?? 0,
             })
-            persistCompanionDraft(project, (st) => {
-              if (st && String(st).startsWith('error:') && alive.current) {
-                setError('发送后清除草稿失败：' + String(st).slice(6))
-              }
-            })
+            // X01: clear failures surface via companionDraftStatus only
+            persistCompanionDraft(project)
           }
         } catch (err) { if (alive.current) setError(err.message || String(err)) }
         finally { sending.current = false; if (alive.current) setBusy(false) }
       }
-      const failure = error || snapshot.openError?.message || snapshot.promptError?.error?.message
+        // Business errors only (session send / memory). Draft save errors are in draftUi.status.
+        const failure = error || snapshot.openError?.message || snapshot.promptError?.error?.message
       return jsx.jsxs('div', { className: 'dshWmCompanion', children: [
         jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
           jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
