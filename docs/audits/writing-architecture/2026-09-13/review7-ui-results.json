@@ -1,0 +1,212 @@
+{
+  "reviewedImplementation": "2c3ab6e",
+  "head": "a58b3c7",
+  "results": [
+    {
+      "name": "T03 outgoing writes are serialized",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 queued latest input uses confirmed server revision",
+      "result": "PASS",
+      "evidence": {
+        "baseRevs": [
+          0,
+          1
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "LATEST_KEYSTROKES"
+      }
+    },
+    {
+      "name": "W03 send then next draft saves",
+      "result": "PASS",
+      "evidence": {
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "NEW_THOUGHT_AFTER_SEND"
+      }
+    },
+    {
+      "name": "T02 late recovery preserves visible input",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 recovery defers writes and flushes latest edits",
+      "result": "PASS",
+      "evidence": {
+        "baseRevs": [
+          5,
+          6
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "NEW_DURING_RECOVERY"
+      }
+    },
+    {
+      "name": "R01 restored text survives reference removal",
+      "result": "PASS",
+      "evidence": {
+        "visible": "NEW_DURING_RECOVERY",
+        "disk": {
+          "schemaVersion": 2,
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-A198cM\\library\\演示项目",
+          "windowId": "fbd54e73-b258-41e9-ab81-dbb4ecae151c",
+          "text": "NEW_DURING_RECOVERY",
+          "reference": null,
+          "rev": 8,
+          "updatedAt": "2026-09-13T13:06:17.476Z",
+          "cleared": false
+        }
+      }
+    },
+    {
+      "name": "R01 changing text preserves recovered reference across reload",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "R01 native nonempty draft retained in cache during reference-only edit",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "R02 empty recovery edit persists across reload",
+      "result": "PASS",
+      "evidence": {
+        "afterReload": ""
+      }
+    },
+    {
+      "name": "R03 conflict pauses pre-existing queue without overwrite",
+      "result": "PASS",
+      "evidence": {
+        "statuses": [
+          409
+        ],
+        "remoteRev": 14,
+        "finalText": "NEWER_OTHER_WRITER"
+      }
+    },
+    {
+      "name": "Explicit local resolution saves latest local input",
+      "result": "PASS",
+      "evidence": {
+        "disk": "LOCAL_EDIT_WHILE_PAUSED"
+      }
+    },
+    {
+      "name": "S01 bound remote selection updates native input",
+      "result": "PASS",
+      "evidence": {
+        "visible": "BOUND_REMOTE",
+        "disk": "BOUND_REMOTE"
+      }
+    },
+    {
+      "name": "S01 send after remote choice",
+      "result": "PASS",
+      "evidence": {
+        "sent": [
+          {
+            "type": "text",
+            "text": "【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-A198cM\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
+          }
+        ]
+      }
+    },
+    {
+      "name": "S02 recovery-flush conflict presents recovery actions",
+      "result": "PASS",
+      "evidence": {
+        "hasConflictAction": true,
+        "visible": "LOCAL_PENDING",
+        "disk": "REMOTE_AFTER_GET"
+      }
+    },
+    {
+      "name": "S03 failed remote read preserves local and blocks remote adoption",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "S03 retry then unbound remote adoption succeeds",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "Editing after remote adoption saves with correct revision",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "V01 recovery 413 produces visible save error",
+      "result": "REPRODUCED",
+      "evidence": {
+        "response": {
+          "status": 413,
+          "data": {
+            "ok": false,
+            "error": "draft-too-large"
+          }
+        },
+        "alerts": [],
+        "length": 500001,
+        "disk": "AFTER_REMOTE_ADOPT"
+      }
+    },
+    {
+      "name": "Shorter draft saves after 413",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "Resolve local with a second 409 preserves both drafts and restores choice",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "V01 failed local resolution exposes current save failure",
+      "result": "REPRODUCED",
+      "evidence": {
+        "alerts": [
+          "草稿与另一处写入冲突。请在下方选择保留本地或采用远端后再继续。"
+        ],
+        "hasChoice": false,
+        "visible": "LOCAL_RESOLVE",
+        "disk": "REMOTE_RESOLVE_2"
+      }
+    },
+    {
+      "name": "Input remains editable and can save after resolution 503",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "Native remote tombstone adoption and next draft save",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "V01 recovery network rejection is observable to author",
+      "result": "REPRODUCED",
+      "evidence": {
+        "alerts": [],
+        "rejections": [],
+        "visible": "NETWORK_UNSAVED",
+        "disk": "AFTER_REMOTE_TOMBSTONE"
+      }
+    }
+  ],
+  "consoleErrors": []
+}
