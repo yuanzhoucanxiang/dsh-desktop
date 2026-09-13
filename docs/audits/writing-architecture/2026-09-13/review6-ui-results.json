@@ -1,0 +1,151 @@
+{
+  "reviewedImplementation": "985851e",
+  "head": "4caaa10",
+  "results": [
+    {
+      "name": "T03 outgoing writes are serialized",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 queued latest input uses confirmed server revision",
+      "result": "PASS",
+      "evidence": {
+        "baseRevs": [
+          0,
+          1
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "LATEST_KEYSTROKES"
+      }
+    },
+    {
+      "name": "W03 send then next draft saves",
+      "result": "PASS",
+      "evidence": {
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "NEW_THOUGHT_AFTER_SEND"
+      }
+    },
+    {
+      "name": "T02 late recovery preserves visible input",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "W02 recovery defers writes and flushes latest edits",
+      "result": "PASS",
+      "evidence": {
+        "baseRevs": [
+          5,
+          6
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "disk": "NEW_DURING_RECOVERY"
+      }
+    },
+    {
+      "name": "R01 restored text survives reference removal",
+      "result": "PASS",
+      "evidence": {
+        "visible": "NEW_DURING_RECOVERY",
+        "disk": {
+          "schemaVersion": 2,
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-0fmhkQ\\library\\演示项目",
+          "windowId": "d5b2b8eb-7543-4295-9b75-6c0299ac6258",
+          "text": "NEW_DURING_RECOVERY",
+          "reference": null,
+          "rev": 8,
+          "updatedAt": "2026-09-13T12:51:37.621Z",
+          "cleared": false
+        }
+      }
+    },
+    {
+      "name": "R01 changing text preserves recovered reference across reload",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "R01 native nonempty draft retained in cache during reference-only edit",
+      "result": "PASS",
+      "evidence": {}
+    },
+    {
+      "name": "R02 empty recovery edit persists across reload",
+      "result": "PASS",
+      "evidence": {
+        "afterReload": ""
+      }
+    },
+    {
+      "name": "R03 conflict pauses pre-existing queue without overwrite",
+      "result": "PASS",
+      "evidence": {
+        "statuses": [
+          409
+        ],
+        "remoteRev": 14,
+        "finalText": "NEWER_OTHER_WRITER"
+      }
+    },
+    {
+      "name": "Explicit local resolution saves latest local input",
+      "result": "PASS",
+      "evidence": {
+        "disk": "LOCAL_EDIT_WHILE_PAUSED"
+      }
+    },
+    {
+      "name": "S01 bound remote selection must update actual native input",
+      "result": "REPRODUCED",
+      "evidence": {
+        "visible": "BOUND_LOCAL",
+        "disk": "BOUND_REMOTE"
+      }
+    },
+    {
+      "name": "S01 send after remote choice",
+      "result": "REPRODUCED",
+      "evidence": {
+        "sent": [
+          {
+            "type": "text",
+            "text": "BOUND_LOCAL"
+          }
+        ]
+      }
+    },
+    {
+      "name": "S02 recovery-flush conflict presents recovery actions",
+      "result": "REPRODUCED",
+      "evidence": {
+        "hasConflictAction": false,
+        "visible": "LOCAL_PENDING",
+        "disk": "REMOTE_AFTER_GET"
+      }
+    },
+    {
+      "name": "S03 missing remote snapshot is not an empty draft",
+      "result": "REPRODUCED",
+      "evidence": {
+        "visible": "",
+        "disk": "REMOTE_VALID",
+        "statuses": [
+          409,
+          409
+        ]
+      }
+    }
+  ],
+  "consoleErrors": []
+}
