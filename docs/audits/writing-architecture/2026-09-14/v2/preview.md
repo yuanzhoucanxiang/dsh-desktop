@@ -8,7 +8,7 @@
 | 启动脚本 | `%TEMP%\dsh-preview\writing-v2-4649b59\start-preview.cmd`（双击即可再次拉起） |
 | PID | **90764** |
 | 窗口标题 | `DeepSeek Harness` |
-| 提交 | `4649b59` |
+| 提交 | 工作树 = `4649b59`（P1–P3）+ P4 文档；P4 提交号 `1b3a110` |
 
 ## 四条隔离路径（全部在 `%TEMP%\dsh-preview\writing-v2-4649b59\` 下）
 

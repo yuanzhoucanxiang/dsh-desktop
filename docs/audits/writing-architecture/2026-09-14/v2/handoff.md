@@ -1,6 +1,6 @@
 # 交回说明（handoff）— 写作模式 v2
 
-- 提交：`4649b59`（P1-①/②/③、P2、P3 全部落地；P4 文档与打包探针随本目录提交）
+- 提交：`4649b59`（P1-①/②/③、P2、P3）+ `1b3a110`（P4：入口接线、打包探针、本目录文档）
 - 一键回归：`cd dsh-desktop && npm run verify:writing-all`（退出码 0 = 全绿；本次实测 0）
 - 目录：`docs/audits/writing-architecture/2026-09-14/v2/`
   - `acceptance.md` 30 项矩阵（含未验证项，不得被总体通过覆盖）
