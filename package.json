@@ -38,7 +38,7 @@
     "test:writing-p1": "node plugin/writing-mode/test/p1-regression.mjs",
     "prestart": "npm run build:writing",
     "predev": "npm run build:writing",
-    "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs"
+    "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",
