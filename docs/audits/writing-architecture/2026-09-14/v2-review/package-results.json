@@ -1,0 +1,15 @@
+{
+  "commit": "95b138d427f445e933e69811f8a775ce968ffe28",
+  "exe": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-rebuild-0.1.38\\win-unpacked\\DeepSeek Harness Desktop.exe",
+  "asar": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-rebuild-0.1.38\\win-unpacked\\resources\\app.asar",
+  "envRoot": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-packaged-smoke-FRT0MY",
+  "pid": 95012,
+  "hookInstalled": true,
+  "code": null,
+  "signal": "SIGTERM",
+  "timedOut": true,
+  "asarSha256": "677f731857e56c860710601b72ea5c1d139d3a5eafe760c85a6c926e018126a3",
+  "mainPresent": true,
+  "pluginSyncPresent": true,
+  "log": "\r\nDebugger listening on ws://127.0.0.1:6410/c5c05736-8d0b-4a8e-89af-9150d27dcd49\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\nDebugger attached.\r\nChecking for update\nGenerated new staging user ID: 2de044cd-e1fe-5aed-8111-5f1c4229b319\nSMOKE_HANDOFF acked=true\nSMOKE_OK url=http://127.0.0.1:2577\nWaiting for the debugger to disconnect...\r\n"
+}

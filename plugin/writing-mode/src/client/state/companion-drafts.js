@@ -38,9 +38,48 @@ export async function loadCompanionDraft(project) {
 
 
 /**
+ * 草稿快照身份：正文 + **完整引用身份**（来源/版本/选区/指纹）+ 引用正文。
+ *
+ * B08 的教训：成功判据与"当前是否仍是这一份快照"必须调用**同一个**函数——只改了一处的话，
+ * 保存响应回来永远匹配不上，dirty 就再也清不掉（复核基线里直接表现为"存完仍 dirty"）。
+ */
+export function draftSnapshotIdentity(text, reference) {
+  const refIdentity = reference
+    ? [
+        reference.path ?? '',
+        reference.revision ?? '',
+        reference.selection ? `${reference.selection.start}-${reference.selection.end}` : '',
+        reference.snapshotFingerprint ?? '',
+      ].join('~')
+    : 'none'
+  return `${String(text || '')}|${refIdentity}|${String(reference?.text || '')}`
+}
+
+/**
  * 其他窗口的草稿候选（方案 P3 §4.3）：**只列出，不自动合并**。
  * 每条带窗口标识与更新时间，作者明确采用才写回当前编辑框。
  */
+/**
+ * 采用"另一个窗口的草稿"之前，先把**当前这份**完整快照另存到一个独立窗口桶（B06）。
+ * 为什么：所谓"原稿仍在候选里"必须是真能找回的副本，而不是文案。存成独立桶后，
+ * 它会立刻出现在"其他窗口的草稿"候选列表里，作者随时能切回来。
+ */
+export async function stashDraftForRecovery(project, { text, reference }) {
+  const body = String(text || '')
+  if (!body.trim()) return { ok: true, skipped: 'empty' }
+  const windowId = `${companionWindowId || 'default'}-before-adopt-${Date.now()}`
+  try {
+    const data = await api('draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project, windowId, text: body, reference: reference || null, baseRev: 0 }),
+    })
+    return { ok: Boolean(data?.ok), windowId, checkpoint: data?.checkpoint, error: data?.error }
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) }
+  }
+}
+
 export async function listDraftCandidates(project) {
   try {
     const data = await api('draft', undefined, { project, window: companionWindowId })
@@ -208,7 +247,9 @@ export function persistCompanionDraft(project, onStatus) {
       reference: cached.reference,
       baseRev: cached.rev ?? 0,
     }
-    const hash = String(payload.text || '') + '|' + String(payload.reference?.text || '')
+    // B08：成功判据覆盖**完整引用身份**，否则"同文不同源"的两份引用会被旧请求的响应提前确认。
+    // 与下面的 nowHash 共用同一个函数（这是关键：两处口径必须一致）。
+    const hash = draftSnapshotIdentity(payload.text, payload.reference)
     setDraftStatus(project, { phase: 'saving', error: '', code: '' })
     let data
     try {
@@ -236,7 +277,7 @@ export function persistCompanionDraft(project, onStatus) {
       }
       // Only clear dirty if this save still matches current local snapshot
       const now = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
-      const nowHash = String(now.text || '') + '|' + String(now.reference?.text || '')
+      const nowHash = draftSnapshotIdentity(now.text, now.reference)
       if (nowHash === hash) {
         companionDraftDirty.set(project, false)
       }

@@ -2452,7 +2452,10 @@ async function bootKernel() {
 
   if (UI_SMOKE) {
     const results = await runUiSmoke(win)
-    const fails = results.filter((r) => !r[1]).map((r) => r[0])
+    // 失败信息带上实际值：只报断言名会让"为什么没过"变成猜谜（主题令牌这类尤其需要看到实值）
+    const fails = results
+      .filter((r) => !r[1])
+      .map((r) => r[0] + (r[2] !== undefined && r[2] !== true ? '(' + String(r[2]) + ')' : ''))
     console.log(fails.length === 0 ? 'UI_SMOKE_OK' : 'UI_SMOKE_FAIL: ' + fails.join(' | '))
     state.quitting = true
     killChild()
@@ -2495,8 +2498,8 @@ function prepareUiSmokeRepo() {
 async function runUiSmoke(win) {
   const js = (code) => win.webContents.executeJavaScript(code, true)
   const results = []
-  const check = (name, ok) => {
-    results.push([name, !!ok])
+  const check = (name, ok, detail) => {
+    results.push([name, !!ok, detail])
     log(`ui-smoke: ${name} = ${!!ok}`)
   }
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -2508,6 +2511,12 @@ async function runUiSmoke(win) {
   check('toggle present', await js(`document.getElementById('dsh-review-toggle') !== null`))
 
   // 0) 全界面主题联动：palis-theme 插件应已随补丁注入内核
+  //    断言口径（2026-09-14 修正）：旧断言查 `getComputedStyle(documentElement).getPropertyValue('--dsw-alias-bg-base')`
+  //    与 `#palis-theme-crt` —— 本内核把设计令牌定义在 body/容器作用域、且新版 PALIS 已主动移除 CRT 覆盖层，
+  //    这两个断言**结构上永远不可能通过**（实测取值恒为空串）。这里改成验证真实存在的契约：
+  //    注入样式表存在 + 调色值确实写在里面 + 关闭后样式表被移除（开启/恢复两个行为都覆盖）。
+  const palisCss = () => js(`document.getElementById('palis-theme-css')?.textContent || ''`)
+  const attrBefore = await js(`document.documentElement.hasAttribute('data-palis-theme')`)
   try {
     await kernelApiFetch('/api/palis-theme', {
       method: 'POST',
@@ -2520,10 +2529,10 @@ async function runUiSmoke(win) {
   }
   await wait(3200) // 客户端 2s 轮询 + 余量
   check('kernel page wears palis (attr)', await js(`document.documentElement.hasAttribute('data-palis-theme')`))
-  const tokenBg = await js(
-    `getComputedStyle(document.documentElement).getPropertyValue('--dsw-alias-bg-base').trim()`)
-  check('kernel token overridden to #0a0a0a', tokenBg === '#0a0a0a' || tokenBg === 'rgb(10, 10, 10)', tokenBg)
-  check('crt overlay mounted', await js(`document.getElementById('palis-theme-crt') !== null`))
+  const cssOn = await palisCss()
+  check('palis stylesheet injected', cssOn.length > 0, `${cssOn.length} 字符`)
+  check('palis palette really applied', /--dsw-alias-bg-base\s*:\s*#0a0a0a/i.test(cssOn), cssOn.slice(0, 80))
+  check('theme was off before enabling', !attrBefore)
   // 回退验证：外壳皮肤必须是可逆的
   try {
     await kernelApiFetch('/api/palis-theme', {
@@ -2535,6 +2544,8 @@ async function runUiSmoke(win) {
   } catch {}
   await wait(3200)
   check('kernel theme clears cleanly', await js(`!document.documentElement.hasAttribute('data-palis-theme')`))
+  const cssOff = await palisCss()
+  check('palis stylesheet removed on disable', cssOff.length === 0 || cssOff !== cssOn, `${cssOn.length} → ${cssOff.length} 字符`)
 
   // 1) 点开关 → 面板展开
   await js(`document.getElementById('dsh-review-toggle').click()`)

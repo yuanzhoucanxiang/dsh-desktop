@@ -43,12 +43,30 @@ export function makeReference({ label, excerpt, path = null, revision = null, st
 }
 
 /** 结构相等：只比身份字段。任一字段缺失（null）按"不同"处理，避免把不同来源当成同一引用。 */
+/** 是否具备完整身份（缺任何一项都不能据"空==空"判等）。 */
+export function hasReferenceIdentity(r) {
+  if (!r) return false
+  if (!r.path || r.revision == null) return false
+  const sel = r.selection
+  if (!sel || !Number.isInteger(sel.start) || !Number.isInteger(sel.end)) return false
+  return true
+}
+
+/**
+ * 结构相等：只比身份字段。
+ * B08：任一方缺身份（旧 checkpoint 的 {label,text}）时**不能**把缺失当成"都空所以相等"——
+ * 那会让两段不同的旧引用被判成同一份，进而"发送后清理引用"清错对象。
+ * 旧格式一律保守比较**完整快照**（label + 正文），此时只有真正同源的引用才算同一份。
+ */
 export function sameReference(a, b) {
   if (!a || !b) return !a && !b
-  const sel = (r) => (r.selection ? `${r.selection.start}-${r.selection.end}` : 'none')
+  if (!hasReferenceIdentity(a) || !hasReferenceIdentity(b)) {
+    return String(a.label ?? '') === String(b.label ?? '') && String(a.text ?? '') === String(b.text ?? '')
+  }
+  const sel = (r) => `${r.selection.start}-${r.selection.end}`
   return (
-    String(a.path ?? '') === String(b.path ?? '') &&
-    String(a.revision ?? '') === String(b.revision ?? '') &&
+    String(a.path) === String(b.path) &&
+    String(a.revision) === String(b.revision) &&
     sel(a) === sel(b) &&
     String(a.snapshotFingerprint ?? '') === String(b.snapshotFingerprint ?? '')
   )

@@ -643,8 +643,14 @@ export function apply(ctx) {
               return
             }
             if (op === 'forget') {
-              const r = forgetCoordination({ projectKey })
-              writeJson(res, 200, { ok: true, ...r })
+              // B03：删除要带条件（token / 记录版本），由客户端把它看到的那份传回来
+              const r = forgetCoordination({
+                projectKey,
+                operationToken: parsed.operationToken ?? null,
+                expectedVersion: Number.isInteger(parsed.expectedVersion) ? parsed.expectedVersion : null,
+                force: parsed.force === true,
+              })
+              writeJson(res, r.ok ? 200 : 409, { ok: r.ok, ...r })
               return
             }
             writeJson(res, 400, { ok: false, error: 'unknown-op' })

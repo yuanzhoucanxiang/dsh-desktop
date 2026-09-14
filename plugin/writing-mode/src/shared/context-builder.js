@@ -16,6 +16,9 @@
 
 export const DEFAULT_MEMORY_BUDGET = 6000
 
+/** Unicode 码点计数（预算口径，见 C02）。 */
+export const codePointLength = (text) => [...String(text ?? '')].length
+
 const INJECTABLE_KINDS = ['fact', 'preference']
 const LABEL_OF = { fact: '设定', preference: '偏好', 'open-question': '待定问题' }
 
@@ -38,16 +41,19 @@ function freezeItem(item) {
  *   pinned —— 作者本次勾选/固定（数组顺序即作者顺序；无效或被撤回的一律不算，且要报告）
  *   rest   —— 其余可注入条目，按传入顺序（memо 的稳定/追加顺序）确定性补齐
  */
-export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET) {
+export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = []) {
   const list = Array.isArray(items) ? items : []
   const pinned = new Set((pinnedIds || []).map((id) => String(id)))
+  const excluded = new Set((excludedIds || []).map((id) => String(id)))
   const selected = []
   const omissions = []
   let used = 0
   const take = (item, reason, isPinned) => {
     const label = LABEL_OF[item.kind] || '设定'
     const line = `- [${label}] ${item.text}`
-    const cost = line.length + 1
+    // C02：预算按 **Unicode 码点**计（[...s].length），不是 UTF-16 代码单元（s.length）——
+    // 否则 3500 个 emoji 会被当成 7000 字，整条被错误省略（2026-09-14 复核实测）。
+    const cost = [...line].length + 1
     if (used + cost > budget) {
       omissions.push({ id: item.id, kind: item.kind, reason: 'budget', chars: cost, pinned: isPinned })
       return
@@ -78,12 +84,21 @@ export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET) {
       omissions.push({ id, kind: item.kind, status: item.status, reason: 'not-injectable', pinned: true })
       continue
     }
+    // C02：作者明确排除的条目，即使被标成"固定"也不带入（排除优先于固定）
+    if (excluded.has(String(item.id))) {
+      omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: 'excluded-by-author', pinned: true })
+      continue
+    }
     take(item, 'author-pinned', true)
   }
-  // 2) 其余确定性补齐（跳过已固定的）
+  // 2) 其余确定性补齐（跳过已固定的；明确排除的一律跳过并如实报告）
   const pinnedTaken = new Set(selected.map((s) => String(s.id)))
   for (const item of list) {
     if (!isInjectable(item)) continue
+    if (excluded.has(String(item.id))) {
+      omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: 'excluded-by-author', pinned: false })
+      continue
+    }
     if (pinnedTaken.has(String(item.id))) continue
     take(item, 'auto', false)
   }
@@ -117,7 +132,7 @@ export function buildPreparedTurn(input) {
   const reference = buildReference(input?.reference)
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : []
   const { selected, omissions, charsUsed } = includeMemory
-    ? selectMemory(items, input?.pinnedMemoryIds, budget)
+    ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds)
     : { selected: [], omissions: [], charsUsed: 0 }
 
   const parts = []

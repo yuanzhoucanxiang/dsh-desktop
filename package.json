@@ -41,13 +41,17 @@
     "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs",
     "verify:writing-package": "node scripts/verify-writing-package.mjs && node scripts/verify-writing-coldstart.mjs",
     "plugin-sync-test": "node lib/plugin-sync.test.js",
-    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native",
+    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run verify:ui-smoke && npm run verify:writing-packaged",
     "test:writing-coordination": "node plugin/writing-mode/test/coordination.mjs",
     "test:writing-adapter": "node plugin/writing-mode/test/adapter-coordination.mjs",
     "test:writing-p3": "node plugin/writing-mode/test/p3-memory-context.mjs",
     "verify:writing-adapter": "node plugin/writing-mode/test/coordination.mjs && node plugin/writing-mode/test/adapter-coordination.mjs",
     "verify:writing-memory-ui": "node plugin/writing-mode/test/p3-memory-context.mjs --group=M",
-    "verify:writing-context": "node plugin/writing-mode/test/p3-memory-context.mjs --group=C && node plugin/writing-mode/test/p3-memory-context.mjs --group=D"
+    "verify:writing-context": "node plugin/writing-mode/test/p3-memory-context.mjs --group=C && node plugin/writing-mode/test/p3-memory-context.mjs --group=D",
+    "verify:writing-packaged": "node scripts/verify-writing-packaged.mjs",
+    "verify:ui-smoke": "node scripts/verify-ui-smoke.mjs",
+    "verify:writing-review-probes": "node docs/audits/writing-architecture/2026-09-14/v2-review/probes.mjs && node scripts/run-review-ui-probes.mjs",
+    "verify:writing-baseline-ui": "node scripts/run-baseline-ui.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -66,17 +70,13 @@
     "files": [
       "main.js",
       "preload.js",
-      "lib/git-review.js",
-      "lib/profile-inspect.js",
-      "lib/plugin-manager.js",
-      "lib/atomic-file.js",
-      "lib/settings-store.js",
       "renderer/**/*",
       "build/*.png",
       "build/icon.ico",
       "build/whale-source.svg",
       "package.json",
-      "lib/builtin-seed.js"
+      "lib/*.js",
+      "!lib/*.test.js"
     ],
     "extraResources": [
       {

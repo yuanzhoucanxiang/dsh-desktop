@@ -66,24 +66,56 @@ export function projectChat(chat) {
  * 「这一轮到底有没有被受理」的原生证据（方案 §3.3）：发送返回失败时用它核对，
  * 有证据才算 accepted，没证据才算 uncertain —— 绝不凭"超时"就重发。
  */
-export function turnEvidence(session, body) {
+/**
+ * 发送前基线：记下此刻已存在的回合节点键与队列项 id。
+ * **没有基线的"证据"就是历史**——旧消息里只要含同一段备忘前缀就会被误判成"本轮已受理"
+ * （2026-09-14 复核 B02 实测：明确拒绝的新问题被判 accepted，正文被清空）。
+ */
+export function turnBaseline(session) {
+  const snap = session && typeof session.getSnapshot === 'function' ? session.getSnapshot() : null
+  const chat = snap?.chat
+  const keys = new Set()
+  for (const key of chat?.order || []) keys.add(String(key))
+  const queueIds = new Set()
+  for (const row of snap?.queue || []) if (row?.id != null) queueIds.add(String(row.id))
+  return { keys, queueIds, size: keys.size }
+}
+
+/**
+ * 「这一轮到底有没有被受理」的原生证据（方案 §3.3）：
+ *   只有**基线之后新出现**的用户回合（或新排入的队列项）才算本轮受理；
+ *   匹配用本轮作者消息本身（不是整段 body——备忘前缀每轮都一样，会误伤）；
+ *   明确拒绝且无新证据 → 调用方按 rejected 处理，保留正文，绝不重发。
+ */
+export function turnEvidence(session, body, baseline = null, message = null) {
   const snap = session && typeof session.getSnapshot === 'function' ? session.getSnapshot() : null
   if (!snap) return { accepted: false, queued: false, evidence: 'no-session-snapshot' }
-  const needle = normalizeForMatch(String(body || '').split(REFERENCE_SEPARATOR)[0]).slice(0, 200)
-  if (!needle) return { accepted: false, queued: false, evidence: 'empty-body' }
+  const norm = (t) => normalizeForMatch(String(t || '').split(REFERENCE_SEPARATOR)[0])
+  const targets = []
+  const msg = norm(message)
+  if (msg) targets.push(msg)
+  const whole = norm(body)
+  if (whole && whole !== msg) targets.push(whole)
+  if (!targets.length) return { accepted: false, queued: false, evidence: 'empty-body' }
+  const matches = (text) => {
+    const t = norm(text)
+    if (!t) return false
+    return targets.some((want) => t === want || t.startsWith(want) || t.includes(want))
+  }
   const chat = snap.chat
   const nodes = chat?.nodes
   for (const key of (chat?.order || [])) {
-    const node = nodes && typeof nodes.get === 'function' ? nodes.get(key) : nodes ? nodes[key] : null
+    const k = String(key)
+    if (baseline && baseline.keys.has(k)) continue // 历史节点不是本轮证据
+    const node = nodes && typeof nodes.get === 'function' ? nodes.get(k) : nodes ? nodes[k] : null
     if (!node || (node.kind !== 'user' && node.kind !== 'steering')) continue
-    const text = normalizeForMatch(textOf(node.data?.content)).slice(0, 200)
-    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: false, evidence: 'user-node' }
+    if (matches(textOf(node.data?.content))) return { accepted: true, queued: false, evidence: 'new-user-node' }
   }
   for (const row of snap.queue || []) {
-    const text = normalizeForMatch(row?.text || row?.preview || '')
-    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: true, evidence: 'queue-row' }
+    if (baseline && row?.id != null && baseline.queueIds.has(String(row.id))) continue
+    if (matches(row?.text || row?.preview || '')) return { accepted: true, queued: true, evidence: 'new-queue-row' }
   }
-  return { accepted: false, queued: false, evidence: 'not-found' }
+  return { accepted: false, queued: false, evidence: 'no-new-turn' }
 }
 
 /**

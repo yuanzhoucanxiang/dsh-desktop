@@ -74,6 +74,11 @@ export function writeCheckpoint(project, windowId, draft) {
         path: draft.reference.path ? String(draft.reference.path).slice(0, 500) : null,
         revision: draft.reference.revision ?? null,
         selection: draft.reference.selection || null,
+        // B08：引用身份字段必须一起持久化——漏掉快照指纹会让"取自未保存快照"的引用
+        // 在 round-trip 之后被 referenceStatus 判成 current（2026-09-14 复核实测）。
+        snapshotFingerprint: draft.reference.snapshotFingerprint ? String(draft.reference.snapshotFingerprint).slice(0, 200) : null,
+        note: draft.reference.note ? String(draft.reference.note).slice(0, 500) : null,
+        legacy: draft.reference.legacy === true ? true : undefined,
       }
     : null
   if (!text && !reference) {

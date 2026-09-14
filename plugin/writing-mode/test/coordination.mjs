@@ -99,13 +99,27 @@ ok('H05 绑定确认失败 → uncertain，保留已知标识；新窗口看到 
   assert.equal(other._outcome, 'uncertain', '另一个窗口不得把 uncertain 当成"没有记录"而新建')
 })
 
+ok('B03 forget 必须带条件：无守卫/过期 token/版本不符一律拒绝，不做删除', () => {
+  const p = 'E:/novel/守卫'
+  claimCoordination({ projectKey: p, operationToken: 't1' })
+  markCreatingCoordination({ projectKey: p, operationToken: 't1' })
+  confirmCoordination({ projectKey: p, operationToken: 't1', sessionId: 'sess-guard' })
+  assert.throws(() => forgetCoordination({ projectKey: p }), /forget-needs-guard/)
+  assert.equal(forgetCoordination({ projectKey: p, operationToken: 'wrong' }).error, 'stale-token')
+  assert.equal(forgetCoordination({ projectKey: p, operationToken: 't1', expectedVersion: 999 }).error, 'version-mismatch')
+  assert.equal(readCoordination(p).sessionId, 'sess-guard', '被拒绝的 forget 不得动记录')
+  const okForget = forgetCoordination({ projectKey: p, operationToken: 't1', expectedVersion: readCoordination(p).version })
+  assert.equal(okForget.ok, true)
+  assert.equal(readCoordination(p).phase, null)
+})
+
 ok('H06 会话被删：明确 forget 之后才允许重新 claim', () => {
   const p = 'E:/novel/会话被删'
   claimCoordination({ projectKey: p, operationToken: 't1' })
   markCreatingCoordination({ projectKey: p, operationToken: 't1' })
   confirmCoordination({ projectKey: p, operationToken: 't1', sessionId: 'sess-gone' })
   assert.equal(claimCoordination({ projectKey: p, operationToken: 't2' })._outcome, 'bound')
-  forgetCoordination({ projectKey: p })
+  forgetCoordination({ projectKey: p, operationToken: 't1', expectedVersion: readCoordination(p).version })
   const after = claimCoordination({ projectKey: p, operationToken: 't2' })
   assert.equal(after._outcome, 'claimed')
 })

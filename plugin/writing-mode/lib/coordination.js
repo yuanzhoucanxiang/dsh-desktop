@@ -219,14 +219,41 @@ export function releaseCoordination({ projectKey, operationToken }) {
   }, coordinationError)
 }
 
-/** 运维路径：清掉一条记录（只在作者明确要求"放弃这次关联"时由 UI 调用）。 */
-export function forgetCoordination({ projectKey }) {
+/**
+ * 清掉一条记录（作者明确"放弃这次关联"时才由 UI 调用）。
+ *
+ * B03 加固：删除同样受**互斥 + 记录条件**约束——调用方要带上它看到的 operationToken / version，
+ * 与当前记录不一致就拒绝（别人已经推进过这条记录，你不能按旧认知删）。删除仍在文件锁内完成，
+ * 且不做"重建"以外的任何副作用：记录没了就真的没了，所以条件不满足时宁可拒绝。
+ */
+export function forgetCoordination({ projectKey, operationToken = null, expectedVersion = null, force = false }) {
   const file = recordPath(projectKey)
-  try {
-    fs.unlinkSync(file)
-    return { ok: true, file }
-  } catch (err) {
-    if (err.code === 'ENOENT') return { ok: true, file, absent: true }
-    throw coordinationError('forget-failed', 500, { detail: err.message })
+  if (force !== true && operationToken === null && expectedVersion === null) {
+    throw coordinationError('forget-needs-guard', 400)
   }
+  return withFileLock(file, () => {
+    let current
+    try {
+      current = readCoordination(projectKey)
+    } catch {
+      // 坏记录：不删（原件保留给诊断）
+      return { ok: false, file, error: 'corrupt-record' }
+    }
+    if (current.phase === null) return { ok: true, file, absent: true, retained: true }
+    if (!force) {
+      if (operationToken !== null && current.operationToken !== operationToken) {
+        return { ok: false, file, error: 'stale-token', retained: true, phase: current.phase }
+      }
+      if (expectedVersion !== null && Number(current.version) !== Number(expectedVersion)) {
+        return { ok: false, file, error: 'version-mismatch', retained: true, phase: current.phase, version: current.version }
+      }
+    }
+    try {
+      fs.unlinkSync(file)
+      return { ok: true, file }
+    } catch (err) {
+      if (err.code === 'ENOENT') return { ok: true, file, absent: true }
+      throw coordinationError('forget-failed', 500, { detail: err.message })
+    }
+  }, coordinationError)
 }

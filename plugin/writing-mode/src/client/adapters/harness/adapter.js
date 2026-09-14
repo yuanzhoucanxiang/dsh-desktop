@@ -14,7 +14,7 @@
  * 本模块不 import React/DOM/组件，可在 node 里用 fixture 直接测（见 test/adapter-*.mjs）。
  */
 import { canonicalProjectKey, projectIdentityOf } from './identity.js'
-import { projectChat, turnEvidence, createSnapshotCache } from './projection.js'
+import { projectChat, turnBaseline, turnEvidence, createSnapshotCache } from './projection.js'
 import { httpCoordination } from './coordination-client.js'
 
 /** 等待对方窗口完成绑定的轮询参数（只用于发现，不授权抢占，见方案 §3.2 末段）。 */
@@ -139,9 +139,11 @@ export function createHarnessAdapter(deps = {}) {
     if (claim.outcome === 'uncertain') {
       return { status: 'uncertain', sessionId: claim.record?.sessionId || null, workspaceId: claim.record?.workspaceId || null, record: claim.record, wrongness: 'previous-attempt-unconfirmed', key, path, binding }
     }
-    // claimed：本次拿到创建权
+    // claimed：本次拿到创建权。结果必须**带上身份**——否则新建成功后的 handle 缺 projectKey/path，
+    // 之后既无法定位原项目，也无法判断"是不是同一个项目"（2026-09-14 复核 B03 实测）。
     void rec
-    return createNow({ path, operationId, key, binding })
+    const created = await createNow({ path, operationId, key, binding })
+    return { key, path, binding, ...created }
   }
 
   /** 已有绑定：核对原生会话是否还在（被删要呈现状态与恢复操作，不静默新建）。 */
@@ -347,6 +349,7 @@ export function createHarnessAdapter(deps = {}) {
                 phase: state.record.phase,
                 sessionId: state.record.sessionId || null,
                 workspaceId: state.record.workspaceId || null,
+                operationToken: state.record.operationToken || null,
                 version: state.record.version ?? null,
                 reason: state.record.reason || null,
                 stale: Boolean(state.record.stale),
@@ -390,6 +393,9 @@ export function createHarnessAdapter(deps = {}) {
         return { result: 'rejected', code: 'not-ready', status: state.status, projectKey: key, operationId }
       }
       const session = currentSession()
+      // B02：先记基线。没有基线就无法区分"本轮新回合"与历史里的旧消息
+      // （旧消息含同一段备忘前缀时会被误判成本轮已受理 → 明确拒绝也清稿）。
+      const baseline = session ? turnBaseline(session) : null
       if (!session || !has(session, 'prompt')) {
         // 绑定的会话在原生侧已不存在（被别处删掉）：状态降级为 missing，让作者看到恢复入口，
         // 而不是把消息发进虚空或悄悄新建（2026-09-14 fixture 实测到这一点）。
@@ -413,13 +419,14 @@ export function createHarnessAdapter(deps = {}) {
         return { result: 'rejected', code: 'session-changed', projectKey: at.key, operationId: at.operationId }
       }
       const freshSession = currentSession() || session
-      const evidence = turnEvidence(freshSession, body)
+      const evidence = turnEvidence(freshSession, body, baseline, preparedTurn?.message)
       if (res?.ok) return { result: 'accepted', evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId }
+      // 原生明确拒绝（ok:false）：只有"本轮确实新出现了一轮"才算受理，否则一律 rejected，
+      // 让正文与引用留在作者手里（旧消息里的同备忘前缀不算证据）。
       if (evidence.accepted) return { result: 'accepted', evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId }
       const message = thrown?.message || res?.error?.message || res?.error || '发送失败'
       const code = thrown?.code || res?.error?.code || 'send-failed'
       if (thrown) return { result: 'uncertain', code, error: String(message), retainedBody: body, projectKey: key, operationId, sessionId: state.sessionId }
-      // 原生给了明确的不受理（没抛异常、没证据、明确 ok:false）
       return { result: 'rejected', code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId }
     }
 
@@ -449,12 +456,67 @@ export function createHarnessAdapter(deps = {}) {
       listeners.clear()
     }
 
-    /** 作者明确要求的恢复：会话确认已被删/上一次创建不可确认时，清记录后重新建立关联。 */
+    /**
+     * 作者明确要求的"继续关联"（B03 起语义收敛）：
+     *   1. 会话还在 → 用**记录里的原 token** 走 claim→creating→confirm 把关联补上（不新建任何原生对象）；
+     *   2. 另一个窗口还在创建中且我们没有已知会话 → 只等，不清记录、不新建；
+     *   3. 只有"会话确实不在了/从未有过"才做条件受保护的 forget + 重建。
+     * 关键：把"继续原关联"实现成"放弃并新建"是错的——那会留下一个孤立会话。
+     */
     async function recover(reason = 'author-requested') {
       if (state.status !== 'missing' && state.status !== 'uncertain' && state.status !== 'waiting') {
         throw adapterError('recover-not-allowed', '当前状态不需要恢复（' + state.status + '）')
       }
-      if (coordination?.forget) await coordination.forget({ path })
+      const rec = (await readRecord(path)) || null
+      const knownSession = state.sessionId || rec?.sessionId || null
+      const knownToken = rec?.operationToken || state.record?.operationToken || null
+      const sessionAlive = Boolean(knownSession) && liveSessionIds().has(knownSession)
+
+      if (sessionAlive && knownToken) {
+        try {
+          await coordination.claim({ path, operationToken: knownToken, owner: 'recover' })
+          if (coordination.creating) await coordination.creating({ path, operationToken: knownToken })
+          const conf = await coordination.confirm({
+            path,
+            operationToken: knownToken,
+            sessionId: knownSession,
+            workspaceId: rec?.workspaceId || state.workspaceId || null,
+          })
+          const phase = conf?.outcome === 'bound' ? 'bound' : conf?.record?.phase
+          if (phase === 'bound') {
+            state = { ...state, status: 'ready', sessionId: knownSession, workspaceId: rec?.workspaceId || state.workspaceId, record: conf.record || rec, error: null, wrongness: null }
+            notify()
+            return getSnapshot()
+          }
+          state = { ...state, status: 'uncertain', sessionId: knownSession, record: conf?.record || rec, wrongness: 'reconfirm-' + (conf?.outcome || 'failed') }
+          notify()
+          return getSnapshot()
+        } catch (err) {
+          state = { ...state, status: 'uncertain', sessionId: knownSession, error: err.message || String(err) }
+          notify()
+          return getSnapshot()
+        }
+      }
+
+      if (rec?.phase === 'creating' && knownToken && knownToken !== operationId) {
+        // 对端还在创建：等它，不抢、不清
+        await refresh()
+        state = { ...state, status: 'waiting', record: rec, wrongness: 'peer-still-creating' }
+        notify()
+        return getSnapshot()
+      }
+
+      // 会话确实不在了：条件受保护的 forget（版本/token 不符就拒绝，见 host forgetCoordination）
+      if (coordination?.forget) {
+        const forgotten = await coordination.forget({ path, operationToken: knownToken, expectedVersion: rec?.version ?? null })
+        if (forgotten && forgotten.ok === false && forgotten.error && forgotten.error !== 'stale-token') {
+          // 记录被别人推进过：不按旧认知删，交回状态让作者重查
+          await refresh()
+          state = { ...state, wrongness: 'forget-refused:' + forgotten.error }
+          notify()
+          return getSnapshot()
+        }
+      }
       const next = await connect(path, newOperationToken(), { canonicalKey: key })
       const snap = next.getSnapshot()
       state = { status: snap.status, sessionId: snap.sessionId, workspaceId: snap.workspaceId || null, record: snap.record ? { ...snap.record } : null, error: snap.error, wrongness: reason }

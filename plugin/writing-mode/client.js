@@ -233,16 +233,17 @@ function isInjectable(item) {
 function isPinnable(item) {
   return Boolean(item) && item.status === "confirmed" && Boolean(LABEL_OF[item.kind]);
 }
-function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET) {
+function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = []) {
   const list = Array.isArray(items) ? items : [];
   const pinned = new Set((pinnedIds || []).map((id) => String(id)));
+  const excluded = new Set((excludedIds || []).map((id) => String(id)));
   const selected = [];
   const omissions = [];
   let used = 0;
   const take = (item, reason, isPinned) => {
     const label = LABEL_OF[item.kind] || "设定";
     const line = `- [${label}] ${item.text}`;
-    const cost = line.length + 1;
+    const cost = [...line].length + 1;
     if (used + cost > budget) {
       omissions.push({ id: item.id, kind: item.kind, reason: "budget", chars: cost, pinned: isPinned });
       return;
@@ -270,11 +271,19 @@ function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET) {
       omissions.push({ id, kind: item.kind, status: item.status, reason: "not-injectable", pinned: true });
       continue;
     }
+    if (excluded.has(String(item.id))) {
+      omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: "excluded-by-author", pinned: true });
+      continue;
+    }
     take(item, "author-pinned", true);
   }
   const pinnedTaken = new Set(selected.map((s) => String(s.id)));
   for (const item of list) {
     if (!isInjectable(item)) continue;
+    if (excluded.has(String(item.id))) {
+      omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: "excluded-by-author", pinned: false });
+      continue;
+    }
     if (pinnedTaken.has(String(item.id))) continue;
     take(item, "auto", false);
   }
@@ -303,7 +312,7 @@ function buildPreparedTurn(input) {
   const includeMemory = input?.includeMemory !== false;
   const reference = buildReference(input?.reference);
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : [];
-  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget) : { selected: [], omissions: [], charsUsed: 0 };
+  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds) : { selected: [], omissions: [], charsUsed: 0 };
   const parts = [];
   if (selected.length) {
     const body = selected.map((s) => `- [${s.label}] ${s.text}`).join("\n");
@@ -624,6 +633,7 @@ var CSS = [
   ".dshWmContextPanel{max-height:200px;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-2);}",
   ".dshWmContextItem{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.5;padding:3px 0;}",
   ".dshWmContextText{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}",
+  ".dshWmContextState{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}",
   ".dshWmContextQuestions{margin-top:4px;border-top:1px dashed var(--dsw-alias-border-l2);padding-top:4px;}",
   ".dshWmCompose{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:12px;}.dshWmCompose:focus-within{border-color:var(--dsw-alias-label-tertiary);}.dshWmChatInput{display:block;box-sizing:border-box;width:100%;min-height:88px;max-height:200px;resize:vertical;border:0;outline:none;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;line-height:1.7;}.dshWmChatInput::placeholder{color:var(--dsw-alias-label-tertiary);}",
   ".dshWmComposeFoot{display:flex;align-items:center;gap:8px;margin-top:8px;}.dshWmInputHint{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);}.dshWmSend{margin-left:auto;flex-shrink:0;width:30px;height:30px;border:0;border-radius:8px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-size:21px;cursor:pointer;}.dshWmSend:disabled{opacity:.25;cursor:default;}",
@@ -891,24 +901,44 @@ function projectChat(chat) {
   }
   return { messages, hasUnknown };
 }
-function turnEvidence(session, body) {
+function turnBaseline(session) {
+  const snap = session && typeof session.getSnapshot === "function" ? session.getSnapshot() : null;
+  const chat = snap?.chat;
+  const keys = /* @__PURE__ */ new Set();
+  for (const key of chat?.order || []) keys.add(String(key));
+  const queueIds = /* @__PURE__ */ new Set();
+  for (const row of snap?.queue || []) if (row?.id != null) queueIds.add(String(row.id));
+  return { keys, queueIds, size: keys.size };
+}
+function turnEvidence(session, body, baseline = null, message = null) {
   const snap = session && typeof session.getSnapshot === "function" ? session.getSnapshot() : null;
   if (!snap) return { accepted: false, queued: false, evidence: "no-session-snapshot" };
-  const needle = normalizeForMatch(String(body || "").split(REFERENCE_SEPARATOR)[0]).slice(0, 200);
-  if (!needle) return { accepted: false, queued: false, evidence: "empty-body" };
+  const norm = (t) => normalizeForMatch(String(t || "").split(REFERENCE_SEPARATOR)[0]);
+  const targets = [];
+  const msg = norm(message);
+  if (msg) targets.push(msg);
+  const whole = norm(body);
+  if (whole && whole !== msg) targets.push(whole);
+  if (!targets.length) return { accepted: false, queued: false, evidence: "empty-body" };
+  const matches = (text) => {
+    const t = norm(text);
+    if (!t) return false;
+    return targets.some((want) => t === want || t.startsWith(want) || t.includes(want));
+  };
   const chat = snap.chat;
   const nodes = chat?.nodes;
   for (const key of chat?.order || []) {
-    const node = nodes && typeof nodes.get === "function" ? nodes.get(key) : nodes ? nodes[key] : null;
+    const k = String(key);
+    if (baseline && baseline.keys.has(k)) continue;
+    const node = nodes && typeof nodes.get === "function" ? nodes.get(k) : nodes ? nodes[k] : null;
     if (!node || node.kind !== "user" && node.kind !== "steering") continue;
-    const text = normalizeForMatch(textOf(node.data?.content)).slice(0, 200);
-    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: false, evidence: "user-node" };
+    if (matches(textOf(node.data?.content))) return { accepted: true, queued: false, evidence: "new-user-node" };
   }
   for (const row of snap.queue || []) {
-    const text = normalizeForMatch(row?.text || row?.preview || "");
-    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: true, evidence: "queue-row" };
+    if (baseline && row?.id != null && baseline.queueIds.has(String(row.id))) continue;
+    if (matches(row?.text || row?.preview || "")) return { accepted: true, queued: true, evidence: "new-queue-row" };
   }
-  return { accepted: false, queued: false, evidence: "not-found" };
+  return { accepted: false, queued: false, evidence: "no-new-turn" };
 }
 function createSnapshotCache() {
   let cache = null;
@@ -1067,7 +1097,8 @@ function createHarnessAdapter(deps = {}) {
       return { status: "uncertain", sessionId: claim.record?.sessionId || null, workspaceId: claim.record?.workspaceId || null, record: claim.record, wrongness: "previous-attempt-unconfirmed", key, path, binding };
     }
     void rec;
-    return createNow({ path, operationId, key, binding });
+    const created = await createNow({ path, operationId, key, binding });
+    return { key, path, binding, ...created };
   }
   function verifyRecord(record, binding) {
     const sessionId = record?.sessionId || binding?.sessionId || null;
@@ -1244,6 +1275,7 @@ function createHarnessAdapter(deps = {}) {
               phase: state.record.phase,
               sessionId: state.record.sessionId || null,
               workspaceId: state.record.workspaceId || null,
+              operationToken: state.record.operationToken || null,
               version: state.record.version ?? null,
               reason: state.record.reason || null,
               stale: Boolean(state.record.stale)
@@ -1277,6 +1309,7 @@ function createHarnessAdapter(deps = {}) {
         return { result: "rejected", code: "not-ready", status: state.status, projectKey: key, operationId };
       }
       const session = currentSession();
+      const baseline = session ? turnBaseline(session) : null;
       if (!session || !has(session, "prompt")) {
         const gone = Boolean(at.sessionId) && !liveSessionIds().has(at.sessionId);
         if (gone) {
@@ -1297,7 +1330,7 @@ function createHarnessAdapter(deps = {}) {
         return { result: "rejected", code: "session-changed", projectKey: at.key, operationId: at.operationId };
       }
       const freshSession = currentSession() || session;
-      const evidence = turnEvidence(freshSession, body);
+      const evidence = turnEvidence(freshSession, body, baseline, preparedTurn?.message);
       if (res?.ok) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
       if (evidence.accepted) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
       const message = thrown?.message || res?.error?.message || res?.error || "发送失败";
@@ -1330,7 +1363,50 @@ function createHarnessAdapter(deps = {}) {
       if (state.status !== "missing" && state.status !== "uncertain" && state.status !== "waiting") {
         throw adapterError("recover-not-allowed", "当前状态不需要恢复（" + state.status + "）");
       }
-      if (coordination?.forget) await coordination.forget({ path });
+      const rec = await readRecord(path) || null;
+      const knownSession = state.sessionId || rec?.sessionId || null;
+      const knownToken = rec?.operationToken || state.record?.operationToken || null;
+      const sessionAlive = Boolean(knownSession) && liveSessionIds().has(knownSession);
+      if (sessionAlive && knownToken) {
+        try {
+          await coordination.claim({ path, operationToken: knownToken, owner: "recover" });
+          if (coordination.creating) await coordination.creating({ path, operationToken: knownToken });
+          const conf = await coordination.confirm({
+            path,
+            operationToken: knownToken,
+            sessionId: knownSession,
+            workspaceId: rec?.workspaceId || state.workspaceId || null
+          });
+          const phase = conf?.outcome === "bound" ? "bound" : conf?.record?.phase;
+          if (phase === "bound") {
+            state = { ...state, status: "ready", sessionId: knownSession, workspaceId: rec?.workspaceId || state.workspaceId, record: conf.record || rec, error: null, wrongness: null };
+            notify();
+            return getSnapshot();
+          }
+          state = { ...state, status: "uncertain", sessionId: knownSession, record: conf?.record || rec, wrongness: "reconfirm-" + (conf?.outcome || "failed") };
+          notify();
+          return getSnapshot();
+        } catch (err) {
+          state = { ...state, status: "uncertain", sessionId: knownSession, error: err.message || String(err) };
+          notify();
+          return getSnapshot();
+        }
+      }
+      if (rec?.phase === "creating" && knownToken && knownToken !== operationId) {
+        await refresh();
+        state = { ...state, status: "waiting", record: rec, wrongness: "peer-still-creating" };
+        notify();
+        return getSnapshot();
+      }
+      if (coordination?.forget) {
+        const forgotten = await coordination.forget({ path, operationToken: knownToken, expectedVersion: rec?.version ?? null });
+        if (forgotten && forgotten.ok === false && forgotten.error && forgotten.error !== "stale-token") {
+          await refresh();
+          state = { ...state, wrongness: "forget-refused:" + forgotten.error };
+          notify();
+          return getSnapshot();
+        }
+      }
       const next = await connect(path, newOperationToken(), { canonicalKey: key });
       const snap = next.getSnapshot();
       state = { status: snap.status, sessionId: snap.sessionId, workspaceId: snap.workspaceId || null, record: snap.record ? { ...snap.record } : null, error: snap.error, wrongness: reason };
@@ -1701,10 +1777,20 @@ function makeReference({ label, excerpt, path = null, revision = null, start = n
     note: note || null
   });
 }
+function hasReferenceIdentity(r) {
+  if (!r) return false;
+  if (!r.path || r.revision == null) return false;
+  const sel = r.selection;
+  if (!sel || !Number.isInteger(sel.start) || !Number.isInteger(sel.end)) return false;
+  return true;
+}
 function sameReference(a, b) {
   if (!a || !b) return !a && !b;
-  const sel = (r) => r.selection ? `${r.selection.start}-${r.selection.end}` : "none";
-  return String(a.path ?? "") === String(b.path ?? "") && String(a.revision ?? "") === String(b.revision ?? "") && sel(a) === sel(b) && String(a.snapshotFingerprint ?? "") === String(b.snapshotFingerprint ?? "");
+  if (!hasReferenceIdentity(a) || !hasReferenceIdentity(b)) {
+    return String(a.label ?? "") === String(b.label ?? "") && String(a.text ?? "") === String(b.text ?? "");
+  }
+  const sel = (r) => `${r.selection.start}-${r.selection.end}`;
+  return String(a.path) === String(b.path) && String(a.revision) === String(b.revision) && sel(a) === sel(b) && String(a.snapshotFingerprint ?? "") === String(b.snapshotFingerprint ?? "");
 }
 function referenceStatus(reference, source) {
   if (!reference?.text) return "empty";
@@ -1984,6 +2070,30 @@ async function loadCompanionDraft(project) {
     return { text: "", reference: null, rev: 0 };
   }
 }
+function draftSnapshotIdentity(text, reference) {
+  const refIdentity = reference ? [
+    reference.path ?? "",
+    reference.revision ?? "",
+    reference.selection ? `${reference.selection.start}-${reference.selection.end}` : "",
+    reference.snapshotFingerprint ?? ""
+  ].join("~") : "none";
+  return `${String(text || "")}|${refIdentity}|${String(reference?.text || "")}`;
+}
+async function stashDraftForRecovery(project, { text, reference }) {
+  const body = String(text || "");
+  if (!body.trim()) return { ok: true, skipped: "empty" };
+  const windowId = `${companionWindowId || "default"}-before-adopt-${Date.now()}`;
+  try {
+    const data = await api("draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project, windowId, text: body, reference: reference || null, baseRev: 0 })
+    });
+    return { ok: Boolean(data?.ok), windowId, checkpoint: data?.checkpoint, error: data?.error };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
 async function listDraftCandidates(project) {
   try {
     const data = await api("draft", void 0, { project, window: companionWindowId });
@@ -2140,7 +2250,7 @@ function persistCompanionDraft(project, onStatus) {
       reference: cached.reference,
       baseRev: cached.rev ?? 0
     };
-    const hash = String(payload.text || "") + "|" + String(payload.reference?.text || "");
+    const hash = draftSnapshotIdentity(payload.text, payload.reference);
     setDraftStatus(project, { phase: "saving", error: "", code: "" });
     let data;
     try {
@@ -2166,7 +2276,7 @@ function persistCompanionDraft(project, onStatus) {
         companionDrafts.set(project, { ...now2, rev });
       }
       const now = companionDrafts.get(project) || { text: "", reference: null, rev: 0 };
-      const nowHash = String(now.text || "") + "|" + String(now.reference?.text || "");
+      const nowHash = draftSnapshotIdentity(now.text, now.reference);
       if (nowHash === hash) {
         companionDraftDirty.set(project, false);
       }
@@ -2294,8 +2404,10 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
   const [contextOpen, setContextOpen] = react2.useState(false);
   const [includeMemory, setIncludeMemory] = react2.useState(true);
   const [pinned, setPinned] = react2.useState([]);
+  const [excluded, setExcluded] = react2.useState([]);
   const [memoryItems, setMemoryItems] = react2.useState([]);
   const [memoryMeta, setMemoryMeta] = react2.useState({ revision: null, etag: null, ok: true, error: "" });
+  const [memoryBlock, setMemoryBlock] = react2.useState(null);
   const alive = react2.useRef(true);
   const sending = react2.useRef(false);
   const id = binding.sessionId;
@@ -2482,7 +2594,7 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
       if (alive.current) setBusy(false);
     }
   }
-  async function send() {
+  async function send(options = {}) {
     if (sending.current || !draft.trim()) return;
     if (needsFullComposer) {
       void fullConversation();
@@ -2496,25 +2608,40 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
     try {
       const target = handle || await ensureHandle();
       if (!target || !alive.current) return;
-      const memData = await loadProjectMemory(project);
-      const freshItems = memData.ok ? memData.memory?.items || [] : [];
-      const memWarning = memData.ok ? "" : String(memData.error || "memory-unavailable");
-      if (memData.ok && alive.current) {
-        setMemoryItems(freshItems);
-        setMemoryMeta({ revision: memData.memory?.revision ?? null, etag: memData.etag ?? null, ok: true, error: "" });
+      const wantMemory = includeMemory && !options.bypassMemory;
+      let freshItems = [];
+      let memoryRevision = null;
+      let memoryEtag = null;
+      if (wantMemory) {
+        const memData = await loadProjectMemory(project);
+        if (!memData.ok) {
+          if (alive.current) {
+            setMemoryBlock({ error: String(memData.error || "memory-unavailable") });
+            setError("");
+          }
+          return;
+        }
+        freshItems = memData.memory?.items || [];
+        memoryRevision = memData.memory?.revision ?? null;
+        memoryEtag = memData.etag ?? null;
+        if (alive.current) {
+          setMemoryItems(freshItems);
+          setMemoryMeta({ revision: memoryRevision, etag: memoryEtag, ok: true, error: "" });
+        }
       }
+      if (alive.current) setMemoryBlock(null);
       const prepared = buildPreparedTurn({
         message: sentDraft,
         reference: sentReference,
         memoryItems: freshItems,
-        includeMemory,
+        includeMemory: wantMemory,
         pinnedMemoryIds: pinned,
+        excludedMemoryIds: excluded,
         projectKey: project,
         operationId: operationIdRef.current,
-        memoryRevision: memData.ok ? memData.memory?.revision : null,
-        memoryEtag: memData.ok ? memData.etag : null
+        memoryRevision,
+        memoryEtag
       });
-      if (memWarning && alive.current) setError("备忘读取失败，本次未带入已确认设定。正文已保留，可以重试或不参考发送：" + memWarning);
       const result = await target.send(prepared);
       if (result.result === "rejected") {
         throw new Error(result.error || "发送失败，请重试");
@@ -2559,6 +2686,22 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
   const failure = error || snapshot.error;
   const statusNote = !handle || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
   const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
+  const injectables = memoryItems.filter(isPinnable);
+  const memoryPreview = react2.useMemo(
+    () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
+    [memoryItems, pinned, excluded]
+  );
+  const previewRows = injectables.map((it) => {
+    const taken = memoryPreview.selected.find((x) => String(x.id) === String(it.id));
+    const omitted = memoryPreview.omissions.find((x) => String(x.id) === String(it.id));
+    return {
+      id: it.id,
+      kind: it.kind,
+      text: it.text,
+      source: it.source?.kind === "assistant" ? "助手建议" : it.source?.kind === "host" ? "内核" : "作者",
+      state: taken ? taken.pinned ? "固定带入" : "自动带入" : omitted?.reason === "excluded-by-author" ? "你已排除" : omitted?.reason === "budget" ? "超出预算省略" : omitted?.reason === "not-injectable" ? "状态不适用" : "未采用"
+    };
+  });
   let refStatus = "empty";
   try {
     refStatus = referenceStatus(reference, sourceInfo ? sourceInfo() : null);
@@ -2635,6 +2778,27 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
       })
     ] }) : null,
     draftUi.status.phase === "saving" ? jsx5.jsx("div", { className: "dshWmAiHint", role: "status", children: "正在保存草稿…" }) : null,
+    memoryBlock ? jsx5.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-memory-block": "1", children: [
+      `项目备忘读取失败（${memoryBlock.error}）：本轮还没有发出，正文与引用都保留着。请选择：`,
+      jsx5.jsx("button", {
+        className: "dshWmQuiet",
+        "data-wm-memory-retry": "1",
+        onClick: () => {
+          setMemoryBlock(null);
+          void send();
+        },
+        children: "重试读取"
+      }),
+      jsx5.jsx("button", {
+        className: "dshWmQuiet",
+        "data-wm-memory-bypass": "1",
+        onClick: () => {
+          setMemoryBlock(null);
+          void send({ bypassMemory: true });
+        },
+        children: "不参考备忘发送"
+      })
+    ] }) : null,
     failure ? jsx5.jsx("div", { className: "dshWmCompanionError", role: "alert", children: failure }) : null,
     needsFullComposer ? jsx5.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), children: "在完整会话中发送附件或使用指令 ↗" }) : null,
     jsx5.jsxs("div", { className: "dshWmCompose", children: [
@@ -2647,17 +2811,25 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
             className: "dshWmQuiet",
             "data-wm-draft-adopt": c.windowId,
             onClick: () => {
-              updateDraft(c.text);
-              if (c.reference) updateReference(c.reference);
-              setDraftCandidates((prev) => prev.filter((x) => x.windowId !== c.windowId));
-              setPreviewCandidate(null);
+              void (async () => {
+                const current = companionDrafts.get(project) || { text: draft, reference };
+                const stash = await stashDraftForRecovery(project, { text: current.text, reference: current.reference });
+                if (!stash.ok) {
+                  setError("没能为当前草稿留下可恢复副本，已取消采用（原稿与引用都还在）。" + (stash.error ? " " + stash.error : ""));
+                  return;
+                }
+                updateDraft(c.text);
+                updateReference(c.reference || null);
+                void reloadCandidates();
+                setPreviewCandidate(null);
+              })();
             },
             children: "采用这一份"
           })
         ] }, c.windowId)),
         previewCandidate ? jsx5.jsxs("div", { className: "dshWmDraftPreview", children: [
           jsx5.jsx("pre", { children: previewCandidate.text }),
-          jsx5.jsx("span", { className: "dshWmMemoryNote", children: '采用会替换当前编辑框内容（你原来的草稿仍在"其他窗口"候选里，可再切换回来）' })
+          jsx5.jsx("span", { className: "dshWmMemoryNote", children: "采用前会先把当前草稿另存为一份可恢复副本（随后出现在上面的候选列表里，可随时切回）；引用按这一份一起替换" })
         ] }) : null
       ] }) : null,
       reference ? jsx5.jsxs("div", { className: "dshWmReference", "data-wm-reference-status": refStatus, children: [
@@ -2707,35 +2879,29 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
           "参考"
         ] }),
         contextOpen ? jsx5.jsxs("div", { className: "dshWmContextPanel", children: [
-          memoryMeta.ok ? null : jsx5.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + "）：可以重试，或直接不参考发送。正文不会丢。" }),
-          memoryItems.filter(isInjectable).length ? memoryItems.filter(isInjectable).map((it) => jsx5.jsxs("label", { className: "dshWmContextItem", children: [
+          memoryMeta.ok ? null : jsx5.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
+          jsx5.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${memoryPreview.omittedCount ? `，另有 ${memoryPreview.omittedCount} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=参考，取消勾选=不带；"优先"只是把它们排在最前面，不改变是否带入）` : "本轮不参考项目备忘（开关已关）" }),
+          previewRows.length ? previewRows.map((row) => jsx5.jsxs("div", { className: "dshWmContextItem", "data-wm-memory-row": row.id, children: [
             jsx5.jsx("input", {
               type: "checkbox",
-              "data-wm-memory-pin": it.id,
-              checked: pinned.includes(it.id),
-              onChange: (e) => setPinned((prev) => e.target.checked ? [...prev, it.id] : prev.filter((x) => x !== it.id))
+              "data-wm-memory-pin": row.id,
+              checked: !excluded.includes(row.id),
+              title: "这一条是否参与本轮",
+              onChange: (e) => setExcluded((prev) => e.target.checked ? prev.filter((x) => x !== row.id) : [...prev, row.id])
             }),
-            jsx5.jsx("span", { className: "dshWmMemoryKind", children: it.kind === "preference" ? "偏好" : "设定" }),
-            jsx5.jsx("span", { className: "dshWmContextText", children: it.text })
-          ] }, it.id)) : jsx5.jsx("div", { className: "dshWmMemoryNote", children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
-          jsx5.jsxs("div", { className: "dshWmMemoryNote", children: [
-            "勾选的条目优先带入（作者固定），其余按备忘顺序自动补齐；自动部分有 ",
-            String(DEFAULT_MEMORY_BUDGET),
-            " 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。"
-          ] }),
-          memoryItems.filter((it) => it.kind === "open-question" && it.status === "confirmed").length ? jsx5.jsxs("div", { className: "dshWmContextQuestions", children: [
-            jsx5.jsx("div", { className: "dshWmMemoryNote", children: "待定问题（确认了也仍是问题，默认不带入；可单独勾选）" }),
-            memoryItems.filter((it) => it.kind === "open-question" && it.status === "confirmed").map((it) => jsx5.jsxs("label", { className: "dshWmContextItem", children: [
-              jsx5.jsx("input", {
-                type: "checkbox",
-                "data-wm-memory-pin": it.id,
-                checked: pinned.includes(it.id),
-                onChange: (e) => setPinned((prev) => e.target.checked ? [...prev, it.id] : prev.filter((x) => x !== it.id))
-              }),
-              jsx5.jsx("span", { className: "dshWmMemoryKind", children: "待定" }),
-              jsx5.jsx("span", { className: "dshWmContextText", children: it.text })
-            ] }, it.id))
-          ] }) : null
+            jsx5.jsx("span", { className: "dshWmMemoryKind", children: row.kind === "preference" ? "偏好" : row.kind === "open-question" ? "待定" : "设定" }),
+            jsx5.jsx("span", { className: "dshWmContextText", children: row.text }),
+            jsx5.jsx("button", {
+              className: "dshWmQuiet",
+              "data-wm-memory-fix": row.id,
+              title: "固定优先：本轮先于其他条目带入",
+              onClick: () => setPinned((prev) => prev.includes(row.id) ? prev.filter((x) => x !== row.id) : [...prev, row.id]),
+              children: pinned.includes(row.id) ? "优先 ✓" : "优先"
+            }),
+            jsx5.jsx("span", { className: "dshWmContextState", "data-wm-memory-state": row.state, children: `${row.state} · 来源：${row.source}` })
+          ] }, row.id)) : jsx5.jsx("div", { className: "dshWmMemoryNote", children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
+          memoryPreview.omissions.some((o) => o.reason === "not-injectable") ? jsx5.jsx("div", { className: "dshWmMemoryNote", children: "有条目处于候选/已撤回/已解决状态，本轮不会自动带入。" }) : null,
+          jsx5.jsx("div", { className: "dshWmMemoryNote", children: "自动部分有 " + String(DEFAULT_MEMORY_BUDGET) + " 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。" })
         ] }) : null
       ] }),
       jsx5.jsxs("div", { className: "dshWmComposeFoot", children: [

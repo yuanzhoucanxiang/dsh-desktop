@@ -181,8 +181,13 @@ function createFakeKernel(options = {}) {
         release: host.releaseCoordination,
       }
       if (body.op === 'forget') {
-        host.forgetCoordination({ projectKey: key })
-        return { ok: true }
+        const r = host.forgetCoordination({
+          projectKey: key,
+          operationToken: body.operationToken ?? null,
+          expectedVersion: Number.isInteger(body.expectedVersion) ? body.expectedVersion : null,
+          force: body.force === true,
+        })
+        return { ok: Boolean(r.ok), error: r.error, record: safeRead(key) }
       }
       const fn = fns[body.op]
       if (!fn) return { ok: false, error: 'unknown-op' }
@@ -329,7 +334,7 @@ await ok('H07 已受理但网络断开 → accepted（有原生证据，不算 u
   const a = await win.connect(p, 'tok-G')
   const r = await a.send({ body: '发出了但报网络错' })
   assert.equal(r.result, 'accepted', `有 user 节点证据就该算受理（实得 ${r.result}）`)
-  assert.equal(r.evidence, 'user-node')
+  assert.equal(r.evidence, 'new-user-node')
   assert.equal(kernel.state.prompts.length, 1, '不得自动重发')
 })
 
