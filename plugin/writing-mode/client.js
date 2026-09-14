@@ -742,48 +742,7 @@ async function api(route, opts, query) {
   }
 }
 
-// plugin/writing-mode/src/client/entry.js
-var __wmAlreadyLoaded = window.__dshWritingModeLoaded === true;
-window.__dshWritingModeLoaded = true;
-var name = "writing-mode";
-var LS_KEY = "dsh-writing-mode-active";
-var LS_FILE = "dsh-writing-mode-file";
-var sessionRuntime = null;
-var nativeApi = null;
-var workspaceRuntime = null;
-function appendCompanionDraft(sessions, id, text) {
-  const info = sessions.provideInfo(id);
-  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error("原生输入框尚未就绪，请稍后重试");
-  const draft = info.hooks.input.getSnapshot().draft || "";
-  info.props.inputActions.setDraft(draft ? draft + "\n\n" + text : text);
-}
-async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = nativeApi, workspaces = workspaceRuntime) {
-  if (!sessions) throw new Error("Harness 会话服务尚未就绪");
-  const binding = await api("companion", void 0, { path });
-  if (!binding.ok) throw new Error(binding.error);
-  await sessions.refresh();
-  if (!isCurrent()) return null;
-  let id = binding.sessionId;
-  if (!id || !sessions.list.getSnapshot().byId[id]) {
-    const prepared = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-    if (!prepared.ok) throw new Error(prepared.error);
-    if (!connection?.agentPresets?.select || !workspaces) throw new Error("Harness 未提供原生角色或工作区服务，请检查内核版本");
-    if (!isCurrent()) return null;
-    const workspace = await workspaces.create({ path: binding.project });
-    if (!isCurrent()) return null;
-    id = await sessions.create({ workspaceId: workspace.workspaceId });
-    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset });
-    if (!selected.result.ok) throw new Error(selected.result.error.message);
-    sessions.noteAgentPreset(id, selected.result.value.agentPreset);
-    const data = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId: id }) });
-    if (!data.ok) throw new Error("会话已创建，但项目关联未保存：" + data.error);
-  }
-  if (!isCurrent()) return null;
-  sessions.open(id);
-  await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-  if (!isCurrent()) return null;
-  return { ...binding, sessionId: id };
-}
+// plugin/writing-mode/src/client/state/companion-drafts.js
 var companionDrafts = /* @__PURE__ */ new Map();
 var companionWindowId = null;
 try {
@@ -1035,6 +994,49 @@ function persistCompanionDraft(project, onStatus) {
   draftSaveQueue.set(project, next.catch(() => {
   }));
   return next;
+}
+
+// plugin/writing-mode/src/client/entry.js
+var __wmAlreadyLoaded = window.__dshWritingModeLoaded === true;
+window.__dshWritingModeLoaded = true;
+var name = "writing-mode";
+var LS_KEY = "dsh-writing-mode-active";
+var LS_FILE = "dsh-writing-mode-file";
+var sessionRuntime = null;
+var nativeApi = null;
+var workspaceRuntime = null;
+function appendCompanionDraft(sessions, id, text) {
+  const info = sessions.provideInfo(id);
+  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error("原生输入框尚未就绪，请稍后重试");
+  const draft = info.hooks.input.getSnapshot().draft || "";
+  info.props.inputActions.setDraft(draft ? draft + "\n\n" + text : text);
+}
+async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = nativeApi, workspaces = workspaceRuntime) {
+  if (!sessions) throw new Error("Harness 会话服务尚未就绪");
+  const binding = await api("companion", void 0, { path });
+  if (!binding.ok) throw new Error(binding.error);
+  await sessions.refresh();
+  if (!isCurrent()) return null;
+  let id = binding.sessionId;
+  if (!id || !sessions.list.getSnapshot().byId[id]) {
+    const prepared = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
+    if (!prepared.ok) throw new Error(prepared.error);
+    if (!connection?.agentPresets?.select || !workspaces) throw new Error("Harness 未提供原生角色或工作区服务，请检查内核版本");
+    if (!isCurrent()) return null;
+    const workspace = await workspaces.create({ path: binding.project });
+    if (!isCurrent()) return null;
+    id = await sessions.create({ workspaceId: workspace.workspaceId });
+    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset });
+    if (!selected.result.ok) throw new Error(selected.result.error.message);
+    sessions.noteAgentPreset(id, selected.result.value.agentPreset);
+    const data = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId: id }) });
+    if (!data.ok) throw new Error("会话已创建，但项目关联未保存：" + data.error);
+  }
+  if (!isCurrent()) return null;
+  sessions.open(id);
+  await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
+  if (!isCurrent()) return null;
+  return { ...binding, sessionId: id };
 }
 async function loadProjectMemory(path) {
   try {
