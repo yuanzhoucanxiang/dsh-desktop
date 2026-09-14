@@ -32,10 +32,15 @@
 | 2026-09-11 | [`logs/2026-09-11.md`](logs/2026-09-11.md)（〔123–135〕） | 写作模式：Hooks/设置/llm/v0.1.37/host 分层/v0.3 文档；接手审计；项目模板、知识与联网资料、P1 回归 | ox-alpha / Codex |
 | 2026-09-12 | [`logs/2026-09-12.md`](logs/2026-09-12.md)（〔136–146〕） | 写作伙伴原生会话、v0.1.38 发布；架构分支 Stage A/E（2c97591–cb99ae7）；F/N/T/W 四轮复核返工至 53223df（锁不抢、双 token、墓碑清除、恢复门闩）；cde 25/25 · review-f 10/10 · p1 7/7 | Codex / ox-alpha |
 | 2026-09-13 | [`logs/2026-09-13.md`](logs/2026-09-13.md)（〔147–152〕） | 五至九轮复核；1664467 的 X01 通过，UI 32/32、存储 8/8，故障返工收口；原架构与完整验收继续 | Codex / ox-alpha |
+| 2026-09-14 | [`logs/2026-09-14.md`](logs/2026-09-14.md)（〔153–154〕） | 整体复评 5a152dc；下一阶段 v2：模块/adapter → 记忆与上下文 → 30 项/隔离打包预览 | Codex / GPT-6 |
 
 ---
 
 ## 协作规范（重要，后续协作者必读）
+
+下一阶段方案：[`writing-mode-next-execution-v2.md`](docs/plans/writing-mode-next-execution-v2.md)，2026-09-14〔154〕。按 P1→P4 实施，保留既有通过行为，完整工程/预览后交回复核，不自动合并或发布。— Codex / GPT-6
+
+整体复评索引：[`logs/2026-09-14.md`](logs/2026-09-14.md)〔153〕，5a152dc 的已覆盖稳定性与包字节验证通过；原架构完善方案未完成。阶段差距及后续顺序见 [`overall-assessment.md`](docs/audits/writing-architecture/2026-09-14/overall-assessment.md)。— Codex / GPT-6
 
 第九轮审查索引：[`logs/2026-09-13.md`](logs/2026-09-13.md)〔152〕，1664467 的 X01 正向通过；UI 32/32、存储/并发 8/8，当前故障返工收口。通过边界及原方案剩余工作见 [`review9.md`](docs/audits/writing-architecture/2026-09-13/review9.md)。— Codex / GPT-6
 
