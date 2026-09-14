@@ -1,0 +1,21 @@
+{
+  "note": "写作模式运行时文件清单（repo → 安装包 → profile 逐文件比对用；方案 2.3 末段与 P4 打包验收依据）。构建产物 client.js 与 src/ 源码不入清单；lib/editor-session.js 是仅供测试的 re-export，按方案排除在运行时依赖之外。",
+  "entry": [
+    "plugin/writing-mode/index.js",
+    "plugin/writing-mode/client.js",
+    "plugin/writing-mode/package.json"
+  ],
+  "files": [
+    "plugin/writing-mode/lib/domain.js",
+    "plugin/writing-mode/lib/draft-checkpoints.js",
+    "plugin/writing-mode/lib/knowledge.js",
+    "plugin/writing-mode/lib/project-memory.js",
+    "plugin/writing-mode/lib/store.js",
+    "plugin/writing-mode/lib/templates.js",
+    "plugin/writing-mode/lib/websearch.js",
+    "plugin/writing-mode/lib/companion.cordis.yml"
+  ],
+  "exclude": [
+    "plugin/writing-mode/lib/editor-session.js"
+  ]
+}
