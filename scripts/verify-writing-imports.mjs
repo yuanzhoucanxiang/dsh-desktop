@@ -7,6 +7,9 @@
  * 导入 → 报错。只对"别处确实有同名声明"的名字报错，浏览器全局与拼写错误不在此列。
  *
  * 用法：node scripts/verify-writing-imports.mjs   （并入 npm run verify:writing-architecture）
+ *      node scripts/verify-writing-imports.mjs --debug <名字>
+ *        —— 打印该名字在每个出现文件里的判定状态，以及"被当成声明的规则"（定位漏报用）
+ *      DSH_WRITING_SRC=<目录> 可改检查对象（selftest 用它注入漏 import 验证本脚本真会报错）
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,7 +17,8 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const SRC = path.join(root, 'plugin/writing-mode/src')
+// 自检脚本会把 src 树复制到临时目录再注入"漏 import"，用环境变量指过去
+const SRC = process.env.DSH_WRITING_SRC || path.join(root, 'plugin/writing-mode/src')
 const CLIENT = path.join(SRC, 'client')
 const rel = (p) => path.relative(root, p).split(path.sep).join('/')
 
@@ -63,6 +67,38 @@ function importedNames(text) {
   return out
 }
 
+/**
+ * 从开括号位置做严格括号配对，返回内部文本与收尾下标（不配对返回 null）。
+ *
+ * 为什么不能用 /\(([^)]*)\)/、/\{([^}]*)\}/ 这类正则：**它们可以跨行**，一个跨行的
+ * 括号组会把中间成片的真实代码整体当成「形参 / 解构」，于是某个没 import 的名字被
+ * 判成「本模块已声明」→ 静默漏报。2026-09-14 定位到 R7 的漏报正是此因：
+ * `WritingCompanion` 的 JSX 用法被一个跨 3 行的箭头形参括号吞掉（用 --debug 复算得出）。
+ */
+function balanced(text, openIndex) {
+  const open = text[openIndex]
+  const close = open === '(' ? ')' : open === '{' ? '}' : open === '[' ? ']' : null
+  if (!close) return null
+  const stack = [close]
+  for (let i = openIndex + 1; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '(') stack.push(')')
+    else if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === ')' || ch === '}' || ch === ']') {
+      if (ch !== stack[stack.length - 1]) break // 括号不配对：按不可信处理，保守结束
+      stack.pop()
+      if (!stack.length) return { inner: text.slice(openIndex + 1, i), end: i }
+    }
+  }
+  return null
+}
+
+const IDENT_RE = /\b[A-Za-z_$][\w$]*\b/g
+const addIdents = (out, source) => {
+  for (const tok of String(source || '').matchAll(IDENT_RE)) if (isIdent(tok[0])) out.add(tok[0])
+}
+
 function declaredNames(text) {
   // import 必须从**原文**解析：codeOnly 会把模块路径的字符串也抹掉
   const out = importedNames(text)
@@ -72,26 +108,29 @@ function declaredNames(text) {
     if (m) out.add(m[1] || m[2])
   }
   // 形参 / 箭头参数 / catch 参数也是声明（否则 versionOf(name) 会撞上别处的同名顶层声明）
-  // 注意：必须用原文（codeOnly 会把 import 的模块路径也抹掉，且箭头参数形态多样）
-  const paramSources = [
-    ...text.matchAll(/function\s*[A-Za-z_$]?[\w$]*\s*\(([^)]*)\)/g),
-    ...text.matchAll(/\(([^)]*)\)\s*=>/g),
-    ...text.matchAll(/\bcatch\s*\(([^)]*)\)/g),
-  ]
-  for (const m of paramSources) {
-    for (const tok of String(m[1] || '').matchAll(/[A-Za-z_$][\w$]*/g)) if (isIdent(tok[0])) out.add(tok[0])
+  // 都在 codeOnly 之后的文本上做严格配对，避免跨行括号把真实代码吞成形参
+  for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$]?[\w$]*\s*\(/g)) {
+    const b = balanced(code, m.index + m[0].length - 1)
+    if (b) addIdents(out, b.inner)
+  }
+  for (const m of code.matchAll(/\bcatch\s*\(/g)) {
+    const b = balanced(code, m.index + m[0].length - 1)
+    if (b) addIdents(out, b.inner)
+  }
+  for (const m of code.matchAll(/\(/g)) {
+    const b = balanced(code, m.index)
+    if (b && /^\s*=>/.test(code.slice(b.end + 1))) addIdents(out, b.inner)
   }
   // 无括号单参箭头：v => …（此正则的第 2 组才是名字）
   for (const m of text.matchAll(/(^|[^\w$.])([A-Za-z_$][\w$]*)\s*=>/g)) if (isIdent(m[2])) out.add(m[2])
   // 嵌套（缩进的）函数声明：组件内部的 function post(...) 也算本模块声明
   for (const m of code.matchAll(/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1])
-  // 局部声明：任意位置的 const/let/var（含 for-of、解构），否则 v/i/prev 这类会被误判为外部声明
+  // 局部声明：任意位置的 const/let/var（含 for-of），否则 v/i/prev 这类会被误判为外部声明
   for (const m of code.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) out.add(m[1])
-  for (const m of code.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}/g)) {
-    for (const tok of m[1].matchAll(/[A-Za-z_$][\w$]*/g)) if (isIdent(tok[0])) out.add(tok[0])
-  }
-  for (const m of code.matchAll(/\b(?:const|let|var)\s*\[([^\]]*)\]/g)) {
-    for (const tok of m[1].matchAll(/[A-Za-z_$][\w$]*/g)) if (isIdent(tok[0])) out.add(tok[0])
+  // 解构（含 for-of 与数组形式）：同样严格配对后再取名字
+  for (const m of code.matchAll(/\b(?:const|let|var)\s*([{[])/g)) {
+    const b = balanced(code, m.index + m[0].length - 1)
+    if (b) addIdents(out, b.inner)
   }
   return out
 }
@@ -119,6 +158,56 @@ for (const file of files) {
 }
 
 const failures = []
+/** --debug <名字>：打印检查器对该名字在每处出现文件里的判定状态（定位漏报用）。 */
+const debugAt = process.argv.indexOf('--debug')
+const debugName = debugAt >= 0 ? process.argv[debugAt + 1] : null
+if (debugName) {
+  const name = debugName
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  /** 逐条规则复算，指出「谁把它当成了声明」——漏报定位的关键 */
+  const ruleHits = (file, text) => {
+    const code = codeOnly(text)
+    const hits = []
+    for (const m of text.matchAll(IMPORTS_RE)) if (String(m[1]).includes(name)) hits.push('import 子句')
+    const declLine = new RegExp(`^(?:export\\s+)?(?:async\\s+)?function\\s+${esc}|^(?:export\\s+)?(?:const|let|var)\\s+${esc}`)
+    if (code.split('\n').some((l) => declLine.test(l))) hits.push('顶层声明行')
+    if (new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${esc}`, 'm').test(code)) hits.push('嵌套函数声明')
+    if (new RegExp(`\\b(?:const|let|var)\\s+${esc}\\b`).test(code)) hits.push('局部声明')
+    for (const m of code.matchAll(/\b(?:const|let|var)\s*([{[])/g)) {
+      const b = balanced(code, m.index + m[0].length - 1)
+      if (b && new RegExp(`\\b${esc}\\b`).test(b.inner)) hits.push(`解构（跨 ${b.inner.split('\n').length} 行）`)
+    }
+    const paramInner = []
+    for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$]?[\w$]*\s*\(/g)) {
+      const b = balanced(code, m.index + m[0].length - 1)
+      if (b) paramInner.push(b.inner)
+    }
+    for (const m of code.matchAll(/\bcatch\s*\(/g)) {
+      const b = balanced(code, m.index + m[0].length - 1)
+      if (b) paramInner.push(b.inner)
+    }
+    for (const m of code.matchAll(/\(/g)) {
+      const b = balanced(code, m.index)
+      if (b && /^\s*=>/.test(code.slice(b.end + 1))) paramInner.push(b.inner)
+    }
+    for (const inner of paramInner) {
+      if (new RegExp(`\\b${esc}\\b`).test(inner)) hits.push(`形参位置（跨 ${inner.split('\n').length} 行）`)
+    }
+    for (const m of text.matchAll(/(^|[^\w$.])([A-Za-z_$][\w$]*)\s*=>/g)) if (m[2] === name) hits.push('无括号箭头参数')
+    return hits
+  }
+  for (const [file, { decls }] of perFile) {
+    const text = fs.readFileSync(file, 'utf8')
+    if (!text.includes(name)) continue
+    const code = codeOnly(text).replace(/[A-Za-z_$][\w$]*\s*:/g, ' ')
+    const used = new Set([...code.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)/g)].map((m) => m[2]))
+    const owners = [...(ownerOf.get(name) || [])]
+    const foreign = owners.filter((o) => o !== rel(file))
+    console.log(`DEBUG ${rel(file)}: 原文出现=${(text.match(new RegExp(name, 'g')) || []).length} 判定为已声明=${decls.has(name)} 判定为被使用=${used.has(name)} 声明于其他模块=${foreign.length ? foreign.join(',') : '（无）'}`)
+    console.log(`      被当成声明的规则：${ruleHits(file, text).join(' / ') || '（无）'}`)
+  }
+  process.exit(0)
+}
 for (const [file, { decls }] of perFile) {
   const code = codeOnly(fs.readFileSync(file, 'utf8')).replace(/[A-Za-z_$][\w$]*\s*:/g, ' ') // 去掉对象键
   const used = new Set([...code.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)/g)].map((m) => m[2]))

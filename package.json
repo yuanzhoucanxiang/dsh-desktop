@@ -38,7 +38,7 @@
     "test:writing-p1": "node plugin/writing-mode/test/p1-regression.mjs",
     "prestart": "npm run build:writing",
     "predev": "npm run build:writing",
-    "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs",
+    "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs",
     "verify:writing-package": "node scripts/verify-writing-package.mjs",
     "plugin-sync-test": "node lib/plugin-sync.test.js",
     "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native"
