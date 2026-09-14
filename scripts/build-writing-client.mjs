@@ -1,72 +1,73 @@
 /**
- * Build plugin/writing-mode/client.js from src/ sources.
- * - src/shared/editor-session.js is inlined as the only createEditorSession
- * - src/client/entry.js is the ModuleLoader factory body (react stays external)
+ * Build plugin/writing-mode/client.js from src/ with esbuild (real module bundling).
+ *
+ * - Entry: plugin/writing-mode/src/client/entry.js (ESM; imports ../shared/* and features)
+ * - react / react/jsx-runtime stay external: the ModuleLoader factory's `require`
+ *   resolves the host React — never bundle a second copy.
+ * - Output: CJS bundle wrapped as window.__ModuleLoader__.load({id, factory}).
+ * - Deterministic: same input → byte-identical output (no timestamps, no absolute paths).
+ *   Two consecutive builds must match; scripts/verify-writing-build.mjs enforces this.
+ *
+ * Env: WM_BUILD_OUT=<path>  write elsewhere (verify:writing-build uses this; it never overwrites)
  * Generated product — edit src/, then: npm run build:writing
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import esbuild from 'esbuild'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 
-function read(p) {
-  return fs.readFileSync(path.join(root, p), 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n')
-}
-
-let entry = read('plugin/writing-mode/src/client/entry.js')
-const shared = read('plugin/writing-mode/src/shared/editor-session.js')
-const sharedBody = shared
-  .replace(/^[\s\S]*?export function createEditorSession/, 'function createEditorSession')
-  .replace(/\nexport /g, '\n')
-
-const ctxSrc = read('plugin/writing-mode/src/shared/context-builder.js')
-const ctxBody = ctxSrc
-  .replace(/^[\s\S]*?export function buildPreparedTurn/, 'function buildPreparedTurn')
-  .split('export function memoryHint')[0]
-  .replace(/^function buildPreparedTurn[\s\S]*?function memoryHint[\s\S]*$/m, '')
-
-// rebuild cleanly: just take both exported functions as local
-const ctxClean = [
-  ctxSrc.match(/export function buildPreparedTurn[\s\S]*?(?=\nexport function memoryHint)/)?.[0] || '',
-  ctxSrc.match(/export function memoryHint[\s\S]*$/)?.[0] || '',
-]
-  .join('\n')
-  .replace(/export function/g, 'function')
-
-const anchor = '    // createEditorSession comes from src/shared/editor-session.js (build inlines it)\n'
-if (!entry.includes(anchor)) {
-  console.error('entry.js missing editor-session anchor')
-  process.exit(1)
-}
-entry = entry.replace(
-  anchor,
-  sharedBody.trimEnd() + '\n' + ctxClean.trimEnd() + '\n' + anchor
-)
+const ENTRY = path.join(root, 'plugin/writing-mode/src/client/entry.js')
+const DEFAULT_OUT = path.join(root, 'plugin/writing-mode/client.js')
+const PLUGIN_ID = '@dsh-local/writing-mode'
 
 const banner = `/**
  * GENERATED FILE — do not hand-edit.
- * Source: plugin/writing-mode/src/client/entry.js + src/shared/editor-session.js
+ * Source: plugin/writing-mode/src/client/entry.js (+ ../shared, features/…)
  * Build:  node scripts/build-writing-client.mjs   (or npm run build:writing)
- * Bundle: window.__ModuleLoader__.load factory body
+ * Bundle: esbuild (CJS) wrapped as window.__ModuleLoader__.load factory body
  */
 `
-const factory = `${banner}window.__ModuleLoader__.load({
-  id: "@dsh-local/writing-mode",
-  factory: (require) => {
-    var module = { exports: {} }
-    var exports = module.exports
-    Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" })
-${entry}
-    return module.exports
-  },
-})
-`
 
-const outFile = process.env.WM_BUILD_OUT
-  ? path.resolve(process.env.WM_BUILD_OUT)
-  : path.join(root, 'plugin/writing-mode/client.js')
-fs.mkdirSync(path.dirname(outFile), { recursive: true })
-fs.writeFileSync(outFile, factory, 'utf8')
-console.log(`built ${path.relative(root, outFile)} (${factory.length} bytes, ${factory.split('\n').length} lines)`)
+export async function buildWritingClient(outFile) {
+  const result = await esbuild.build({
+    entryPoints: [ENTRY],
+    bundle: true,
+    write: false,
+    format: 'cjs',
+    platform: 'browser',
+    target: 'es2022',
+    external: ['react', 'react/jsx-runtime'],
+    charset: 'utf8',
+    legalComments: 'none',
+    logLevel: 'silent',
+    absWorkingDir: root,
+  })
+  const code = result.outputFiles[0].text.replace(/\n*$/, '\n')
+  const factory =
+    banner +
+    'window.__ModuleLoader__.load({\n' +
+    `  id: ${JSON.stringify(PLUGIN_ID)},\n` +
+    '  factory: (require) => {\n' +
+    '    var module = { exports: {} }\n' +
+    '    var exports = module.exports\n' +
+    '    Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" })\n' +
+    code +
+    '    return module.exports\n' +
+    '  },\n' +
+    '})\n'
+  const target = outFile || process.env.WM_BUILD_OUT
+    ? path.resolve(outFile || process.env.WM_BUILD_OUT)
+    : DEFAULT_OUT
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, factory, 'utf8')
+  return { target, bytes: Buffer.byteLength(factory), lines: factory.split('\n').length }
+}
+
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+if (invokedDirectly) {
+  const { target, bytes, lines } = await buildWritingClient()
+  console.log(`built ${path.relative(root, target)} (${bytes} bytes, ${lines} lines)`)
+}
