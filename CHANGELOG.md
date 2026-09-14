@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+
+- 2026-09-14 写作模式 v2（P1–P4）@4649b59：`entry.js` 3526→165 行并拆出 `features/{editor,library,tools}`；`runtime-manifest.json` 成为唯一发布集合（清单驱动同步 + 受管记录 + 逐文件哈希，只删受管且未改动的旧文件）；R7 漏 import 检查修复跨行括号正则漏报并新增"注入缺陷必须报错"的自检；新增 `createHarnessAdapter` 唯一 native 接触面（send 三态、迟到归位、不静默新建）与 host 侧会话创建协调协议（reserved→creating→bound/uncertain，受验证跨进程锁）；备忘最小完整操作（候选/编辑/确认/撤回/历史恢复 + 审计 actor）与 preparedTurn v2 契约（选择/固定/6000 字符预算/全嵌套冻结）；引用身份（path+revision+selection+指纹，结构相等）与跨窗口草稿恢复候选。验收：`verify:writing-all` 退出码 0（架构 R1–R8+R7 自检、适配 30、备忘 7、上下文 10、空环境冷启动 6、升级 5、三套 Electron E2E）；30 项矩阵与交回文档见 `docs/audits/writing-architecture/2026-09-14/v2/`。NSIS 隔离安装 / macOS / 离线加载 / 真实模型体验 = NOT_RUN（原因见 known-issues）。— 署名：ox-alpha
 - 制定写作模式下一阶段执行方案 v2：分四批完成模块/构建、Harness 适配与协调、作者可控记忆/上下文、30 项及隔离打包验收。属于待实施计划，不代表功能已完成。— 署名：Codex / GPT-6
 
 - 2026-09-14 整体复评 5a152dc：32 条 UI 时序重跑通过；包及隔离 profile 13 文件与源码一致。明确原方案 A/B/D/E 和完整打包/30 项验收仍有缺口，新增整体评估与只读证据，未改生产实现。— 署名：Codex / GPT-6

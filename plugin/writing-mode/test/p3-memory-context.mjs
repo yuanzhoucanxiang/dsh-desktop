@@ -29,8 +29,12 @@ const proj = path.join(tmp, '作品')
 fs.mkdirSync(path.join(proj, 'state'), { recursive: true })
 fs.writeFileSync(path.join(proj, 'project.md'), '# 作品\n')
 
+const GROUP = (process.argv.find((x) => x.startsWith('--group=')) || '--group=all').split('=')[1].toLowerCase()
+const inGroup = (id) => GROUP === 'all' || id.toLowerCase().startsWith(GROUP)
+
 let pass = 0
 const ok = (name, fn) => {
+  if (!inGroup(name)) return
   try {
     fn()
     pass++
