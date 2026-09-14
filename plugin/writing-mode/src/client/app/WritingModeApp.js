@@ -10,6 +10,11 @@ import { appendCompanionDraft, ensureCompanionSession } from '../adapters/harnes
 import { createEditorSession } from '../../shared/editor-session.js'
 import { applyBodyAttr, setCloseGuard, commitModeActive, getModeActive, subscribeMode, setModeActive } from '../state/mode-store.js'
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs, versionOf } from '../state/prefs-store.js'
+import { groupFiles, maxVersionInGroup } from '../features/library/grouping.js'
+import { fileRow } from '../features/library/FileRow.js'
+import { lineDiff } from '../features/editor/diff.js'
+import { selectionText } from '../features/tools/selection.js'
+import { assistantPrompt, reviewPrompt } from '../features/tools/prompts.js'
 import { WritingCompanion } from '../features/companion/index.js'
 
 const LS_FILE = 'dsh-writing-mode-file'
@@ -349,22 +354,12 @@ export function WritingModeApp() {
     }
   }
 
-  function selectionText() {
-    const ta = taRef.current
-    if (!ta) return content.slice(0, 4000)
-    const s = ta.selectionStart
-    const e = ta.selectionEnd
-    if (typeof s === 'number' && typeof e === 'number' && e > s) {
-      return content.slice(s, e)
-    }
-    return content.slice(Math.max(0, (s || 0) - 400), (s || 0) + 1600) || content.slice(0, 2000)
-  }
 
   async function runAssist(action) {
     const snapshot = editor.get()
     const selection = taRef.current ? { start: taRef.current.selectionStart, end: taRef.current.selectionEnd } : { start: 0, end: 0 }
     const isRec = action === 'research' || action === 'spark'
-    const text = selectionText()
+    const text = selectionText({ ta: taRef.current, content })
     if (!isRec && !text.trim()) {
       setAiErr(T.noText)
       flashMsg(T.noText)
@@ -496,38 +491,7 @@ export function WritingModeApp() {
   const projects = activeTree ? activeTree.projects || [] : []
 
   /** 把 rel 路径按顶层目录分组；q 非空时按文件名/路径过滤。 */
-  function groupFiles(files, q) {
-    const query = String(q || '').trim().toLowerCase()
-    const map = new Map()
-    for (const f of files || []) {
-      if (query) {
-        const hay = (f.name + ' ' + f.rel).toLowerCase()
-        if (!hay.includes(query)) continue
-      }
-      const top = String(f.rel || '').includes('/')
-        ? String(f.rel).split('/')[0]
-        : '·'
-      if (!map.has(top)) map.set(top, [])
-      map.get(top).push(f)
-    }
-    const order = ['draft', 'bible', 'outline', 'state', 'reviews', '·']
-    const keys = [...map.keys()].sort((a, b) => {
-      const ia = order.indexOf(a)
-      const ib = order.indexOf(b)
-      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b, 'zh')
-    })
-    return keys.map((k) => ({ key: k, files: map.get(k) }))
-  }
 
-  function maxVersionInGroup(files) {
-    const max = new Map()
-    for (const f of files || []) {
-      const v = versionOf(f.name)
-      const key = f.abs.replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()
-      if (v != null) max.set(key, Math.max(max.get(key) || 0, v))
-    }
-    return max
-  }
 
   function toggleProj(key) {
     setCollapsed((prev) => {
@@ -539,81 +503,8 @@ export function WritingModeApp() {
   }
 
   // 文件行（带版本徽标）
-  function fileButton(f, maxVer) {
-    const ver = versionOf(f.name)
-    const latest = maxVer instanceof Map ? maxVer.get(f.abs.replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()) : 0
-    const isHist = ver != null && ver < latest
-    return jsx.jsx(
-      'button',
-      {
-        type: 'button',
-        className: 'dshWmItem' + (filePath && f.abs === filePath ? ' is-on' : ''),
-        onClick: () => setFilePath(f.abs),
-        title: f.rel,
-        children: [
-          jsx.jsx(
-            'div',
-            {
-              className: 'dshWmItemRow',
-              children: [
-                jsx.jsx(
-                  'span',
-                  {
-                    className: 'dshWmItemTitle',
-                    style: { flex: 1, minWidth: 0 },
-                    children: f.name.replace(/-v\d+(\.[^.]+)?$/i, '$1'),
-                  },
-                  't'
-                ),
-                ver != null
-                  ? jsx.jsx(
-                      'span',
-                      {
-                        className: 'dshWmVer' + (isHist ? ' is-hist' : ''),
-                        children: 'v' + ver,
-                      },
-                      'v'
-                    )
-                  : null,
-              ],
-            },
-            'row'
-          ),
-          jsx.jsx(
-            'span',
-            { className: 'dshWmItemMeta', children: f.chars + T.chars },
-            'm'
-          ),
-        ],
-      },
-      f.abs
-    )
-  }
 
   /** 极简行 diff：前后缀对齐，中间段整段 del/add（章稿对比够用）。 */
-  function lineDiff(oldText, newText) {
-    const a = String(oldText || '').split(/\r?\n/)
-    const b = String(newText || '').split(/\r?\n/)
-    let p = 0
-    while (p < a.length && p < b.length && a[p] === b[p]) p++
-    let s = 0
-    while (
-      s < a.length - p &&
-      s < b.length - p &&
-      a[a.length - 1 - s] === b[b.length - 1 - s]
-    ) {
-      s++
-    }
-    const out = []
-    const ctx = 2
-    for (const line of a.slice(Math.max(0, p - ctx), p)) out.push({ t: 'ctx', line })
-    for (const line of a.slice(p, a.length - s)) out.push({ t: 'del', line })
-    for (const line of b.slice(p, b.length - s)) out.push({ t: 'add', line })
-    for (const line of a.slice(a.length - s, a.length - s + Math.min(s, ctx))) {
-      out.push({ t: 'ctx', line })
-    }
-    return out
-  }
 
   async function comparePrev() {
     if (curVerNum == null || versionSeries.length < 2) return
@@ -641,22 +532,13 @@ export function WritingModeApp() {
     } catch (err) { flashMsg(err.message); setAiErr(err.message); return false }
   }
   async function sendToChat() {
-    const payload = aiOut || selectionText()
-    const prompt = payload
-      ? `请作为写作助手处理下面的文稿：\n\n${payload}`
-      : `请作为写作助手，帮我完善当前文稿。`
+    const payload = aiOut || selectionText({ ta: taRef.current, content })
+    const prompt = assistantPrompt(payload)
     await fillComposer(prompt)
   }
 
   async function sendReviewToChat() {
-    const prompt =
-      '请作为写作主理，严格按下列评审报告修订对应文稿（只改 draft/bible/outline/state，报告本身不要改）。\n' +
-      '先读报告与 draft 当前版本，再输出修改计划并执行；完成后把新版本号写入 project.md。\n\n' +
-      '=== 评审报告 ===\n' +
-      content +
-      '\n\n=== 报告路径 ===\n' +
-      filePath +
-      '\n'
+    const prompt = reviewPrompt({ reportContent: content, reportPath: filePath })
     await fillComposer(prompt)
   }
 
@@ -1048,12 +930,13 @@ export function WritingModeApp() {
                                                     'fh'
                                                   ),
                                                   ...g.files.map((f) =>
-                                                    fileButton(
-                                                      f,
-                                                      g.key === 'draft' || String(f.rel).includes('/draft/')
-                                                        ? maxDraft
-                                                        : 0
-                                                    )
+                                                    fileRow({
+                                                      file: f,
+                                                      maxVer: g.key === 'draft' || String(f.rel).includes('/draft/') ? maxDraft : 0,
+                                                      active: Boolean(filePath) && f.abs === filePath,
+                                                      onPick: setFilePath,
+                                                      labels: T,
+                                                    })
                                                   ),
                                                 ],
                                               },

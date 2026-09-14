@@ -112,20 +112,24 @@ const { source, files: wanted } = publishSet(SRC)
   }
 }
 
-// 3. profile（默认查真机 ~/.dsh，可用 --profile 覆盖）
+// 3. profile（只在显式 --profile 时判定；默认查真机 ~/.dsh 但只作提示）
+//    为什么默认不判失败：profile 是**这台机器的运行态**（应用没重启就还是上一版），
+//    不是仓库属性；把它当门禁会让"随时可跑的回归入口"变成红。打包/升级验收请显式传 --profile。
 {
+  const explicit = Boolean(flag('--profile'))
   const dir = flag('--profile') || defaultProfileDir()
   if (!fs.existsSync(dir)) {
-    record('profile', 'manifest ↔ profile 已种入副本', 'NOT_RUN', `不存在：${dir}（该机尚未种入写作模式）`)
+    record('profile', 'manifest ↔ profile 已种入副本', explicit ? 'FAIL' : 'NOT_RUN',
+      `不存在：${dir}（该机尚未种入写作模式）`)
   } else {
     const { compareTrees } = await import('../lib/plugin-sync.js')
     const c = compareTrees(SRC, dir)
     const detail = c.ok
       ? `全部 ${c.same.length} 个文件一致（${dir}）`
-      : `缺失：${c.missing.map((m) => m.rel).join(', ') || '无'}；内容不一致：${c.drift.map((d) => `${d.rel}(${d.srcHash}→${d.destHash})`).join(', ') || '无'}`
+      : `缺失：${c.missing.map((m) => m.rel).join(', ') || '无'}；内容不一致：${c.drift.map((d) => `${d.rel}(${d.srcHash}→${d.destHash})`).join(', ') || '无'}（应用下次启动会自动换成当版）`
     // 非受管的历史遗留文件不判失败：外壳只在能证明归属时才清理，这里只如实上报
     const extraNote = c.extra.length ? `；另有 ${c.extra.length} 个非发布集合文件（历史遗留/用户添加，保留）：${c.extra.map((e) => e.rel).join(', ')}` : ''
-    record('profile', 'manifest ↔ profile 已种入副本', c.ok ? 'PASS' : 'FAIL', detail + extraNote)
+    record('profile', 'manifest ↔ profile 已种入副本', c.ok ? 'PASS' : explicit ? 'FAIL' : 'NOT_RUN', detail + extraNote)
   }
 }
 

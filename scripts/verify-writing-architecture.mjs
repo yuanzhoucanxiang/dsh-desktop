@@ -144,6 +144,37 @@ else pass('R6 入口不含样式数组（已移入 styles/）')
 if (/\bdraftSaveQueue\b/.test(entryCode)) fail('R6 入口仍持有草稿保存队列')
 else pass('R6 入口不含草稿保存队列（已移入 state/）')
 
+// ── R8：目标结构在位（方案 §2.3 的目录职责划分不能被悄悄挪走） ──────────
+{
+  const CLIENT = path.join(SRC, 'client')
+  const required = [
+    ['app', '装配与布局（入口挂载、浮动入口、三栏组合）'],
+    ['features/editor', '编辑器特性'],
+    ['features/library', '作品库特性（分组/版本归并/文件行）'],
+    ['features/companion', '写作伙伴特性'],
+    ['features/memory', '记忆特性'],
+    ['features/tools', '工具面板特性（选区取值/提示词模板）'],
+    ['features/settings', '设置面板'],
+    ['adapters/harness', '唯一 native 接触面'],
+    ['services', 'HTTP/内核服务封装'],
+    ['state', '客户端状态（模式/偏好/草稿）'],
+    ['styles', '样式表'],
+  ]
+  const missing = required.filter(([rel]) => {
+    const dir = path.join(CLIENT, rel)
+    return !fs.existsSync(dir) || !fs.readdirSync(dir).some((f) => f.endsWith('.js'))
+  })
+  if (missing.length) fail(`R8 目标结构缺目录（或目录内无模块）：${missing.map(([rel, why]) => `${rel}（${why}）`).join('；')}`)
+  else pass(`R8 目标结构 ${required.length} 个目录均在位且有模块`)
+  if (!fs.existsSync(path.join(SRC, 'shared'))) fail('R8 缺 src/shared（共享控制器与纯函数）')
+  else pass('R8 src/shared 在位')
+  // 客户端根下只允许入口与文案表（其余模块都该进 app/features/adapters/services/state/styles）
+  const ROOT_ALLOWED = new Set(['entry.js', 'copy.js'])
+  const stray = fs.readdirSync(path.join(SRC, 'client')).filter((f) => f.endsWith('.js') && !ROOT_ALLOWED.has(f))
+  if (stray.length) fail(`R8 src/client 根下出现散落模块（应归入 app/features/adapters/services/state/styles）：${stray.join(', ')}`)
+  else pass('R8 src/client 根下只有入口与文案表')
+}
+
 console.log('')
 if (notes.length) console.log(`（${notes.length} 条提示不影响通过）`)
 console.log(failures.length ? `WRITING_ARCHITECTURE_FAIL ${failures.length} 项` : 'WRITING_ARCHITECTURE_OK')
