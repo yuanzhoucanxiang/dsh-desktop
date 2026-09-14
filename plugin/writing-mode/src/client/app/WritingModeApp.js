@@ -6,7 +6,8 @@ import * as jsx from 'react/jsx-runtime'
 import { T, zh } from '../copy.js'
 import { api } from '../services/writing-api.js'
 import { harnessSessions } from '../adapters/harness/runtime.js'
-import { appendCompanionDraft, ensureCompanionSession } from '../adapters/harness/sessions.js'
+import { harnessAdapter } from '../adapters/harness/runtime.js'
+import { newOperationToken } from '../adapters/harness/adapter.js'
 import { createEditorSession } from '../../shared/editor-session.js'
 import { applyBodyAttr, setCloseGuard, commitModeActive, getModeActive, subscribeMode, setModeActive } from '../state/mode-store.js'
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs, versionOf } from '../state/prefs-store.js'
@@ -95,6 +96,7 @@ export function WritingModeApp() {
     void loadPrefs()
   }, [active])
   const taRef = react.useRef(null)
+  const fillOpRef = react.useRef(null) // 「发给写作伙伴」的 operation token（连点不会建出两个会话）
   const aiTarget = react.useRef(null)
   const saveTimer = react.useRef(0)
   const fileInputRef = react.useRef(null)
@@ -523,9 +525,14 @@ export function WritingModeApp() {
   async function fillComposer(prompt) {
     const source = editor.get().path
     try {
-      const next = await ensureCompanionSession(harnessSessions(), source || activeRoot, () => editor.get().path === source && getModeActive())
-      if (!next) return false
-      appendCompanionDraft(harnessSessions(), next.sessionId, prompt)
+      // P2：会话获取走 adapter（唯一接触面）。fillOpRef 记住本次操作的 token，
+      // 连点"发给写作伙伴"不会因为并发建出两个会话。
+      if (!fillOpRef.current) fillOpRef.current = newOperationToken()
+      const target = await harnessAdapter().connect(source || activeRoot, fillOpRef.current)
+      if (!target) return false
+      if (editor.get().path !== source || !getModeActive()) return false
+      const already = target.getDraft()
+      target.setDraft(already ? already + '\n\n' + prompt : prompt)
       setAiOpen(true); setAiTab('companion'); setFocus(false)
       flashMsg('已追加到写作伙伴输入框，补充想法后发送')
       return true

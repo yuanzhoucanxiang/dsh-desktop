@@ -45,15 +45,15 @@ __export(entry_exports, {
   __draftDirty: () => companionDraftDirty,
   __draftStatus: () => companionDraftStatus,
   api: () => api,
-  appendCompanionDraft: () => appendCompanionDraft,
   apply: () => apply,
   companionRows: () => companionRows,
   createEditorSession: () => createEditorSession,
-  ensureCompanionSession: () => ensureCompanionSession,
+  createHarnessAdapter: () => createHarnessAdapter,
   getDraftStatus: () => getDraftStatus,
   inject: () => inject,
   loadCompanionDraft: () => loadCompanionDraft,
   name: () => name,
+  newOperationToken: () => newOperationToken,
   persistCompanionDraft: () => persistCompanionDraft,
   resolveDraftConflict: () => resolveDraftConflict,
   retryDraftConflictRemote: () => retryDraftConflictRemote,
@@ -746,58 +746,592 @@ async function api(route, opts, query) {
 var react3 = __toESM(require("react"), 1);
 var jsx7 = __toESM(require("react/jsx-runtime"), 1);
 
+// plugin/writing-mode/src/client/adapters/harness/identity.js
+function canonicalProjectKey(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  return raw.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+function projectIdentityOf(binding, fallbackPath) {
+  const canonical = binding && typeof binding.project === "string" ? binding.project : "";
+  if (canonical) return { key: canonicalProjectKey(canonical), authoritative: true, display: canonical };
+  return { key: canonicalProjectKey(fallbackPath), authoritative: false, display: String(fallbackPath || "") };
+}
+
+// plugin/writing-mode/src/client/adapters/harness/projection.js
+var REFERENCE_SEPARATOR = "\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n";
+function textOf(parts) {
+  return (parts || []).filter((p) => p && (p.kind === "text" || p.type === "text")).map((p) => p.text || "").join("");
+}
+function normalizeForMatch(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+function projectChat(chat) {
+  if (!chat) return { messages: [], hasUnknown: false };
+  const nodes = chat.nodes;
+  const order = chat.order || [];
+  const messages = [];
+  let hasUnknown = false;
+  for (const key of order) {
+    const node = nodes && typeof nodes.get === "function" ? nodes.get(key) : nodes ? nodes[key] : null;
+    if (!node || node.visibility === "hidden") continue;
+    const data = node.data || {};
+    if (node.kind === "user" || node.kind === "steering") {
+      const raw = textOf(data.content);
+      const idx = raw.indexOf(REFERENCE_SEPARATOR);
+      const text = idx >= 0 ? raw.slice(0, idx) : raw;
+      const reference = idx >= 0 ? raw.slice(idx + REFERENCE_SEPARATOR.length) : void 0;
+      messages.push({ key, kind: "user", text: text || "附件消息（在完整会话中查看）", reference });
+      continue;
+    }
+    if (node.kind === "assistant-step") {
+      const text = textOf(data.blocks);
+      if (text) messages.push({ key, kind: "assistant", text });
+      continue;
+    }
+    if (node.kind === "turn-tail") continue;
+    if (node.kind === "tool-call") {
+      messages.push({ key, kind: "detail", text: "工具活动", detail: data });
+      continue;
+    }
+    if (node.kind === "turn-error") {
+      messages.push({ key, kind: "error", text: data.failure?.message || "这次回复未能完成，请查看完整会话。" });
+      continue;
+    }
+    hasUnknown = true;
+    messages.push({ key, kind: "detail", text: node.kind === "context" ? "补充上下文" : "会话活动", detail: data });
+  }
+  return { messages, hasUnknown };
+}
+function turnEvidence(session, body) {
+  const snap = session && typeof session.getSnapshot === "function" ? session.getSnapshot() : null;
+  if (!snap) return { accepted: false, queued: false, evidence: "no-session-snapshot" };
+  const needle = normalizeForMatch(String(body || "").split(REFERENCE_SEPARATOR)[0]).slice(0, 200);
+  if (!needle) return { accepted: false, queued: false, evidence: "empty-body" };
+  const chat = snap.chat;
+  const nodes = chat?.nodes;
+  for (const key of chat?.order || []) {
+    const node = nodes && typeof nodes.get === "function" ? nodes.get(key) : nodes ? nodes[key] : null;
+    if (!node || node.kind !== "user" && node.kind !== "steering") continue;
+    const text = normalizeForMatch(textOf(node.data?.content)).slice(0, 200);
+    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: false, evidence: "user-node" };
+  }
+  for (const row of snap.queue || []) {
+    const text = normalizeForMatch(row?.text || row?.preview || "");
+    if (text.includes(needle.slice(0, 80))) return { accepted: true, queued: true, evidence: "queue-row" };
+  }
+  return { accepted: false, queued: false, evidence: "not-found" };
+}
+function createSnapshotCache() {
+  let cache = null;
+  let lastKey = "";
+  const ids = /* @__PURE__ */ new WeakMap();
+  let seq = 0;
+  const idOf = (part) => {
+    if (part && typeof part === "object") {
+      if (!ids.has(part)) ids.set(part, ++seq);
+      return `o${ids.get(part)}`;
+    }
+    return String(part ?? "");
+  };
+  return {
+    get(fingerprintParts, build) {
+      const key = fingerprintParts.map(idOf).join("\0");
+      if (cache && key === lastKey) return cache;
+      cache = build();
+      lastKey = key;
+      return cache;
+    },
+    peek() {
+      return cache;
+    }
+  };
+}
+
+// plugin/writing-mode/src/client/adapters/harness/coordination-client.js
+var JSON_POST = { method: "POST", headers: { "content-type": "application/json" } };
+function httpCoordination(api2 = api) {
+  const post = async (op, body) => {
+    const res = await api2("coordination", { ...JSON_POST, body: JSON.stringify({ op, ...body }) });
+    return {
+      ok: Boolean(res?.ok),
+      outcome: res?.outcome || null,
+      record: res?.record || null,
+      error: res?.error || null
+    };
+  };
+  return {
+    claim: (body) => post("claim", body),
+    creating: (body) => post("creating", body),
+    confirm: (body) => post("confirm", body),
+    uncertain: (body) => post("uncertain", body),
+    release: (body) => post("release", body),
+    forget: (body) => post("forget", body),
+    read: async (body) => {
+      const res = await api2("coordination", void 0, { path: body.path });
+      return { ok: Boolean(res?.ok), record: res?.record || null, error: res?.error || null };
+    }
+  };
+}
+
+// plugin/writing-mode/src/client/adapters/harness/adapter.js
+var PEER_WAIT = { attempts: 40, intervalMs: 250 };
+function adapterError(code, message, extra = {}) {
+  const err = new Error(message || code);
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
+}
+function newOperationToken() {
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `op-${Date.now().toString(36)}-${rand}`;
+}
+var has = (obj, name2) => Boolean(obj && typeof obj[name2] === "function");
+function createHarnessAdapter(deps = {}) {
+  const {
+    sessions = null,
+    workspaces = null,
+    connection = null,
+    api: api2 = null,
+    coordination = api2 ? httpCoordination(api2) : null,
+    now = () => Date.now(),
+    wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log = () => {
+    }
+  } = deps;
+  const inflight = /* @__PURE__ */ new Map();
+  function capabilities() {
+    const flags = {
+      sessions: Boolean(sessions),
+      "sessions.refresh": has(sessions, "refresh"),
+      "sessions.create": has(sessions, "create"),
+      "sessions.open": has(sessions, "open"),
+      "sessions.binding": has(sessions, "binding"),
+      "sessions.provideInfo": has(sessions, "provideInfo"),
+      "workspaces.create": has(workspaces, "create"),
+      "agentPresets.select": has(connection?.agentPresets, "select"),
+      coordination: Boolean(coordination && coordination.claim),
+      api: typeof api2 === "function"
+    };
+    const required = ["sessions", "sessions.refresh", "sessions.create", "workspaces.create", "agentPresets.select", "coordination", "api"];
+    const soft = ["sessions.binding", "sessions.provideInfo", "sessions.open", "sessions.noteAgentPreset"];
+    const missing = required.filter((k) => !flags[k]);
+    const degraded = soft.filter((k) => !flags[k]);
+    return {
+      flags,
+      missing,
+      degraded,
+      canCreate: missing.length === 0,
+      // 已有会话时能干活的条件（不需要创建能力）：能拿到 store 与输入面
+      canSend: Boolean(flags.sessions && flags["sessions.binding"] && flags.api)
+    };
+  }
+  function sessionStoreOf(id) {
+    if (!id || !has(sessions, "binding")) return null;
+    try {
+      return sessions.binding(id)?.session || null;
+    } catch {
+      return null;
+    }
+  }
+  function liveSessionIds() {
+    try {
+      const snap = sessions?.list?.getSnapshot?.();
+      return new Set(Object.keys(snap?.byId || {}));
+    } catch {
+      return /* @__PURE__ */ new Set();
+    }
+  }
+  async function resolveBinding(path) {
+    if (typeof api2 !== "function") throw adapterError("api-missing", "写作模式 HTTP 服务不可用");
+    const res = await api2("companion", void 0, { path });
+    if (!res?.ok) throw adapterError(res?.error || "binding-unavailable", "无法解析作品身份：" + (res?.error || "unknown"));
+    const identity = projectIdentityOf(res, path);
+    if (!identity.authoritative) throw adapterError("identity-unverified", "host 未返回规范作品身份，暂不建立关联");
+    return { binding: res, identity };
+  }
+  async function readRecord(path) {
+    if (!coordination?.read) return null;
+    try {
+      const r = await coordination.read({ path });
+      return r?.ok ? r.record : null;
+    } catch {
+      return null;
+    }
+  }
+  async function openBinding({ path, operationId, preset }) {
+    const { binding, identity } = await resolveBinding(path);
+    const key = identity.key;
+    const rec = await readRecord(path);
+    const claim = await coordination.claim({ path, operationToken: operationId, owner: String(preset?.owner || "window") });
+    if (!claim.ok) throw adapterError(claim.error || "coordination-unavailable", "协调服务不可用");
+    log(`adapter claim ${key} → ${claim.outcome}`);
+    if (claim.outcome === "bound") {
+      const found = verifyRecord(claim.record, binding);
+      if (found.status === "ready" || found.status === "missing") return { ...found, key, path, binding };
+      return { ...found, key, path, binding };
+    }
+    if (claim.outcome === "in-progress") {
+      const peer = await waitForPeer({ path, binding, key });
+      return { ...peer, key, path, binding };
+    }
+    if (claim.outcome === "uncertain") {
+      return { status: "uncertain", sessionId: claim.record?.sessionId || null, workspaceId: claim.record?.workspaceId || null, record: claim.record, wrongness: "previous-attempt-unconfirmed", key, path, binding };
+    }
+    void rec;
+    return createNow({ path, operationId, key, binding });
+  }
+  function verifyRecord(record, binding) {
+    const sessionId = record?.sessionId || binding?.sessionId || null;
+    if (!sessionId) return { status: "error", error: "record-without-session", record };
+    if (!liveSessionIds().has(sessionId)) return { status: "missing", sessionId, workspaceId: record?.workspaceId || null, record };
+    return { status: "ready", sessionId, workspaceId: record?.workspaceId || null, record, outcome: "existing" };
+  }
+  async function waitForPeer({ path, binding, key }) {
+    for (let i = 0; i < PEER_WAIT.attempts; i++) {
+      await wait(PEER_WAIT.intervalMs);
+      const rec2 = await readRecord(path);
+      if (!rec2) return { status: "error", error: "record-vanished" };
+      if (rec2.phase === "bound" && rec2.sessionId) return { ...verifyRecord(rec2, binding), outcome: "adopted-peer" };
+      if (rec2.phase === "uncertain") return { status: "uncertain", sessionId: rec2.sessionId || null, workspaceId: rec2.workspaceId || null, record: rec2, wrongness: "peer-unconfirmed" };
+      if (rec2.phase === null) return { status: "error", error: "record-cleared-while-waiting" };
+    }
+    const rec = await readRecord(path);
+    return { status: "waiting", sessionId: null, workspaceId: rec?.workspaceId || null, record: rec, wrongness: "peer-still-creating" };
+  }
+  async function createNow({ path, operationId, key, binding }) {
+    const caps = capabilities();
+    if (!caps.canCreate) {
+      await coordination.release({ path, operationToken: operationId });
+      throw adapterError("capabilities-missing", "内核未提供创建会话所需能力：" + caps.missing.join(", "), { missing: caps.missing });
+    }
+    await coordination.creating({ path, operationToken: operationId });
+    let workspaceId = null;
+    let sessionId = null;
+    try {
+      const prepared = await api2("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
+      if (!prepared?.ok) throw adapterError(prepared?.error || "preset-unavailable", "写作伙伴预设不可用：" + (prepared?.error || "unknown"));
+      const workspace = await workspaces.create({ path: binding.project });
+      workspaceId = workspace?.workspaceId || null;
+      if (!workspaceId) throw adapterError("workspace-create-empty", "工作区创建未返回标识");
+      sessionId = await sessions.create({ workspaceId });
+      if (!sessionId) throw adapterError("session-create-empty", "会话创建未返回标识");
+      const selected = await connection.agentPresets.select({ sessionId, agentPreset: prepared.preset });
+      if (!selected?.result?.ok) throw adapterError(selected?.result?.error?.code || "preset-select-failed", selected?.result?.error?.message || "角色预设应用失败");
+      if (has(sessions, "noteAgentPreset")) sessions.noteAgentPreset(sessionId, selected.result.value?.agentPreset);
+      const saved = await api2("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId }) });
+      if (!saved?.ok) throw adapterError(saved?.error || "binding-save-failed", "会话已创建，但作品关联未保存：" + (saved?.error || "unknown"));
+      await sessions.refresh();
+      const confirmed = await coordination.confirm({ path, operationToken: operationId, sessionId, workspaceId });
+      if (confirmed.outcome !== "bound") {
+        return { status: "uncertain", sessionId, workspaceId, record: confirmed.record, wrongness: "confirm-" + confirmed.outcome, outcome: "created-unconfirmed" };
+      }
+      await sessions.open(sessionId);
+      return { status: "ready", sessionId, workspaceId, record: confirmed.record, outcome: "created" };
+    } catch (err) {
+      const code = err?.code || "create-failed";
+      if (sessionId) {
+        await coordination.uncertain({ path, operationToken: operationId, sessionId, workspaceId, reason: code });
+        return { status: "uncertain", sessionId, workspaceId, record: await readRecord(path), wrongness: code, error: err.message, outcome: "created-partially" };
+      }
+      if (workspaceId) {
+        await coordination.confirm({ path, operationToken: operationId, workspaceId });
+        await coordination.uncertain({ path, operationToken: operationId, workspaceId, reason: code });
+        return { status: "uncertain", sessionId: null, workspaceId, record: await readRecord(path), wrongness: code, error: err.message, outcome: "workspace-only" };
+      }
+      await coordination.release({ path, operationToken: operationId });
+      return { status: "error", error: err.message, code, record: await readRecord(path) };
+    }
+  }
+  async function connect(projectIdentity, operationToken, options = {}) {
+    const operationId = operationToken || newOperationToken();
+    const localKey = canonicalProjectKey(projectIdentity);
+    if (!localKey) throw adapterError("project-identity-required", "缺少作品身份");
+    const existing = inflight.get(localKey) || (options.canonicalKey ? inflight.get(options.canonicalKey) : null);
+    if (existing) {
+      const shared = await existing;
+      log(`adapter in-process share ${localKey}`);
+      return makeHandle({ ...shared, operationId, shared: true, requestedPath: projectIdentity });
+    }
+    const promise = openBinding({ path: projectIdentity, operationId, preset: options });
+    inflight.set(localKey, promise);
+    try {
+      const resolved = await promise;
+      if (resolved.key && resolved.key !== localKey && !inflight.has(resolved.key)) inflight.set(resolved.key, Promise.resolve(resolved));
+      return makeHandle({ ...resolved, operationId, requestedPath: projectIdentity });
+    } finally {
+      inflight.delete(localKey);
+    }
+  }
+  function makeHandle(bound) {
+    const { key, path, binding } = bound;
+    const operationId = bound.operationId || newOperationToken();
+    let state = {
+      status: bound.status,
+      sessionId: bound.sessionId || null,
+      workspaceId: bound.workspaceId || null,
+      record: bound.record || null,
+      error: bound.error || null,
+      wrongness: bound.wrongness || null
+    };
+    const snapshotCache = createSnapshotCache();
+    const listeners = /* @__PURE__ */ new Set();
+    const nativeUnsubs = [];
+    let attachedSessionId = null;
+    let disposed = false;
+    const currentSession = () => sessionStoreOf(state.sessionId);
+    const currentInfo = () => {
+      if (!state.sessionId || !has(sessions, "provideInfo")) return null;
+      try {
+        return sessions.provideInfo(state.sessionId);
+      } catch {
+        return null;
+      }
+    };
+    function notify() {
+      if (disposed) return;
+      for (const fn of [...listeners]) {
+        try {
+          fn();
+        } catch (err) {
+          log("adapter listener failed: " + (err?.message || err));
+        }
+      }
+    }
+    function attach2(store) {
+      if (!store || !has(store, "subscribe")) return;
+      const off = store.subscribe(() => notify());
+      if (typeof off === "function") nativeUnsubs.push(off);
+    }
+    function ensureAttached() {
+      if (attachedSessionId === state.sessionId) return;
+      attachedSessionId = state.sessionId;
+      if (!state.sessionId) return;
+      attach2(currentSession());
+      attach2(currentInfo()?.hooks?.input);
+    }
+    function refreshStatus() {
+      if (state.status === "ready") return;
+      if (state.status === "waiting" && state.sessionId && liveSessionIds().has(state.sessionId) && state.record?.phase === "bound") {
+        state.status = "ready";
+      }
+    }
+    function getSnapshot() {
+      if (disposed) throw adapterError("disposed", "handle 已释放");
+      ensureAttached();
+      refreshStatus();
+      const session = currentSession();
+      const info = currentInfo();
+      const chatSnap = session?.getSnapshot?.() || null;
+      const inputSnap = info?.hooks?.input?.getSnapshot?.() || null;
+      const caps = capabilities();
+      const statusKey = `${state.status}|${state.record?.phase || ""}|${state.record?.version ?? ""}|${state.sessionId || ""}|${state.error || ""}`;
+      const queueSig = (chatSnap?.queue || []).map((row) => row?.id ?? "").join("|");
+      const pendingSig = (chatSnap?.pending || []).map((wait2) => wait2?.key ?? "").join("|");
+      const order = chatSnap?.chat?.order || [];
+      const orderSig = `${order.length}:${order.length ? order[order.length - 1] : ""}:${chatSnap?.chat?.nodes?.size ?? ""}`;
+      return snapshotCache.get(
+        [chatSnap?.chat, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(","), caps.missing.join(","), caps.degraded.join(",")],
+        () => {
+          const { messages, hasUnknown } = projectChat(chatSnap?.chat);
+          return Object.freeze({
+            projectKey: key,
+            projectPath: path,
+            operationToken: operationId,
+            shared: Boolean(bound.shared),
+            status: state.status,
+            wrongness: state.wrongness,
+            error: state.error,
+            sessionId: state.sessionId,
+            messages,
+            hasUnknown,
+            running: Boolean(chatSnap?.running),
+            queue: (chatSnap?.queue || []).map((row) => ({ id: row?.id, text: row?.text, preview: row?.preview })),
+            pending: (chatSnap?.pending || []).map((wait2) => ({ key: wait2?.key, kind: wait2?.kind })),
+            hasMore: Boolean(chatSnap?.hasMore),
+            draft: inputSnap?.draft ?? "",
+            claim: inputSnap?.claim ?? null,
+            imageIds: inputSnap?.imageIds || [],
+            record: state.record ? Object.freeze({
+              phase: state.record.phase,
+              sessionId: state.record.sessionId || null,
+              workspaceId: state.record.workspaceId || null,
+              version: state.record.version ?? null,
+              reason: state.record.reason || null,
+              stale: Boolean(state.record.stale)
+            }) : null,
+            missing: caps.missing,
+            degraded: caps.degraded
+          });
+        }
+      );
+    }
+    function subscribe(fn) {
+      listeners.add(fn);
+      ensureAttached();
+      return () => listeners.delete(fn);
+    }
+    function getDraft() {
+      return currentInfo()?.hooks?.input?.getSnapshot?.().draft ?? "";
+    }
+    function setDraft(text) {
+      const info = currentInfo();
+      const actions = info?.props?.inputActions;
+      if (!actions?.setDraft) throw adapterError("input-not-ready", "原生输入框尚未就绪");
+      actions.setDraft(String(text ?? ""));
+      return true;
+    }
+    async function send(preparedTurn) {
+      const body = String(preparedTurn?.body || "");
+      const at = { key, sessionId: state.sessionId, operationId };
+      if (!body.trim()) return { result: "rejected", code: "empty-body", projectKey: key, operationId };
+      if (state.status !== "ready" || !at.sessionId) {
+        return { result: "rejected", code: "not-ready", status: state.status, projectKey: key, operationId };
+      }
+      const session = currentSession();
+      if (!session || !has(session, "prompt")) {
+        const gone = Boolean(at.sessionId) && !liveSessionIds().has(at.sessionId);
+        if (gone) {
+          state.status = "missing";
+          notify();
+          return { result: "rejected", code: "session-missing", projectKey: key, operationId, sessionId: at.sessionId };
+        }
+        return { result: "rejected", code: "session-unavailable", projectKey: key, operationId };
+      }
+      let res = null;
+      let thrown = null;
+      try {
+        res = await session.prompt([{ type: "text", text: body }], "queue");
+      } catch (err) {
+        thrown = err;
+      }
+      if (state.sessionId !== at.sessionId || key !== at.key) {
+        return { result: "rejected", code: "session-changed", projectKey: at.key, operationId: at.operationId };
+      }
+      const freshSession = currentSession() || session;
+      const evidence = turnEvidence(freshSession, body);
+      if (res?.ok) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
+      if (evidence.accepted) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
+      const message = thrown?.message || res?.error?.message || res?.error || "发送失败";
+      const code = thrown?.code || res?.error?.code || "send-failed";
+      if (thrown) return { result: "uncertain", code, error: String(message), retainedBody: body, projectKey: key, operationId, sessionId: state.sessionId };
+      return { result: "rejected", code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId };
+    }
+    async function cancel() {
+      const session = currentSession();
+      if (!session || !has(session, "cancel")) throw adapterError("cancel-unavailable", "当前会话不支持取消");
+      await session.cancel();
+      return { ok: true, sessionId: state.sessionId };
+    }
+    function openFullSession() {
+      if (!state.sessionId || !has(sessions, "open")) throw adapterError("open-unavailable", "没有可打开的会话");
+      sessions.open(state.sessionId);
+      return { ok: true, sessionId: state.sessionId };
+    }
+    function dispose() {
+      disposed = true;
+      for (const off of nativeUnsubs.splice(0)) {
+        try {
+          off();
+        } catch {
+        }
+      }
+      listeners.clear();
+    }
+    async function recover(reason = "author-requested") {
+      if (state.status !== "missing" && state.status !== "uncertain" && state.status !== "waiting") {
+        throw adapterError("recover-not-allowed", "当前状态不需要恢复（" + state.status + "）");
+      }
+      if (coordination?.forget) await coordination.forget({ path });
+      const next = await connect(path, newOperationToken(), { canonicalKey: key });
+      const snap = next.getSnapshot();
+      state = { status: snap.status, sessionId: snap.sessionId, workspaceId: snap.workspaceId || null, record: snap.record ? { ...snap.record } : null, error: snap.error, wrongness: reason };
+      notify();
+      return snap;
+    }
+    async function refresh() {
+      const rec = await readRecord(path);
+      if (rec) {
+        state.record = rec;
+        if (rec.sessionId) state.sessionId = rec.sessionId;
+        if (rec.workspaceId) state.workspaceId = rec.workspaceId;
+      }
+      refreshStatus();
+      if (state.status === "waiting" && state.sessionId) state.status = liveSessionIds().has(state.sessionId) ? "ready" : state.status;
+      notify();
+      return getSnapshot();
+    }
+    const handle = {
+      projectKey: key,
+      projectPath: path,
+      operationToken: operationId,
+      binding,
+      getSnapshot,
+      subscribe,
+      getDraft,
+      setDraft,
+      send,
+      cancel,
+      openFullSession,
+      dispose,
+      recover,
+      refresh,
+      record: () => state.record,
+      sessionId: () => state.sessionId,
+      status: () => state.status
+    };
+    return handle;
+  }
+  function attach(projectIdentity, sessionId, options = {}) {
+    const key = canonicalProjectKey(projectIdentity);
+    if (!key || !sessionId) throw adapterError("attach-arguments", "需要作品身份与会话标识");
+    const live = liveSessionIds().has(sessionId);
+    return makeHandle({
+      key,
+      path: projectIdentity,
+      binding: options.binding || null,
+      status: live ? "ready" : "missing",
+      sessionId,
+      workspaceId: options.workspaceId || null,
+      record: options.record || null,
+      requestedPath: projectIdentity,
+      operationId: options.operationToken || newOperationToken()
+    });
+  }
+  return {
+    capabilities,
+    connect,
+    attach,
+    /** 诊断用：当前进行中的绑定键（UI 不读）。 */
+    inflightKeys: () => [...inflight.keys()],
+    _sessionStoreOf: sessionStoreOf
+  };
+}
+
 // plugin/writing-mode/src/client/adapters/harness/runtime.js
 var sessionsRef = null;
 var connectionRef = null;
 var workspacesRef = null;
+var adapterRef = null;
 function bindHarness(ctx) {
   sessionsRef = ctx.sessions || null;
   connectionRef = ctx.connection?.api || null;
   workspacesRef = ctx.workspaces || null;
+  adapterRef = null;
 }
 function harnessSessions() {
   return sessionsRef;
 }
-function harnessConnection() {
-  return connectionRef;
-}
-function harnessWorkspaces() {
-  return workspacesRef;
-}
-
-// plugin/writing-mode/src/client/adapters/harness/sessions.js
-function appendCompanionDraft(sessions, id, text) {
-  const info = sessions.provideInfo(id);
-  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error("原生输入框尚未就绪，请稍后重试");
-  const draft = info.hooks.input.getSnapshot().draft || "";
-  info.props.inputActions.setDraft(draft ? draft + "\n\n" + text : text);
-}
-async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = harnessConnection(), workspaces = harnessWorkspaces()) {
-  if (!sessions) throw new Error("Harness 会话服务尚未就绪");
-  const binding = await api("companion", void 0, { path });
-  if (!binding.ok) throw new Error(binding.error);
-  await sessions.refresh();
-  if (!isCurrent()) return null;
-  let id = binding.sessionId;
-  if (!id || !sessions.list.getSnapshot().byId[id]) {
-    const prepared = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-    if (!prepared.ok) throw new Error(prepared.error);
-    if (!connection?.agentPresets?.select || !workspaces) throw new Error("Harness 未提供原生角色或工作区服务，请检查内核版本");
-    if (!isCurrent()) return null;
-    const workspace = await workspaces.create({ path: binding.project });
-    if (!isCurrent()) return null;
-    id = await sessions.create({ workspaceId: workspace.workspaceId });
-    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset });
-    if (!selected.result.ok) throw new Error(selected.result.error.message);
-    sessions.noteAgentPreset(id, selected.result.value.agentPreset);
-    const data = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId: id }) });
-    if (!data.ok) throw new Error("会话已创建，但项目关联未保存：" + data.error);
+function harnessAdapter() {
+  if (!adapterRef) {
+    adapterRef = createHarnessAdapter({
+      sessions: sessionsRef,
+      workspaces: workspacesRef,
+      connection: connectionRef ? { agentPresets: connectionRef.agentPresets } : null,
+      api
+    });
   }
-  if (!isCurrent()) return null;
-  sessions.open(id);
-  await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-  if (!isCurrent()) return null;
-  return { ...binding, sessionId: id };
+  return adapterRef;
 }
 
 // plugin/writing-mode/src/client/state/mode-store.js
@@ -1421,26 +1955,7 @@ function useCompanionStore(store) {
   return react2.useSyncExternalStore(subscribe, snapshot);
 }
 function companionRows(snapshot) {
-  const chat = snapshot.chat;
-  if (!chat) return [];
-  return chat.order.flatMap((key) => {
-    const node = chat.nodes.get(key);
-    if (!node || node.visibility === "hidden") return [];
-    const data = node.data || {};
-    const textOf = (parts) => (parts || []).filter((p) => p.kind === "text" || p.type === "text").map((p) => p.text || "").join("");
-    if (node.kind === "user" || node.kind === "steering") {
-      const [text, reference] = textOf(data.content).split("\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n");
-      return [{ key, kind: "user", text: text || "附件消息（在完整会话中查看）", reference }];
-    }
-    if (node.kind === "assistant-step") {
-      const text = textOf(data.blocks);
-      return text ? [{ key, kind: "assistant", text }] : [];
-    }
-    if (node.kind === "turn-tail") return [];
-    if (node.kind === "tool-call") return [{ key, kind: "detail", text: "工具活动", detail: data }];
-    if (node.kind === "turn-error") return [{ key, kind: "error", text: data.failure?.message || "这次回复未能完成，请查看完整会话。" }];
-    return [{ key, kind: "detail", text: node.kind === "context" ? "补充上下文" : "会话活动", detail: data }];
-  });
+  return Array.isArray(snapshot?.messages) ? snapshot.messages : [];
 }
 function CompanionTranscript({ snapshot, onFull }) {
   const rows = companionRows(snapshot);
@@ -1476,6 +1991,7 @@ function CompanionTranscript({ snapshot, onFull }) {
 }
 function CompanionChat({ initialBinding, path, contextText, onExit }) {
   const sessions = harnessSessions();
+  const adapter = harnessAdapter();
   const [binding, setBinding] = react2.useState(initialBinding);
   const project = binding.project;
   const cached = companionDrafts.get(project) || { text: "", reference: null };
@@ -1487,12 +2003,28 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
   const alive = react2.useRef(true);
   const sending = react2.useRef(false);
   const id = binding.sessionId;
-  const session = id ? sessions?.binding(id)?.session : null;
-  const info = id ? sessions?.provideInfo(id) : null;
-  const snapshot = useCompanionStore(session);
-  const input = useCompanionStore(info?.hooks?.input);
-  const draft = info ? input.draft || "" : localDraft;
-  const needsFullComposer = Boolean(input.imageIds?.length || input.claim || draft.trimStart().startsWith("/"));
+  const [handle, setHandle] = react2.useState(() => id ? adapter.attach(project, id, { binding }) : null);
+  const opRef = react2.useRef(null);
+  const snapshot = useCompanionStore(handle);
+  const draft = handle ? snapshot.draft || "" : localDraft;
+  const needsFullComposer = Boolean(snapshot.imageIds && snapshot.imageIds.length || snapshot.claim || draft.trimStart().startsWith("/"));
+  const recovery = handle && snapshot.status !== "ready" ? snapshot.status : null;
+  const setNativeDraft = react2.useCallback((text) => {
+    try {
+      handle?.setDraft(text);
+    } catch {
+    }
+  }, [handle]);
+  const ensureHandle = react2.useCallback(async () => {
+    if (handle && handle.status() !== "missing" && handle.status() !== "waiting") return handle;
+    if (!opRef.current) opRef.current = newOperationToken();
+    const next = await adapter.connect(path, opRef.current);
+    if (alive.current) {
+      setHandle(next);
+      setBinding((prev) => ({ ...prev, sessionId: next.sessionId() }));
+    }
+    return next;
+  }, [adapter, handle, path]);
   react2.useEffect(() => {
     alive.current = true;
     return () => {
@@ -1500,8 +2032,25 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
     };
   }, []);
   react2.useEffect(() => {
-    if (id) sessions?.open(id);
-  }, [id, sessions]);
+    if (!id) return;
+    const started = id ? adapter.attach(project, id, { binding }) : null;
+    setHandle(started);
+    try {
+      started?.openFullSession();
+    } catch {
+    }
+  }, [adapter, id, project]);
+  react2.useEffect(() => () => {
+    handle?.dispose();
+  }, [handle]);
+  const handleRef = react2.useRef(null);
+  const setNativeDraftRef = react2.useRef(null);
+  react2.useEffect(() => {
+    handleRef.current = handle ?? null;
+  }, [handle]);
+  react2.useEffect(() => {
+    setNativeDraftRef.current = setNativeDraft;
+  }, [setNativeDraft]);
   const recoveryGen = react2.useRef(0);
   const [draftUi, setDraftUi] = react2.useState(() => ({
     conflict: null,
@@ -1525,7 +2074,12 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
       if (cancelled) return;
       const typedDuring = recoveryGen.current !== started;
       if (!typedDuring) {
-        const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || "";
+        let nativeDraft = "";
+        try {
+          nativeDraft = handleRef.current ? handleRef.current.getDraft() : "";
+        } catch {
+          nativeDraft = "";
+        }
         const adoptText = nativeDraft || c.text || "";
         const adoptRef = c.reference || null;
         companionDrafts.set(project, {
@@ -1537,7 +2091,7 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
         if (!nativeDraft && c.text) {
           setLocalDraft(c.text);
           try {
-            if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text);
+            setNativeDraftRef.current?.(c.text);
           } catch {
           }
         }
@@ -1558,8 +2112,16 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
   }, [project]);
   function updateDraft(text) {
     recoveryGen.current++;
-    if (info) info.props.inputActions.setDraft(text);
-    else setLocalDraft(text);
+    let wroteNative = false;
+    if (handle) {
+      try {
+        handle.setDraft(text);
+        wroteNative = true;
+      } catch {
+        wroteNative = false;
+      }
+    }
+    if (!wroteNative) setLocalDraft(text);
     const prev = companionDrafts.get(project) || { text: "", reference: null, rev: 0 };
     companionDrafts.set(project, { ...prev, text });
     companionDraftDirty.set(project, true);
@@ -1580,11 +2142,16 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
     sending.current = true;
     setBusy(true);
     try {
-      const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current);
-      if (!next || !alive.current) return;
-      if (!id && draft) appendCompanionDraft(sessions, next.sessionId, draft);
-      sessions.open(next.sessionId);
-      setBinding(next);
+      const target = handle || await ensureHandle();
+      if (!target || !alive.current) return;
+      if (!id && draft) {
+        const already = target.getDraft();
+        try {
+          target.setDraft(already ? already + "\n\n" + draft : draft);
+        } catch {
+        }
+      }
+      target.openFullSession();
       onExit();
     } catch (err) {
       if (alive.current) setError(err.message);
@@ -1604,15 +2171,8 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
     setError("");
     const sentDraft = draft, sentReference = reference;
     try {
-      const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current);
-      if (!next || !alive.current) return;
-      const target = sessions.binding(next.sessionId)?.session;
-      if (!target) throw new Error("会话尚未就绪，请重试");
-      const targetInfo = sessions.provideInfo(next.sessionId);
-      if (!id) {
-        targetInfo.props.inputActions.setDraft(companionDrafts.get(project)?.text || sentDraft);
-        setBinding(next);
-      }
+      const target = handle || await ensureHandle();
+      if (!target || !alive.current) return;
       const memData = await loadProjectMemory(project);
       const memoryItems = memData.ok ? memData.memory?.items || [] : [];
       const memWarning = memData.ok ? "" : String(memData.error || "memory-unavailable");
@@ -1624,14 +2184,28 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
         memoryRevision: memData.ok ? memData.memory?.revision : null
       });
       if (memWarning && alive.current) setError("备忘读取失败，本次未带入已确认设定：" + memWarning);
-      const result = await target.prompt([{ type: "text", text: prepared.body }], "queue");
-      if (!result.ok) throw new Error(result.error?.message || "发送失败，请重试");
-      const nowDraft = targetInfo.hooks.input.getSnapshot().draft;
+      const result = await target.send(prepared);
+      if (result.result === "rejected") {
+        throw new Error(result.error || "发送失败，请重试");
+      }
+      if (result.result === "uncertain") {
+        if (alive.current) setError("这一轮是否已被受理无法确认，正文已保留。请先查看完整会话确认原生回合，再决定是否重发。");
+        return;
+      }
+      let nowDraft = null;
+      try {
+        nowDraft = target.getDraft();
+      } catch {
+        nowDraft = null;
+      }
       const draftCleared = nowDraft === sentDraft || nowDraft === "" || nowDraft == null;
       const nowRef = companionDrafts.get(project)?.reference || null;
       const refCleared = !nowRef || nowRef.text === sentReference?.text && nowRef.label === sentReference?.label;
       if (draftCleared) {
-        targetInfo.props.inputActions.setDraft("");
+        try {
+          target.setDraft("");
+        } catch {
+        }
         if (alive.current) setLocalDraft("");
       }
       if (refCleared && alive.current) setReference(null);
@@ -1651,7 +2225,9 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
       if (alive.current) setBusy(false);
     }
   }
-  const failure = error || snapshot.openError?.message || snapshot.promptError?.error?.message;
+  const failure = error || snapshot.error;
+  const statusNote = !handle || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
+  const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
   return jsx5.jsxs("div", { className: "dshWmCompanion", children: [
     jsx5.jsxs("div", { className: "dshWmConversationHead", children: [
       jsx5.jsx("span", { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
@@ -1659,6 +2235,26 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
       jsx5.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), disabled: busy || !sessions, title: "打开完整会话，调整模型、工具或处理请求", children: "会话设置 ↗" })
     ] }),
     memOpen ? jsx5.jsx(CompanionMemoryPanel, { path: project }) : null,
+    statusNote ? jsx5.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-status": snapshot.status, children: [
+      statusNote,
+      jsx5.jsx("button", { className: "dshWmQuiet", onClick: () => void handle?.refresh(), children: "重查状态" }),
+      recoverable ? jsx5.jsx("button", {
+        className: "dshWmQuiet",
+        onClick: () => void handle?.recover().catch((err) => setError(err.message || String(err))),
+        children: "继续关联"
+      }) : null,
+      jsx5.jsx("button", {
+        className: "dshWmQuiet",
+        onClick: () => {
+          try {
+            handle?.openFullSession();
+          } catch (err) {
+            setError(err.message || String(err));
+          }
+        },
+        children: "查看完整会话"
+      })
+    ] }) : null,
     jsx5.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
     draftUi.conflict ? jsx5.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
       draftUi.conflict.remoteStatus === "valid" ? "草稿与另一处写入冲突，自动保存已暂停。" : draftUi.conflict.remoteStatus === "failed" ? "冲突后无法读取远端草稿。" : "冲突处理中，正在读取远端草稿…",
@@ -1667,9 +2263,7 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
         onClick: () => void resolveDraftConflict(project, "keep-local", {
           setLocalDraft,
           setReference,
-          setNativeDraft: (t) => {
-            if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t);
-          }
+          setNativeDraft
         }),
         children: "保留本地并覆盖"
       }),
@@ -1679,9 +2273,7 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
           void resolveDraftConflict(project, "keep-remote", {
             setLocalDraft,
             setReference,
-            setNativeDraft: (t) => {
-              if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t);
-            }
+            setNativeDraft
           });
         },
         children: "采用远端"
@@ -1720,7 +2312,7 @@ function CompanionChat({ initialBinding, path, contextText, onExit }) {
           if (value?.text) updateReference(value);
         }, children: "＋ 引用稿件 / 选区" }),
         jsx5.jsx("span", { className: "dshWmInputHint", children: "Shift + Enter 换行" }),
-        snapshot.running ? jsx5.jsx("button", { className: "dshWmQuiet", "aria-label": "停止回复", onClick: () => void session.cancel().catch((err) => setError(err.message)), children: "停止" }) : null,
+        snapshot.running ? jsx5.jsx("button", { className: "dshWmQuiet", "aria-label": "停止回复", onClick: () => void (handle ? handle.cancel().catch((err) => setError(err.message)) : setError("会话尚未就绪")), children: "停止" }) : null,
         jsx5.jsx("button", { className: "dshWmSend", disabled: !sessions || busy || !draft.trim(), onClick: () => void send(), "aria-label": snapshot.running ? "排队发送" : "发送", title: snapshot.running ? "在本次回复后发送" : "发送", children: busy ? "…" : "↑" })
       ] })
     ] })
@@ -1837,6 +2429,7 @@ function WritingModeApp() {
     void loadPrefs();
   }, [active]);
   const taRef = react3.useRef(null);
+  const fillOpRef = react3.useRef(null);
   const aiTarget = react3.useRef(null);
   const saveTimer = react3.useRef(0);
   const fileInputRef = react3.useRef(null);
@@ -2230,9 +2823,12 @@ function WritingModeApp() {
   async function fillComposer(prompt) {
     const source = editor.get().path;
     try {
-      const next = await ensureCompanionSession(harnessSessions(), source || activeRoot, () => editor.get().path === source && getModeActive());
-      if (!next) return false;
-      appendCompanionDraft(harnessSessions(), next.sessionId, prompt);
+      if (!fillOpRef.current) fillOpRef.current = newOperationToken();
+      const target = await harnessAdapter().connect(source || activeRoot, fillOpRef.current);
+      if (!target) return false;
+      if (editor.get().path !== source || !getModeActive()) return false;
+      const already = target.getDraft();
+      target.setDraft(already ? already + "\n\n" + prompt : prompt);
       setAiOpen(true);
       setAiTab("companion");
       setFocus(false);

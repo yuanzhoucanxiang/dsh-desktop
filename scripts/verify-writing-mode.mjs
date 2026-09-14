@@ -199,37 +199,54 @@ try {
     }
     const connection = { agentPresets: { select: async ({ agentPreset }) => { selections++; assert.equal(agentPreset, 'writing-companion'); return { result: { ok: true, value: { agentPreset } } } } } }
     const workspaces = { create: async ({ path: dir }) => { assert.ok(path.isAbsolute(dir)); return { workspaceId: 'workspace-test' } } }
-    const first = await client.ensureCompanionSession(sessions, doc.path, () => true, connection, workspaces)
-    client.appendCompanionDraft(sessions, first.sessionId, '我已有的想法')
-    client.appendCompanionDraft(sessions, first.sessionId, '选区快照')
-    const second = await client.ensureCompanionSession(sessions, path.join(project, 'project.md'), () => true, connection, workspaces)
-    assert.equal(first.sessionId, second.sessionId); assert.equal(creates, 1); assert.equal(selections, 1)
-    assert.match(drafts[first.sessionId], /我已有的想法\n\n选区快照$/); assert.equal(submissions, 0)
+    // P2：会话获取唯一走 adapter（真实 HTTP route=coordination + 真协调协议）
+    const makeAdapter = () => client.createHarnessAdapter({ sessions, workspaces, connection, api: client.api })
+    const appendDraft = (handle, text) => {
+      const already = handle.getDraft()
+      handle.setDraft(already ? already + '\n\n' + text : text)
+    }
+    const adapter = makeAdapter()
+    const first = await adapter.connect(doc.path, 'tok-1')
+    assert.equal(first.getSnapshot().status, 'ready')
+    appendDraft(first, '我已有的想法')
+    appendDraft(first, '选区快照')
+    const second = await adapter.connect(path.join(project, 'project.md'), 'tok-2')
+    assert.equal(first.getSnapshot().sessionId, second.getSnapshot().sessionId)
+    assert.equal(creates, 1); assert.equal(selections, 1)
+    assert.match(drafts[first.getSnapshot().sessionId], /我已有的想法\n\n选区快照$/); assert.equal(submissions, 0)
     const presetFile = path.join(path.dirname(store.configFile()), '.agent-presets/writing-companion/agent.cordis.yml')
     assert.match(fs.readFileSync(presetFile, 'utf8'), /不强制阶段/)
     fs.appendFileSync(presetFile, '\n# customized\n')
     await post('companion', { path: doc.path, prepare: true })
     assert.match(fs.readFileSync(presetFile, 'utf8'), /# customized/)
     await post('prefs', { fontSize: 18 })
-    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.sessionId)
+    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.getSnapshot().sessionId)
     assert.equal((await post('companion', { path: os.tmpdir(), prepare: true })).ok, false)
     const before = opened.length
-    assert.equal(await client.ensureCompanionSession(sessions, doc.path, () => false, connection, workspaces), null)
-    assert.equal(opened.length, before)
+    // 已有绑定时再 connect：直接采用，不重复创建、不重复打开
+    const again = await adapter.connect(doc.path, 'tok-3')
+    assert.equal(again.getSnapshot().sessionId, first.getSnapshot().sessionId)
+    assert.equal(creates, 1); assert.equal(opened.length, before)
     const secondProject = path.join(root, '另一部作品')
     fs.mkdirSync(secondProject, { recursive: true })
     const otherDoc = path.join(secondProject, 'project.md'); fs.writeFileSync(otherDoc, '另一部作品')
-    let stillCurrent = true
+    // 创建中途"切走"：会话照常建好并落到自己的作品上（不留孤立），调用方自己判断是否还用它
     const entered = deferred(), release = deferred()
     const originalCreate = sessions.create
     sessions.create = async opts => { entered.resolve(); await release.promise; return originalCreate(opts) }
-    const connecting = client.ensureCompanionSession(sessions, otherDoc, () => stillCurrent, connection, workspaces)
-    await entered.promise; stillCurrent = false; release.resolve()
-    assert.equal(await connecting, null); assert.equal(opened.length, before)
+    const connecting = makeAdapter().connect(otherDoc, 'tok-4')
+    await entered.promise; release.resolve()
+    const otherHandle = await connecting
+    assert.equal(otherHandle.getSnapshot().status, 'ready')
     const other = await client.api('companion', undefined, { path: otherDoc })
-    assert.notEqual(other.sessionId, first.sessionId)
-    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.sessionId)
+    assert.notEqual(other.sessionId, first.getSnapshot().sessionId)
+    assert.equal(other.sessionId, otherHandle.getSnapshot().sessionId)
+    // 先前的作品绑定不受影响，且另一部作品没有串入任何草稿
+    assert.equal((await client.api('companion', undefined, { path: doc.path })).sessionId, first.getSnapshot().sessionId)
     assert.equal(drafts[other.sessionId], '')
+    // 迟到/串台防护：另一部作品的 handle 只认自己的会话
+    assert.equal(otherHandle.getSnapshot().projectKey, other.sessionId ? otherHandle.getSnapshot().projectKey : '')
+    assert.notEqual(otherHandle.getSnapshot().sessionId, first.getSnapshot().sessionId)
   })
   await test('伙伴或外部编辑：干净稿刷新，未保存稿保留并提示冲突', async () => {
     const doc = await create('外部刷新-v1.md', '初稿')

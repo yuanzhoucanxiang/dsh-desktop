@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
+import { withFileLock as lockWithFile } from './file-lock.js'
 
 export const MEMORY_SCHEMA = 1
 export const MEMORY_FILE = 'state/writing-memory.json'
@@ -90,98 +91,11 @@ function assertMemoryPathSafe(projectDir, opts = {}) {
 }
 
 /* ── Cross-process lock with owner ───────────────────────────────────── */
+/* W01 锁协议已抽到 lib/file-lock.js（协调记录共用同一份受验证实现）；
+   这里只传自己的错误工厂，错误码与文案保持不变。 */
 
-function lockMetaPath(file) {
-  return file + '.lock'
-}
-
-function ownerToken() {
-  return `${process.pid}:${randomUUID()}`
-}
-
-function readLockOwner(lock) {
-  try {
-    return fs.readFileSync(lock, 'utf8').trim()
-  } catch {
-    return ''
-  }
-}
-
-function isOwnerAlive(owner) {
-  if (!owner) return false
-  const pid = Number(String(owner).split(':')[0])
-  if (!Number.isInteger(pid) || pid <= 0) return false
-  if (pid === process.pid) return true
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    // EPERM means process exists but we cannot signal it
-    return err?.code === 'EPERM'
-  }
-}
-
-/**
- * Exclusive lock.
- * W01: never move/unlink a lock we do not own. If owner PID is not alive,
- * return lock-stale after timeout instead of creating an acquire gap.
- */
 function withFileLock(file, fn) {
-  const lock = lockMetaPath(file)
-  const dir = path.dirname(file)
-  fs.mkdirSync(dir, { recursive: true })
-  const token = ownerToken()
-  const deadline = Date.now() + 8000
-  let fd = null
-
-  const tryAcquire = () => {
-    try {
-      fd = fs.openSync(lock, 'wx')
-      fs.writeSync(fd, token)
-      fs.fsyncSync(fd)
-      return true
-    } catch (err) {
-      if (err.code === 'EEXIST') return false
-      throw memoryError('lock-failed', 500)
-    }
-  }
-
-  for (;;) {
-    if (tryAcquire()) break
-    const owner = readLockOwner(lock)
-    if (isOwnerAlive(owner)) {
-      if (Date.now() > deadline) throw memoryError('lock-timeout', 503)
-      const waitUntil = Date.now() + 20
-      while (Date.now() < waitUntil) {}
-      continue
-    }
-    // Owner process gone or unreadable — do NOT steal (would open an acquire gap).
-    // Surface a recoverable diagnostic; operator/admin can clear the lock file.
-    if (Date.now() > deadline) throw memoryError('lock-stale', 503)
-    const waitUntil = Date.now() + 40
-    while (Date.now() < waitUntil) {}
-  }
-
-  const my = token
-  try {
-    if (readLockOwner(lock) !== my) throw memoryError('lock-lost', 503)
-    return fn()
-  } finally {
-    try {
-      if (readLockOwner(lock) === my) {
-        try {
-          fs.closeSync(fd)
-        } catch {}
-        try {
-          fs.unlinkSync(lock)
-        } catch {}
-      } else {
-        try {
-          fs.closeSync(fd)
-        } catch {}
-      }
-    } catch {}
-  }
+  return lockWithFile(file, fn, memoryError)
 }
 
 function validateExistingMemory(data) {

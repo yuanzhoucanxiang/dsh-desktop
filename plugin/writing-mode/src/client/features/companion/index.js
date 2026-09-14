@@ -7,7 +7,8 @@ import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
 import { companionDrafts, loadCompanionDraft, companionRecoveryState, companionDraftDirty, companionDraftConflict, companionDraftStatus, setDraftStatus, getDraftStatus, subscribeDraftStatus, resolveDraftConflict, retryDraftConflictRemote, persistCompanionDraft } from '../../state/companion-drafts.js'
 import { harnessSessions } from '../../adapters/harness/runtime.js'
-import { appendCompanionDraft, ensureCompanionSession } from '../../adapters/harness/sessions.js'
+import { harnessAdapter } from '../../adapters/harness/runtime.js'
+import { newOperationToken } from '../../adapters/harness/adapter.js'
 import { buildPreparedTurn } from '../../../shared/context-builder.js'
 
 export const emptyCompanionSnapshot = Object.freeze({})
@@ -18,27 +19,12 @@ export function useCompanionStore(store) {
   const snapshot = react.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store])
   return react.useSyncExternalStore(subscribe, snapshot)
 }
+/**
+ * 消息行：**由 adapter 投影好**（方案 P2 §3.1：UI 不读 chat.nodes/order）。
+ * 这里只做兜底，不再自己解析原生 chat 图。
+ */
 export function companionRows(snapshot) {
-  const chat = snapshot.chat
-  if (!chat) return []
-  return chat.order.flatMap(key => {
-    const node = chat.nodes.get(key)
-    if (!node || node.visibility === 'hidden') return []
-    const data = node.data || {}
-    const textOf = parts => (parts || []).filter(p => p.kind === 'text' || p.type === 'text').map(p => p.text || '').join('')
-    if (node.kind === 'user' || node.kind === 'steering') {
-      const [text, reference] = textOf(data.content).split('\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n')
-      return [{ key, kind: 'user', text: text || '附件消息（在完整会话中查看）', reference }]
-    }
-    if (node.kind === 'assistant-step') {
-      const text = textOf(data.blocks)
-      return text ? [{ key, kind: 'assistant', text }] : []
-    }
-    if (node.kind === 'turn-tail') return [] // footer of the same assistant step
-    if (node.kind === 'tool-call') return [{ key, kind: 'detail', text: '工具活动', detail: data }]
-    if (node.kind === 'turn-error') return [{ key, kind: 'error', text: data.failure?.message || '这次回复未能完成，请查看完整会话。' }]
-    return [{ key, kind: 'detail', text: node.kind === 'context' ? '补充上下文' : '会话活动', detail: data }]
-  })
+  return Array.isArray(snapshot?.messages) ? snapshot.messages : []
 }
 
 
@@ -72,6 +58,7 @@ export function CompanionTranscript({ snapshot, onFull }) {
 }
 export function CompanionChat({ initialBinding, path, contextText, onExit }) {
   const sessions = harnessSessions()
+  const adapter = harnessAdapter()
   const [binding, setBinding] = react.useState(initialBinding)
   const project = binding.project
   const cached = companionDrafts.get(project) || { text: '', reference: null }
@@ -83,14 +70,46 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
   const alive = react.useRef(true)
   const sending = react.useRef(false)
   const id = binding.sessionId
-  const session = id ? sessions?.binding(id)?.session : null
-  const info = id ? sessions?.provideInfo(id) : null
-  const snapshot = useCompanionStore(session)
-  const input = useCompanionStore(info?.hooks?.input)
-  const draft = info ? input.draft || '' : localDraft
-  const needsFullComposer = Boolean(input.imageIds?.length || input.claim || draft.trimStart().startsWith('/'))
+  // P2：会话事实来自 adapter；应用已经给出 sessionId 时用 attach（不 claim、不创建、不写记录），
+  // 只有作者确实需要新建时才走 connect。这样"老绑定没有协调记录"不会被误判成"需要新建会话"。
+  const [handle, setHandle] = react.useState(() => (id ? adapter.attach(project, id, { binding }) : null))
+  const opRef = react.useRef(null)
+  const snapshot = useCompanionStore(handle)
+  const draft = handle ? snapshot.draft || '' : localDraft
+  const needsFullComposer = Boolean((snapshot.imageIds && snapshot.imageIds.length) || snapshot.claim || draft.trimStart().startsWith('/'))
+  const recovery = handle && snapshot.status !== 'ready' ? snapshot.status : null
+  const setNativeDraft = react.useCallback((text) => {
+    try {
+      handle?.setDraft(text)
+    } catch {}
+  }, [handle])
+  /** 需要会话时取得 handle：已有绑定用 attach，没有就 connect（可能创建，且同一作品只创建一次）。 */
+  const ensureHandle = react.useCallback(async () => {
+    if (handle && handle.status() !== 'missing' && handle.status() !== 'waiting') return handle
+    if (!opRef.current) opRef.current = newOperationToken()
+    const next = await adapter.connect(path, opRef.current)
+    if (alive.current) {
+      setHandle(next)
+      setBinding((prev) => ({ ...prev, sessionId: next.sessionId() }))
+    }
+    return next
+  }, [adapter, handle, path])
   react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
-  react.useEffect(() => { if (id) sessions?.open(id) }, [id, sessions])
+  react.useEffect(() => {
+    if (!id) return
+    const started = id ? adapter.attach(project, id, { binding }) : null
+    setHandle(started)
+    try {
+      started?.openFullSession()
+    } catch {}
+  }, [adapter, id, project])
+  react.useEffect(() => () => { handle?.dispose() }, [handle])
+  // 下面的草稿恢复 effect 依赖是 [project]（一次性），用 ref 取"当前" handle 与写回函数，
+  // 避免闭包里是 null 或过期 handle。
+  const handleRef = react.useRef(null)
+  const setNativeDraftRef = react.useRef(null)
+  react.useEffect(() => { handleRef.current = handle ?? null }, [handle])
+  react.useEffect(() => { setNativeDraftRef.current = setNativeDraft }, [setNativeDraft])
   const recoveryGen = react.useRef(0)
   const [draftUi, setDraftUi] = react.useState(() => ({
     conflict: null,
@@ -116,7 +135,12 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
       const typedDuring = recoveryGen.current !== started
       // R01: adopt full snapshot into cache (text + reference + rev) when no user edit
       if (!typedDuring) {
-        const nativeDraft = info?.hooks?.input?.getSnapshot?.().draft || ''
+        let nativeDraft = ''
+        try {
+          nativeDraft = handleRef.current ? handleRef.current.getDraft() : ''
+        } catch {
+          nativeDraft = ''
+        }
         const adoptText = nativeDraft || c.text || ''
         const adoptRef = c.reference || null
         companionDrafts.set(project, {
@@ -128,7 +152,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
         if (!nativeDraft && c.text) {
           setLocalDraft(c.text)
           try {
-            if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(c.text)
+            setNativeDraftRef.current?.(c.text)
           } catch {}
         }
       } else if (Number.isInteger(c.rev)) {
@@ -148,8 +172,19 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
   }, [project])
   function updateDraft(text) {
     recoveryGen.current++
-    if (info) info.props.inputActions.setDraft(text)
-    else setLocalDraft(text)
+    // 有会话就写原生输入框，没有会话（还没建立关联）就存在组件里。
+    // 注意 handle?.setDraft() 在 handle 为 null 时**不抛错**，所以必须显式判断有没有写入，
+    // 否则本地草稿会既没进原生也没进 state（E2E 实测过这条：切到完整会话后输入框是空的）。
+    let wroteNative = false
+    if (handle) {
+      try {
+        handle.setDraft(text)
+        wroteNative = true
+      } catch {
+        wroteNative = false
+      }
+    }
+    if (!wroteNative) setLocalDraft(text)
     const prev = companionDrafts.get(project) || { text: '', reference: null, rev: 0 }
     companionDrafts.set(project, { ...prev, text })
     companionDraftDirty.set(project, true)
@@ -170,11 +205,17 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     if (sending.current) return
     sending.current = true; setBusy(true)
     try {
-      const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current)
-      if (!next || !alive.current) return
-      if (!id && draft) appendCompanionDraft(sessions, next.sessionId, draft)
-      sessions.open(next.sessionId)
-      setBinding(next)
+      const target = handle || (await ensureHandle())
+      if (!target || !alive.current) return
+      // 只有"本次才建立会话"时把草稿带进原生输入框；已有会话时原生输入框本来就是同一份草稿，
+      // 再追加会变成两份（native E2E 断言过这条：切到完整会话后输入框内容必须与草稿一字不差）。
+      if (!id && draft) {
+        const already = target.getDraft()
+        try {
+          target.setDraft(already ? already + '\n\n' + draft : draft)
+        } catch {}
+      }
+      target.openFullSession()
       onExit()
     } catch (err) { if (alive.current) setError(err.message) }
     finally { sending.current = false; if (alive.current) setBusy(false) }
@@ -185,15 +226,8 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     sending.current = true; setBusy(true); setError('')
     const sentDraft = draft, sentReference = reference
     try {
-      const next = id ? binding : await ensureCompanionSession(sessions, path, () => alive.current)
-      if (!next || !alive.current) return
-      const target = sessions.binding(next.sessionId)?.session
-      if (!target) throw new Error('会话尚未就绪，请重试')
-      const targetInfo = sessions.provideInfo(next.sessionId)
-      if (!id) {
-        targetInfo.props.inputActions.setDraft(companionDrafts.get(project)?.text || sentDraft)
-        setBinding(next)
-      }
+      const target = handle || (await ensureHandle())
+      if (!target || !alive.current) return
       const memData = await loadProjectMemory(project)
       const memoryItems = memData.ok ? memData.memory?.items || [] : []
       const memWarning = memData.ok ? '' : String(memData.error || 'memory-unavailable')
@@ -207,15 +241,29 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
         memoryRevision: memData.ok ? memData.memory?.revision : null,
       })
       if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定：' + memWarning)
-      const result = await target.prompt([{ type: 'text', text: prepared.body }], 'queue')
-      if (!result.ok) throw new Error(result.error?.message || '发送失败，请重试')
+      const result = await target.send(prepared)
+      // 受理结果三分：rejected=没受理（改完再发）· uncertain=可能已受理（保留正文，绝不自动重发）
+      if (result.result === 'rejected') {
+        throw new Error(result.error || '发送失败，请重试')
+      }
+      if (result.result === 'uncertain') {
+        if (alive.current) setError('这一轮是否已被受理无法确认，正文已保留。请先查看完整会话确认原生回合，再决定是否重发。')
+        return
+      }
       // W03: one protected clear after send; tombstone advances rev
-      const nowDraft = targetInfo.hooks.input.getSnapshot().draft
+      let nowDraft = null
+      try {
+        nowDraft = target.getDraft()
+      } catch {
+        nowDraft = null
+      }
       const draftCleared = nowDraft === sentDraft || nowDraft === '' || nowDraft == null
       const nowRef = companionDrafts.get(project)?.reference || null
       const refCleared = !nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)
       if (draftCleared) {
-        targetInfo.props.inputActions.setDraft('')
+        try {
+          target.setDraft('')
+        } catch {}
         if (alive.current) setLocalDraft('')
       }
       if (refCleared && alive.current) setReference(null)
@@ -233,7 +281,20 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     finally { sending.current = false; if (alive.current) setBusy(false) }
   }
     // Business errors only (session send / memory). Draft save errors are in draftUi.status.
-    const failure = error || snapshot.openError?.message || snapshot.promptError?.error?.message
+    const failure = error || snapshot.error
+    // 真实异常才出现的恢复条：说明状态 + 给出恢复入口（方案 §3.3：不静默切到新空会话）
+    const statusNote = !handle || snapshot.status === 'ready'
+      ? ''
+      : snapshot.status === 'waiting'
+        ? '正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）'
+        : snapshot.status === 'uncertain'
+          ? '上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。'
+          : snapshot.status === 'missing'
+            ? '原本关联的会话已不存在（可能被删除了）。'
+            : snapshot.status === 'error'
+              ? `关联失败：${snapshot.error || '未知原因'}`
+              : ''
+    const recoverable = snapshot.status === 'missing' || snapshot.status === 'uncertain' || snapshot.status === 'waiting'
   return jsx.jsxs('div', { className: 'dshWmCompanion', children: [
     jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
       jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
@@ -241,6 +302,30 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
     ] }),
     memOpen ? jsx.jsx(CompanionMemoryPanel, { path: project }) : null,
+    statusNote
+      ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', 'data-wm-status': snapshot.status, children: [
+          statusNote,
+          jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void handle?.refresh(), children: '重查状态' }),
+          recoverable
+            ? jsx.jsx('button', {
+                className: 'dshWmQuiet',
+                onClick: () => void handle?.recover().catch((err) => setError(err.message || String(err))),
+                children: '继续关联',
+              })
+            : null,
+          jsx.jsx('button', {
+            className: 'dshWmQuiet',
+            onClick: () => {
+              try {
+                handle?.openFullSession()
+              } catch (err) {
+                setError(err.message || String(err))
+              }
+            },
+            children: '查看完整会话',
+          }),
+        ] })
+      : null,
     jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
     draftUi.conflict
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
@@ -255,9 +340,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
               void resolveDraftConflict(project, 'keep-local', {
                 setLocalDraft,
                 setReference,
-                setNativeDraft: (t) => {
-                  if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t)
-                },
+                setNativeDraft,
               }),
             children: '保留本地并覆盖',
           }),
@@ -268,9 +351,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
                   void resolveDraftConflict(project, 'keep-remote', {
                     setLocalDraft,
                     setReference,
-                    setNativeDraft: (t) => {
-                      if (info?.props?.inputActions?.setDraft) info.props.inputActions.setDraft(t)
-                    },
+                    setNativeDraft,
                   })
                 },
                 children: '采用远端',
@@ -311,7 +392,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
       jsx.jsxs('div', { className: 'dshWmComposeFoot', children: [
         jsx.jsx('button', { className: 'dshWmQuiet', disabled: !sessions, onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
         jsx.jsx('span', { className: 'dshWmInputHint', children: 'Shift + Enter 换行' }),
-        snapshot.running ? jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '停止回复', onClick: () => void session.cancel().catch(err => setError(err.message)), children: '停止' }) : null,
+        snapshot.running ? jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '停止回复', onClick: () => void (handle ? handle.cancel().catch(err => setError(err.message)) : setError('会话尚未就绪')), children: '停止' }) : null,
         jsx.jsx('button', { className: 'dshWmSend', disabled: !sessions || busy || !draft.trim(), onClick: () => void send(), 'aria-label': snapshot.running ? '排队发送' : '发送', title: snapshot.running ? '在本次回复后发送' : '发送', children: busy ? '…' : '↑' }),
       ] }),
     ] }),

@@ -31,8 +31,20 @@ import {
   memoryError,
 } from './lib/project-memory.js'
 import { readCheckpoint, writeCheckpoint, listCheckpoints } from './lib/draft-checkpoints.js'
+import {
+  claimCoordination,
+  markCreatingCoordination,
+  confirmCoordination,
+  markUncertainCoordination,
+  releaseCoordination,
+  forgetCoordination,
+  readCoordination,
+} from './lib/coordination.js'
 import fs from 'node:fs'
 import { listTemplates, renderTemplate } from './lib/templates.js'
+
+/** 记录里的内部判定字段不进响应（结果单独放在 outcome）。 */
+const stripOutcome = ({ _outcome, ...record }) => record
 
 export const name = 'writing-mode'
 /** webServer=文档库 API；llm=文字工具；agentDefaultModel=全局工具模型选择。 */
@@ -563,6 +575,77 @@ export function apply(ctx) {
               baseRev: parsed.baseRev,
             })
             writeJson(res, 200, r)
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
+          }
+          return
+        }
+
+        // ── 会话创建协调（方案 P2 §3.2）：预留 / 创建中 / 已绑定 / 不确定 ──
+        // 项目身份用**作品的规范路径**（与记忆同源：resolveUnderRoots + resolveProjectDir），
+        // 因此协调记录天然按作品分桶，且跨窗口/跨进程看到同一份记录。
+        if (route === 'coordination') {
+          const resolveProjectKey = (rawPath) => {
+            const roots = effectiveRoots(cfg)
+            const target = resolveUnderRoots(rawPath, roots)
+            const proj = target ? resolveProjectDir(target.abs, roots) : null
+            return proj ? { proj, roots } : null
+          }
+          try {
+            if (req.method === 'GET') {
+              const resolved = resolveProjectKey(url.searchParams.get('path') || '')
+              if (!resolved) {
+                writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+                return
+              }
+              const record = readCoordination(resolved.proj)
+              writeJson(res, 200, { ok: true, project: resolved.proj, record })
+              return
+            }
+            const parsed = await readJsonBody(req)
+            if (parsed === null) {
+              writeJson(res, 400, { ok: false, error: 'invalid-json' })
+              return
+            }
+            const resolved = resolveProjectKey(parsed?.path || '')
+            if (!resolved) {
+              writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+              return
+            }
+            const projectKey = resolved.proj
+            const base = { path: parsed.path, projectKey, operationToken: parsed.operationToken }
+            const op = String(parsed.op || '')
+            if (op === 'claim') {
+              const r = claimCoordination({ ...base, owner: parsed.owner })
+              writeJson(res, 200, { ok: true, outcome: r._outcome, record: stripOutcome(r) })
+              return
+            }
+            if (op === 'creating') {
+              const r = markCreatingCoordination(base)
+              writeJson(res, 200, { ok: true, outcome: r._outcome, record: stripOutcome(r) })
+              return
+            }
+            if (op === 'confirm') {
+              const r = confirmCoordination({ ...base, sessionId: parsed.sessionId, workspaceId: parsed.workspaceId, bindingVersion: parsed.bindingVersion })
+              writeJson(res, 200, { ok: true, outcome: r._outcome, record: stripOutcome(r) })
+              return
+            }
+            if (op === 'uncertain') {
+              const r = markUncertainCoordination({ ...base, workspaceId: parsed.workspaceId, sessionId: parsed.sessionId, reason: parsed.reason })
+              writeJson(res, 200, { ok: true, outcome: r._outcome, record: stripOutcome(r) })
+              return
+            }
+            if (op === 'release') {
+              const r = releaseCoordination(base)
+              writeJson(res, 200, { ok: true, outcome: r._outcome, record: stripOutcome(r) })
+              return
+            }
+            if (op === 'forget') {
+              const r = forgetCoordination({ projectKey })
+              writeJson(res, 200, { ok: true, ...r })
+              return
+            }
+            writeJson(res, 400, { ok: false, error: 'unknown-op' })
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
           }

@@ -18,7 +18,6 @@ import { applyBodyAttr, setCloseGuard, modeListeners, setModeActive, commitModeA
 import { companionRows, WritingCompanion } from './features/companion/index.js'
 import { loadProjectMemory, CompanionMemoryPanel } from './features/memory/index.js'
 import { bindHarness, harnessSessions, harnessConnection, harnessWorkspaces } from './adapters/harness/runtime.js'
-import { appendCompanionDraft, ensureCompanionSession } from './adapters/harness/sessions.js'
 import {
   companionDrafts,
   loadCompanionDraft,
@@ -162,4 +161,7 @@ export function apply(ctx) {
 }
 
 export { companionDraftConflict as __draftConflict }
-export { appendCompanionDraft, ensureCompanionSession, loadCompanionDraft, resolveDraftConflict, retryDraftConflictRemote, subscribeDraftStatus, getDraftStatus, persistCompanionDraft, companionDraftDirty as __draftDirty, companionDraftStatus as __draftStatus, companionRows, createEditorSession, api }
+export { loadCompanionDraft, resolveDraftConflict, retryDraftConflictRemote, subscribeDraftStatus, getDraftStatus, persistCompanionDraft, companionDraftDirty as __draftDirty, companionDraftStatus as __draftStatus, companionRows, createEditorSession, api }
+// 测试钩子（P2）：让 host 回归能在同一个 sandbox 里直接驱动 adapter（真实 HTTP 路由 + 真协调协议）
+export { createHarnessAdapter } from './adapters/harness/adapter.js'
+export { newOperationToken } from './adapters/harness/adapter.js'

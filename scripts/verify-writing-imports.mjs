@@ -44,10 +44,12 @@ const codeOnly = (t) =>
     .replace(/([=(,:;[!&|?{}]\s*)\/(?![/*])(?:\\.|\[[^\]\n]*\]|[^/\n\\])+\/[gimsuy]*/g, '$1 RE')
 
 const IMPORTS_RE = /^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/gm
+/** 再导出 `export { a, b } from '…'`（如 entry.js 的测试钩子）：既算"本模块有这些名字"，
+ *  又不该被当作"使用"——用法扫描会把它当引用，于是合法再导出被误报成漏 import。 */
+const REEXPORTS_RE = /^export\s+\{([^}]*)\}\s*from\s*['"][^'"]+['"]/gm
 function importedNames(text) {
   const out = new Set()
-  for (const m of text.matchAll(IMPORTS_RE)) {
-    const clause = m[1]
+  const takeClause = (clause) => {
     const star = clause.match(/\*\s+as\s+([A-Za-z_$][\w$]*)/)
     if (star) out.add(star[1])
     const braces = clause.match(/\{([\s\S]*?)\}/)
@@ -63,6 +65,13 @@ function importedNames(text) {
       .replace(/,/g, ' ')
       .trim()
     if (isIdent(def)) out.add(def)
+  }
+  for (const m of text.matchAll(IMPORTS_RE)) takeClause(m[1])
+  for (const m of text.matchAll(REEXPORTS_RE)) {
+    for (const piece of m[1].split(',')) {
+      const n = piece.trim().split(/\s+as\s+/).pop().trim()
+      if (isIdent(n)) out.add(n)
+    }
   }
   return out
 }
@@ -95,8 +104,63 @@ function balanced(text, openIndex) {
 }
 
 const IDENT_RE = /\b[A-Za-z_$][\w$]*\b/g
-const addIdents = (out, source) => {
-  for (const tok of String(source || '').matchAll(IDENT_RE)) if (isIdent(tok[0])) out.add(tok[0])
+/** 按顶层逗号切分（跳过嵌套括号内的逗号）。 */
+function splitTopLevel(text) {
+  const parts = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '(' || ch === '{' || ch === '[') depth++
+    else if (ch === ')' || ch === '}' || ch === ']') depth--
+    else if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(text.slice(start))
+  return parts
+}
+
+/**
+ * 从解构模式里取**绑定名**：只取键位上的名字，**默认值表达式里的标识符不算声明**。
+ * 反例（2026-09-14 实测的误报）：`const { now = () => Date.now(), wait = (ms) => new Promise(…) } = deps`
+ * 若整段括号文本都当声明，`Date`/`Promise`/`setTimeout` 就变成"本模块声明"，
+ * 于是别的模块用 `Date.now()` 会被误报成"跨模块漏 import"。
+ */
+function destructuredNames(pattern, out = new Set()) {
+  for (const rawPart of splitTopLevel(pattern)) {
+    let part = rawPart.trim()
+    if (!part) continue
+    part = part.split('=')[0].trim() // 丢掉默认值表达式
+    if (part.startsWith('...')) part = part.slice(3).trim()
+    if (/^[{[]/.test(part)) {
+      const b = balanced(part, 0)
+      if (b) destructuredNames(b.inner, out)
+      continue
+    }
+    const target = part.includes(':') ? part.split(':').pop().trim() : part
+    if (isIdent(target)) out.add(target)
+  }
+  return out
+}
+
+/** 形参名：同样只取绑定名（默认值里的标识符不算声明）。 */
+function paramNames(inner, out = new Set()) {
+  for (const rawPart of splitTopLevel(String(inner || ''))) {
+    let part = rawPart.trim()
+    if (!part) continue
+    part = part.split('=')[0].trim()
+    if (part.startsWith('...')) part = part.slice(3).trim()
+    if (/^[{[]/.test(part)) {
+      const b = balanced(part, 0)
+      if (b) destructuredNames(b.inner, out)
+      continue
+    }
+    const target = part.includes(':') ? part.split(':').pop().trim() : part
+    if (isIdent(target)) out.add(target)
+  }
+  return out
 }
 
 function declaredNames(text) {
@@ -108,18 +172,18 @@ function declaredNames(text) {
     if (m) out.add(m[1] || m[2])
   }
   // 形参 / 箭头参数 / catch 参数也是声明（否则 versionOf(name) 会撞上别处的同名顶层声明）
-  // 都在 codeOnly 之后的文本上做严格配对，避免跨行括号把真实代码吞成形参
+  // 都在 codeOnly 之后的文本上做严格配对，且只取绑定名（默认值里的标识符不算声明）
   for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$]?[\w$]*\s*\(/g)) {
     const b = balanced(code, m.index + m[0].length - 1)
-    if (b) addIdents(out, b.inner)
+    if (b) paramNames(b.inner, out)
   }
   for (const m of code.matchAll(/\bcatch\s*\(/g)) {
     const b = balanced(code, m.index + m[0].length - 1)
-    if (b) addIdents(out, b.inner)
+    if (b) paramNames(b.inner, out)
   }
   for (const m of code.matchAll(/\(/g)) {
     const b = balanced(code, m.index)
-    if (b && /^\s*=>/.test(code.slice(b.end + 1))) addIdents(out, b.inner)
+    if (b && /^\s*=>/.test(code.slice(b.end + 1))) paramNames(b.inner, out)
   }
   // 无括号单参箭头：v => …（此正则的第 2 组才是名字）
   for (const m of text.matchAll(/(^|[^\w$.])([A-Za-z_$][\w$]*)\s*=>/g)) if (isIdent(m[2])) out.add(m[2])
@@ -127,10 +191,10 @@ function declaredNames(text) {
   for (const m of code.matchAll(/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1])
   // 局部声明：任意位置的 const/let/var（含 for-of），否则 v/i/prev 这类会被误判为外部声明
   for (const m of code.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) out.add(m[1])
-  // 解构（含 for-of 与数组形式）：同样严格配对后再取名字
+  // 解构（含 for-of 与数组形式）：严格配对后只取绑定名（默认值里的 Date/Promise 等不算声明）
   for (const m of code.matchAll(/\b(?:const|let|var)\s*([{[])/g)) {
     const b = balanced(code, m.index + m[0].length - 1)
-    if (b) addIdents(out, b.inner)
+    if (b) destructuredNames(b.inner, out)
   }
   return out
 }
