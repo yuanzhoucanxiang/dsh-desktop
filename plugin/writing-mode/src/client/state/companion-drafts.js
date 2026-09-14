@@ -37,6 +37,29 @@ export async function loadCompanionDraft(project) {
 }
 
 
+/**
+ * 其他窗口的草稿候选（方案 P3 §4.3）：**只列出，不自动合并**。
+ * 每条带窗口标识与更新时间，作者明确采用才写回当前编辑框。
+ */
+export async function listDraftCandidates(project) {
+  try {
+    const data = await api('draft', undefined, { project, window: companionWindowId })
+    if (!data.ok) return []
+    const mine = companionWindowId
+    return (data.checkpoints || [])
+      .filter((c) => c && c.windowId !== mine && String(c.text || '').trim())
+      .map((c) => ({
+        windowId: c.windowId,
+        updatedAt: c.updatedAt || null,
+        rev: c.rev ?? 0,
+        text: c.text || '',
+        reference: c.reference || null,
+      }))
+  } catch {
+    return []
+  }
+}
+
 export const draftSaveQueue = new Map()
 export const companionRecoveryState = new Map()
 export const companionDraftDirty = new Map()

@@ -2,10 +2,12 @@
  * 写作模式客户端模块（P1 从 entry.js 搬迁；行为不变）。
  */
 import { loadProjectMemory, CompanionMemoryPanel } from '../memory/index.js'
+import { memoryHint, isInjectable, DEFAULT_MEMORY_BUDGET } from '../../../shared/context-builder.js'
+import { referenceStatus, sameReference, normalizeReference } from '../../../shared/reference.js'
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
-import { companionDrafts, loadCompanionDraft, companionRecoveryState, companionDraftDirty, companionDraftConflict, companionDraftStatus, setDraftStatus, getDraftStatus, subscribeDraftStatus, resolveDraftConflict, retryDraftConflictRemote, persistCompanionDraft } from '../../state/companion-drafts.js'
+import { companionDrafts, loadCompanionDraft, listDraftCandidates, companionRecoveryState, companionDraftDirty, companionDraftConflict, companionDraftStatus, setDraftStatus, getDraftStatus, subscribeDraftStatus, resolveDraftConflict, retryDraftConflictRemote, persistCompanionDraft } from '../../state/companion-drafts.js'
 import { harnessSessions } from '../../adapters/harness/runtime.js'
 import { harnessAdapter } from '../../adapters/harness/runtime.js'
 import { newOperationToken } from '../../adapters/harness/adapter.js'
@@ -28,7 +30,7 @@ export function companionRows(snapshot) {
 }
 
 
-export function CompanionTranscript({ snapshot, onFull }) {
+export function CompanionTranscript({ snapshot, onFull, onCandidate }) {
   const rows = companionRows(snapshot)
   const scroll = react.useRef(null)
   const follow = react.useRef(true)
@@ -47,6 +49,14 @@ export function CompanionTranscript({ snapshot, onFull }) {
       jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
       jsx.jsx('div', { className: 'dshWmMessageText', children: row.text }),
       row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
+      row.kind === 'assistant' && onCandidate
+        ? jsx.jsx('button', {
+            className: 'dshWmQuiet dshWmMessageAction',
+            'data-wm-candidate': row.key,
+            onClick: () => onCandidate({ text: row.text, messageId: row.key }),
+            children: '记为候选',
+          })
+        : null,
     ] }, row.key)),
     (snapshot.queue || []).map(row => jsx.jsx('div', { className: 'dshWmActivity', children: '等待回复后发送 · ' + (row.text || row.preview || '消息') }, row.id)),
     (snapshot.pending || []).map(wait => jsx.jsxs('div', { className: 'dshWmRequest', children: [
@@ -56,7 +66,7 @@ export function CompanionTranscript({ snapshot, onFull }) {
     snapshot.running ? jsx.jsx('div', { className: 'dshWmThinking', role: 'status', children: '正在回应…' }) : null,
   ] })
 }
-export function CompanionChat({ initialBinding, path, contextText, onExit }) {
+export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }) {
   const sessions = harnessSessions()
   const adapter = harnessAdapter()
   const [binding, setBinding] = react.useState(initialBinding)
@@ -67,6 +77,14 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
   const [busy, setBusy] = react.useState(false)
   const [error, setError] = react.useState('')
   const [memOpen, setMemOpen] = react.useState(false)
+  const [candidate, setCandidate] = react.useState(null)
+  const [draftCandidates, setDraftCandidates] = react.useState([])
+  const [previewCandidate, setPreviewCandidate] = react.useState(null)
+  const [contextOpen, setContextOpen] = react.useState(false)
+  const [includeMemory, setIncludeMemory] = react.useState(true) // 默认开启本次参考
+  const [pinned, setPinned] = react.useState([]) // 作者本次固定/勾选的条目 id（顺序即作者顺序）
+  const [memoryItems, setMemoryItems] = react.useState([])
+  const [memoryMeta, setMemoryMeta] = react.useState({ revision: null, etag: null, ok: true, error: '' })
   const alive = react.useRef(true)
   const sending = react.useRef(false)
   const id = binding.sessionId
@@ -74,6 +92,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
   // 只有作者确实需要新建时才走 connect。这样"老绑定没有协调记录"不会被误判成"需要新建会话"。
   const [handle, setHandle] = react.useState(() => (id ? adapter.attach(project, id, { binding }) : null))
   const opRef = react.useRef(null)
+  const operationIdRef = react.useRef(null) // 每次发送一个 operationId，冻结进 preparedTurn
   const snapshot = useCompanionStore(handle)
   const draft = handle ? snapshot.draft || '' : localDraft
   const needsFullComposer = Boolean((snapshot.imageIds && snapshot.imageIds.length) || snapshot.claim || draft.trimStart().startsWith('/'))
@@ -94,6 +113,29 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     }
     return next
   }, [adapter, handle, path])
+  const reloadMemory = react.useCallback(async () => {
+    const data = await loadProjectMemory(project)
+    setMemoryItems(data.ok ? data.memory?.items || [] : [])
+    setMemoryMeta({
+      revision: data.ok ? data.memory?.revision ?? null : null,
+      etag: data.ok ? data.etag ?? null : null,
+      ok: Boolean(data.ok),
+      error: data.ok ? '' : String(data.error || 'memory-unavailable'),
+    })
+    return data
+  }, [project])
+  react.useEffect(() => { void reloadMemory() }, [reloadMemory])
+  // 其他窗口的草稿候选：只列出（带窗口/时间），采用与否由作者决定；不自动合并、不自动替换
+  const reloadCandidates = react.useCallback(async () => {
+    const list = await listDraftCandidates(project)
+    setDraftCandidates(list)
+  }, [project])
+  react.useEffect(() => { void reloadCandidates() }, [reloadCandidates])
+  // 候选入口：点助手消息上的"记为候选"→ 打开备忘面板并预填（面板是唯一的备忘写入口）
+  const startCandidate = react.useCallback((msg) => {
+    setCandidate({ text: msg.text, source: { kind: 'assistant', sessionId: snapshot.sessionId || null, messageId: msg.messageId || null } })
+    setMemOpen(true)
+  }, [snapshot.sessionId])
   react.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   react.useEffect(() => {
     if (!id) return
@@ -142,7 +184,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
           nativeDraft = ''
         }
         const adoptText = nativeDraft || c.text || ''
-        const adoptRef = c.reference || null
+        const adoptRef = normalizeReference(c.reference) || null
         companionDrafts.set(project, {
           text: adoptText,
           reference: adoptRef,
@@ -225,22 +267,30 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     if (needsFullComposer) { void fullConversation(); return }
     sending.current = true; setBusy(true); setError('')
     const sentDraft = draft, sentReference = reference
+    operationIdRef.current = newOperationToken()
     try {
       const target = handle || (await ensureHandle())
       if (!target || !alive.current) return
+      // 每次真正发送都重新读备忘：已撤回/改过的条目按最新有效状态来，绝不拿面板缓存当权威
       const memData = await loadProjectMemory(project)
-      const memoryItems = memData.ok ? memData.memory?.items || [] : []
+      const freshItems = memData.ok ? memData.memory?.items || [] : []
       const memWarning = memData.ok ? '' : String(memData.error || 'memory-unavailable')
+      if (memData.ok && alive.current) {
+        setMemoryItems(freshItems)
+        setMemoryMeta({ revision: memData.memory?.revision ?? null, etag: memData.etag ?? null, ok: true, error: '' })
+      }
       const prepared = buildPreparedTurn({
         message: sentDraft,
-        reference: sentReference
-          ? { label: sentReference.label, text: sentReference.text, path: sentReference.path, revision: sentReference.revision }
-          : null,
-        memoryItems,
+        reference: sentReference,
+        memoryItems: freshItems,
+        includeMemory,
+        pinnedMemoryIds: pinned,
         projectKey: project,
+        operationId: operationIdRef.current,
         memoryRevision: memData.ok ? memData.memory?.revision : null,
+        memoryEtag: memData.ok ? memData.etag : null,
       })
-      if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定：' + memWarning)
+      if (memWarning && alive.current) setError('备忘读取失败，本次未带入已确认设定。正文已保留，可以重试或不参考发送：' + memWarning)
       const result = await target.send(prepared)
       // 受理结果三分：rejected=没受理（改完再发）· uncertain=可能已受理（保留正文，绝不自动重发）
       if (result.result === 'rejected') {
@@ -259,7 +309,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
       }
       const draftCleared = nowDraft === sentDraft || nowDraft === '' || nowDraft == null
       const nowRef = companionDrafts.get(project)?.reference || null
-      const refCleared = !nowRef || (nowRef.text === sentReference?.text && nowRef.label === sentReference?.label)
+      const refCleared = !nowRef || sameReference(nowRef, sentReference)
       if (draftCleared) {
         try {
           target.setDraft('')
@@ -295,13 +345,25 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
               ? `关联失败：${snapshot.error || '未知原因'}`
               : ''
     const recoverable = snapshot.status === 'missing' || snapshot.status === 'uncertain' || snapshot.status === 'waiting'
+    // 引用是否来自旧快照：只在"源稿当前状态可知且路径一致"时判断，其余一律 unknown
+    let refStatus = 'empty'
+    try {
+      refStatus = referenceStatus(reference, sourceInfo ? sourceInfo() : null)
+    } catch {
+      refStatus = 'unknown'
+    }
   return jsx.jsxs('div', { className: 'dshWmCompanion', children: [
     jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
       jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setMemOpen(v => !v), children: memOpen ? '收起备忘' : '项目备忘' }),
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
     ] }),
-    memOpen ? jsx.jsx(CompanionMemoryPanel, { path: project }) : null,
+    memOpen ? jsx.jsx(CompanionMemoryPanel, {
+      path: project,
+      candidate,
+      onCandidateConsumed: () => setCandidate(null),
+      onChanged: () => void reloadMemory(),
+    }) : null,
     statusNote
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', 'data-wm-status': snapshot.status, children: [
           statusNote,
@@ -326,7 +388,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
           }),
         ] })
       : null,
-    jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation() }),
+    jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation(), onCandidate: startCandidate }),
     draftUi.conflict
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
           draftUi.conflict.remoteStatus === 'valid'
@@ -382,13 +444,116 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     failure ? jsx.jsx('div', { className: 'dshWmCompanionError', role: 'alert', children: failure }) : null,
     needsFullComposer ? jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), children: '在完整会话中发送附件或使用指令 ↗' }) : null,
     jsx.jsxs('div', { className: 'dshWmCompose', children: [
-      reference ? jsx.jsxs('div', { className: 'dshWmReference', children: [
-        jsx.jsxs('details', { children: [jsx.jsx('summary', { children: reference.label }), jsx.jsx('pre', { children: reference.text })] }),
+      draftCandidates.length
+        ? jsx.jsxs('div', { className: 'dshWmDraftCandidates', 'data-wm-draft-candidates': String(draftCandidates.length), children: [
+            jsx.jsx('span', { className: 'dshWmMemoryNote', children: '其他窗口还有未合并的草稿（不会自动覆盖你正在写的）：' }),
+            ...draftCandidates.map((c) => jsx.jsxs('div', { className: 'dshWmDraftCandidate', children: [
+              jsx.jsx('span', { className: 'dshWmMemoryKind', children: '窗口 ' + String(c.windowId).slice(0, 6) + (c.updatedAt ? ' · ' + String(c.updatedAt).replace('T', ' ').slice(5, 16) : '') }),
+              jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setPreviewCandidate(previewCandidate && previewCandidate.windowId === c.windowId ? null : c), children: '预览' }),
+              jsx.jsx('button', {
+                className: 'dshWmQuiet',
+                'data-wm-draft-adopt': c.windowId,
+                onClick: () => {
+                  // 明确采用：先留一份可恢复副本（当前草稿进候选列表就是它），再替换
+                  updateDraft(c.text)
+                  if (c.reference) updateReference(c.reference)
+                  setDraftCandidates((prev) => prev.filter((x) => x.windowId !== c.windowId))
+                  setPreviewCandidate(null)
+                },
+                children: '采用这一份',
+              }),
+            ] }, c.windowId)),
+            previewCandidate
+              ? jsx.jsxs('div', { className: 'dshWmDraftPreview', children: [
+                  jsx.jsx('pre', { children: previewCandidate.text }),
+                  jsx.jsx('span', { className: 'dshWmMemoryNote', children: '采用会替换当前编辑框内容（你原来的草稿仍在"其他窗口"候选里，可再切换回来）' }),
+                ] })
+              : null,
+          ] })
+        : null,
+      reference ? jsx.jsxs('div', { className: 'dshWmReference', 'data-wm-reference-status': refStatus, children: [
+        jsx.jsxs('details', { children: [
+          jsx.jsx('summary', { children: reference.label }),
+          jsx.jsxs('div', { className: 'dshWmMemoryNote', children: [
+            reference.path ? '来源：' + reference.path : '来源：未记录（旧引用）',
+            reference.revision != null ? ' · 版本 ' + String(reference.revision).slice(0, 10) : '',
+            reference.selection ? ' · 选区 ' + reference.selection.start + '-' + reference.selection.end : '',
+            refStatus === 'unsaved' ? ' · 取自未保存的编辑器内容' : '',
+          ] }),
+          jsx.jsx('pre', { children: reference.text }),
+        ] }),
+        refStatus === 'stale'
+          ? jsx.jsx('button', {
+              className: 'dshWmQuiet',
+              'data-wm-reference-restale': '1',
+              title: '源稿已经改过，重新取当前内容作为引用',
+              onClick: () => {
+                const value = contextText?.()
+                if (value?.text) updateReference(value)
+              },
+              children: '引用来自旧快照 · 重新引用',
+            })
+          : null,
         jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '移除稿件引用', onClick: () => updateReference(null), children: '×' }),
       ] }) : null,
       jsx.jsx('textarea', { className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: '说说你正在想的…', value: draft, disabled: !sessions, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send() }
       } }),
+      jsx.jsxs('div', { className: 'dshWmContext', children: [
+        jsx.jsx('button', {
+          className: 'dshWmQuiet',
+          'data-wm-context-toggle': '1',
+          disabled: !sessions,
+          onClick: () => setContextOpen((v) => !v),
+          children: includeMemory ? (memoryHint(memoryItems) || '本次没有可参考的已确认条目') : '本次不参考项目备忘',
+        }),
+        jsx.jsxs('label', { className: 'dshWmContextSwitch', title: '这一轮是否参考项目备忘', children: [
+          jsx.jsx('input', {
+            type: 'checkbox',
+            'data-wm-context-enabled': '1',
+            checked: includeMemory,
+            onChange: (e) => setIncludeMemory(e.target.checked),
+          }),
+          '参考',
+        ] }),
+        contextOpen
+          ? jsx.jsxs('div', { className: 'dshWmContextPanel', children: [
+              memoryMeta.ok ? null : jsx.jsx('div', { className: 'dshWmMemoryNote', children: '备忘读取失败（' + memoryMeta.error + '）：可以重试，或直接不参考发送。正文不会丢。' }),
+              memoryItems.filter(isInjectable).length
+                ? memoryItems.filter(isInjectable).map((it) => jsx.jsxs('label', { className: 'dshWmContextItem', children: [
+                    jsx.jsx('input', {
+                      type: 'checkbox',
+                      'data-wm-memory-pin': it.id,
+                      checked: pinned.includes(it.id),
+                      onChange: (e) => setPinned((prev) => e.target.checked ? [...prev, it.id] : prev.filter((x) => x !== it.id)),
+                    }),
+                    jsx.jsx('span', { className: 'dshWmMemoryKind', children: it.kind === 'preference' ? '偏好' : '设定' }),
+                    jsx.jsx('span', { className: 'dshWmContextText', children: it.text }),
+                  ] }, it.id))
+                : jsx.jsx('div', { className: 'dshWmMemoryNote', children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
+              jsx.jsxs('div', { className: 'dshWmMemoryNote', children: [
+                '勾选的条目优先带入（作者固定），其余按备忘顺序自动补齐；自动部分有 ',
+                String(DEFAULT_MEMORY_BUDGET),
+                ' 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。',
+              ] }),
+              memoryItems.filter((it) => it.kind === 'open-question' && it.status === 'confirmed').length
+                ? jsx.jsxs('div', { className: 'dshWmContextQuestions', children: [
+                    jsx.jsx('div', { className: 'dshWmMemoryNote', children: '待定问题（确认了也仍是问题，默认不带入；可单独勾选）' }),
+                    memoryItems.filter((it) => it.kind === 'open-question' && it.status === 'confirmed').map((it) => jsx.jsxs('label', { className: 'dshWmContextItem', children: [
+                      jsx.jsx('input', {
+                        type: 'checkbox',
+                        'data-wm-memory-pin': it.id,
+                        checked: pinned.includes(it.id),
+                        onChange: (e) => setPinned((prev) => e.target.checked ? [...prev, it.id] : prev.filter((x) => x !== it.id)),
+                      }),
+                      jsx.jsx('span', { className: 'dshWmMemoryKind', children: '待定' }),
+                      jsx.jsx('span', { className: 'dshWmContextText', children: it.text }),
+                    ] }, it.id)),
+                  ] })
+                : null,
+            ] })
+          : null,
+      ] }),
       jsx.jsxs('div', { className: 'dshWmComposeFoot', children: [
         jsx.jsx('button', { className: 'dshWmQuiet', disabled: !sessions, onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
         jsx.jsx('span', { className: 'dshWmInputHint', children: 'Shift + Enter 换行' }),
@@ -398,7 +563,7 @@ export function CompanionChat({ initialBinding, path, contextText, onExit }) {
     ] }),
   ] })
 }
-export function WritingCompanion({ path, contextText, onExit }) {
+export function WritingCompanion({ path, contextText, sourceInfo, onExit }) {
   const [result, setResult] = react.useState(null)
   const [retry, setRetry] = react.useState(0)
   react.useEffect(() => {
@@ -414,5 +579,5 @@ export function WritingCompanion({ path, contextText, onExit }) {
   }, [path, retry])
   if (!path || result?.path !== path) return jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' })
   if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] })
-  return jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, onExit }, result.project)
+  return jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit }, result.project)
 }

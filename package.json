@@ -41,9 +41,10 @@
     "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs",
     "verify:writing-package": "node scripts/verify-writing-package.mjs",
     "plugin-sync-test": "node lib/plugin-sync.test.js",
-    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-coordination && npm run test:writing-adapter && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native",
+    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-coordination && npm run test:writing-adapter && npm run test:writing-p3 && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native",
     "test:writing-coordination": "node plugin/writing-mode/test/coordination.mjs",
-    "test:writing-adapter": "node plugin/writing-mode/test/adapter-coordination.mjs"
+    "test:writing-adapter": "node plugin/writing-mode/test/adapter-coordination.mjs",
+    "test:writing-p3": "node plugin/writing-mode/test/p3-memory-context.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",

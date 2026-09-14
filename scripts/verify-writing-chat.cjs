@@ -60,7 +60,10 @@ app.whenReady().then(async () => {
     const d = event.message ? event : typeof level === 'object' ? level : { level, message }
     if (d.level === 'error' || d.level === 3) { errors.push(d.message); console.log('RENDER ERROR', d.message) }
   })
-  const evaluate = code => win.webContents.executeJavaScript(code, true)
+  const evaluate = (code) =>
+    win.webContents.executeJavaScript(code, true).catch((err) => {
+      throw new Error('EVAL FAILED :: ' + String(code).slice(0, 140) + ' :: ' + err.message)
+    })
   async function waitFor(code) {
     const until = Date.now() + 12000
     while (Date.now() < until) { if (await evaluate(code)) return; await sleep(70) }
@@ -100,7 +103,7 @@ app.whenReady().then(async () => {
     ['t',{kind:'tool-call',data:{root:{name:'read_file',status:'running'}}}],
     ['tail',{kind:'turn-tail',data:{closing:{blocks:[{kind:'text',text:'不要重复结尾'}]}}}]
   ])},running:true,pending:[{key:'approval:1',kind:'approval'},{key:'question:2',kind:'question'}],queue:[{id:'q1',text:'下一条想法'}]})`)
-  await waitFor(`document.querySelector('.dshWmConversation').innerText.includes('也许她已经猜到了')`)
+  await waitFor(`document.querySelector('.dshWmConversation')?.innerText.includes('也许她已经猜到了')`)
   assert.equal(await evaluate(`document.querySelectorAll('.dshWmMessage').length`),2)
   assert.equal(await evaluate(`document.querySelectorAll('.dshWmRequest').length`),2)
   assert.ok(await evaluate(`document.querySelector('.dshWmConversation').innerText.includes('下一条想法')`))
@@ -115,8 +118,77 @@ app.whenReady().then(async () => {
   await evaluate(`document.querySelector('.dshWmChatInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
   await waitFor(`testChat.calls.length===3`)
   await evaluate(`testChat.resolve({ok:true,value:{accepted:true}})`)
-  await waitFor(`document.querySelector('.dshWmChatInput').value===''`)
+  await waitFor(`document.querySelector('.dshWmChatInput')?.value===''`)
   console.log('PASS CHAT 中文输入法不误发送；普通 Enter 发送后清空已提交草稿')
+
+  // ── P3 完整作者流程（方案 §4.4）：作者新增 → 带入 → 撤回 → 下轮变更 → 助手建议转候选 → 确认 ──
+  // 全程走真实 host 记忆路由（/api/writing-mode?route=memory）+ 真实 preparedTurn；只有原生会话是假的。
+  await button('项目备忘')
+  await waitFor(`!!document.querySelector('.dshWmMemory .dshWmSearch')`)
+  await input('.dshWmMemory .dshWmSearch', '主角叫林晚')
+  // 备忘还在加载时保存按钮是 disabled：必须等到可用再点（否则点了空）
+  await waitFor(`!Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='保存为项目备忘')?.disabled`)
+  await button('保存为项目备忘')
+  await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="confirmed"]')`)
+  assert.ok(await evaluate(`document.querySelector('.dshWmMemoryStatus').dataset.status==='confirmed'`))
+  // 当轮参考入口如实显示"可参考 1 条"
+  await waitFor(`document.querySelector('[data-wm-context-toggle]')?.textContent==='参考项目备忘 · 1 条'`)
+  await button('收起备忘') // 收起面板，回到输入区
+  await input('.dshWmChatInput', '这一章怎么开头？')
+  await evaluate(`document.querySelector('.dshWmSend').click()`)
+  await waitFor('testChat.calls.length===4')
+  const withMemory = await evaluate('testChat.calls[3].content[0].text')
+  assert.ok(withMemory.includes('【项目备忘 · 作者已确认'), '确认过的设定要真的进请求：' + withMemory.slice(0, 120))
+  assert.ok(withMemory.includes('主角叫林晚'))
+  assert.ok(withMemory.trim().endsWith('这一章怎么开头？'), '作者正文要在末尾完整保留')
+  await evaluate(`testChat.resolve({ok:true,value:{accepted:true}})`)
+  await waitFor(`document.querySelector('.dshWmChatInput')?.value===''`)
+  // 展开面板能看到逐条勾选与省略说明
+  await evaluate(`document.querySelector('[data-wm-context-toggle]').click()`)
+  await waitFor(`!!document.querySelector('[data-wm-memory-pin]')`)
+  assert.ok(await evaluate(`document.querySelectorAll('[data-wm-memory-pin]').length===1`))
+  assert.ok(await evaluate(`document.querySelector('.dshWmContextPanel').innerText.includes('Unicode 字符数')`))
+  await evaluate(`document.querySelector('[data-wm-context-toggle]').click()`)
+  // 撤回后：不再自动带入（下轮变更生效，而不是复用上一轮的缓存）
+  await button('项目备忘')
+  await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="confirmed"]')`)
+  await waitFor(`!Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='撤回')?.disabled`)
+  await button('撤回')
+  await waitFor(`!document.querySelector('[data-wm-context-toggle]')?.textContent.includes('1 条')`)
+  await button('收起备忘')
+  await input('.dshWmChatInput', '撤回之后还带吗')
+  await evaluate(`document.querySelector('.dshWmSend').click()`)
+  await waitFor('testChat.calls.length===5')
+  const afterRetract = await evaluate('testChat.calls[4].content[0].text')
+  assert.ok(!afterRetract.includes('主角叫林晚'), '撤回的条目不得再出现：' + afterRetract.slice(0, 120))
+  await evaluate(`testChat.resolve({ok:true,value:{accepted:true}})`)
+  // 助手建议 → 记为候选：不注入，确认后才注入
+  await evaluate(`testChat.set({chat:{order:['a'],nodes:new Map([['a',{kind:'assistant-step',data:{blocks:[{kind:'text',text:'也许她已经猜到信里的内容。'}]}}]])},running:false,pending:[],queue:[]})`)
+  await waitFor(`!!document.querySelector('[data-wm-candidate]')`)
+  await evaluate(`document.querySelector('[data-wm-candidate]').click()`)
+  await waitFor(`document.querySelector('.dshWmMemory [data-wm-memory-save]')?.textContent==='存为候选'`)
+  await waitFor(`!document.querySelector('.dshWmMemory [data-wm-memory-save]')?.disabled`)
+  await button('存为候选')
+  await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="proposed"]')`)
+  assert.ok(
+    await evaluate(`document.querySelector('[data-wm-context-toggle]').textContent==='本次没有可参考的已确认条目'`),
+    '候选不算"可参考"，提示条不能把它算进去'
+  )
+  await button('确认')
+  await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="confirmed"]')`)
+  await waitFor(`document.querySelector('[data-wm-context-toggle]')?.textContent==='参考项目备忘 · 1 条'`)
+  // 关掉本次参考：请求里就不再自动带备忘（正文照发）
+  await evaluate(`document.querySelector('[data-wm-context-enabled]').click()`)
+  await button('收起备忘')
+  await input('.dshWmChatInput', '这次不参考备忘')
+  await evaluate(`document.querySelector('.dshWmSend').click()`)
+  await waitFor('testChat.calls.length===6')
+  const noMemory = await evaluate('testChat.calls[5].content[0].text')
+  assert.ok(!noMemory.includes('项目备忘'), '关掉参考后不得再注入：' + noMemory.slice(0, 120))
+  assert.ok(noMemory.includes('这次不参考备忘'))
+  await evaluate(`testChat.resolve({ok:true,value:{accepted:true}})`)
+  console.log('PASS CHAT 作者新增→带入→撤回→下轮变更；助手建议转候选→确认后带入；关掉参考即不带')
+
   assert.equal(errors.length, 0, errors.join('\n'))
   fs.writeFileSync(path.join(temp, 'chat-ui.png'), (await win.webContents.capturePage()).toPNG())
   console.log('WRITING_CHAT_OK', temp)

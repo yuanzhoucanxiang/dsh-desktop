@@ -142,9 +142,11 @@ function normalizeToken(v) {
   return s
 }
 
-function pushChange(memory, change) {
+function pushChange(memory, change, actor = 'host') {
   memory.changes = memory.changes || []
-  memory.changes.push({ at: new Date().toISOString(), ...change })
+  // actor 记的是"谁做了这次操作"：client 会传 'author'（作者在界面上的明确操作），
+  // 缺省 host（内核侧/脚本）。原始来源在 change.after.source 里另有记录，两者不互相替代。
+  memory.changes.push({ at: new Date().toISOString(), actor: String(actor || 'host').slice(0, 40), ...change })
   if (memory.changes.length > MAX_CHANGES) {
     memory.changes = memory.changes.slice(-MAX_CHANGES)
   }
@@ -173,7 +175,7 @@ function validateItemInput(input, existing = null) {
  * Mutate memory under lock. Requires BOTH baseRevision and baseEtag
  * (or empty-file protocol: baseRevision 0 + emptyEtag()).
  */
-export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item }, opts = {}) {
+export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item, actor }, opts = {}) {
   const { projectReal, file } = assertMemoryPathSafe(projectDir, opts)
 
   const revTok = normalizeToken(baseRevision)
@@ -222,7 +224,7 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
         kind: entry.kind,
         status: entry.status,
         after: { text: entry.text, source: entry.source },
-      })
+      }, actor)
     } else if (op === 'update' || op === 'restore') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
@@ -253,7 +255,7 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
         status: target.status,
         before,
         after: { text: target.text, status: target.status, source: target.source },
-      })
+      }, actor)
     } else if (op === 'retract') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
@@ -266,7 +268,7 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
         id: target.id,
         before,
         after: { text: target.text, status: target.status, source: target.source },
-      })
+      }, actor)
     } else if (op === 'resolve') {
       const target = memory.items.find((it) => it.id === id)
       if (!target) throw memoryError('not-found', 404)
@@ -279,7 +281,7 @@ export function applyMemoryOp(projectDir, { op, baseRevision, baseEtag, id, item
         id: target.id,
         before,
         after: { text: target.text, status: target.status, source: target.source },
-      })
+      }, actor)
     } else {
       throw memoryError('bad-op')
     }

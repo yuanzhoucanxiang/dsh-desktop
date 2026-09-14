@@ -520,6 +520,8 @@ export function apply(ctx) {
                 baseEtag: parsed.baseEtag,
                 id: parsed.id,
                 item: parsed.item,
+                // 审计操作者：界面来的操作是「作者明确操作」，缺省由 host 记 host
+                actor: parsed.actor,
               },
               { libraryRoots: roots.map((r) => r.real).filter(Boolean) }
             )

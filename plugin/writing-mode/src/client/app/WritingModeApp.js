@@ -16,6 +16,7 @@ import { fileRow } from '../features/library/FileRow.js'
 import { lineDiff } from '../features/editor/diff.js'
 import { selectionText } from '../features/tools/selection.js'
 import { assistantPrompt, reviewPrompt } from '../features/tools/prompts.js'
+import { makeReference, referenceStatus } from '../../shared/reference.js'
 import { WritingCompanion } from '../features/companion/index.js'
 
 const LS_FILE = 'dsh-writing-mode-file'
@@ -1201,10 +1202,26 @@ export function WritingModeApp() {
                       ] }, 'ah'),
                       aiTab === 'companion' && !focus ? jsx.jsx(WritingCompanion, {
                         path: filePath || activeRoot,
+                        sourceInfo: () => {
+                          const snap = editor.get()
+                          return snap.path ? { path: snap.path, revision: snap.revision } : null
+                        },
                         contextText: () => {
-                          const selected = taRef.current && taRef.current.selectionEnd > taRef.current.selectionStart
-                          const text = selected ? content.slice(taRef.current.selectionStart, taRef.current.selectionEnd) : content
-                          return { label: (selected ? '选区 · ' : '稿件 · ') + (filePath || '未命名').split(/[\\/]/).pop() + ' · ' + text.length + ' 字', text: '当前文件：' + (filePath || '未命名') + '\n以下是' + (selected ? '选中的片段' : '编辑器中的稿件快照') + '（可能尚未保存），请以我随后补充的想法为准：\n\n' + text }
+                          const selected = Boolean(taRef.current && taRef.current.selectionEnd > taRef.current.selectionStart)
+                          const start = selected ? taRef.current.selectionStart : null
+                          const end = selected ? taRef.current.selectionEnd : null
+                          const excerpt = selected ? content.slice(start, end) : content
+                          const snap = editor.get()
+                          return makeReference({
+                            label: (selected ? '选区 · ' : '稿件 · ') + (filePath || '未命名').split(/[\\/]/).pop() + ' · ' + excerpt.length + ' 字',
+                            excerpt,
+                            path: filePath || null,
+                            revision: snap.path === filePath ? snap.revision : null,
+                            start,
+                            end,
+                            dirty: Boolean(snap.dirty),
+                            note: '请以我随后补充的想法为准。',
+                          })
                         },
                         onExit: close,
                       }, 'companion') : null,
