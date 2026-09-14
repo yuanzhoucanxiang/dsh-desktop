@@ -51,7 +51,10 @@
     "verify:writing-packaged": "node scripts/verify-writing-packaged.mjs",
     "verify:ui-smoke": "node scripts/verify-ui-smoke.mjs",
     "verify:writing-review-probes": "node docs/audits/writing-architecture/2026-09-14/v2-review/probes.mjs && node scripts/run-review-ui-probes.mjs",
-    "verify:writing-baseline-ui": "node scripts/run-baseline-ui.mjs"
+    "verify:writing-baseline-ui": "node scripts/run-baseline-ui.mjs",
+    "verify:writing-packaged-dev": "node scripts/verify-writing-packaged.mjs --allow-missing",
+    "verify:writing-quick": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run verify:ui-smoke",
+    "pid-cleanup-test": "node lib/pid-cleanup.test.js"
   },
   "devDependencies": {
     "electron": "^43.4.0",

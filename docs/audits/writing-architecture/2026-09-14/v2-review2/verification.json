@@ -1,0 +1,236 @@
+{
+  "sha": "dcc2c88075fabe5bdf9a0f46d5863112ad2a0c36",
+  "modules": [
+    {
+      "file": "main.js",
+      "repoHash": "ac6a4a145158d01fbbace78c7ceaffef6f249135d527e76191f884826077ee2d",
+      "packageHash": "ac6a4a145158d01fbbace78c7ceaffef6f249135d527e76191f884826077ee2d",
+      "same": true
+    },
+    {
+      "file": "preload.js",
+      "repoHash": "b305fab09b590555272f78f069f22001bcf8e3a79fbdadc0adaee24b5c8b2a3a",
+      "packageHash": "b305fab09b590555272f78f069f22001bcf8e3a79fbdadc0adaee24b5c8b2a3a",
+      "same": true
+    },
+    {
+      "file": "lib/atomic-file.js",
+      "repoHash": "863321d4203e3fa51d099181a6ebdc239850749d9011390ed7d2b07bcce8b3be",
+      "packageHash": "863321d4203e3fa51d099181a6ebdc239850749d9011390ed7d2b07bcce8b3be",
+      "same": true
+    },
+    {
+      "file": "lib/builtin-seed.js",
+      "repoHash": "b2dfcaa6b925854112ebf828d88ab60d8a0463e18e4dfeb73a8f8a8f4fa75383",
+      "packageHash": "b2dfcaa6b925854112ebf828d88ab60d8a0463e18e4dfeb73a8f8a8f4fa75383",
+      "same": true
+    },
+    {
+      "file": "lib/git-review.js",
+      "repoHash": "3b74d80d9f2677caeae751f78b7ad4f6e336e9c1b4cb679305ceadbea844c9f2",
+      "packageHash": "3b74d80d9f2677caeae751f78b7ad4f6e336e9c1b4cb679305ceadbea844c9f2",
+      "same": true
+    },
+    {
+      "file": "lib/plugin-manager.js",
+      "repoHash": "3707b2616bc8b009b165a88e25da02a4439fdc5d65477127155cca49192dbb87",
+      "packageHash": "3707b2616bc8b009b165a88e25da02a4439fdc5d65477127155cca49192dbb87",
+      "same": true
+    },
+    {
+      "file": "lib/plugin-sync.js",
+      "repoHash": "5a1fa8e34682c42efa063fd7ba3121281244888168734f4604ddd0408ca92500",
+      "packageHash": "5a1fa8e34682c42efa063fd7ba3121281244888168734f4604ddd0408ca92500",
+      "same": true
+    },
+    {
+      "file": "lib/profile-inspect.js",
+      "repoHash": "97ce0ca22741317843228223b67ac1c78e1e38f526cc4ecf1305f31d0bbdbf8f",
+      "packageHash": "97ce0ca22741317843228223b67ac1c78e1e38f526cc4ecf1305f31d0bbdbf8f",
+      "same": true
+    },
+    {
+      "file": "lib/settings-store.js",
+      "repoHash": "f6f587c779a61fabd1df18af7b2c3c19b974920491920e88110bf110223bb93a",
+      "packageHash": "f6f587c779a61fabd1df18af7b2c3c19b974920491920e88110bf110223bb93a",
+      "same": true
+    }
+  ],
+  "allModulesEqual": true,
+  "matrixRows": [
+    {
+      "id": "A01",
+      "status": "PASS"
+    },
+    {
+      "id": "A02",
+      "status": "PASS"
+    },
+    {
+      "id": "A03",
+      "status": "PASS"
+    },
+    {
+      "id": "E01",
+      "status": "PASS"
+    },
+    {
+      "id": "E02",
+      "status": "PASS"
+    },
+    {
+      "id": "H01",
+      "status": "PASS"
+    },
+    {
+      "id": "H02",
+      "status": "PASS"
+    },
+    {
+      "id": "H03",
+      "status": "PASS"
+    },
+    {
+      "id": "H04",
+      "status": "PASS"
+    },
+    {
+      "id": "H05",
+      "status": "PASS"
+    },
+    {
+      "id": "H06",
+      "status": "PASS"
+    },
+    {
+      "id": "H07",
+      "status": "PASS"
+    },
+    {
+      "id": "D01",
+      "status": "PASS"
+    },
+    {
+      "id": "D02",
+      "status": "PASS"
+    },
+    {
+      "id": "D03",
+      "status": "PASS"
+    },
+    {
+      "id": "D04",
+      "status": "PASS"
+    },
+    {
+      "id": "D05",
+      "status": "PASS"
+    },
+    {
+      "id": "M01",
+      "status": "PASS"
+    },
+    {
+      "id": "M02",
+      "status": "PASS"
+    },
+    {
+      "id": "M03",
+      "status": "PASS"
+    },
+    {
+      "id": "M04",
+      "status": "PASS"
+    },
+    {
+      "id": "M05",
+      "status": "PASS"
+    },
+    {
+      "id": "M06",
+      "status": "PASS"
+    },
+    {
+      "id": "C01",
+      "status": "PASS"
+    },
+    {
+      "id": "C02",
+      "status": "PASS"
+    },
+    {
+      "id": "C03",
+      "status": "PASS"
+    },
+    {
+      "id": "C04",
+      "status": "PASS"
+    },
+    {
+      "id": "P01",
+      "status": "PASS"
+    },
+    {
+      "id": "P02",
+      "status": "PARTIAL"
+    },
+    {
+      "id": "P03",
+      "status": "PASS"
+    }
+  ],
+  "missingPackageGate": {
+    "exitCode": 0,
+    "output": "待跑：未找到真包 exe（C:\\Users\\DL\\AppData\\Local\\Temp\\wm-nonexistent-f4c4b870-568a-456f-9b8e-a2e4c92ac3af\\win-unpacked\\DeepSeek Harness Desktop.exe）——先构建，再用 WM_PKG 指向解包目录\n"
+  },
+  "containsGlobalImageKill": true,
+  "originalNode": [
+    {
+      "id": "B02-historical-memory-prefix-is-not-current-acceptance",
+      "status": "PASS"
+    },
+    {
+      "id": "B03-continue-link-keeps-existing-session",
+      "status": "PASS"
+    },
+    {
+      "id": "B05-sync-junction-does-not-write-outside-profile",
+      "status": "PASS"
+    },
+    {
+      "id": "B05-managed-record-traversal-does-not-delete-outside",
+      "status": "PASS"
+    },
+    {
+      "id": "B08-reference-fingerprint-survives-checkpoint",
+      "status": "PASS"
+    },
+    {
+      "id": "B08-distinct-legacy-references-are-not-equal",
+      "status": "PASS"
+    },
+    {
+      "id": "C02-unicode-budget-counts-codepoints",
+      "status": "PASS"
+    }
+  ],
+  "originalUI": [
+    {
+      "id": "B06-adopt-keeps-recoverable-original",
+      "status": "PASS"
+    },
+    {
+      "id": "B06-adopt-null-reference-clears-old-source",
+      "status": "PASS"
+    },
+    {
+      "id": "B04-memory-failure-waits-for-explicit-choice",
+      "status": "PASS"
+    },
+    {
+      "id": "B02-rejected-turn-retains-visible-and-disk-draft",
+      "status": "PASS"
+    }
+  ],
+  "baselineCount": 33
+}

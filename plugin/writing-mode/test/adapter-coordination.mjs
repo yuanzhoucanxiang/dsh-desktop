@@ -327,15 +327,52 @@ await ok('H06 记录仍有绑定但会话已消失 → missing + 恢复入口；
 
 console.log('--- H07 受理与网络')
 
-await ok('H07 已受理但网络断开 → accepted（有原生证据，不算 uncertain）', async () => {
+await ok('N04 明确拒绝 + 期间别处出现新消息 → rejected（文本证据不得翻案）', async () => {
   const p = freshProject('作品G')
-  const kernel = createFakeKernel({ failPrompt: true, afterDispatch: true })
+  const kernel = createFakeKernel()
   const win = makeAdapter(kernel)
   const a = await win.connect(p, 'tok-G')
-  const r = await a.send({ body: '发出了但报网络错' })
-  assert.equal(r.result, 'accepted', `有 user 节点证据就该算受理（实得 ${r.result}）`)
-  assert.equal(r.evidence, 'new-user-node')
+  const session = kernel.state.sessions.get(a.getSnapshot().sessionId)
+  // 原生明确拒绝，同时"别处"往同一个会话里塞了另一条消息（其他窗口/排队转历史）
+  session.prompt = async () => {
+    kernel.state.prompts.push({ sessionId: session.id, body: '继续' })
+    const key = 'other-window-turn'
+    session.chat.nodes.set(key, { kind: 'user', data: { content: [{ type: 'text', text: '不要继续旧方案，我们重新讨论人物动机。' }] } })
+    session.chat.order.push(key)
+    return { ok: false, error: { code: 'busy', message: 'This request was rejected' } }
+  }
+  const r = await a.send({ message: '继续', body: '继续' })
+  assert.equal(r.result, 'rejected', `明确拒绝不得被文本包含翻案（实得 ${r.result}）`)
   assert.equal(kernel.state.prompts.length, 1, '不得自动重发')
+})
+
+await ok('N04 抛异常但无可证明标识 → uncertain 且保留正文（宁可不确定也不误判受理）', async () => {
+  const p = freshProject('作品G2')
+  const kernel = createFakeKernel({ failPrompt: true, afterDispatch: true })
+  const win = makeAdapter(kernel)
+  const a = await win.connect(p, 'tok-G2')
+  const r = await a.send({ body: '发出了但报网络错' })
+  assert.equal(r.result, 'uncertain', `文本证据不足以证明受理（实得 ${r.result}）`)
+  assert.equal(r.retainedBody, '发出了但报网络错')
+  assert.equal(kernel.state.prompts.length, 1, '不得自动重发')
+})
+
+await ok('N04 内核给出可证明标识（requestId 出现在新队列项）→ accepted', async () => {
+  const p = freshProject('作品G3')
+  const kernel = createFakeKernel()
+  const win = makeAdapter(kernel)
+  const a = await win.connect(p, 'tok-G3')
+  const session = kernel.state.sessions.get(a.getSnapshot().sessionId)
+  session.prompt = async () => {
+    const id = 'q-42'
+    session.queue.push({ id, text: '' })
+    kernel.state.prompts.push({ sessionId: session.id, body: '这一轮交给内核了' })
+    throw Object.assign(new Error('response lost'), { code: 'ECONNRESET', requestId: 'q-42' })
+  }
+  const r = await a.send({ body: '这一轮交给内核了' })
+  assert.equal(r.result, 'accepted', `有内核队列标识即可证明受理（实得 ${r.result}）`)
+  assert.equal(r.evidence, 'kernel-queue-id')
+  assert.equal(kernel.state.prompts.length, 1)
 })
 
 await ok('H07 交出去但无任何证据 → uncertain 且保留正文，绝不自动重发', async () => {

@@ -1,6 +1,6 @@
 {
-  "reviewedImplementation": "95b138d",
-  "head": "95b138d",
+  "reviewedImplementation": "dcc2c88075fabe5bdf9a0f46d5863112ad2a0c36",
+  "head": "dcc2c88075fabe5bdf9a0f46d5863112ad2a0c36",
   "results": [
     {
       "name": "T03 outgoing writes are serialized",
@@ -65,12 +65,12 @@
         "visible": "NEW_DURING_RECOVERY",
         "disk": {
           "schemaVersion": 2,
-          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-tPg8mc\\library\\演示项目",
-          "windowId": "014a5a85-efc7-410c-95c4-762b7b392008",
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-ESXw2T\\library\\演示项目",
+          "windowId": "816deff3-de5f-4596-b783-ac2a8629f0c6",
           "text": "NEW_DURING_RECOVERY",
           "reference": null,
           "rev": 8,
-          "updatedAt": "2026-09-14T21:46:55.384Z",
+          "updatedAt": "2026-09-14T13:45:41.053Z",
           "cleared": false
         }
       }
@@ -125,7 +125,7 @@
         "sent": [
           {
             "type": "text",
-            "text": "【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-tPg8mc\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
+            "text": "【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-ESXw2T\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
           }
         ]
       }

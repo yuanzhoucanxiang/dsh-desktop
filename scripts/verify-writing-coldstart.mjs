@@ -121,18 +121,25 @@ if (mode === 'upgrade' || mode === 'all') {
   fs.writeFileSync(path.join(dir, 'test', 'old-suite.mjs'), '// 旧版测试脚本（历史遗留，不该进 profile）\n')
   fs.writeFileSync(path.join(dir, 'src', 'shared', 'old.js'), '// 旧版源码\n')
   // 用户/应用数据 fixture（脱敏：不含任何密钥）
+  const fixtureRoot = path.join(effectiveHome(env), 'library')
+  const fixtureProject = path.join(fixtureRoot, 'fixture-project')
   const fixture = {
-    settings: JSON.stringify({ fontSize: 19, theme: 'palis', roots: [{ path: 'C:/tmp/作品', label: '作品', default: true }], activeRoot: 'C:/tmp/作品', companions: { 'C:/tmp/作品': 'sess-old-1' }, prefs: { autoSaveMs: 7000 } }, null, 2),
+    settings: JSON.stringify({ fontSize: 19, theme: 'palis', roots: [{ path: fixtureRoot, label: '预览库', default: true }], activeRoot: fixtureRoot, companions: { [fixtureProject]: 'sess-old-1' }, prefs: { autoSaveMs: 7000 } }, null, 2),
     memory: JSON.stringify({ schemaVersion: 1, revision: 4, projectKey: 'C:/tmp/作品', items: [{ id: 'm1', kind: 'fact', status: 'confirmed', text: '主角叫林晚', source: { kind: 'author' }, createdAt: '2026-09-01T00:00:00.000Z' }], changes: [] }, null, 2),
     checkpoint: JSON.stringify({ project: 'C:/tmp/作品', windowId: 'old-window', rev: 3, text: '旧窗口的草稿', reference: { label: '选区 · 第1章 · 5 字', text: '灯塔的影子' }, updatedAt: '2026-09-01T00:00:00.000Z' }, null, 2),
   }
   const ehome = effectiveHome(env)
   fs.mkdirSync(ehome, { recursive: true })
   fs.writeFileSync(path.join(ehome, 'writing-mode.json'), fixture.settings)
-  const projDir = path.join(env.localAppData, 'fixture-project')
+  // 库根指向隔离环境里**真实存在**的作品目录（原来是 C:/tmp/作品，指不到任何东西）
+  const libRoot = path.join(effectiveHome(env), 'library')
+  const projDir = path.join(libRoot, 'fixture-project')
   fs.mkdirSync(path.join(projDir, 'state'), { recursive: true })
   fs.writeFileSync(path.join(projDir, 'project.md'), '# 脱敏 fixture 作品\n')
   fs.writeFileSync(path.join(projDir, 'state', 'writing-memory.json'), fixture.memory)
+  // 旧草稿写进**生产草稿目录**（draftRoot() = <home>/writing-mode/drafts），并用生产模块写
+  const draftMod = await import('../plugin/writing-mode/lib/draft-checkpoints.js')
+  draftMod.writeCheckpoint(projDir, 'old-window', { text: '旧窗口的草稿', reference: { label: '选区 · 第1章 · 5 字', text: '灯塔的影子' }, baseRev: 0 })
   const before = {
     settings: fs.readFileSync(path.join(effectiveHome(env), 'writing-mode.json')),
     memory: fs.readFileSync(path.join(projDir, 'state', 'writing-memory.json')),
@@ -151,6 +158,25 @@ if (mode === 'upgrade' || mode === 'all') {
     const memoryUnchanged = before.memory.equals(fs.readFileSync(path.join(projDir, 'state', 'writing-memory.json')))
     record('P-up-4', '设置与备忘字节不变（无破坏性迁移）', settingsUnchanged && memoryUnchanged ? 'PASS' : 'FAIL',
       `writing-mode.json ${settingsUnchanged ? '一致' : '被改写'}；writing-memory.json ${memoryUnchanged ? '一致' : '被改写'}`)
+
+    // N06：用**生产模块**证明旧数据"能被发现、能读、能继续保存"（字节不变只是必要不充分条件）
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(effectiveHome(env), 'writing-mode.json'), 'utf8'))
+      const rootOk = cfg.roots?.some((r) => fs.existsSync(r.path))
+      const projMod = await import('../plugin/writing-mode/lib/project-memory.js')
+      const before2 = projMod.readMemory(projDir, { libraryRoots: [libRoot] })
+      const itemsKept = (before2.memory.items || []).some((it) => it.text === '主角叫林晚' && it.status === 'confirmed')
+      const chk = draftMod.readCheckpoint(projDir, 'old-window')
+      const draftKept = chk && chk.text === '旧窗口的草稿' && chk.reference && chk.reference.text === '灯塔的影子'
+      // 继续保存：走生产写入路径，revision 必须递增且文件仍然可读
+      const written = projMod.applyMemoryOp(projDir, { op: 'add', baseRevision: before2.memory.revision, baseEtag: before2.etag, item: { kind: 'preference', status: 'confirmed', text: '升级后继续保存的一条偏好', source: { kind: 'author' } } })
+      const after2 = projMod.readMemory(projDir, { libraryRoots: [libRoot] })
+      const savedOk = written.memory.revision > before2.memory.revision && (after2.memory.items || []).some((it) => it.text === '升级后继续保存的一条偏好')
+      record('P-up-4b', '旧数据可发现/可读/可继续保存（生产模块）', rootOk && itemsKept && draftKept && savedOk ? 'PASS' : 'FAIL',
+        `库根可达=${rootOk}；旧备忘条目保留=${itemsKept}；旧草稿与引用可读=${draftKept}；继续保存成功=${savedOk}（revision ${before2.memory.revision}→${after2.memory.revision}）`)
+    } catch (err) {
+      record('P-up-4b', '旧数据可发现/可读/可继续保存（生产模块）', 'FAIL', String(err?.message || err))
+    }
     // 旧 schema / 坏 JSON 一律保留原件
     const badDir = path.join(env.localAppData, 'bad-project')
     fs.mkdirSync(path.join(badDir, 'state'), { recursive: true })
@@ -158,7 +184,18 @@ if (mode === 'upgrade' || mode === 'all') {
     const badBefore = fs.readFileSync(path.join(badDir, 'state', 'writing-memory.json'), 'utf8')
     const run2 = runApp(env)
     const badAfter = fs.readFileSync(path.join(badDir, 'state', 'writing-memory.json'), 'utf8')
-    record('P-up-5', '坏 JSON 备忘保留原件（启动不覆盖、不重置）', badBefore === badAfter && run2.ok ? 'PASS' : 'FAIL', badBefore === badAfter ? '字节一致' : '被改写')
+    // N06：不只比字节 —— 还要证明生产读取路径**确实报了诊断**（corrupt-memory）而不是静默当空
+    let diagnostic = ''
+    try {
+      const projMod = await import('../plugin/writing-mode/lib/project-memory.js')
+      projMod.readMemory(badDir, { libraryRoots: [path.dirname(badDir)] })
+      diagnostic = '(未报错：不应发生)'
+    } catch (err) {
+      diagnostic = String(err?.code || err?.message || err)
+    }
+    const diagOk = /corrupt-memory|bad-memory|unknown-schema/.test(diagnostic)
+    record('P-up-5', '坏 JSON 备忘：生产读取报诊断且原件保留', badBefore === badAfter && run2.ok && diagOk ? 'PASS' : 'FAIL',
+      `字节${badBefore === badAfter ? '一致' : '被改写'}；诊断=${diagnostic}`)
   }
 }
 

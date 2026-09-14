@@ -233,10 +233,27 @@ const { source, files: wanted } = publishSet(SRC)
     record('asar', 'app.asar 内主进程依赖齐全', absent.length === 0 ? 'PASS' : 'FAIL',
       absent.length ? `缺：${absent.join(', ')}` : `${closure.length} 个本地模块都在 app.asar 内`)
 
-    const mainInAsar = asar.read('main.js')?.toString('utf8') || ''
-    const repoLeak = /E:\\+Deepseek/.test(mainInAsar)
-    record('asar-no-repo-dep', '包内主进程不依赖源码目录（A02）', repoLeak ? 'FAIL' : 'PASS',
-      repoLeak ? 'main.js 里出现仓库绝对路径' : '未发现仓库路径引用')
+    // (c) 逐字节比对：包内每个主进程模块必须与仓库当前文件一致（只验存在不够，N06）
+    const mismatched = []
+    for (const rel of closure) {
+      const inAsar = asar.read(rel.split(path.sep).join('/'))
+      if (!inAsar) {
+        mismatched.push(rel + '(缺)')
+        continue
+      }
+      if (!inAsar.equals(fs.readFileSync(path.join(ROOT, rel)))) mismatched.push(rel + '(内容不一致)')
+    }
+    record('asar-bytes', 'app.asar 内主进程模块与仓库逐字节一致', mismatched.length === 0 ? 'PASS' : 'FAIL',
+      mismatched.length ? mismatched.join(', ') : `${closure.length} 个模块内容一致`)
+
+    // 全模块检查仓库绝对路径（不只 main.js；E:\ / E:/ 、大小写都算）
+    const leaky = []
+    for (const rel of closure) {
+      const text = asar.read(rel.split(path.sep).join('/'))?.toString('utf8') || ''
+      if (/e:[\\/]+deepseek[\\/]+harness/i.test(text)) leaky.push(rel)
+    }
+    record('asar-no-repo-dep', '包内主进程不依赖源码目录（A02）', leaky.length === 0 ? 'PASS' : 'FAIL',
+      leaky.length ? `出现仓库绝对路径：${leaky.join(', ')}` : `${closure.length} 个模块均未发现仓库路径引用`)
 
     // asar 就在 <解包根>/resources/app.asar 里，所以资源根就是它所在目录（别再拼一层 resources）
     const resRoot = path.dirname(asarPath)

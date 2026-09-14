@@ -396,6 +396,7 @@ export function createHarnessAdapter(deps = {}) {
       // B02：先记基线。没有基线就无法区分"本轮新回合"与历史里的旧消息
       // （旧消息含同一段备忘前缀时会被误判成本轮已受理 → 明确拒绝也清稿）。
       const baseline = session ? turnBaseline(session) : null
+      const queueBefore = baseline ? new Set(baseline.queueIds) : new Set()
       if (!session || !has(session, 'prompt')) {
         // 绑定的会话在原生侧已不存在（被别处删掉）：状态降级为 missing，让作者看到恢复入口，
         // 而不是把消息发进虚空或悄悄新建（2026-09-14 fixture 实测到这一点）。
@@ -419,15 +420,37 @@ export function createHarnessAdapter(deps = {}) {
         return { result: 'rejected', code: 'session-changed', projectKey: at.key, operationId: at.operationId }
       }
       const freshSession = currentSession() || session
+      // 诊断用（不参与判定）：本轮之后是否出现了新回合。文本包含关系**不能**证明受理归属——
+      // 另一个窗口的新消息、或排队回合转入历史都可能命中（复核 N04 实测）。
       const evidence = turnEvidence(freshSession, body, baseline, preparedTurn?.message)
       if (res?.ok) return { result: 'accepted', evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId }
-      // 原生明确拒绝（ok:false）：只有"本轮确实新出现了一轮"才算受理，否则一律 rejected，
-      // 让正文与引用留在作者手里（旧消息里的同备忘前缀不算证据）。
-      if (evidence.accepted) return { result: 'accepted', evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId }
       const message = thrown?.message || res?.error?.message || res?.error || '发送失败'
       const code = thrown?.code || res?.error?.code || 'send-failed'
-      if (thrown) return { result: 'uncertain', code, error: String(message), retainedBody: body, projectKey: key, operationId, sessionId: state.sessionId }
-      return { result: 'rejected', code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId }
+      // 原生明确拒绝（ok:false）：**不接受任何文本证据翻案**，一律 rejected —— 正文与引用留在作者手里。
+      if (!thrown) return { result: 'rejected', code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId }
+      // 抛异常（交出去过但结果不可核）：只有拿到**内核可证明的本轮标识**才算受理，否则保持 uncertain。
+      // 可证明关联：回包或**抛出的错误**上都可能带内核标识（网络错误常带 requestId）
+      const correlation = correlateDispatch(thrown || res, freshSession, queueBefore)
+      if (correlation.accepted) {
+        return { result: 'accepted', evidence: correlation.evidence, queued: correlation.queued, projectKey: key, operationId, sessionId: state.sessionId }
+      }
+      return { result: 'uncertain', code, error: String(message), retainedBody: body, evidence: evidence.evidence, projectKey: key, operationId, sessionId: state.sessionId }
+    }
+
+    /**
+     * 受理归属的**可证明**判定（N04）：只接受内核给出的本轮标识——
+     * prompt 回包里的 requestId/turnId/queueId，或该标识确实出现在本轮之后新增的队列里。
+     * 文本相等/包含一律不作为受理依据：另一个窗口发同一句话时无法区分是哪一轮。
+     */
+    function correlateDispatch(result, session, queueBeforeIds) {
+      const ids = [result?.requestId, result?.turnId, result?.queueId, result?.id].filter((x) => x != null).map(String)
+      if (!ids.length) return { accepted: false, evidence: 'no-kernel-request-id' }
+      const snap = session && typeof session.getSnapshot === 'function' ? session.getSnapshot() : null
+      for (const row of snap?.queue || []) {
+        const rid = row?.id != null ? String(row.id) : null
+        if (rid && ids.includes(rid) && !queueBeforeIds.has(rid)) return { accepted: true, queued: true, evidence: 'kernel-queue-id' }
+      }
+      return { accepted: false, evidence: 'kernel-id-not-observed' }
     }
 
     /** 只取消本 handle 自己会话的当前回合；不碰别人的会话。 */
@@ -468,20 +491,67 @@ export function createHarnessAdapter(deps = {}) {
         throw adapterError('recover-not-allowed', '当前状态不需要恢复（' + state.status + '）')
       }
       const rec = (await readRecord(path)) || null
-      const knownSession = state.sessionId || rec?.sessionId || null
       const knownToken = rec?.operationToken || state.record?.operationToken || null
+      const knownSession = state.sessionId || rec?.sessionId || null
       const sessionAlive = Boolean(knownSession) && liveSessionIds().has(knownSession)
+
+      /** 用已知标识补确认（不新建任何原生对象）。 */
+      const reconfirm = async (sessionId, workspaceId) => {
+        if (!knownToken) return null
+        await coordination.claim({ path, operationToken: knownToken, owner: 'recover' })
+        if (coordination.creating) await coordination.creating({ path, operationToken: knownToken })
+        return coordination.confirm({ path, operationToken: knownToken, sessionId, workspaceId: workspaceId || null })
+      }
+
+      // N02：记录里有 workspace/会话标识、或状态是 uncertain，说明**外部创建可能已经发生**。
+      // 这时先按"内核保存的项目关联 → 已知 workspace 对应的原生会话"去找；找不到就保持 uncertain，
+      // 绝不 forget+新建（复核实测：sessions.create 在原生侧建好 s1 后回包丢失，旧逻辑会再建 w2/s2）。
+      const mayHaveCreated = Boolean(rec && (rec.workspaceId || rec.sessionId)) || state.status === 'uncertain'
+      if (!knownSession && mayHaveCreated) {
+        let found = null
+        let foundWorkspace = rec?.workspaceId || state.workspaceId || null
+        try {
+          const binding = typeof api === 'function' ? await api('companion', undefined, { path }) : null
+          if (binding?.ok && binding.sessionId && liveSessionIds().has(binding.sessionId)) found = binding.sessionId
+        } catch {}
+        if (!found && foundWorkspace) {
+          for (const id of liveSessionIds()) {
+            const store = sessionStoreOf(id)
+            const snap = store && typeof store.getSnapshot === 'function' ? store.getSnapshot() : null
+            const wsId = snap?.workspaceId ?? store?.workspaceId ?? null
+            if (wsId && String(wsId) === String(foundWorkspace)) {
+              found = id
+              break
+            }
+          }
+        }
+        if (found) {
+          const conf = await reconfirm(found, foundWorkspace)
+          const phase = conf?.outcome === 'bound' ? 'bound' : conf?.record?.phase
+          if (phase === 'bound') {
+            state = { ...state, status: 'ready', sessionId: found, workspaceId: foundWorkspace, record: conf.record || rec, error: null, wrongness: null }
+          } else {
+            state = { ...state, status: 'uncertain', sessionId: found, workspaceId: foundWorkspace, record: conf?.record || rec, wrongness: 'reconfirm-' + (conf?.outcome || 'failed') }
+          }
+          notify()
+          return getSnapshot()
+        }
+        // 查不到：保留不确定与已知标识，给作者"查看完整会话 / 选择关联"的入口，不做破坏性动作
+        state = {
+          ...state,
+          status: 'uncertain',
+          workspaceId: foundWorkspace,
+          record: rec || state.record,
+          wrongness: 'external-result-unknown',
+          error: null,
+        }
+        notify()
+        return getSnapshot()
+      }
 
       if (sessionAlive && knownToken) {
         try {
-          await coordination.claim({ path, operationToken: knownToken, owner: 'recover' })
-          if (coordination.creating) await coordination.creating({ path, operationToken: knownToken })
-          const conf = await coordination.confirm({
-            path,
-            operationToken: knownToken,
-            sessionId: knownSession,
-            workspaceId: rec?.workspaceId || state.workspaceId || null,
-          })
+          const conf = await reconfirm(knownSession, rec?.workspaceId || state.workspaceId || null)
           const phase = conf?.outcome === 'bound' ? 'bound' : conf?.record?.phase
           if (phase === 'bound') {
             state = { ...state, status: 'ready', sessionId: knownSession, workspaceId: rec?.workspaceId || state.workspaceId, record: conf.record || rec, error: null, wrongness: null }

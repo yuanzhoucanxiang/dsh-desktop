@@ -1,0 +1,81 @@
+{
+  "sha": "dcc2c88075fabe5bdf9a0f46d5863112ad2a0c36",
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review2-edge-9y085v",
+  "results": [
+    {
+      "id": "N02-unknown-created-session-must-not-be-recreated",
+      "status": "PASS",
+      "evidence": {
+        "ok": true,
+        "before": {
+          "status": "uncertain",
+          "sessionId": null,
+          "record": {
+            "phase": "uncertain",
+            "sessionId": null,
+            "workspaceId": "w1",
+            "operationToken": "initial",
+            "version": 4,
+            "reason": "create-failed",
+            "stale": false
+          }
+        },
+        "after": {
+          "status": "uncertain",
+          "sessionId": null
+        },
+        "creates": 1,
+        "workspaces": 1,
+        "liveIds": [
+          "s1"
+        ]
+      }
+    },
+    {
+      "id": "N04-other-new-message-is-not-current-acceptance",
+      "status": "PASS",
+      "evidence": {
+        "ok": true,
+        "result": {
+          "result": "rejected",
+          "code": "busy",
+          "error": "This request was rejected",
+          "projectKey": "c:/fixture/project",
+          "operationId": "op-mu1rvakz-j0w3hnjp",
+          "sessionId": "s"
+        },
+        "newOtherMessage": "不要继续旧方案，我们重新讨论人物动机。"
+      }
+    },
+    {
+      "id": "N05-profile-root-junction-must-be-rejected",
+      "status": "PASS",
+      "evidence": {
+        "ok": true,
+        "after": "AUTHOR ORIGINAL",
+        "result": {
+          "ok": false,
+          "source": "fallback",
+          "version": null,
+          "copied": [],
+          "updated": [],
+          "removed": [],
+          "keptEdited": [],
+          "removedFailed": [],
+          "foreign": [],
+          "unchanged": 0,
+          "errors": [
+            "拒绝同步：目标插件根不可信（reparse-point：C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review2-edge-9y085v\\profile-plugin）"
+          ],
+          "refused": [
+            {
+              "rel": ".",
+              "reason": "reparse-point",
+              "at": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-review2-edge-9y085v\\profile-plugin"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

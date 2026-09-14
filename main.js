@@ -413,7 +413,8 @@ function syncBuiltinPlugin(name) {
   // 清单驱动同步（lib/plugin-sync.js）：有 runtime-manifest.json 的插件按其发布集合复制，
   // 否则退回按扩展名递归；两者都逐文件哈希比对，并且只清理「上一版受管、这一版不发布、
   // 且仍与上次写入一致」的文件——用户改过的、非受管的文件一律保留只上报。
-  const r = pluginSync.syncPluginDir({ srcDir: src, destDir: dest })
+  // N05：可信边界由外壳给出（它自己解析的 profile 根），不看目标自己的解析结果
+  const r = pluginSync.syncPluginDir({ srcDir: src, destDir: dest, trustedRoot: path.join(dshHome(), 'profiles') })
   const changed = r.copied.length + r.updated.length + r.removed.length
   if (changed) {
     log(`${name} synced to ${dest} [${r.source}] +${r.copied.length} ~${r.updated.length} -${r.removed.length} (未变 ${r.unchanged})`)

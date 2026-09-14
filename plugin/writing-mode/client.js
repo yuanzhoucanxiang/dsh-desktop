@@ -1310,6 +1310,7 @@ function createHarnessAdapter(deps = {}) {
       }
       const session = currentSession();
       const baseline = session ? turnBaseline(session) : null;
+      const queueBefore = baseline ? new Set(baseline.queueIds) : /* @__PURE__ */ new Set();
       if (!session || !has(session, "prompt")) {
         const gone = Boolean(at.sessionId) && !liveSessionIds().has(at.sessionId);
         if (gone) {
@@ -1332,11 +1333,24 @@ function createHarnessAdapter(deps = {}) {
       const freshSession = currentSession() || session;
       const evidence = turnEvidence(freshSession, body, baseline, preparedTurn?.message);
       if (res?.ok) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
-      if (evidence.accepted) return { result: "accepted", evidence: evidence.evidence, queued: evidence.queued, projectKey: key, operationId, sessionId: state.sessionId };
       const message = thrown?.message || res?.error?.message || res?.error || "发送失败";
       const code = thrown?.code || res?.error?.code || "send-failed";
-      if (thrown) return { result: "uncertain", code, error: String(message), retainedBody: body, projectKey: key, operationId, sessionId: state.sessionId };
-      return { result: "rejected", code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId };
+      if (!thrown) return { result: "rejected", code, error: String(message), projectKey: key, operationId, sessionId: state.sessionId };
+      const correlation = correlateDispatch(thrown || res, freshSession, queueBefore);
+      if (correlation.accepted) {
+        return { result: "accepted", evidence: correlation.evidence, queued: correlation.queued, projectKey: key, operationId, sessionId: state.sessionId };
+      }
+      return { result: "uncertain", code, error: String(message), retainedBody: body, evidence: evidence.evidence, projectKey: key, operationId, sessionId: state.sessionId };
+    }
+    function correlateDispatch(result, session, queueBeforeIds) {
+      const ids = [result?.requestId, result?.turnId, result?.queueId, result?.id].filter((x) => x != null).map(String);
+      if (!ids.length) return { accepted: false, evidence: "no-kernel-request-id" };
+      const snap = session && typeof session.getSnapshot === "function" ? session.getSnapshot() : null;
+      for (const row of snap?.queue || []) {
+        const rid = row?.id != null ? String(row.id) : null;
+        if (rid && ids.includes(rid) && !queueBeforeIds.has(rid)) return { accepted: true, queued: true, evidence: "kernel-queue-id" };
+      }
+      return { accepted: false, evidence: "kernel-id-not-observed" };
     }
     async function cancel() {
       const session = currentSession();
@@ -1364,19 +1378,60 @@ function createHarnessAdapter(deps = {}) {
         throw adapterError("recover-not-allowed", "当前状态不需要恢复（" + state.status + "）");
       }
       const rec = await readRecord(path) || null;
-      const knownSession = state.sessionId || rec?.sessionId || null;
       const knownToken = rec?.operationToken || state.record?.operationToken || null;
+      const knownSession = state.sessionId || rec?.sessionId || null;
       const sessionAlive = Boolean(knownSession) && liveSessionIds().has(knownSession);
+      const reconfirm = async (sessionId, workspaceId) => {
+        if (!knownToken) return null;
+        await coordination.claim({ path, operationToken: knownToken, owner: "recover" });
+        if (coordination.creating) await coordination.creating({ path, operationToken: knownToken });
+        return coordination.confirm({ path, operationToken: knownToken, sessionId, workspaceId: workspaceId || null });
+      };
+      const mayHaveCreated = Boolean(rec && (rec.workspaceId || rec.sessionId)) || state.status === "uncertain";
+      if (!knownSession && mayHaveCreated) {
+        let found = null;
+        let foundWorkspace = rec?.workspaceId || state.workspaceId || null;
+        try {
+          const binding2 = typeof api2 === "function" ? await api2("companion", void 0, { path }) : null;
+          if (binding2?.ok && binding2.sessionId && liveSessionIds().has(binding2.sessionId)) found = binding2.sessionId;
+        } catch {
+        }
+        if (!found && foundWorkspace) {
+          for (const id of liveSessionIds()) {
+            const store = sessionStoreOf(id);
+            const snap2 = store && typeof store.getSnapshot === "function" ? store.getSnapshot() : null;
+            const wsId = snap2?.workspaceId ?? store?.workspaceId ?? null;
+            if (wsId && String(wsId) === String(foundWorkspace)) {
+              found = id;
+              break;
+            }
+          }
+        }
+        if (found) {
+          const conf = await reconfirm(found, foundWorkspace);
+          const phase = conf?.outcome === "bound" ? "bound" : conf?.record?.phase;
+          if (phase === "bound") {
+            state = { ...state, status: "ready", sessionId: found, workspaceId: foundWorkspace, record: conf.record || rec, error: null, wrongness: null };
+          } else {
+            state = { ...state, status: "uncertain", sessionId: found, workspaceId: foundWorkspace, record: conf?.record || rec, wrongness: "reconfirm-" + (conf?.outcome || "failed") };
+          }
+          notify();
+          return getSnapshot();
+        }
+        state = {
+          ...state,
+          status: "uncertain",
+          workspaceId: foundWorkspace,
+          record: rec || state.record,
+          wrongness: "external-result-unknown",
+          error: null
+        };
+        notify();
+        return getSnapshot();
+      }
       if (sessionAlive && knownToken) {
         try {
-          await coordination.claim({ path, operationToken: knownToken, owner: "recover" });
-          if (coordination.creating) await coordination.creating({ path, operationToken: knownToken });
-          const conf = await coordination.confirm({
-            path,
-            operationToken: knownToken,
-            sessionId: knownSession,
-            workspaceId: rec?.workspaceId || state.workspaceId || null
-          });
+          const conf = await reconfirm(knownSession, rec?.workspaceId || state.workspaceId || null);
           const phase = conf?.outcome === "bound" ? "bound" : conf?.record?.phase;
           if (phase === "bound") {
             state = { ...state, status: "ready", sessionId: knownSession, workspaceId: rec?.workspaceId || state.workspaceId, record: conf.record || rec, error: null, wrongness: null };
@@ -2408,6 +2463,7 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
   const [memoryItems, setMemoryItems] = react2.useState([]);
   const [memoryMeta, setMemoryMeta] = react2.useState({ revision: null, etag: null, ok: true, error: "" });
   const [memoryBlock, setMemoryBlock] = react2.useState(null);
+  const [notice, setNotice] = react2.useState("");
   const alive = react2.useRef(true);
   const sending = react2.useRef(false);
   const id = binding.sessionId;
@@ -2544,8 +2600,14 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
       cancelled = true;
     };
   }, [project]);
+  const editGen = react2.useRef(0);
+  const adopting = react2.useRef(false);
+  const bumpEdit = () => {
+    editGen.current++;
+  };
   function updateDraft(text) {
     recoveryGen.current++;
+    bumpEdit();
     let wroteNative = false;
     if (handle) {
       try {
@@ -2564,6 +2626,7 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
   }
   function updateReference(value) {
     recoveryGen.current++;
+    bumpEdit();
     setReference(value);
     const prev = companionDrafts.get(project) || { text: "", reference: null, rev: 0 };
     companionDrafts.set(project, { ...prev, reference: value });
@@ -2691,6 +2754,7 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
     () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
     [memoryItems, pinned, excluded]
   );
+  const budgetOmitted = memoryPreview.omissions.filter((o) => o.reason === "budget").length;
   const previewRows = injectables.map((it) => {
     const taken = memoryPreview.selected.find((x) => String(x.id) === String(it.id));
     const omitted = memoryPreview.omissions.find((x) => String(x.id) === String(it.id));
@@ -2778,6 +2842,10 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
       })
     ] }) : null,
     draftUi.status.phase === "saving" ? jsx5.jsx("div", { className: "dshWmAiHint", role: "status", children: "正在保存草稿…" }) : null,
+    notice ? jsx5.jsxs("div", { className: "dshWmCompanionError", role: "status", "data-wm-notice": "1", children: [
+      notice,
+      jsx5.jsx("button", { className: "dshWmQuiet", onClick: () => setNotice(""), children: "知道了" })
+    ] }) : null,
     memoryBlock ? jsx5.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-memory-block": "1", children: [
       `项目备忘读取失败（${memoryBlock.error}）：本轮还没有发出，正文与引用都保留着。请选择：`,
       jsx5.jsx("button", {
@@ -2811,17 +2879,37 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
             className: "dshWmQuiet",
             "data-wm-draft-adopt": c.windowId,
             onClick: () => {
+              if (adopting.current) return;
+              adopting.current = true;
+              const projectAtStart = project;
+              const genAtStart = editGen.current;
               void (async () => {
-                const current = companionDrafts.get(project) || { text: draft, reference };
-                const stash = await stashDraftForRecovery(project, { text: current.text, reference: current.reference });
-                if (!stash.ok) {
-                  setError("没能为当前草稿留下可恢复副本，已取消采用（原稿与引用都还在）。" + (stash.error ? " " + stash.error : ""));
-                  return;
+                try {
+                  const current = companionDrafts.get(project) || { text: draft, reference };
+                  const stash = await stashDraftForRecovery(project, { text: current.text, reference: current.reference });
+                  if (!stash.ok) {
+                    setError("没能为当前草稿留下可恢复副本，已取消采用（原稿与引用都还在）。" + (stash.error ? " " + stash.error : ""));
+                    return;
+                  }
+                  void reloadCandidates();
+                  const late = !alive.current || projectAtStart !== project || editGen.current !== genAtStart;
+                  if (late) {
+                    setNotice("采用已取消：等待期间你又改了草稿。新稿完整保留，原稿副本也已存好可在候选里找到。");
+                    return;
+                  }
+                  const nextText = c.text;
+                  const nextRef = c.reference || null;
+                  applyDraftSnapshot(project, { text: nextText, reference: nextRef }, {
+                    setLocalDraft,
+                    setReference,
+                    setNativeDraft: (t) => handleRef.current?.setDraft(t)
+                  });
+                  bumpEdit();
+                  persistCompanionDraft(project);
+                  setPreviewCandidate(null);
+                } finally {
+                  adopting.current = false;
                 }
-                updateDraft(c.text);
-                updateReference(c.reference || null);
-                void reloadCandidates();
-                setPreviewCandidate(null);
               })();
             },
             children: "采用这一份"
@@ -2880,21 +2968,28 @@ function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }
         ] }),
         contextOpen ? jsx5.jsxs("div", { className: "dshWmContextPanel", children: [
           memoryMeta.ok ? null : jsx5.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
-          jsx5.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${memoryPreview.omittedCount ? `，另有 ${memoryPreview.omittedCount} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=参考，取消勾选=不带；"优先"只是把它们排在最前面，不改变是否带入）` : "本轮不参考项目备忘（开关已关）" }),
+          jsx5.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）` : "本轮不参考项目备忘（开关已关）" }),
           previewRows.length ? previewRows.map((row) => jsx5.jsxs("div", { className: "dshWmContextItem", "data-wm-memory-row": row.id, children: [
             jsx5.jsx("input", {
               type: "checkbox",
               "data-wm-memory-pin": row.id,
-              checked: !excluded.includes(row.id),
-              title: "这一条是否参与本轮",
-              onChange: (e) => setExcluded((prev) => e.target.checked ? prev.filter((x) => x !== row.id) : [...prev, row.id])
+              // 待定问题默认不带入（C02）：勾选 = 明确选择这一条；其他条目默认带入，取消 = 明确排除。
+              checked: row.kind === "open-question" ? pinned.includes(row.id) : !excluded.includes(row.id),
+              title: row.kind === "open-question" ? "勾选才把这个问题带进本轮" : "这一条是否参与本轮",
+              onChange: (e) => {
+                if (row.kind === "open-question") {
+                  setPinned((prev) => e.target.checked ? [...prev, row.id] : prev.filter((x) => x !== row.id));
+                  return;
+                }
+                setExcluded((prev) => e.target.checked ? prev.filter((x) => x !== row.id) : [...prev, row.id]);
+              }
             }),
             jsx5.jsx("span", { className: "dshWmMemoryKind", children: row.kind === "preference" ? "偏好" : row.kind === "open-question" ? "待定" : "设定" }),
             jsx5.jsx("span", { className: "dshWmContextText", children: row.text }),
-            jsx5.jsx("button", {
+            row.kind === "open-question" ? null : jsx5.jsx("button", {
               className: "dshWmQuiet",
               "data-wm-memory-fix": row.id,
-              title: "固定优先：本轮先于其他条目带入",
+              title: "固定优先：本轮先于其他条目带入（不改变是否带入）",
               onClick: () => setPinned((prev) => prev.includes(row.id) ? prev.filter((x) => x !== row.id) : [...prev, row.id]),
               children: pinned.includes(row.id) ? "优先 ✓" : "优先"
             }),

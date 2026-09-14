@@ -1,0 +1,15 @@
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process'),crypto=require('node:crypto')
+const repo=path.resolve(__dirname,'../../../../..')
+const asar=require(path.join(repo,'node_modules/@electron/asar'))
+const pack=JSON.parse(fs.readFileSync(path.join(__dirname,'package-results.json'),'utf8'))
+const sha=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()
+const files=['main.js','preload.js',...fs.readdirSync(path.join(repo,'lib')).filter(f=>f.endsWith('.js')&&!f.endsWith('.test.js')).map(f=>'lib/'+f)]
+const hash=b=>crypto.createHash('sha256').update(b).digest('hex')
+const modules=files.map(file=>{try{const repoHash=hash(fs.readFileSync(path.join(repo,file))),packageHash=hash(asar.extractFile(pack.asar,file));return {file,repoHash,packageHash,same:repoHash===packageHash}}catch(e){return {file,same:false,error:e.message}}})
+const gate=cp.spawnSync(process.execPath,['scripts/verify-writing-packaged.mjs'],{cwd:repo,encoding:'utf8',env:{...process.env,WM_PKG:path.join(os.tmpdir(),'wm-nonexistent-'+crypto.randomUUID())}})
+const safety=fs.readFileSync(path.join(repo,'scripts/verify-writing-packaged.mjs'),'utf8')
+const matrix=fs.readFileSync(path.join(repo,'docs/audits/writing-architecture/2026-09-14/v2/acceptance.md'),'utf8')
+const matrixRows=matrix.split('\n').filter(l=>/^\| [A-Z]\d\d \|/.test(l)).map(l=>{const c=l.split('|').map(x=>x.trim());return {id:c[1],status:c[3]}})
+const result={sha,modules,allModulesEqual:modules.every(m=>m.same),matrixRows,missingPackageGate:{exitCode:gate.status,output:(gate.stdout||'')+(gate.stderr||'')},containsGlobalImageKill:safety.includes("['/IM', 'DeepSeek Harness Desktop.exe', '/F']"),originalNode:JSON.parse(fs.readFileSync(path.join(__dirname,'probes-results.json'))).results.map(r=>({id:r.id,status:r.status})),originalUI:JSON.parse(fs.readFileSync(path.join(__dirname,'ui-results.json'))).results.map(r=>({id:r.id,status:r.status})),baselineCount:JSON.parse(fs.readFileSync(path.join(__dirname,'baseline-ui-results.json'))).results.length}
+fs.writeFileSync(path.join(__dirname,'verification.json'),JSON.stringify(result,null,2)+'\n')
+console.log(JSON.stringify({sha,shellModules:modules.length,allModulesEqual:result.allModulesEqual,matrixRows:matrixRows.length,missingPackageGate:result.missingPackageGate,containsGlobalImageKill:result.containsGlobalImageKill,baselineCount:result.baselineCount},null,2))
