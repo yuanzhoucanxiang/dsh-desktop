@@ -46,6 +46,11 @@ if [ ! -d node_modules/electron ]; then
   npm install --no-audit --no-fund
 fi
 
+# 2b. writing-mode client product must be fresh before packaging (mirror build.ps1 step 0):
+#     client.js is a committed artifact, but packaging must never ship a stale one.
+echo "==> building writing-mode client (src -> client.js) ..."
+node "$HERE/scripts/build-writing-client.mjs"
+
 # 3. package the app (dir only; do NOT pass a dmg target here - this step must
 #    not produce an installer, the dmg is built from the complete prepackaged
 #    app in step 5)
