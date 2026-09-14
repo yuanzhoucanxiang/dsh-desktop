@@ -1,15 +1,15 @@
 {
-  "commit": "95b138d427f445e933e69811f8a775ce968ffe28",
+  "commit": "b44c1c98660921e9c367570f5210630ed6ab6336",
   "exe": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-rebuild-0.1.38\\win-unpacked\\DeepSeek Harness Desktop.exe",
   "asar": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-rebuild-0.1.38\\win-unpacked\\resources\\app.asar",
-  "envRoot": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-packaged-smoke-FRT0MY",
-  "pid": 95012,
+  "envRoot": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-packaged-smoke-5FQymd",
+  "pid": 101224,
   "hookInstalled": true,
   "code": null,
   "signal": "SIGTERM",
   "timedOut": true,
-  "asarSha256": "677f731857e56c860710601b72ea5c1d139d3a5eafe760c85a6c926e018126a3",
+  "asarSha256": "67dd0e90a6c2a92abf635c5f8e94a026614bdfe5a8ed14661452053058349e74",
   "mainPresent": true,
   "pluginSyncPresent": true,
-  "log": "\r\nDebugger listening on ws://127.0.0.1:6410/c5c05736-8d0b-4a8e-89af-9150d27dcd49\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\nDebugger attached.\r\nChecking for update\nGenerated new staging user ID: 2de044cd-e1fe-5aed-8111-5f1c4229b319\nSMOKE_HANDOFF acked=true\nSMOKE_OK url=http://127.0.0.1:2577\nWaiting for the debugger to disconnect...\r\n"
+  "log": "\r\nDebugger listening on ws://127.0.0.1:11893/aacea6aa-72fa-4abc-8a4a-371b2b7b86ea\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\nDebugger attached.\r\nChecking for update\nGenerated new staging user ID: 1a7b0da8-abcb-5af2-bb62-37779bd5ebc2\nUpdate for version 0.1.38 is not available (latest version: 0.1.38, downgrade is disallowed).\nSMOKE_HANDOFF acked=true\nSMOKE_OK url=http://127.0.0.1:1352\nWaiting for the debugger to disconnect...\r\n"
 }

@@ -1,4 +1,7 @@
-# 写作模式 v2 已知问题与剩余边界（提交 4649b59）
+# 写作模式 v2 已知问题与剩余边界（提交 b44c1c9，复核返工后）
+
+> 本轮（复核退回后）已修：新包启动失败、旧消息被当受理证据、采用候选丢原稿、恢复另建会话、
+> 备忘失败仍照发、同步越界、引用指纹丢失、矩阵缺 A01–A03。下面保留的是仍未做/仍有边界的部分。
 
 按"影响 × 是否可绕过"排序。没有一项会让作者的稿件/设置处于风险中；未验证项见 `acceptance.md` 末表。
 
@@ -55,3 +58,34 @@
 - 记忆历史的 before/after 对照只在文本不同时显示差异行，未做行级 diff。
 
 — ox-alpha
+
+## 10. NSIS 安装器未在隔离用户环境执行（NOT_RUN）
+
+本轮已能**离线构建真包**（`scripts/rebuild-package-tmp.mjs`：electron-builder API + 本地 electron dist，
+输出到 `%TEMP%`）并完成真包冷启动/首启种子/主题验收。安装器（`--win nsis --prepackaged`）会写注册表与
+程序目录，未在隔离用户环境执行；需要时在**普通终端**（不在 ZCode 会话里，避免锁 `app.asar`）跑：
+
+```bash
+cd dsh-desktop
+node scripts/rebuild-package-tmp.mjs                                   # 出 dir 包到 %TEMP%
+WM_PKG=%TEMP%/wm-v2-rebuild-<ver> node scripts/verify-writing-packaged.mjs
+node scripts/verify-writing-package.mjs --package "%TEMP%/wm-v2-rebuild-<ver>/win-unpacked"
+# 需要安装器时：electron-builder --win nsis --prepackaged <dir包>/win-unpacked --publish never
+```
+
+## 11. 主题 UI 冒烟的断言口径（本轮修正）
+
+旧断言查 `:root` 上的 `--dsw-alias-bg-base`（本内核该令牌不在 `:root`，实测恒为空串）与
+`#palis-theme-crt`（新版 PALIS 设计已主动移除该覆盖层）——**结构上永远不可能通过**。
+现改为验证真实契约：`data-palis-theme` 往返 + 注入样式表存在 + 调色值确实写在样式表里 + 关闭后移除。
+开发态跑 ui-smoke 需要内置插件（palis）在隔离 profile 里，`verify:ui-smoke` 已用**生产种子模块**
+（`lib/builtin-seed.js` + `dist/builtin-plugins`）装入，不再依赖用户机器上的插件。
+
+## 12. C01 应用层拆分仍不完整（PARTIAL）
+
+已做：`entry.js` 3526→165 行；`app/` 只留装配；`features/{editor,library,companion,memory,tools,settings}`、
+`adapters/services/state/styles` 就位；会话获取与发送、草稿生命周期、备忘读写、引用来源、会话投影
+均已走 adapter / 纯函数模块。
+未做：`WritingModeApp.js` 仍有约 1.5k 行，内含新建项目与文稿、库切换、文字工具执行、保存定时与多块界面。
+继续拆分要把这些块提成真正的组件/控制器（不是改名），每步都要有 E2E 兜底（现有三套 E2E + 原 32 条基线
++ 复核 UI 探针可作为安全网）。
