@@ -36,6 +36,7 @@ const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
 const { createSettingsStore } = require('./lib/settings-store')
 const { parsePatchList, effectiveDisabled, entryIdsForPackage, setEntryDisabled } = require('./lib/plugin-manager')
+const pluginSync = require('./lib/plugin-sync')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
@@ -409,40 +410,17 @@ function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)
   if (!fs.existsSync(path.join(src, 'package.json'))) return false
   const dest = path.join(dshHome(), 'profiles', 'node_modules', '@dsh-local', name)
-  let synced = false
-  /** 递归收集相对路径（跳过 node_modules / 点目录）。 */
-  const walk = (rel) => {
-    const abs = path.join(src, rel)
-    let ents
-    try {
-      ents = fs.readdirSync(abs, { withFileTypes: true })
-    } catch {
-      return []
-    }
-    const out = []
-    for (const ent of ents) {
-      if (ent.name.startsWith('.') || ent.name === 'node_modules') continue
-      const child = rel ? path.join(rel, ent.name) : ent.name
-      if (ent.isDirectory()) out.push(...walk(child))
-      else if (ent.isFile() && /\.(js|mjs|cjs|json|md|yml)$/.test(ent.name)) out.push(child)
-    }
-    return out
+  // 清单驱动同步（lib/plugin-sync.js）：有 runtime-manifest.json 的插件按其发布集合复制，
+  // 否则退回按扩展名递归；两者都逐文件哈希比对，并且只清理「上一版受管、这一版不发布、
+  // 且仍与上次写入一致」的文件——用户改过的、非受管的文件一律保留只上报。
+  const r = pluginSync.syncPluginDir({ srcDir: src, destDir: dest })
+  const changed = r.copied.length + r.updated.length + r.removed.length
+  if (changed) {
+    log(`${name} synced to ${dest} [${r.source}] +${r.copied.length} ~${r.updated.length} -${r.removed.length} (未变 ${r.unchanged})`)
   }
-  const files = walk('')
-  if (!files.includes('package.json')) return false
-  for (const file of files) {
-    const s = path.join(src, file)
-    const d = path.join(dest, file)
-    try {
-      if (fs.existsSync(d) && fs.readFileSync(d).equals(fs.readFileSync(s))) continue
-      fs.mkdirSync(path.dirname(d), { recursive: true })
-      fs.copyFileSync(s, d)
-      synced = true
-    } catch (err) {
-      log(`sync ${name} ${file} failed: ${err.message}`)
-    }
-  }
-  if (synced) log(`${name} synced to ${dest}`)
+  if (r.keptEdited.length) log(`${name}: 检测到你改过的旧文件，保留不删 — ${r.keptEdited.join(', ')}`)
+  if (r.foreign.length) log(`${name}: 非受管文件保留 ${r.foreign.length} 个（${r.foreign.slice(0, 4).join(', ')}${r.foreign.length > 4 ? ' …' : ''}）`)
+  for (const err of r.errors) log(`sync ${name} failed: ${err}`)
   return true
 }
 
