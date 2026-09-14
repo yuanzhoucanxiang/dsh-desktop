@@ -10,6 +10,8 @@ import { buildPreparedTurn, memoryHint } from '../shared/context-builder.js'
 import { T } from './copy.js'
 import { ensureWritingCss } from './styles/writing-css.js'
 import { api } from './services/writing-api.js'
+import { bindHarness, harnessSessions, harnessConnection, harnessWorkspaces } from './adapters/harness/runtime.js'
+import { appendCompanionDraft, ensureCompanionSession } from './adapters/harness/sessions.js'
 import {
   companionDrafts,
   companionWindowId,
@@ -39,46 +41,7 @@ export const name = 'writing-mode'
 
 const LS_KEY = 'dsh-writing-mode-active'
 const LS_FILE = 'dsh-writing-mode-file'
-let sessionRuntime = null
-let nativeApi = null
-let workspaceRuntime = null
 
-function appendCompanionDraft(sessions, id, text) {
-  const info = sessions.provideInfo(id)
-  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error('原生输入框尚未就绪，请稍后重试')
-  const draft = info.hooks.input.getSnapshot().draft || ''
-  info.props.inputActions.setDraft(draft ? draft + '\n\n' + text : text)
-}
-
-
-async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = nativeApi, workspaces = workspaceRuntime) {
-  if (!sessions) throw new Error('Harness 会话服务尚未就绪')
-  const binding = await api('companion', undefined, { path })
-  if (!binding.ok) throw new Error(binding.error)
-  await sessions.refresh()
-  if (!isCurrent()) return null
-  let id = binding.sessionId
-  if (!id || !sessions.list.getSnapshot().byId[id]) {
-    const prepared = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, prepare: true }) })
-    if (!prepared.ok) throw new Error(prepared.error)
-    if (!connection?.agentPresets?.select || !workspaces) throw new Error('Harness 未提供原生角色或工作区服务，请检查内核版本')
-    if (!isCurrent()) return null
-    const workspace = await workspaces.create({ path: binding.project })
-    if (!isCurrent()) return null
-    id = await sessions.create({ workspaceId: workspace.workspaceId })
-    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset })
-    if (!selected.result.ok) throw new Error(selected.result.error.message)
-    sessions.noteAgentPreset(id, selected.result.value.agentPreset)
-    const data = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, sessionId: id }) })
-    if (!data.ok) throw new Error('会话已创建，但项目关联未保存：' + data.error)
-  }
-  if (!isCurrent()) return null
-  sessions.open(id)
-  // Reload the native role picker after the confirmed session becomes current.
-  await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, prepare: true }) })
-  if (!isCurrent()) return null
-  return { ...binding, sessionId: id }
-}
 
 
 // Conversation history stays in Harness. Unsent text lives in host checkpoints.
@@ -246,7 +209,7 @@ function CompanionTranscript({ snapshot, onFull }) {
   ] })
 }
 function CompanionChat({ initialBinding, path, contextText, onExit }) {
-  const sessions = sessionRuntime
+  const sessions = harnessSessions()
   const [binding, setBinding] = react.useState(initialBinding)
   const project = binding.project
   const cached = companionDrafts.get(project) || { text: '', reference: null }
@@ -498,9 +461,9 @@ function WritingCompanion({ path, contextText, onExit }) {
   react.useEffect(() => {
     let active = true
     if (path) void api('companion', undefined, { path }).then(async data => {
-      if (data.ok && data.sessionId && sessionRuntime) {
-        await sessionRuntime.refresh()
-        if (!sessionRuntime.list.getSnapshot().byId[data.sessionId]) data.sessionId = null
+      if (data.ok && data.sessionId && harnessSessions()) {
+        await harnessSessions().refresh()
+        if (!harnessSessions().list.getSnapshot().byId[data.sessionId]) data.sessionId = null
       }
       if (active) setResult({ path, ...data })
     }).catch(err => { if (active) setResult({ path, error: err.message }) })
@@ -817,10 +780,10 @@ function WritingModeApp() {
   }, [active, refreshTree])
 
   react.useEffect(() => {
-    if (!active || !sessionRuntime) return
+    if (!active || !harnessSessions()) return
     let running = new Set()
     const update = () => {
-      const snapshot = sessionRuntime.list.getSnapshot()
+      const snapshot = harnessSessions().list.getSnapshot()
       const next = new Set(Object.values(snapshot.byId).filter(s => s.running).map(s => s.id))
       if (Array.from(running).some(id => !next.has(id))) {
         void refreshTree().catch(() => {})
@@ -829,7 +792,7 @@ function WritingModeApp() {
       running = next
     }
     update()
-    return sessionRuntime.list.subscribe(update)
+    return harnessSessions().list.subscribe(update)
   }, [active, editor, refreshTree])
 
   const persist = react.useCallback(() => editor.flush(), [editor])
@@ -1277,9 +1240,9 @@ function WritingModeApp() {
   async function fillComposer(prompt) {
     const source = editor.get().path
     try {
-      const next = await ensureCompanionSession(sessionRuntime, source || activeRoot, () => editor.get().path === source && getModeActive())
+      const next = await ensureCompanionSession(harnessSessions(), source || activeRoot, () => editor.get().path === source && getModeActive())
       if (!next) return false
-      appendCompanionDraft(sessionRuntime, next.sessionId, prompt)
+      appendCompanionDraft(harnessSessions(), next.sessionId, prompt)
       setAiOpen(true); setAiTab('companion'); setFocus(false)
       flashMsg('已追加到写作伙伴输入框，补充想法后发送')
       return true
@@ -2724,9 +2687,7 @@ function WritingModeSettings() {
 export const inject = __wmAlreadyLoaded ? [] : ['slots', 'sessions', 'connection', 'workspaces']
 export function apply(ctx) {
   if (__wmAlreadyLoaded) return
-  sessionRuntime = ctx.sessions || null
-  nativeApi = ctx.connection?.api || null
-  workspaceRuntime = ctx.workspaces || null
+  bindHarness(ctx)
   try {
     ensureDomFloat()
   } catch (err) {

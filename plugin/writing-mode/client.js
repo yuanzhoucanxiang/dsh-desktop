@@ -742,6 +742,60 @@ async function api(route, opts, query) {
   }
 }
 
+// plugin/writing-mode/src/client/adapters/harness/runtime.js
+var sessionsRef = null;
+var connectionRef = null;
+var workspacesRef = null;
+function bindHarness(ctx) {
+  sessionsRef = ctx.sessions || null;
+  connectionRef = ctx.connection?.api || null;
+  workspacesRef = ctx.workspaces || null;
+}
+function harnessSessions() {
+  return sessionsRef;
+}
+function harnessConnection() {
+  return connectionRef;
+}
+function harnessWorkspaces() {
+  return workspacesRef;
+}
+
+// plugin/writing-mode/src/client/adapters/harness/sessions.js
+function appendCompanionDraft(sessions, id, text) {
+  const info = sessions.provideInfo(id);
+  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error("原生输入框尚未就绪，请稍后重试");
+  const draft = info.hooks.input.getSnapshot().draft || "";
+  info.props.inputActions.setDraft(draft ? draft + "\n\n" + text : text);
+}
+async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = harnessConnection(), workspaces = harnessWorkspaces()) {
+  if (!sessions) throw new Error("Harness 会话服务尚未就绪");
+  const binding = await api("companion", void 0, { path });
+  if (!binding.ok) throw new Error(binding.error);
+  await sessions.refresh();
+  if (!isCurrent()) return null;
+  let id = binding.sessionId;
+  if (!id || !sessions.list.getSnapshot().byId[id]) {
+    const prepared = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
+    if (!prepared.ok) throw new Error(prepared.error);
+    if (!connection?.agentPresets?.select || !workspaces) throw new Error("Harness 未提供原生角色或工作区服务，请检查内核版本");
+    if (!isCurrent()) return null;
+    const workspace = await workspaces.create({ path: binding.project });
+    if (!isCurrent()) return null;
+    id = await sessions.create({ workspaceId: workspace.workspaceId });
+    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset });
+    if (!selected.result.ok) throw new Error(selected.result.error.message);
+    sessions.noteAgentPreset(id, selected.result.value.agentPreset);
+    const data = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId: id }) });
+    if (!data.ok) throw new Error("会话已创建，但项目关联未保存：" + data.error);
+  }
+  if (!isCurrent()) return null;
+  sessions.open(id);
+  await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
+  if (!isCurrent()) return null;
+  return { ...binding, sessionId: id };
+}
+
 // plugin/writing-mode/src/client/state/companion-drafts.js
 var companionDrafts = /* @__PURE__ */ new Map();
 var companionWindowId = null;
@@ -1002,42 +1056,6 @@ window.__dshWritingModeLoaded = true;
 var name = "writing-mode";
 var LS_KEY = "dsh-writing-mode-active";
 var LS_FILE = "dsh-writing-mode-file";
-var sessionRuntime = null;
-var nativeApi = null;
-var workspaceRuntime = null;
-function appendCompanionDraft(sessions, id, text) {
-  const info = sessions.provideInfo(id);
-  if (!info?.props?.inputActions?.setDraft || !info?.hooks?.input) throw new Error("原生输入框尚未就绪，请稍后重试");
-  const draft = info.hooks.input.getSnapshot().draft || "";
-  info.props.inputActions.setDraft(draft ? draft + "\n\n" + text : text);
-}
-async function ensureCompanionSession(sessions, path, isCurrent = () => true, connection = nativeApi, workspaces = workspaceRuntime) {
-  if (!sessions) throw new Error("Harness 会话服务尚未就绪");
-  const binding = await api("companion", void 0, { path });
-  if (!binding.ok) throw new Error(binding.error);
-  await sessions.refresh();
-  if (!isCurrent()) return null;
-  let id = binding.sessionId;
-  if (!id || !sessions.list.getSnapshot().byId[id]) {
-    const prepared = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-    if (!prepared.ok) throw new Error(prepared.error);
-    if (!connection?.agentPresets?.select || !workspaces) throw new Error("Harness 未提供原生角色或工作区服务，请检查内核版本");
-    if (!isCurrent()) return null;
-    const workspace = await workspaces.create({ path: binding.project });
-    if (!isCurrent()) return null;
-    id = await sessions.create({ workspaceId: workspace.workspaceId });
-    const selected = await connection.agentPresets.select({ sessionId: id, agentPreset: prepared.preset });
-    if (!selected.result.ok) throw new Error(selected.result.error.message);
-    sessions.noteAgentPreset(id, selected.result.value.agentPreset);
-    const data = await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, sessionId: id }) });
-    if (!data.ok) throw new Error("会话已创建，但项目关联未保存：" + data.error);
-  }
-  if (!isCurrent()) return null;
-  sessions.open(id);
-  await api("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, prepare: true }) });
-  if (!isCurrent()) return null;
-  return { ...binding, sessionId: id };
-}
 async function loadProjectMemory(path) {
   try {
     const data = await api("memory", void 0, { path });
@@ -1196,7 +1214,7 @@ function CompanionTranscript({ snapshot, onFull }) {
   ] });
 }
 function CompanionChat({ initialBinding, path, contextText, onExit }) {
-  const sessions = sessionRuntime;
+  const sessions = harnessSessions();
   const [binding, setBinding] = react.useState(initialBinding);
   const project = binding.project;
   const cached = companionDrafts.get(project) || { text: "", reference: null };
@@ -1453,9 +1471,9 @@ function WritingCompanion({ path, contextText, onExit }) {
   react.useEffect(() => {
     let active = true;
     if (path) void api("companion", void 0, { path }).then(async (data) => {
-      if (data.ok && data.sessionId && sessionRuntime) {
-        await sessionRuntime.refresh();
-        if (!sessionRuntime.list.getSnapshot().byId[data.sessionId]) data.sessionId = null;
+      if (data.ok && data.sessionId && harnessSessions()) {
+        await harnessSessions().refresh();
+        if (!harnessSessions().list.getSnapshot().byId[data.sessionId]) data.sessionId = null;
       }
       if (active) setResult({ path, ...data });
     }).catch((err) => {
@@ -1762,10 +1780,10 @@ function WritingModeApp() {
     void refreshTree();
   }, [active, refreshTree]);
   react.useEffect(() => {
-    if (!active || !sessionRuntime) return;
+    if (!active || !harnessSessions()) return;
     let running = /* @__PURE__ */ new Set();
     const update = () => {
-      const snapshot = sessionRuntime.list.getSnapshot();
+      const snapshot = harnessSessions().list.getSnapshot();
       const next = new Set(Object.values(snapshot.byId).filter((s) => s.running).map((s) => s.id));
       if (Array.from(running).some((id) => !next.has(id))) {
         void refreshTree().catch(() => {
@@ -1775,7 +1793,7 @@ function WritingModeApp() {
       running = next;
     };
     update();
-    return sessionRuntime.list.subscribe(update);
+    return harnessSessions().list.subscribe(update);
   }, [active, editor, refreshTree]);
   const persist = react.useCallback(() => editor.flush(), [editor]);
   const saveAsNewVersion = () => editor.version();
@@ -2196,9 +2214,9 @@ function WritingModeApp() {
   async function fillComposer(prompt) {
     const source = editor.get().path;
     try {
-      const next = await ensureCompanionSession(sessionRuntime, source || activeRoot, () => editor.get().path === source && getModeActive());
+      const next = await ensureCompanionSession(harnessSessions(), source || activeRoot, () => editor.get().path === source && getModeActive());
       if (!next) return false;
-      appendCompanionDraft(sessionRuntime, next.sessionId, prompt);
+      appendCompanionDraft(harnessSessions(), next.sessionId, prompt);
       setAiOpen(true);
       setAiTab("companion");
       setFocus(false);
@@ -3522,9 +3540,7 @@ function WritingModeSettings() {
 var inject = __wmAlreadyLoaded ? [] : ["slots", "sessions", "connection", "workspaces"];
 function apply(ctx) {
   if (__wmAlreadyLoaded) return;
-  sessionRuntime = ctx.sessions || null;
-  nativeApi = ctx.connection?.api || null;
-  workspaceRuntime = ctx.workspaces || null;
+  bindHarness(ctx);
   try {
     ensureDomFloat();
   } catch (err) {
