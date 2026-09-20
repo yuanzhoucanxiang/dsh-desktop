@@ -264,6 +264,63 @@ export function newDraftPath(rootPath, title) {
   return path.join(rootPath, `${safe}-${stamp}.md`)
 }
 
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+
+/** 项目目录名：非法字符剔除后拒绝空名、`.`/`..`、纯点段与 Windows 保留名。失败返回 null。 */
+export function safeProjectDirName(title) {
+  const dirName = String(title || '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+    .trim()
+  if (!dirName) return null
+  if (/^\.+$/.test(dirName)) return null
+  if (WIN_RESERVED.test(dirName)) return null
+  return dirName
+}
+
+/** 目标路径已存在且非空目录（或被文件占用）时返回 true；无法判定时 fail-closed 为 true。 */
+export function isBlockedProjectDir(absPath) {
+  try {
+    if (!fs.existsSync(absPath)) return false
+    const st = fs.statSync(absPath)
+    if (!st.isDirectory()) return true
+    return fs.readdirSync(absPath).length > 0
+  } catch {
+    return true
+  }
+}
+
+/**
+ * create-project 目标解析：目录名安全 + 严格位于库根之下（不得是库根本身）+
+ * 无 project.md + 目录不存在或为空。成功返回 { dirName, target }。
+ */
+export function prepareProjectTarget(rootPath, title, roots) {
+  const dirName = safeProjectDirName(title)
+  if (!dirName) return { ok: false, error: 'invalid-project-name' }
+  const projectAbs = path.join(String(rootPath || ''), dirName)
+  const target = resolveUnderRoots(projectAbs, roots)
+  if (target === null) return { ok: false, error: 'path-outside-roots' }
+  if (!target.rel || target.rel === '') return { ok: false, error: 'invalid-project-name' }
+  if (fs.existsSync(path.join(target.abs, 'project.md'))) {
+    return { ok: false, error: 'project-exists', path: target.abs }
+  }
+  if (isBlockedProjectDir(target.abs)) {
+    return { ok: false, error: 'directory-not-empty', path: target.abs }
+  }
+  return { ok: true, dirName, target }
+}
+
+/** 模板文件 rel 必须是相对安全段，禁止 ..、绝对路径与空段。 */
+export function isSafeTemplateRel(rel) {
+  const s = String(rel || '')
+  if (!s || s.includes('\0') || path.isAbsolute(s) || /^[a-zA-Z]:/.test(s)) return false
+  const parts = s.split('/')
+  if (parts.some((p) => !p || p === '.' || p === '..')) return false
+  return true
+}
+
 export function readTextOrNull(p) {
   try {
     const target = resolveUnderRoots(p, effectiveRoots(readConfig()))

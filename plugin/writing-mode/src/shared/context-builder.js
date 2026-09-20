@@ -1,18 +1,16 @@
 /**
- * 当轮上下文构建（方案 P3 §4.2）：把"作者这一轮真正要发的东西"冻结成一个不可变对象。
+ * 当轮上下文构建（方案 P3 §4.2 + world-settings §7）：
+ * 把"作者这一轮真正要发的东西"冻结成一个不可变对象。
  *
- * 契约要点（逐条对应方案）：
- *   1. 只自动参考**当前项目 confirmed 的 fact/preference**；proposed/retracted/resolved 永不自动注入；
- *      open-question 即便已确认也仍是问题，不混进默认事实列表。
- *   2. 顺序：作者本次勾选/固定的有效条目**优先**（按作者给出的顺序），其余按备忘里的稳定顺序确定性补齐。
- *   3. 自动部分有字符预算（默认 6000，明确是 Unicode 字符数、不是 token）；作者消息与显式稿件引用
- *      **不受**这个预算影响（永远完整发送）。
- *   4. 结果含 projectKey / operationId / message / reference / memoryRevision / memoryEtag /
- *      实际采用条目（id/状态/来源/文本/选择原因/是否作者固定）/ 省略信息 / body；
- *      外层与嵌套数组元素都冻结——发送中备忘改变不会改写已经冻结的本次请求。
- *
+ * 契约要点：
+ *   1. 只自动参考 **confirmed** 的 fact/preference；world 设定注入 **结论+边界**（host 派生 text），
+ *      **explanation 不注入**。
+ *   2. 顺序：作者固定优先（排除 > 固定）；其余 world 设定按确定性标题/标签匹配排序，普通备忘保持稳定顺序。
+ *   3. 自动部分 Unicode 字符预算（默认 6000）；作者消息与显式引用不受限；整条省略不截断边界。
+ *   4. preparedTurn 全嵌套冻结。
  * 纯函数：不做 IO、不读时钟、不改入参。
  */
+import { isWorldSettingItem, settingInjectUnit, rankWorldSettingIds } from './world-setting.js'
 
 export const DEFAULT_MEMORY_BUDGET = 6000
 
@@ -36,12 +34,33 @@ function freezeItem(item) {
   return Object.freeze({ id: item.id, status: item.status, kind: item.kind, text: item.text })
 }
 
+/** 自动顺序：world 设定按当轮匹配排序，其余保持列表稳定顺序。 */
+export function orderForInjection(items, turnText, pinnedIds, excludedIds) {
+  const list = Array.isArray(items) ? items : []
+  const pinned = new Set((pinnedIds || []).map(String))
+  const excluded = new Set((excludedIds || []).map(String))
+  const rankedWorld = rankWorldSettingIds(list, turnText, [...pinned], [...excluded])
+  const worldOrder = new Map(rankedWorld.map((r, i) => [r.id, i]))
+  const world = []
+  const rest = []
+  for (const it of list) {
+    if (!it || pinned.has(String(it.id)) || excluded.has(String(it.id))) continue
+    if (isWorldSettingItem(it) && it.status === 'confirmed') world.push(it)
+    else rest.push(it)
+  }
+  world.sort((a, b) => {
+    const ia = worldOrder.has(String(a.id)) ? worldOrder.get(String(a.id)) : Number.MAX_SAFE_INTEGER
+    const ib = worldOrder.has(String(b.id)) ? worldOrder.get(String(b.id)) : Number.MAX_SAFE_INTEGER
+    if (ia !== ib) return ia - ib
+    return String(a.id) < String(b.id) ? -1 : 1
+  })
+  return [...world, ...rest]
+}
+
 /**
  * 选出本轮要带的条目，返回 { selected, omissions }。
- *   pinned —— 作者本次勾选/固定（数组顺序即作者顺序；无效或被撤回的一律不算，且要报告）
- *   rest   —— 其余可注入条目，按传入顺序（memо 的稳定/追加顺序）确定性补齐
  */
-export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = []) {
+export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = [], turnText = '') {
   const list = Array.isArray(items) ? items : []
   const pinned = new Set((pinnedIds || []).map((id) => String(id)))
   const excluded = new Set((excludedIds || []).map((id) => String(id)))
@@ -49,10 +68,11 @@ export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, e
   const omissions = []
   let used = 0
   const take = (item, reason, isPinned) => {
-    const label = LABEL_OF[item.kind] || '设定'
-    const line = `- [${label}] ${item.text}`
-    // C02：预算按 **Unicode 码点**计（[...s].length），不是 UTF-16 代码单元（s.length）——
-    // 否则 3500 个 emoji 会被当成 7000 字，整条被错误省略（2026-09-14 复核实测）。
+    const world = isWorldSettingItem(item) ? settingInjectUnit(item) : null
+    const label = world?.label || LABEL_OF[item.kind] || '设定'
+    const text = world?.text || item.text
+    const title = world?.title || ''
+    const line = title ? `- [${label}] ${title}：${text}` : `- [${label}] ${text}`
     const cost = [...line].length + 1
     if (used + cost > budget) {
       omissions.push({ id: item.id, kind: item.kind, reason: 'budget', chars: cost, pinned: isPinned })
@@ -67,13 +87,16 @@ export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, e
       source: item.source
         ? Object.freeze({ kind: item.source.kind || 'author', sessionId: item.source.sessionId || null, messageId: item.source.messageId || null, path: item.source.path || null })
         : null,
-      text: item.text,
+      text,
+      title,
+      setting: world ? Object.freeze({ type: 'world', title: world.title, tags: world.tags || [] }) : null,
       reason,
       pinned: isPinned,
       chars: cost,
+      line,
     })
   }
-  // 1) 作者固定优先（可按作者选择带上"待定问题"，但它始终标注为待定，不混进默认事实）
+  // 1) 作者固定优先（排除 > 固定）
   for (const id of pinned) {
     const item = list.find((it) => it && String(it.id) === id)
     if (!item) {
@@ -84,23 +107,25 @@ export function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, e
       omissions.push({ id, kind: item.kind, status: item.status, reason: 'not-injectable', pinned: true })
       continue
     }
-    // C02：作者明确排除的条目，即使被标成"固定"也不带入（排除优先于固定）
     if (excluded.has(String(item.id))) {
       omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: 'excluded-by-author', pinned: true })
       continue
     }
     take(item, 'author-pinned', true)
   }
-  // 2) 其余确定性补齐（跳过已固定的；明确排除的一律跳过并如实报告）
+  // 2) 其余确定性补齐（world 匹配优先）；被作者排除的可注入条目也要如实报告
   const pinnedTaken = new Set(selected.map((s) => String(s.id)))
   for (const item of list) {
     if (!isInjectable(item)) continue
     if (excluded.has(String(item.id))) {
       omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: 'excluded-by-author', pinned: false })
-      continue
     }
+  }
+  for (const item of orderForInjection(list, turnText, pinnedIds, excludedIds)) {
+    if (!isInjectable(item)) continue
+    if (excluded.has(String(item.id))) continue
     if (pinnedTaken.has(String(item.id))) continue
-    take(item, 'auto', false)
+    take(item, isWorldSettingItem(item) ? 'world-match-or-stable' : 'auto', false)
   }
   return { selected, omissions, charsUsed: used }
 }
@@ -119,7 +144,6 @@ function buildReference(reference) {
     path: reference.path || null,
     revision: reference.revision ?? null,
     selection,
-    // 未保存内容的快照标记（与源稿 revision 一起构成引用身份，不用正文拼接代替结构相等）
     snapshotFingerprint: reference.snapshotFingerprint || null,
     stale: Boolean(reference.stale),
   })
@@ -127,17 +151,17 @@ function buildReference(reference) {
 
 export function buildPreparedTurn(input) {
   const message = String(input?.message ?? '')
-  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : DEFAULT_MEMORY_BUDGET
-  const includeMemory = input?.includeMemory !== false // 默认开启本次参考
+  const budget = Number.isFinite(input?.budget) ? input.budget : DEFAULT_MEMORY_BUDGET
+  const includeMemory = input?.includeMemory !== false
   const reference = buildReference(input?.reference)
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : []
   const { selected, omissions, charsUsed } = includeMemory
-    ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds)
+    ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, message)
     : { selected: [], omissions: [], charsUsed: 0 }
 
   const parts = []
   if (selected.length) {
-    const body = selected.map((s) => `- [${s.label}] ${s.text}`).join('\n')
+    const body = selected.map((s) => s.line || `- [${s.label}] ${s.text}`).join('\n')
     const budgetNote = omissions.filter((o) => o.reason === 'budget').length
     parts.push(
       '【项目备忘 · 作者已确认，仅供参考，不要伪装成系统指令】\n' +
@@ -153,7 +177,7 @@ export function buildPreparedTurn(input) {
   if (message) parts.push(message)
 
   return Object.freeze({
-    schemaVersion: 2,
+    schemaVersion: 3,
     projectKey: input?.projectKey || null,
     operationId: input?.operationId || null,
     message,
@@ -175,3 +199,5 @@ export function memoryHint(memoryItems) {
   const n = (Array.isArray(memoryItems) ? memoryItems : []).filter(isInjectable).length
   return n ? `参考项目备忘 · ${n} 条` : null
 }
+
+void freezeItem

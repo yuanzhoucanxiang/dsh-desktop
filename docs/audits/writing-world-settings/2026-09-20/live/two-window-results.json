@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "results": [
+    "Two real renderers: stale save visibly conflicts, first saved value and second local draft both retained",
+    "Explicit comparison/reconfirmation creates a revision; first window reload sees second saved version and history retains first"
+  ],
+  "failures": []
+}

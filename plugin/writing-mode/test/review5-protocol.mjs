@@ -18,6 +18,25 @@ const ok = (name, cond, extra = '') => {
   }
 }
 
+const reactStub = {
+  memo: (c) => c,
+  createElement: () => null,
+  cloneElement: (c) => c,
+  Fragment: 'Fragment',
+  createContext: (d) => ({ _default: d, Provider: null, Consumer: null }),
+  useContext: () => ({}),
+  useState: (i) => [typeof i === 'function' ? i() : i, () => {}],
+  useEffect: () => {},
+  useLayoutEffect: () => {},
+  useMemo: (f) => f(),
+  useCallback: (f) => f,
+  useRef: (i) => ({ current: i }),
+  forwardRef: (f) => f,
+  Component: class Component {},
+  PureComponent: class PureComponent {},
+}
+const jsxStub = { jsx: () => null, jsxs: () => null, Fragment: 'Fragment' }
+
 const root = process.cwd()
 const code = fs.readFileSync(path.join(root, 'plugin/writing-mode/client.js'), 'utf8')
 let mod = null
@@ -32,7 +51,12 @@ const sandbox = {
   sessionStorage: { getItem: () => 'win1', setItem: () => {} },
   navigator: { language: 'zh-CN' },
   console,
-  document: undefined,
+  // factory 内含 decode-named-character-reference（DOM 版）顶层 createElement
+  document: {
+    createElement: () => ({ innerHTML: '', textContent: '', getAttribute: () => null }),
+    getElementById: () => null,
+    head: { appendChild() {} },
+  },
   fetch: async (url, opts) => {
     fetchLog.push({ url: String(url), method: opts?.method || 'GET' })
     return {
@@ -44,10 +68,15 @@ const sandbox = {
   window: {
     __ModuleLoader__: {
       load: (entry) => {
-        mod = entry.factory(() => ({}))
+        mod = entry.factory(hostRequire)
       },
     },
   },
+}
+function hostRequire(name) {
+  if (name === 'react') return reactStub
+  if (name === 'react/jsx-runtime' || name === 'react/jsx-dev-runtime') return jsxStub
+  return {}
 }
 vm.runInNewContext(code, sandbox)
 

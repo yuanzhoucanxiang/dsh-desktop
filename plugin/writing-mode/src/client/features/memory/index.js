@@ -133,7 +133,8 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
     void post('add', { item: { kind, text: body, status: asCandidate ? 'proposed' : 'confirmed', source } }, { keepText: true })
   }
 
-  const items = state.items.slice().reverse()
+  // Structured settings have their own schema-aware editor immediately below.
+  const items = state.items.filter(it => !it.setting).slice().reverse()
 
   return jsx.jsxs('div', { className: 'dshWmMemory', children: [
     jsx.jsx('div', {

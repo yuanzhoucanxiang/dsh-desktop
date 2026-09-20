@@ -2,6 +2,8 @@
  * 写作模式客户端模块（P1 从 entry.js 搬迁；行为不变）。
  */
 import { loadProjectMemory, CompanionMemoryPanel } from '../memory/index.js'
+import { organizeWorld } from '../../services/world-organizer.js'
+import { WorldSettingsPanel } from '../world-settings/index.js'
 import { memoryHint, isInjectable, isPinnable, selectMemory, DEFAULT_MEMORY_BUDGET } from '../../../shared/context-builder.js'
 import { referenceStatus, sameReference, normalizeReference } from '../../../shared/reference.js'
 import * as react from 'react'
@@ -31,7 +33,7 @@ export function companionRows(snapshot) {
 }
 
 
-export function CompanionTranscript({ snapshot, onFull, onCandidate }) {
+export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect }) {
   const rows = companionRows(snapshot)
   const scroll = react.useRef(null)
   const follow = react.useRef(true)
@@ -46,7 +48,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate }) {
       jsx.jsx('p', { children: '一个人物、一段卡住的情节，\n或一个还没成形的念头。' }),
     ] }) : rows.map(row => row.kind === 'detail' ? jsx.jsxs('details', { className: 'dshWmActivity', children: [
       jsx.jsx('summary', { children: row.text }), jsx.jsx('pre', { children: JSON.stringify(row.detail, null, 2) }),
-    ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind, children: [
+    ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind + (worldSelectedIds?.includes(row.key) ? ' is-world-selected' : ''), children: [
       jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
       jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
       row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
@@ -56,6 +58,13 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate }) {
             'data-wm-candidate': row.key,
             onClick: () => onCandidate({ text: row.text, messageId: row.key }),
             children: '记为候选',
+          })
+        : null,
+      onToggleWorldSelect
+        ? jsx.jsx('button', {
+            className: 'dshWmQuiet dshWmMessageAction' + (worldSelectedIds?.includes(row.key) ? ' is-on' : ''),
+            onClick: () => onToggleWorldSelect({ id: row.key, role: row.kind === 'user' ? 'author' : 'assistant', text: row.text }),
+            children: worldSelectedIds?.includes(row.key) ? '✓ 整理范围' : '选入整理',
           })
         : null,
     ] }, row.key)),
@@ -90,6 +99,8 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
   // B04：开启参考但读不到备忘时，本轮**不发出**，等作者在「重试/不参考发送」之间选
   const [memoryBlock, setMemoryBlock] = react.useState(null)
   const [notice, setNotice] = react.useState('')
+  const [worldSelection, setWorldSelection] = react.useState([])
+  const [worldStatus, setWorldStatus] = react.useState(null)
   const alive = react.useRef(true)
   const sending = react.useRef(false)
   const id = binding.sessionId
@@ -406,12 +417,24 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setMemOpen(v => !v), children: memOpen ? '收起备忘' : '项目备忘' }),
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
     ] }),
-    memOpen ? jsx.jsx(CompanionMemoryPanel, {
+    memOpen ? jsx.jsxs('div', { className: 'dshWmMemoryWorkspace', children: [jsx.jsx(CompanionMemoryPanel, {
       path: project,
       candidate,
       onCandidateConsumed: () => setCandidate(null),
       onChanged: () => void reloadMemory(),
-    }) : null,
+    }),
+    jsx.jsx(WorldSettingsPanel, {
+      path: project,
+      selectedMessages: worldSelection,
+      onClearSelection: () => setWorldSelection([]),
+      onStatus: setWorldStatus,
+      key: project,
+      onChanged: () => void reloadMemory(),
+      onRequestOrganize: async (extra, signal) => {
+        const current = await ensureHandle()
+        return organizeWorld({ handle: current, selected: worldSelection, extra, signal })
+      },
+    })] }) : null,
     statusNote
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', 'data-wm-status': snapshot.status, children: [
           statusNote,
@@ -436,7 +459,19 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           }),
         ] })
       : null,
-    jsx.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation(), onCandidate: startCandidate }),
+    jsx.jsx(CompanionTranscript, {
+      snapshot,
+      onFull: () => void fullConversation(),
+      onCandidate: startCandidate,
+      worldSelectedIds: worldSelection.map((m) => m.id),
+      onToggleWorldSelect: snapshot.running ? null : (msg) => {
+        setWorldSelection((list) => {
+          const has = list.some((m) => m.id === msg.id)
+          return has ? list.filter((m) => m.id !== msg.id) : [...list, msg]
+        })
+        setMemOpen(true)
+      },
+    }),
     draftUi.conflict
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
           draftUi.conflict.remoteStatus === 'valid'

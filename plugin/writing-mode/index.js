@@ -22,6 +22,8 @@ import {
   findProjectRoot,
   resolveProjectDir,
   ensureCompanionPreset,
+  prepareProjectTarget,
+  isSafeTemplateRel,
 } from './lib/store.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
 import {
@@ -29,7 +31,18 @@ import {
   applyMemoryOp,
   injectableItems,
   memoryError,
+  memoryApiPayload,
+  getOperationReceipt,
+  syncSettingProjection,
 } from './lib/project-memory.js'
+import {
+  readSettingProjection,
+  writeSettingProjection,
+  renderSettingProjection,
+  projectDirOf,
+  hashText,
+  PROJECTION_REL,
+} from './lib/setting-projection.js'
 import { readCheckpoint, writeCheckpoint, listCheckpoints } from './lib/draft-checkpoints.js'
 import {
   claimCoordination,
@@ -430,8 +443,6 @@ export function apply(ctx) {
           const title = String(parsed.title || '').trim() || '未命名项目'
           const premise = String(parsed.premise || '').trim()
           const tmpl = renderTemplate(parsed.templateId || 'novel', title, premise)
-          // 项目目录名：去掉非法路径字符
-          const dirName = title.replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 40) || '未命名项目'
           const roots = effectiveRoots(cfg)
           const rootPath =
             (typeof parsed.root === 'string' && parsed.root) ||
@@ -441,21 +452,30 @@ export function apply(ctx) {
             writeJson(res, 400, { ok: false, error: 'no-root' })
             return
           }
-          const projectAbs = path.join(rootPath, dirName)
-          if (fs.existsSync(path.join(projectAbs, 'project.md'))) {
-            writeJson(res, 409, { ok: false, error: 'project-exists', path: projectAbs })
+          const prepared = prepareProjectTarget(rootPath, title, roots)
+          if (!prepared.ok) {
+            const status = prepared.error === 'project-exists' || prepared.error === 'directory-not-empty' ? 409 : 400
+            writeJson(res, status, {
+              ok: false,
+              error: prepared.error,
+              ...(prepared.path ? { path: prepared.path } : {}),
+            })
             return
           }
-          const target = resolveUnderRoots(projectAbs, roots)
-          if (target === null) {
-            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-            return
-          }
+          const { dirName, target } = prepared
           const written = []
           try {
             for (const f of tmpl.files) {
               if (!f.rel || f.rel.endsWith('.gitkeep')) continue
+              if (!isSafeTemplateRel(f.rel)) {
+                writeJson(res, 500, { ok: false, error: 'template-path-unsafe' })
+                return
+              }
               const abs = path.join(target.abs, ...f.rel.split('/'))
+              if (resolveUnderRoots(abs, roots) === null) {
+                writeJson(res, 500, { ok: false, error: 'template-path-unsafe' })
+                return
+              }
               fs.mkdirSync(path.dirname(abs), { recursive: true })
               fs.writeFileSync(abs, f.body, 'utf8')
               written.push(f.rel)
@@ -482,16 +502,10 @@ export function apply(ctx) {
             return
           }
           try {
-            const { memory, etag } = readMemory(proj, {
+            const payload = memoryApiPayload(proj, {
               libraryRoots: roots.map((r) => r.real).filter(Boolean),
             })
-            writeJson(res, 200, {
-              ok: true,
-              project: proj,
-              memory,
-              etag,
-              injectable: injectableItems(memory),
-            })
+            writeJson(res, 200, payload)
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
           }
@@ -512,7 +526,8 @@ export function apply(ctx) {
             return
           }
           try {
-            const { memory, etag } = applyMemoryOp(
+            if (parsed.op === 'update-projection') throw memoryError('projection-operation-private', 400)
+            const r = applyMemoryOp(
               proj,
               {
                 op: parsed.op,
@@ -520,20 +535,76 @@ export function apply(ctx) {
                 baseEtag: parsed.baseEtag,
                 id: parsed.id,
                 item: parsed.item,
-                // 审计操作者：界面来的操作是「作者明确操作」，缺省由 host 记 host
                 actor: parsed.actor,
+                operationId: parsed.operationId,
+                requestHash: parsed.requestHash,
+                clientSchemaVersion: parsed.clientSchemaVersion,
               },
               { libraryRoots: roots.map((r) => r.real).filter(Boolean) }
             )
             writeJson(res, 200, {
               ok: true,
               project: proj,
-              memory,
-              etag,
-              injectable: injectableItems(memory),
+              memory: r.memory,
+              etag: r.etag,
+              injectable: injectableItems(r.memory),
+              schemaVersion: r.memory.schemaVersion,
+              projection: r.memory.projection || null,
+              receipt: r.receipt || null,
+              replay: Boolean(r.replay),
             })
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
+          }
+          return
+        }
+
+        if (req.method === 'GET' && route === 'memory-operation') {
+          const roots = effectiveRoots(cfg)
+          const raw = url.searchParams.get('path') || ''
+          const operationId = url.searchParams.get('operationId') || ''
+          const target = resolveUnderRoots(raw, roots)
+          const proj = target ? resolveProjectDir(target.abs, roots) : null
+          if (!proj || !operationId) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          try {
+            const { memory } = readMemory(proj, {
+              libraryRoots: roots.map((r) => r.real).filter(Boolean),
+            })
+            const receipt = getOperationReceipt(memory, operationId)
+            if (!receipt) {
+              writeJson(res, 200, { ok: true, found: false, receipt: null })
+              return
+            }
+            writeJson(res, 200, { ok: true, found: true, receipt, revision: memory.revision })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.code || err?.message || err) })
+          }
+          return
+        }
+
+        if ((req.method === 'POST' || req.method === 'GET') && route === 'setting-projection') {
+          const parsed = req.method === 'POST' ? await readJsonBody(req) : { path: url.searchParams.get('path') }
+          if (!parsed) { writeJson(res, 400, { ok: false, error: 'invalid-json' }); return }
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(parsed.path || '', roots)
+          const proj = target ? resolveProjectDir(target.abs, roots) : null
+          if (!proj) { writeJson(res, 400, { ok: false, error: 'path-outside-roots' }); return }
+          try {
+            const opts = { libraryRoots: roots.map(r => r.real).filter(Boolean) }
+            if (req.method === 'GET') {
+              const current = readMemory(proj, opts)
+              const disk = readSettingProjection(proj)
+              const proposed = renderSettingProjection(current.memory.items, { sourceRevision: current.memory.revision, projectKey: proj })
+              writeJson(res, 200, { ok: true, ...disk, proposed, projection: current.memory.projection, revision: current.memory.revision, etag: current.etag })
+            } else {
+              if (parsed.targetPath && parsed.targetPath !== PROJECTION_REL) throw memoryError('projection-path-fixed', 409)
+              writeJson(res, 200, syncSettingProjection(proj, parsed, opts))
+            }
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err.code || err.message || err) })
           }
           return
         }

@@ -1,0 +1,11 @@
+{
+  "id": "A02-empty-world-panel",
+  "status": "REPRODUCED",
+  "result": {
+    "html": "<div class=\"dshWmWorldPanel\"></div>",
+    "text": "",
+    "buttons": 0,
+    "children": 0
+  },
+  "errors": []
+}

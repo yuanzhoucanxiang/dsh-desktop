@@ -1,0 +1,35 @@
+  const transcript=[];
+  const memoryFile=path.join(project,'state/writing-memory.json');
+  const memory=()=>fs.existsSync(memoryFile)?JSON.parse(fs.readFileSync(memoryFile,'utf8')):{items:[]};
+  const worldButton=text=>evaluate('Array.from(document.querySelectorAll(".dshWmWorldPanel button")).find(e=>e.textContent==='+JSON.stringify(text)+')?.click()');
+  const field=(key,text)=>evaluate('(()=>{const e=document.querySelector("[data-world-field='+key+']");Object.getOwnPropertyDescriptor(e.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(e,'+JSON.stringify(text)+');e.dispatchEvent(new Event("input",{bubbles:true}));})()');
+  async function turn(text){
+    const before=await evaluate('document.querySelectorAll(".dshWmMessage.is-assistant").length');
+    await input(text);await evaluate('document.querySelector(".dshWmSend").click()');
+    const end=Date.now()+240000;let state;
+    while(Date.now()<end){
+      state=await evaluate('({messages:Array.from(document.querySelectorAll(".dshWmMessage")).map(e=>({kind:e.className,text:e.querySelector(".dshWmMessageText")?.innerText})),running:Array.from(document.querySelectorAll(".dshWmCompanion button")).some(e=>e.textContent==="停止"),errors:Array.from(document.querySelectorAll(".dshWmCompanionError")).map(e=>e.innerText)})');
+      if(state.errors.length||state.messages.some(e=>e.kind.includes('is-error')))break;
+      if(state.messages.filter(e=>e.kind.includes('is-assistant')).length>before&&!state.running){await sleep(600);break}
+      await sleep(400);
+    }
+    transcript.push({text,state});fs.writeFileSync(path.join(temp,'transcript.json'),JSON.stringify(transcript,null,2));
+    assert.equal(state.errors.length,0,JSON.stringify(state));assert.ok(!state.running,'Model timeout');assert.ok(!state.messages.some(e=>e.kind.includes('is-error')),JSON.stringify(state));
+    const answer=state.messages.filter(e=>e.kind.includes('is-assistant')).at(-1)?.text;assert.ok(answer);console.log('LIVE_RESPONSE',answer);return answer;
+  }
+  await turn('我们聊一下灯塔来信的世界，不要调用工具或修改文件。雾季每天晚上禁航，但持港务署救援许可的船可以出港。灯塔由人工值守，断电时用铜钟示警。我还没想好守灯人的心情。你随意聊聊感觉，简短一点，不要列问卷。');
+  assert.equal(memory().items.length,0);assert.equal(fs.readFileSync(doc,'utf8'),'灯塔的影子落在信封上。她没有拆开那封信。');results.push('W24-1 自由讨论不自动写设定或改稿');
+  await evaluate('Array.from(document.querySelectorAll(".dshWmMessage.is-user button")).find(e=>e.textContent==="选入整理").click()');
+  await waitFor('!!document.querySelector("[data-world-panel]")');await worldButton('整理为设定');
+  const until=Date.now()+240000;while(Date.now()<until){if(await evaluate('!!document.querySelector("[data-world-field=title]")'))break;await sleep(400)}
+  assert.ok(await evaluate('!!document.querySelector("[data-world-field=title]")'),await evaluate('document.querySelector("[data-world-panel]").innerText'));
+  fs.writeFileSync(path.join(temp,'organization.txt'),await evaluate('document.querySelector("[data-world-panel]").innerText'));
+  await worldButton('存为候选');await waitFor('!!document.querySelector("[data-world-item]")');assert.equal(memory().items[0].status,'proposed');assert.ok(memory().items[0].setting.sources.length);results.push('W24-2 真模型整理形成候选，来源为所选消息，未自动确认');
+  await field('title','雾季禁航');await field('conclusion','雾季每天 21:00 后禁止普通船只出港。');await field('boundaries','持港务署救援许可的船只除外。');await field('explanation','救援是明确例外，普通商船不能借口赶时间出港。');await worldButton('确认修改');await waitFor('document.querySelector("[data-world-notice]").textContent.includes("可读稿已同步")');assert.equal(memory().items[0].status,'confirmed');results.push('W24-3 作者修订候选并确认，投影同步');
+  const answer=await turn('只根据已确认的项目设定，用两句回答：雾季 22 点普通商船能出港吗？有港务署救援许可的船呢？不要调用工具。');assert.match(answer,/不能|不可以|禁止|不得/);assert.match(answer,/救援/);results.push('W24-4 确认后的结论与例外进入真实续聊');
+  await turn('我刚冒出一个相反的想法：也许普通商船雾季 22 点也能自由出港。先别当成定稿，也别修改文件或设定。请指出它与目前设定的冲突，简短回答。');assert.equal(memory().items[0].setting.conclusion,'雾季每天 21:00 后禁止普通船只出港。');assert.equal(fs.readFileSync(doc,'utf8'),'灯塔的影子落在信封上。她没有拆开那封信。');results.push('W24-5 冲突想法只讨论，不覆盖作者确认内容');
+  win.showInactive();await sleep(250);fs.writeFileSync(path.join(temp,'live.png'),(await win.webContents.capturePage()).toPNG());console.log('WORLD_LIVE_OK',temp,JSON.stringify(results));
+}).catch(err=>{console.error(err);process.exitCode=1}).finally(async()=>{
+  fs.writeFileSync(path.join(temp,'results.json'),JSON.stringify({passed:!process.exitCode,results,failures},null,2));
+  if(win&&!win.isDestroyed())win.destroy();if(kernel&&kernel.exitCode===null)kernel.kill();app.exit(process.exitCode||0);
+});

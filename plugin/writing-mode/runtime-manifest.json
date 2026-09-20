@@ -13,10 +13,12 @@
     "plugin/writing-mode/lib/file-lock.js",
     "plugin/writing-mode/lib/knowledge.js",
     "plugin/writing-mode/lib/project-memory.js",
+    "plugin/writing-mode/lib/setting-projection.js",
     "plugin/writing-mode/lib/store.js",
     "plugin/writing-mode/lib/templates.js",
     "plugin/writing-mode/lib/websearch.js",
-    "plugin/writing-mode/lib/companion.cordis.yml"
+    "plugin/writing-mode/lib/companion.cordis.yml",
+    "plugin/writing-mode/lib/world-setting.js"
   ],
   "docs": [
     "plugin/writing-mode/CONTRACT.md"

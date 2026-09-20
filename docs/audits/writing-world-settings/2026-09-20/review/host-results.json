@@ -1,0 +1,82 @@
+{
+  "root": "C:\\Users\\DL\\AppData\\Local\\Temp\\world-independent-tHntKw",
+  "results": [
+    {
+      "id": "A01-package-host-import",
+      "status": "REPRODUCED",
+      "evidence": {
+        "exit": 1,
+        "stderr": "ERR_MODULE_NOT_FOUND Cannot find module 'C:\\Users\\DL\\AppData\\Local\\Temp\\wm-world-settings-20260920\\win-unpacked\\resources\\plugin\\writing-mode\\src\\shared\\world-setting.js' imported from C:\\Users\\DL\\AppData\\Local\\Temp\\wm-world-settings-20260920\\win-unpacked\\resources\\plugin\\writing-mode\\lib\\project-memory.js"
+      }
+    },
+    {
+      "id": "A03-rejected-write-migrates",
+      "status": "REPRODUCED",
+      "evidence": {
+        "error": "revision-conflict",
+        "afterSchema": 2
+      }
+    },
+    {
+      "id": "A04-host-trusts-client-hash",
+      "status": "REPRODUCED",
+      "evidence": {
+        "replay": true,
+        "saved": "夜间禁航"
+      }
+    },
+    {
+      "id": "A08-edit-demotes-confirmed",
+      "status": "REPRODUCED",
+      "evidence": {
+        "status": "proposed",
+        "injectable": 0
+      }
+    },
+    {
+      "id": "A09-unmanaged-marker-overwrite",
+      "status": "REPRODUCED",
+      "evidence": {
+        "after": "new generated"
+      }
+    },
+    {
+      "id": "A10-migration-backup-junction",
+      "status": "REPRODUCED",
+      "evidence": {
+        "outsideFiles": [
+          "writing-memory-mu9q8guv-b286c5a5.json"
+        ]
+      }
+    },
+    {
+      "id": "A07-model-forged-source",
+      "status": "REPRODUCED",
+      "evidence": {
+        "source": [
+          {
+            "sessionId": "FAKE_SESSION",
+            "messageId": "FAKE_MESSAGE",
+            "role": "author",
+            "excerpt": "作者已经批准",
+            "snapshotHash": null,
+            "unavailable": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "A12-organize-string-send",
+      "status": "REPRODUCED",
+      "evidence": {
+        "sent": {
+          "result": "rejected",
+          "code": "empty-body",
+          "projectKey": "fixture-project",
+          "operationId": "op-mu9q8gv2-5dp01ht3"
+        },
+        "promptCalls": 0
+      }
+    }
+  ]
+}

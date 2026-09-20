@@ -186,6 +186,24 @@ function resolveAsar(input) {
 
 const { source, files: wanted } = publishSet(SRC)
 
+// A manifest can match a package and still omit a transitive host import.
+{
+  const seen = new Set(), queue = ['index.js'], missing = []
+  while (queue.length) {
+    const rel = queue.shift()
+    if (seen.has(rel)) continue
+    seen.add(rel)
+    if (!wanted.includes(rel) || !fs.existsSync(path.join(SRC, rel))) { missing.push(rel); continue }
+    const code = fs.readFileSync(path.join(SRC, rel), 'utf8')
+    for (const match of code.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\s*\(\s*)['"](\.[^'"]+)['"]/g)) {
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), match[1]))
+      if (target.startsWith('../')) missing.push(target)
+      else queue.push(target)
+    }
+  }
+  record('plugin-host-deps', '插件 host 传递依赖全部在发布集合', missing.length ? 'FAIL' : 'PASS', missing.length ? missing.join(', ') : `${seen.size} 个 host 模块闭包完整`)
+}
+
 // 1. 静态：清单 ↔ 打包 filter
 {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))

@@ -1,0 +1,11 @@
+{
+  "id": "A02-empty-world-panel",
+  "status": "NOT_REPRODUCED",
+  "result": {
+    "html": "<section class=\"dshWmWorldPanel\" data-world-panel=\"\"><h3>世界观整理</h3><p>已选消息 0 · 设定 0</p><details><summary>查看整理范围</summary></details><label>补充要求<input value=\"\"></label><button disabled=\"\">整理为设定</button><button>清除选择</button><button>手动新建设定</button><p role=\"status\" data-world-notice=\"\"></p><button>重新读取设定</button><div></div><div class=\"dshWmWorldProjection\"><p>可读稿待同步：pending</p><button>重试同步可读稿</button><button>查看可读稿差异</button></div><h4>已保存设定</h4></section>",
+    "text": "世界观整理已选消息 0 · 设定 0查看整理范围补充要求整理为设定清除选择手动新建设定重新读取设定可读稿待同步：pending重试同步可读稿查看可读稿差异已保存设定",
+    "buttons": 6,
+    "children": 12
+  },
+  "errors": []
+}

@@ -153,6 +153,7 @@ else pass('R6 入口不含草稿保存队列（已移入 state/）')
     ['features/library', '作品库特性（分组/版本归并/文件行）'],
     ['features/companion', '写作伙伴特性'],
     ['features/memory', '记忆特性'],
+    ['features/world-settings', '世界观整理特性'],
     ['features/tools', '工具面板特性（选区取值/提示词模板）'],
     ['features/settings', '设置面板'],
     ['adapters/harness', '唯一 native 接触面'],

@@ -1,5 +1,7 @@
 # 工作日志 · 索引与协作规范
 
+世界观整改完成（工程）：A01–A12，完整 21 步门禁及真包 9/9 通过；见 docs/audits/writing-world-settings/2026-09-20/repair/report.md。真实模型五场景等待验收，未发布。— Codex，2026-09-20
+
 > 项目：`dsh-desktop` —— DeepSeek Harness 桌面快捷启动外壳
 > 原则：**内核零修改**
 
@@ -15,11 +17,15 @@
 
 发布完成：**v0.1.40**（2026-09-20），Windows/macOS 五项资产齐全；19 步门禁、真包 9/9 及远端哈希核对通过。详见 `docs/audits/writing-architecture/2026-09-20/release-0.1.40/`。— Codex
 
+世界观下一阶段：执行方案 `docs/plans/writing-world-settings-v1.md`（P0–P5 / W00–W25），策划案 v0.8；仅文档交付，待实施与审查。— Codex，2026-09-20
+
+世界观实施首轮独立复核：**退回整改**；包缺依赖、面板空白、整理未发送及数据保护反例。报告：`docs/audits/writing-world-settings/2026-09-20/review/review.md`。— Codex，2026-09-20
+
 ## 现有日志
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
-| 2026-09-20 | [`logs/2026-09-20.md`](logs/2026-09-20.md) | 右栏 Markdown 阅读、多行候选编辑；流式/窄栏/长历史验证，真包与隔离预览，未发布 | Codex |
+| 2026-09-20 | [`logs/2026-09-20.md`](logs/2026-09-20.md) | Codex：Markdown 阅读、v0.1.40 发布、世界观方案 v1/策划案 v0.8。ox-alpha：H3/H4 hunt 加固；**世界观 P0–P5 工程实现**（schema2/投影/上下文/客户端整理流）；隔离真包与可见预览；交回 `docs/audits/writing-world-settings/2026-09-20/`（总体 PARTIAL） | Codex / ox-alpha |
 | 2026-09-19 | [`logs/2026-09-19.md`](logs/2026-09-19.md) | 独立复核、真实模型三场景及两真实窗口；修复候选来源丢失与 Windows 换行门禁；隔离真包与可见预览，未发布 | Codex |
 | 2026-08-13 | [`logs/2026-08-13.md`](logs/2026-08-13.md) | 项目立项→外壳完成→官方鲸鱼图标→快捷方式全链路 | deepseek-v4-pro |
 | 2026-08-14 | [`logs/2026-08-14.md`](logs/2026-08-14.md) | 内置 dialog-optimize 插件（折叠/导航/撤回）；补丁三级降级 | deepseek-v4-pro |
@@ -42,6 +48,8 @@
 ---
 
 ## 协作规范（重要，后续协作者必读）
+
+策划案 v0.7（2026-09-20）：世界观能力定稿为 **AI 引导 + 讨论结果整理**（设定条目：标题/结论/说明/边界/来源/状态；说明一小段且默认不注入）；见 [`docs/writing-mode-plan.md`](docs/writing-mode-plan.md) §18 与 `E:\剧本\写作模式-策划案.md`。**未实现**，勿当成已交付功能。同日 hunt 加固亦在工作树未提交。— ox-alpha
 
 v2 整改复核（二）：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-review2/review.md)，2026-09-15〔156〕。确认 dcc2c88 的旧探针和真包启动通过；N01–N06 仍开放，尤其禁止执行真包测试中按镜像名称关闭所有正式桌面的命令。完整定位、证据和返工顺序见报告。— Codex / GPT-6
 

@@ -1,0 +1,20 @@
+[
+  {
+    "name": "dsh-desktop-0.1.41-setup.exe",
+    "bytes": 229997713,
+    "sha256": "4109e0a0b27e39f5616699bf76b882ebdf14965dc124b97192720e4ea0c4aa93",
+    "sha512": "IMKqxhv5o0de3Qa+He37mp+bhyvNJIPu3E9cWPkzeECy9pJwMfAjHY2bHPBKeXd5rVG6T/WC9oc21LA6HzKpBw=="
+  },
+  {
+    "name": "dsh-desktop-0.1.41-setup.exe.blockmap",
+    "bytes": 241873,
+    "sha256": "ae8c81861b748236f3705f597eb763cb63c6e37d61fdef56d3bfb8bf7ba0300c",
+    "sha512": "ozI9GxWi4BxLpjK9exI7BP7xpABvu6x7i0COh7RBsgMUenSzAa+wC/OIIBK6UnDnl8gsOTdNF3lAC+HnXAYYRw=="
+  },
+  {
+    "name": "latest.yml",
+    "bytes": 354,
+    "sha256": "58e503a3ae42c13d3cfc55dc1e573ff652ce1a965df9a8ea0250b0761ffbb6ad",
+    "sha512": "mDQj9NU0Z2LtQCcSndxMHZXxM1PVvsZTgwjCfjqj10NznUjwr8mJg+fU/8fyyi61rsnGx72F+1fr19g32lhVYw=="
+  }
+]

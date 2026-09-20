@@ -340,7 +340,15 @@ export function WritingModeApp() {
     })
     setProjMode(false)
     if (!data.ok) {
-      flashMsg(data.error === 'project-exists' ? '同名项目已存在' : '创建失败：' + (data.error || ''))
+      const msg =
+        data.error === 'project-exists'
+          ? '同名项目已存在'
+          : data.error === 'directory-not-empty'
+            ? '目标文件夹已有内容，请换名或先清空'
+            : data.error === 'invalid-project-name'
+              ? '项目名不合法'
+              : '创建失败：' + (data.error || '')
+      flashMsg(msg)
       return
     }
     flashMsg(T.created + '：' + (data.project?.name || ''))

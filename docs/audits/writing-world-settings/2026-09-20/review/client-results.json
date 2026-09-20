@@ -1,0 +1,36 @@
+[
+  {
+    "id": "A04-client-hash-omits-nested-fields",
+    "status": "REPRODUCED",
+    "evidence": {
+      "first": "c43faf6787a67a960c61981d5afc36584475caf44f9c377de9e8e16e19db177d",
+      "second": "c43faf6787a67a960c61981d5afc36584475caf44f9c377de9e8e16e19db177d"
+    }
+  },
+  {
+    "id": "A05-save-one-aliases-all",
+    "status": "REPRODUCED",
+    "evidence": {
+      "drafts": [
+        {
+          "id": "a",
+          "savedId": "saved-A",
+          "operationId": "326df6f2-4aab-4fcb-9f90-6492a6b081a6"
+        },
+        {
+          "id": "b",
+          "savedId": "saved-A",
+          "operationId": "326df6f2-4aab-4fcb-9f90-6492a6b081a6"
+        }
+      ]
+    }
+  },
+  {
+    "id": "A06-projection-failure-reported-success",
+    "status": "REPRODUCED",
+    "evidence": {
+      "note": "设定已保存",
+      "projectionError": "projection-conflict"
+    }
+  }
+]

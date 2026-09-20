@@ -1,0 +1,30 @@
+  const transcript=[];
+  const memoryFile=path.join(project,'state/writing-memory.json');
+  const memory=()=>fs.existsSync(memoryFile)?JSON.parse(fs.readFileSync(memoryFile,'utf8')):{items:[]};
+  const worldButton=text=>evaluate('Array.from(document.querySelectorAll(".dshWmWorldPanel button")).find(e=>e.textContent==='+JSON.stringify(text)+')?.click()');
+  const field=(key,text)=>evaluate('(()=>{const e=document.querySelector("[data-world-field='+key+']");Object.getOwnPropertyDescriptor(e.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(e,'+JSON.stringify(text)+');e.dispatchEvent(new Event("input",{bubbles:true}));})()');
+  async function turn(text){
+    const before=await evaluate('document.querySelectorAll(".dshWmMessage.is-assistant").length');
+    await input(text);await evaluate('document.querySelector(".dshWmSend").click()');
+    const end=Date.now()+240000;let state;
+    while(Date.now()<end){
+      state=await evaluate('({messages:Array.from(document.querySelectorAll(".dshWmMessage")).map(e=>({kind:e.className,text:e.querySelector(".dshWmMessageText")?.innerText})),running:Array.from(document.querySelectorAll(".dshWmCompanion button")).some(e=>e.textContent==="停止"),errors:Array.from(document.querySelectorAll(".dshWmCompanionError")).map(e=>e.innerText)})');
+      if(state.errors.length||state.messages.some(e=>e.kind.includes('is-error')))break;
+      if(state.messages.filter(e=>e.kind.includes('is-assistant')).length>before&&!state.running){await sleep(600);break}
+      await sleep(400);
+    }
+    transcript.push({text,state});fs.writeFileSync(path.join(temp,'transcript.json'),JSON.stringify(transcript,null,2));
+    assert.equal(state.errors.length,0,JSON.stringify(state));assert.ok(!state.running,'Model timeout');assert.ok(!state.messages.some(e=>e.kind.includes('is-error')),JSON.stringify(state));
+    const answer=state.messages.filter(e=>e.kind.includes('is-assistant')).at(-1)?.text;assert.ok(answer);console.log('LIVE_RESPONSE',answer);return answer;
+  }
+
+  await turn('我改变主意了，守灯人不是悲伤孤独，而是期待今晚的救援船。先只讨论人物感受，先别修改世界规则，也不要调用工具。用两三句聊聊。');
+  assert.equal(memory().items[0].setting.conclusion,'雾季每天 21:00 后禁止普通船只出港。');results.push('原 W24 作者中途改主意：模型跟随人物方向，已确认世界规则不被改写');
+  await button('项目备忘');await waitFor('!!document.querySelector("[data-world-item]")');await worldButton('编辑设定');
+  await field('conclusion','雾季每天 23:00 后禁止普通船只出港。');const long='仅说明存档标记ZXQ73。'+('这段只解释作者创作时的历史推敲，不应自动占用对话上下文。'.repeat(250));assert.ok([...long].length>6000);await field('explanation',long);await worldButton('确认修改');await waitFor('document.querySelector("[data-world-notice]").textContent.includes("可读稿已同步")');
+  assert.equal(memory().items[0].setting.explanation,long);assert.ok(memory().changes.some(c=>c.before?.setting?.conclusion==='雾季每天 21:00 后禁止普通船只出港。'));
+  const {buildPreparedTurn}=await import(require('node:url').pathToFileURL(path.join(repo,'plugin/writing-mode/src/shared/context-builder.js')));const prepared=buildPreparedTurn({message:'普通商船22点出港',memoryItems:memory().items});assert.ok(!prepared.body.includes('ZXQ73'));assert.ok(prepared.body.includes('23:00'));assert.ok(prepared.body.includes('救援许可'));
+  const answer=await turn('只按最新确认的设定回答：现在雾季22点普通商船还在禁航时段内吗？禁航几点开始？不要调用工具，简短回答。');assert.match(answer,/23|二十三/);assert.match(answer,/不在|还没|未到|尚未|可以|不属于/);
+  results.push('原 W24 修改已确认设定：保留旧历史，真实模型续聊遵循23点的新规则');results.push('原 W24 长说明超过6000预算：完整落盘，preparedTurn不含说明标记，结论和边界仍进入真实续聊');
+  fs.writeFileSync(path.join(temp,'extra-transcript.json'),JSON.stringify(transcript,null,2));fs.writeFileSync(path.join(temp,'extra-memory.json'),JSON.stringify(memory(),null,2));console.log('WORLD_EXTRA_OK',temp,JSON.stringify(results));
+}).catch(err=>{console.error(err);process.exitCode=1}).finally(async()=>{fs.writeFileSync(path.join(temp,'extra-results.json'),JSON.stringify({passed:!process.exitCode,results,failures},null,2));if(win&&!win.isDestroyed())win.destroy();if(kernel&&kernel.exitCode===null)kernel.kill();app.exit(process.exitCode||0)});

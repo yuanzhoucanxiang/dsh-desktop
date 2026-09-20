@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "productName": "DeepSeek Harness Desktop",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "description": "DeepSeek Harness 桌面快捷启动外壳：拉起 dsh web 内核并用原生窗口承载，不修改内核。",
   "author": "dsh-desktop",
   "license": "MIT",
@@ -36,12 +36,13 @@
     "test:writing-f": "node plugin/writing-mode/test/review-f01-f06.mjs",
     "test:writing-cde": "node plugin/writing-mode/test/architecture-cde.mjs",
     "test:writing-p1": "node plugin/writing-mode/test/p1-regression.mjs",
+    "test:writing-world": "node plugin/writing-mode/test/world-settings-p1.mjs && node plugin/writing-mode/test/world-settings-context.mjs && node plugin/writing-mode/test/world-settings-p3.mjs && node plugin/writing-mode/test/hunt-host.mjs && node plugin/writing-mode/test/world-settings-repair.mjs",
     "prestart": "npm run build:writing",
     "predev": "npm run build:writing",
     "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs",
     "verify:writing-package": "node scripts/verify-writing-package.mjs && node scripts/verify-writing-coldstart.mjs",
     "plugin-sync-test": "node lib/plugin-sync.test.js",
-    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run verify:ui-smoke && npm run verify:writing-packaged",
+    "verify:writing-all": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run test:writing-world && npm run verify:writing-world-ui && npm run verify:ui-smoke && npm run verify:writing-packaged",
     "test:writing-coordination": "node plugin/writing-mode/test/coordination.mjs",
     "test:writing-adapter": "node plugin/writing-mode/test/adapter-coordination.mjs",
     "test:writing-p3": "node plugin/writing-mode/test/p3-memory-context.mjs",
@@ -53,9 +54,10 @@
     "verify:writing-review-probes": "node docs/audits/writing-architecture/2026-09-14/v2-review/probes.mjs && node scripts/run-review-ui-probes.mjs",
     "verify:writing-baseline-ui": "node scripts/run-baseline-ui.mjs",
     "verify:writing-packaged-dev": "node scripts/verify-writing-packaged.mjs --allow-missing",
-    "verify:writing-quick": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run verify:ui-smoke",
+    "verify:writing-quick": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run test:writing-world && npm run verify:writing-world-ui && npm run verify:ui-smoke",
     "pid-cleanup-test": "node lib/pid-cleanup.test.js",
-    "verify:writing-reading": "electron scripts/verify-writing-reading.cjs"
+    "verify:writing-reading": "electron scripts/verify-writing-reading.cjs",
+    "verify:writing-world-ui": "electron scripts/verify-writing-world-ui.cjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",

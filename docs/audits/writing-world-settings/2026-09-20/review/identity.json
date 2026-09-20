@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-09-20T19:24:50.9618462+08:00",
+  "files": [
+    {
+      "path": "plugin/writing-mode/lib/project-memory.js",
+      "sha256": "3E74B4B69201A552FC394800F184BB501C94D253DF66CEA34F34F6EA948DB6BE"
+    },
+    {
+      "path": "plugin/writing-mode/lib/setting-projection.js",
+      "sha256": "8921854CBF3FEBB4810C67AD496B80DB935EB56B4FADB3A269C5B60378B1BC06"
+    },
+    {
+      "path": "plugin/writing-mode/src/shared/world-setting.js",
+      "sha256": "EA13CF98720E910BDF0F6087C37FF495A6C48A7EB2986611477948736EFD39FE"
+    },
+    {
+      "path": "plugin/writing-mode/src/client/features/world-settings/index.js",
+      "sha256": "78B9A84C91FA12D8ECC52A858208203C0D5D6A5BC338E4D3721091079C0290CE"
+    },
+    {
+      "path": "plugin/writing-mode/src/client/features/companion/index.js",
+      "sha256": "14B3AF34F67AA0A405A3F48941B97FE62519068AD10936157C413167DA181A3C"
+    },
+    {
+      "path": "plugin/writing-mode/client.js",
+      "sha256": "7E8E4302796D05BE3E5700014D6EB4E7892D5E387F53EF753A2AFF10889E8FF9"
+    },
+    {
+      "path": "plugin/writing-mode/runtime-manifest.json",
+      "sha256": "6639B7622B1B1B48C96B74A176CCE34B30CB9146143E64989ACE7FB57FC88B75"
+    },
+    {
+      "path": "plugin/writing-mode/index.js",
+      "sha256": "86ABCDE7FF8CD49C08B4D6E58A9923B94B2CC32EB640910216F619D8816A3FD1"
+    }
+  ],
+  "head": "a9aa8b801df0ad79c245274139d5f02468d14c8b",
+  "previewPid": 15584
+}

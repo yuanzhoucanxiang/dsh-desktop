@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 2,
+  "revision": 9,
+  "projectKey": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-native-IZYEWA\\library\\灯塔来信",
+  "items": [
+    {
+      "id": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "kind": "fact",
+      "status": "confirmed",
+      "text": "窗口二未保存的修订",
+      "source": {
+        "kind": "author"
+      },
+      "setting": {
+        "type": "world",
+        "title": "双窗口禁航",
+        "conclusion": "窗口二未保存的修订",
+        "explanation": "",
+        "boundaries": "",
+        "tags": [],
+        "sources": []
+      },
+      "itemRevision": 3,
+      "createdAt": "2026-09-20T14:46:08.967Z",
+      "updatedAt": "2026-09-20T14:46:09.315Z",
+      "confirmedAt": "2026-09-20T14:46:09.315Z",
+      "resolvedAt": null,
+      "retractedAt": null
+    }
+  ],
+  "changes": [
+    {
+      "at": "2026-09-20T14:46:08.967Z",
+      "actor": "author",
+      "op": "confirm-setting",
+      "id": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "after": {
+        "text": "原始规则",
+        "status": "confirmed",
+        "source": {
+          "kind": "author"
+        },
+        "itemRevision": 1,
+        "setting": {
+          "type": "world",
+          "title": "双窗口禁航",
+          "conclusion": "原始规则",
+          "explanation": "",
+          "boundaries": "",
+          "tags": [],
+          "sources": []
+        }
+      }
+    },
+    {
+      "at": "2026-09-20T14:46:09.124Z",
+      "actor": "author",
+      "op": "confirm-setting",
+      "id": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "before": {
+        "text": "原始规则",
+        "status": "confirmed",
+        "source": {
+          "kind": "author"
+        },
+        "itemRevision": 1,
+        "setting": {
+          "type": "world",
+          "title": "双窗口禁航",
+          "conclusion": "原始规则",
+          "explanation": "",
+          "boundaries": "",
+          "tags": [],
+          "sources": []
+        }
+      },
+      "after": {
+        "text": "窗口一先保存的规则",
+        "status": "confirmed",
+        "source": {
+          "kind": "author"
+        },
+        "itemRevision": 2,
+        "setting": {
+          "type": "world",
+          "title": "双窗口禁航",
+          "conclusion": "窗口一先保存的规则",
+          "explanation": "",
+          "boundaries": "",
+          "tags": [],
+          "sources": []
+        }
+      }
+    },
+    {
+      "at": "2026-09-20T14:46:09.315Z",
+      "actor": "author",
+      "op": "confirm-setting",
+      "id": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "before": {
+        "text": "窗口一先保存的规则",
+        "status": "confirmed",
+        "source": {
+          "kind": "author"
+        },
+        "itemRevision": 2,
+        "setting": {
+          "type": "world",
+          "title": "双窗口禁航",
+          "conclusion": "窗口一先保存的规则",
+          "explanation": "",
+          "boundaries": "",
+          "tags": [],
+          "sources": []
+        }
+      },
+      "after": {
+        "text": "窗口二未保存的修订",
+        "status": "confirmed",
+        "source": {
+          "kind": "author"
+        },
+        "itemRevision": 3,
+        "setting": {
+          "type": "world",
+          "title": "双窗口禁航",
+          "conclusion": "窗口二未保存的修订",
+          "explanation": "",
+          "boundaries": "",
+          "tags": [],
+          "sources": []
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "operationId": "7ec7b946-6c23-4e88-bf1d-dd017a995c1b",
+      "requestHash": "6df298c5c55d99f8c985a136f2b6cf0f5d7a1586046b26e75777005da163f42b",
+      "op": "confirm-setting",
+      "itemId": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "at": "2026-09-20T14:46:08.968Z",
+      "revision": 1
+    },
+    {
+      "operationId": "e0577589-8800-42bf-95b7-63b6f6547b67",
+      "requestHash": "bcdf5e106ce7e2e1e6c79eaea9727009adb473b2973075c94cf32bbb2c069a18",
+      "op": "confirm-setting",
+      "itemId": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "at": "2026-09-20T14:46:09.124Z",
+      "revision": 4
+    },
+    {
+      "operationId": "6dcd6158-f53d-487e-81f2-3d72dac3e690",
+      "requestHash": "590b25439b6b2a3b47289e0a9d4d573755c51cbe83813afd92e3202d31d3a815",
+      "op": "confirm-setting",
+      "itemId": "5b1e5c0c-1321-4a9e-806b-0aacc4ef716f",
+      "status": "confirmed",
+      "at": "2026-09-20T14:46:09.315Z",
+      "revision": 7
+    }
+  ],
+  "projection": {
+    "path": "bible/世界观整理.md",
+    "status": "synced",
+    "managedHash": "5a0ea256b1bc0f635a1188e6961d079fc5f823583ce9c2aef3800700c5de95d8",
+    "sourceRevision": 7,
+    "intent": null,
+    "lastError": null
+  }
+}

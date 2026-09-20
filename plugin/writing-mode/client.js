@@ -2093,7 +2093,7 @@ __export(entry_exports, {
   subscribeDraftStatus: () => subscribeDraftStatus
 });
 module.exports = __toCommonJS(entry_exports);
-var react6 = __toESM(require("react"), 1);
+var react7 = __toESM(require("react"), 1);
 var jsx16 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/shared/editor-session.js
@@ -2256,6 +2256,161 @@ function createEditorSession(io, recovered) {
   return session;
 }
 
+// plugin/writing-mode/lib/world-setting.js
+var SETTING_TYPE = "world";
+var SETTING_TYPES = /* @__PURE__ */ new Set([SETTING_TYPE]);
+var MAX_SETTING_CHARS = 16e3;
+var MAX_SOURCE_EXCERPT_CHARS = 8e3;
+var MAX_SOURCES = 20;
+var MAX_TAGS = 20;
+function settingError(code4, status = 400) {
+  return Object.assign(new Error(code4), { status, code: code4 });
+}
+function codePointLength(text7) {
+  return [...String(text7 ?? "")].length;
+}
+function stableStringify(value) {
+  const walk = (v) => {
+    if (v === null || typeof v !== "object") return v;
+    if (Array.isArray(v)) return v.map(walk);
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = walk(v[k]);
+    return out;
+  };
+  return JSON.stringify(walk(value));
+}
+function normalizeSources(raw) {
+  const list4 = Array.isArray(raw) ? raw : [];
+  if (list4.length > MAX_SOURCES) throw settingError("sources-too-many", 413);
+  let excerptChars = 0;
+  const out = list4.map((s) => {
+    const excerpt = String(s?.excerpt ?? "");
+    excerptChars += codePointLength(excerpt);
+    return {
+      sessionId: s?.sessionId != null ? String(s.sessionId).slice(0, 160) : null,
+      messageId: s?.messageId != null ? String(s.messageId).slice(0, 160) : null,
+      role: s?.role === "assistant" || s?.role === "author" ? s.role : null,
+      excerpt,
+      snapshotHash: s?.snapshotHash != null ? String(s.snapshotHash).slice(0, 128) : null,
+      unavailable: s?.unavailable === true
+    };
+  });
+  if (excerptChars > MAX_SOURCE_EXCERPT_CHARS) throw settingError("sources-too-long", 413);
+  return out;
+}
+function normalizeSetting(input, { requireTitleConclusion = false } = {}) {
+  const raw = input && typeof input === "object" ? input : {};
+  const type = raw.type == null || raw.type === "" ? SETTING_TYPE : String(raw.type);
+  if (!SETTING_TYPES.has(type)) throw settingError("bad-setting-type");
+  const title = String(raw.title ?? "").trim();
+  const conclusion = String(raw.conclusion ?? "").trim();
+  const explanation = String(raw.explanation ?? "");
+  const boundaries = String(raw.boundaries ?? "");
+  const tags = (Array.isArray(raw.tags) ? raw.tags : []).map((t) => String(t ?? "").trim()).filter(Boolean).slice(0, MAX_TAGS);
+  const sources = normalizeSources(raw.sources);
+  const chars = codePointLength(title) + codePointLength(conclusion) + codePointLength(explanation) + codePointLength(boundaries) + tags.reduce((n, t) => n + codePointLength(t), 0) + sources.reduce((n, s) => n + codePointLength(s.excerpt), 0);
+  if (chars > MAX_SETTING_CHARS) throw settingError("setting-too-long", 413);
+  if (requireTitleConclusion) {
+    if (!title) throw settingError("empty-title");
+    if (!conclusion) throw settingError("empty-conclusion");
+  }
+  const setting = { type, title, conclusion, explanation, boundaries, tags, sources };
+  return { setting, chars };
+}
+function deriveSettingText(setting) {
+  const conclusion = String(setting?.conclusion ?? "").trim();
+  const boundaries = String(setting?.boundaries ?? "").trim();
+  if (!conclusion) return "";
+  return boundaries ? `${conclusion}
+边界/例外：${boundaries}` : conclusion;
+}
+function settingInjectText(setting) {
+  return deriveSettingText(setting);
+}
+function isWorldSettingItem(item) {
+  return Boolean(item && item.kind === "fact" && item.setting && item.setting.type === SETTING_TYPE);
+}
+function settingInjectUnit(item) {
+  if (!isWorldSettingItem(item) || item.status !== "confirmed") return null;
+  const text7 = settingInjectText(item.setting);
+  if (!text7) return null;
+  return {
+    id: item.id,
+    kind: "fact",
+    label: "世界观",
+    title: item.setting.title || "",
+    text: text7,
+    explanation: item.setting.explanation || "",
+    tags: item.setting.tags || [],
+    itemRevision: item.itemRevision ?? null
+  };
+}
+var normalizeMatch = (s) => String(s ?? "").normalize("NFKC").toLowerCase().trim();
+function rankWorldSettingIds(items, turnText, pinnedIds = [], excludedIds = []) {
+  const pinned = new Set((pinnedIds || []).map(String));
+  const excluded = new Set((excludedIds || []).map(String));
+  const hay = normalizeMatch(turnText);
+  const scored = [];
+  for (const it of items || []) {
+    if (!isWorldSettingItem(it) || it.status !== "confirmed") continue;
+    const id = String(it.id);
+    if (excluded.has(id) || pinned.has(id)) continue;
+    const title = normalizeMatch(it.setting?.title);
+    const tags = (it.setting?.tags || []).map(normalizeMatch).filter(Boolean);
+    let score = 0;
+    if (title && hay.includes(title)) score += 3;
+    for (const t of tags) if (hay.includes(t)) score += 2;
+    scored.push({ id, score });
+  }
+  scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return scored;
+}
+function parseOrganizeResult(raw) {
+  let data = raw;
+  if (typeof raw === "string") {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (!m) return { ok: false, error: "organize-parse-failed" };
+      try {
+        data = JSON.parse(m[1]);
+      } catch {
+        return { ok: false, error: "organize-parse-failed" };
+      }
+    }
+  }
+  if (!data || typeof data !== "object") return { ok: false, error: "organize-parse-failed" };
+  if (data.schemaVersion != null && Number(data.schemaVersion) !== 1) {
+    return { ok: false, error: "organize-schema-unsupported" };
+  }
+  const list4 = Array.isArray(data.settings) ? data.settings : Array.isArray(data.items) ? data.items : null;
+  if (!list4) return { ok: false, error: "organize-shape-invalid" };
+  const settings = [];
+  const rejected = [];
+  for (const row of list4) {
+    try {
+      const { setting } = normalizeSetting({ ...row, sources: [] }, { requireTitleConclusion: true });
+      settings.push({
+        ...setting,
+        // 模型字段只能作候选展示；状态由 host/作者操作决定
+        modelMark: row?.suggestion === true || row?.mark === "suggestion" ? "suggestion" : row?.mark === "open" ? "open" : null,
+        pending: row?.pending === true || row?.mark === "open"
+      });
+    } catch (err) {
+      rejected.push({ error: err?.code || err?.message || "bad-setting", row: { title: row?.title, conclusion: row?.conclusion } });
+    }
+  }
+  return {
+    ok: true,
+    settings,
+    rejected,
+    notes: typeof data.notes === "string" ? data.notes : "",
+    // 丢弃任何模型伪权威字段
+    ignoredAuthority: Boolean(data.confirmed || data.targetPath || data.actor)
+  };
+}
+
 // plugin/writing-mode/src/shared/context-builder.js
 var DEFAULT_MEMORY_BUDGET = 6e3;
 var INJECTABLE_KINDS = ["fact", "preference"];
@@ -2266,7 +2421,28 @@ function isInjectable(item) {
 function isPinnable(item) {
   return Boolean(item) && item.status === "confirmed" && Boolean(LABEL_OF[item.kind]);
 }
-function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = []) {
+function orderForInjection(items, turnText, pinnedIds, excludedIds) {
+  const list4 = Array.isArray(items) ? items : [];
+  const pinned = new Set((pinnedIds || []).map(String));
+  const excluded = new Set((excludedIds || []).map(String));
+  const rankedWorld = rankWorldSettingIds(list4, turnText, [...pinned], [...excluded]);
+  const worldOrder = new Map(rankedWorld.map((r, i) => [r.id, i]));
+  const world = [];
+  const rest = [];
+  for (const it of list4) {
+    if (!it || pinned.has(String(it.id)) || excluded.has(String(it.id))) continue;
+    if (isWorldSettingItem(it) && it.status === "confirmed") world.push(it);
+    else rest.push(it);
+  }
+  world.sort((a, b) => {
+    const ia = worldOrder.has(String(a.id)) ? worldOrder.get(String(a.id)) : Number.MAX_SAFE_INTEGER;
+    const ib = worldOrder.has(String(b.id)) ? worldOrder.get(String(b.id)) : Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+    return String(a.id) < String(b.id) ? -1 : 1;
+  });
+  return [...world, ...rest];
+}
+function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excludedIds = [], turnText = "") {
   const list4 = Array.isArray(items) ? items : [];
   const pinned = new Set((pinnedIds || []).map((id) => String(id)));
   const excluded = new Set((excludedIds || []).map((id) => String(id)));
@@ -2274,8 +2450,11 @@ function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excluded
   const omissions = [];
   let used = 0;
   const take = (item, reason, isPinned) => {
-    const label = LABEL_OF[item.kind] || "设定";
-    const line = `- [${label}] ${item.text}`;
+    const world = isWorldSettingItem(item) ? settingInjectUnit(item) : null;
+    const label = world?.label || LABEL_OF[item.kind] || "设定";
+    const text7 = world?.text || item.text;
+    const title = world?.title || "";
+    const line = title ? `- [${label}] ${title}：${text7}` : `- [${label}] ${text7}`;
     const cost = [...line].length + 1;
     if (used + cost > budget) {
       omissions.push({ id: item.id, kind: item.kind, reason: "budget", chars: cost, pinned: isPinned });
@@ -2288,10 +2467,13 @@ function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excluded
       label,
       status: item.status,
       source: item.source ? Object.freeze({ kind: item.source.kind || "author", sessionId: item.source.sessionId || null, messageId: item.source.messageId || null, path: item.source.path || null }) : null,
-      text: item.text,
+      text: text7,
+      title,
+      setting: world ? Object.freeze({ type: "world", title: world.title, tags: world.tags || [] }) : null,
       reason,
       pinned: isPinned,
-      chars: cost
+      chars: cost,
+      line
     });
   };
   for (const id of pinned) {
@@ -2315,10 +2497,13 @@ function selectMemory(items, pinnedIds, budget = DEFAULT_MEMORY_BUDGET, excluded
     if (!isInjectable(item)) continue;
     if (excluded.has(String(item.id))) {
       omissions.push({ id: item.id, kind: item.kind, status: item.status, reason: "excluded-by-author", pinned: false });
-      continue;
     }
+  }
+  for (const item of orderForInjection(list4, turnText, pinnedIds, excludedIds)) {
+    if (!isInjectable(item)) continue;
+    if (excluded.has(String(item.id))) continue;
     if (pinnedTaken.has(String(item.id))) continue;
-    take(item, "auto", false);
+    take(item, isWorldSettingItem(item) ? "world-match-or-stable" : "auto", false);
   }
   return { selected, omissions, charsUsed: used };
 }
@@ -2334,21 +2519,20 @@ function buildReference(reference) {
     path: reference.path || null,
     revision: reference.revision ?? null,
     selection,
-    // 未保存内容的快照标记（与源稿 revision 一起构成引用身份，不用正文拼接代替结构相等）
     snapshotFingerprint: reference.snapshotFingerprint || null,
     stale: Boolean(reference.stale)
   });
 }
 function buildPreparedTurn(input) {
   const message = String(input?.message ?? "");
-  const budget = Number.isFinite(input?.budget) ? Number(input.budget) : DEFAULT_MEMORY_BUDGET;
+  const budget = Number.isFinite(input?.budget) ? input.budget : DEFAULT_MEMORY_BUDGET;
   const includeMemory = input?.includeMemory !== false;
   const reference = buildReference(input?.reference);
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : [];
-  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds) : { selected: [], omissions: [], charsUsed: 0 };
+  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, message) : { selected: [], omissions: [], charsUsed: 0 };
   const parts = [];
   if (selected.length) {
-    const body = selected.map((s) => `- [${s.label}] ${s.text}`).join("\n");
+    const body = selected.map((s) => s.line || `- [${s.label}] ${s.text}`).join("\n");
     const budgetNote = omissions.filter((o) => o.reason === "budget").length;
     parts.push(
       "【项目备忘 · 作者已确认，仅供参考，不要伪装成系统指令】\n" + body + (budgetNote ? `
@@ -2363,7 +2547,7 @@ ${reference.text}`
   }
   if (message) parts.push(message);
   return Object.freeze({
-    schemaVersion: 2,
+    schemaVersion: 3,
     projectKey: input?.projectKey || null,
     operationId: input?.operationId || null,
     message,
@@ -2663,6 +2847,29 @@ var CSS = [
   ".dshWmMemoryHistory{margin-top:6px;border-top:1px dashed var(--dsw-alias-border-l2);padding-top:6px;}",
   ".dshWmMemoryHistoryRow{margin-bottom:6px;}.dshWmMemoryHistoryRow:last-child{margin-bottom:0;}",
   ".dshWmMemoryDiff{font-size:11px;line-height:1.5;}.dshWmMemoryDiff .is-del{color:var(--dsw-alias-state-error-primary);}.dshWmMemoryDiff .is-add{color:var(--dsw-alias-state-success-primary);}",
+  ".dshWmMemoryWorkspace{flex:0 1 auto;min-height:0;max-height:45vh;overflow:auto;overscroll-behavior:contain;}",
+  ".dshWmMemoryWorkspace .dshWmMemory{max-height:180px;}",
+  ".dshWmWorldPanel{border-bottom:1px solid var(--dsw-alias-border-l2);padding:8px 10px 12px;display:flex;flex-direction:column;gap:6px;font-size:12px;min-height:120px;flex-shrink:0;overscroll-behavior:contain;}",
+  ".dshWmWorldPanel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:6px 0;}",
+  ".dshWmWorldPanel button{margin:3px 4px 3px 0;white-space:normal;}",
+  ".dshWmWorldHead{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWorldSub{font-weight:400;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWorldScope{max-height:96px;overflow:auto;display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmWorldMsg{font-size:11px;line-height:1.4;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 6px;}",
+  ".dshWmWorldPanel input,.dshWmWorldPanel textarea{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:4px 6px;}",
+  ".dshWmWorldPanel label{font-size:11px;color:var(--dsw-alias-label-tertiary);margin-top:4px;}",
+  ".dshWmWorldCard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:8px;background:var(--dsw-alias-bg-layer-2);display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmWorldCardTitle{font-weight:600;}",
+  ".dshWmWorldOps{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}",
+  ".dshWmWorldNotice{font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5;}",
+  ".dshWmWorldSrc{font-size:10px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWorldRaw{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;padding:6px;}",
+  ".dshWmWorldList{max-height:140px;overflow:auto;}",
+  ".dshWmWorldItem{padding:4px 6px;border-radius:6px;margin-bottom:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWorldItem.proposed{opacity:.85;}",
+  ".dshWmWorldItem.retracted{opacity:.5;}",
+  ".dshWmMessage.is-world-selected{outline:1px dashed var(--dsw-alias-label-tertiary);outline-offset:2px;}",
+  ".dshWmMessageAction.is-on{color:var(--dsw-alias-state-success-primary);}",
   ".dshWmMessageAction{margin-top:4px;font-size:11px;}",
   ".dshWmDraftCandidates{display:flex;flex-direction:column;gap:4px;border-bottom:1px dashed var(--dsw-alias-border-l2);padding-bottom:8px;margin-bottom:8px;}",
   ".dshWmDraftCandidate{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}",
@@ -2880,7 +3087,7 @@ async function api(route, opts, query) {
 }
 
 // plugin/writing-mode/src/client/app/WritingModeApp.js
-var react3 = __toESM(require("react"), 1);
+var react4 = __toESM(require("react"), 1);
 var jsx10 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/adapters/harness/identity.js
@@ -3848,12 +4055,12 @@ function reviewPrompt({ reportContent, reportPath }) {
 
 // plugin/writing-mode/src/shared/reference.js
 function hash32(text7) {
-  let h = 2166136261;
+  let h2 = 2166136261;
   for (let i = 0; i < text7.length; i++) {
-    h ^= text7.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
+    h2 ^= text7.charCodeAt(i);
+    h2 = Math.imul(h2, 16777619) >>> 0;
   }
-  return h.toString(16).padStart(8, "0");
+  return h2.toString(16).padStart(8, "0");
 }
 function contentFingerprint(text7) {
   const body = String(text7 ?? "");
@@ -4010,7 +4217,7 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
     const source = asCandidate ? candidateSource || { kind: "assistant" } : { kind: "author" };
     void post2("add", { item: { kind, text: body, status: asCandidate ? "proposed" : "confirmed", source } }, { keepText: true });
   }
-  const items = state.items.slice().reverse();
+  const items = state.items.filter((it) => !it.setting).slice().reverse();
   return jsx3.jsxs("div", { className: "dshWmMemory", children: [
     jsx3.jsx("div", {
       className: "dshWmCompanionEmpty",
@@ -4139,8 +4346,402 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
   ] });
 }
 
-// plugin/writing-mode/src/client/features/companion/index.js
+// plugin/writing-mode/src/client/services/world-organizer.js
+async function snapshotHash(text7) {
+  const bytes = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text7));
+  return [...new Uint8Array(bytes)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+async function organizeWorld(input) {
+  const handle2 = input.handle;
+  const selected = input.selected;
+  const extra = input.extra || "";
+  const signal = input.signal;
+  const before = handle2.getSnapshot();
+  if (before.status !== "ready" || before.running || before.queue?.length) throw new Error("会话正在忙，请等当前回复完成后整理");
+  if (!selected?.length) throw new Error("请先选入要整理的消息");
+  const baseline = new Set(before.messages.map((m) => m.key));
+  const sources = [];
+  for (const chosen of selected) {
+    const row = before.messages.find((m) => m.key === chosen.id);
+    if (!row || row.text !== chosen.text || !["user", "assistant"].includes(row.kind)) throw new Error("所选来源已变化，请重新选择");
+    sources.push({ sessionId: before.sessionId, messageId: row.key, role: row.kind === "user" ? "author" : "assistant", excerpt: row.text, snapshotHash: await snapshotHash(row.text) });
+  }
+  normalizeSources(sources);
+  if (signal?.aborted) throw new Error("已停止等待；可在完整会话查看回复");
+  const operationId = newOperationToken();
+  const body = `整理请求编号：${operationId}
+请仅把下面选定讨论整理为世界观候选，不执行文件写入。区分作者结论、助手建议与未决问题，不编造作者确认。标题/结论/说明/边界可长可短。只输出 JSON：{"schemaVersion":1,"settings":[{"title":"","conclusion":"","explanation":"","boundaries":"","tags":[],"mark":"suggestion 或 open"}],"notes":""}。不要生成来源或权限字段。
+补充要求：${extra}
+
+` + sources.map((s) => `【${s.role} ${s.messageId}】
+${s.excerpt}`).join("\n\n");
+  return new Promise((resolve, reject) => {
+    let done = false, accepted = false, unsubscribe = () => {
+    };
+    const finish = (err, value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      unsubscribe();
+      signal?.removeEventListener("abort", abort);
+      err ? reject(err) : resolve(value);
+    };
+    const abort = () => finish(new Error("已停止等待；请求可能仍在完整会话中运行，请核对后再整理"));
+    const timer = setTimeout(() => finish(new Error("等待回复超时；请先核对完整会话，不会自动重发")), 3e5);
+    const inspect = () => {
+      if (done || !accepted) return;
+      try {
+        const snap = handle2.getSnapshot();
+        if (snap.sessionId !== before.sessionId || snap.projectKey !== before.projectKey) return finish(new Error("会话已变化，未采用迟到结果"));
+        const index2 = snap.messages.findIndex((m) => !baseline.has(m.key) && m.kind === "user" && m.text === body);
+        if (index2 < 0) return;
+        const following = snap.messages.slice(index2 + 1);
+        if (following.some((m) => m.kind === "user")) return finish(new Error("整理期间出现其他回合，请在完整会话核对结果后手动整理"));
+        if (following.some((m) => m.kind === "error")) return finish(new Error("整理回复失败，来源与输入已保留"));
+        if (snap.running || snap.pending?.length) return;
+        const answer = following.filter((m) => !baseline.has(m.key) && m.kind === "assistant").at(-1);
+        if (answer) finish(null, { text: answer.text, sources, operationId, messageId: answer.key, sessionId: snap.sessionId });
+      } catch (err) {
+        finish(err);
+      }
+    };
+    unsubscribe = handle2.subscribe(inspect);
+    signal?.addEventListener("abort", abort, { once: true });
+    Promise.resolve(handle2.send(Object.freeze({ body, message: body, operationId, projectKey: before.projectKey }))).then((sent) => {
+      if (done) return;
+      if (sent.result !== "accepted") return finish(new Error(sent.result === "uncertain" ? "无法确认整理请求是否受理；请先核对完整会话，不会自动重发" : `整理未发送：${sent.error || sent.code || "rejected"}`));
+      accepted = true;
+      inspect();
+    }, (err) => finish(err));
+  });
+}
+
+// plugin/writing-mode/src/client/features/world-settings/index.js
 var react2 = __toESM(require("react"), 1);
+var h = react2.createElement;
+function newOperationId() {
+  return crypto.randomUUID();
+}
+async function requestHashOf(payload) {
+  return snapshotHash(stableStringify(payload));
+}
+function extractSettingsFromAssistantText(text7) {
+  const raw = String(text7 || "");
+  const fence = raw.match(/```json\s*([\s\S]*?)```/i);
+  const parsed = parseOrganizeResult(fence ? fence[1] : raw);
+  return parsed.ok ? parsed : { ...parsed, raw };
+}
+function blankDraft(setting = {}) {
+  return { id: newOperationId(), title: "", conclusion: "", explanation: "", boundaries: "", tags: [], sources: [], ...setting, dirty: true };
+}
+function storageKey(path2) {
+  return "dsh-world-drafts-v1:" + path2;
+}
+function restore(path2) {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(storageKey(path2)) || "null");
+    if (value?.version === 1 && Array.isArray(value.drafts)) return value;
+  } catch {
+  }
+  return { version: 1, drafts: [], rawReply: "", extra: "", interrupted: false };
+}
+function settingOf(d) {
+  return { type: "world", title: d.title, conclusion: d.conclusion, explanation: d.explanation || "", boundaries: d.boundaries || "", tags: d.tags || [], sources: d.sources || [] };
+}
+function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, onDiscard, busy, notice }) {
+  const fields = [["title", "标题"], ["conclusion", "结论"], ["explanation", "说明（可选）"], ["boundaries", "边界 / 例外（可选）"]];
+  return h(
+    "div",
+    { className: "dshWmWorldCard" },
+    h("strong", null, draft.savedId ? "设定修订" : "设定候选"),
+    h("p", null, draft.modelMark === "open" ? "仍待讨论，确认前请核对。" : draft.modelMark === "suggestion" ? "助手建议，尚未由作者确认。" : "尚待作者确认。"),
+    ...fields.map(([key, title]) => h(
+      "label",
+      { key },
+      title,
+      h(key === "title" ? "input" : "textarea", { "data-world-field": key, value: draft[key] || "", rows: key === "explanation" ? 4 : 2, disabled: busy || Boolean(draft.pendingOperation), onChange: (e) => onChange({ ...draft, [key]: e.target.value, dirty: true }) })
+    )),
+    h("details", null, h("summary", null, `来源 ${draft.sources?.length || 0} 条`), ...(draft.sources || []).map((s, i) => h(
+      "div",
+      { key: i },
+      h("small", null, `${s.role || "未知"} · ${s.sessionId || "来源不可用"} / ${s.messageId || "来源不可用"}`),
+      h("pre", null, s.excerpt || "")
+    ))),
+    notice ? h("p", { role: "status" }, notice) : null,
+    h(
+      "div",
+      { className: "dshWmWorldOps" },
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onConfirm }, draft.savedId ? "确认修改" : "确认设定"),
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || draft.savedStatus === "confirmed" || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onSaveCandidate }, "存为候选"),
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation, onClick: onDiscard }, "关闭本地编辑")
+    )
+  );
+}
+function WorldSettingsPanel({ path: path2, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged }) {
+  const [local, setLocal] = react2.useState(() => restore(path2));
+  const localRef = react2.useRef(local);
+  const [data, setData] = react2.useState(null);
+  const dataRef = react2.useRef(null);
+  const [active, setActive] = react2.useState(0);
+  const [phase, setPhase] = react2.useState("idle");
+  const [note, setNote] = react2.useState(() => local.interrupted ? "上次整理等待已中断，请先查看完整会话；不会自动重发。" : "");
+  const [storageError, setStorageError] = react2.useState("");
+  const [conflict, setConflict] = react2.useState(null);
+  const [projection, setProjection] = react2.useState(null);
+  const [historyId, setHistoryId] = react2.useState(null);
+  const alive = react2.useRef(true);
+  const busy = react2.useRef(false);
+  const generation = react2.useRef(0);
+  const controller = react2.useRef(null);
+  const writeLocal = (next, required = false) => {
+    localRef.current = next;
+    if (alive.current) setLocal(next);
+    try {
+      sessionStorage.setItem(storageKey(path2), JSON.stringify(next));
+      setStorageError("");
+    } catch {
+      setStorageError("本窗口草稿未能缓存，请复制保留后再离开。");
+      if (required) throw new Error("无法持久化操作编号，本次未发送保存请求");
+    }
+  };
+  const patchLocal = (patch2) => writeLocal({ ...localRef.current, ...patch2 });
+  const updateDraft = (id, fn, required = false) => writeLocal({ ...localRef.current, drafts: localRef.current.drafts.map((d) => d.id === id ? fn(d) : d) }, required);
+  const adopt = (result) => {
+    dataRef.current = result;
+    if (alive.current) setData(result);
+  };
+  const refresh = async () => {
+    const seq = ++generation.current;
+    const result = await api("memory", void 0, { path: path2 });
+    if (!result?.ok) throw new Error(result?.error || "读取设定失败");
+    if (alive.current && seq === generation.current) adopt(result);
+    return result;
+  };
+  react2.useEffect(() => {
+    alive.current = true;
+    void refresh().catch((err) => {
+      if (alive.current) setNote(err.message);
+    });
+    return () => {
+      alive.current = false;
+      generation.current++;
+      controller.current?.abort();
+    };
+  }, [path2]);
+  react2.useEffect(() => {
+    const protect = (e) => {
+      if (storageError) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [storageError]);
+  const changeDraft = (next) => updateDraft(next.id, () => next);
+  const openItem = (it, snapshot = null) => {
+    const source = snapshot || it;
+    const d = blankDraft({ ...source.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision, dirty: Boolean(snapshot), source: source.source });
+    patchLocal({ drafts: [...localRef.current.drafts, d] });
+    setActive(localRef.current.drafts.length - 1);
+  };
+  const syncProjection = async (preserve = false) => {
+    const current = await refresh();
+    const result = await api("setting-projection", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, baseRevision: current.memory.revision, baseEtag: current.etag, preserve, expectedFileHash: preserve ? projection?.hash : void 0 }) });
+    if (!result.ok) {
+      await refresh();
+      throw new Error(`设定已保存，可读稿待同步：${result.error}`);
+    }
+    adopt(result);
+    setProjection(null);
+    return result;
+  };
+  const requestSave = async (draft2, op, retry = false) => {
+    if (busy.current || conflict) return;
+    busy.current = true;
+    setPhase("saving");
+    setNote("正在保存…");
+    try {
+      if (!dataRef.current) await refresh();
+      let pending = draft2.pendingOperation;
+      if (!pending) {
+        if (retry) throw new Error("没有待重试操作");
+        const remote = dataRef.current.memory.items.find((it) => it.id === draft2.savedId);
+        if (remote && draft2.openedItemRevision != null && remote.itemRevision !== draft2.openedItemRevision) {
+          setConflict({ draftId: draft2.id, remote });
+          throw new Error("远端设定已更新；请先比较当前修订与远端");
+        }
+        const request = { path: path2, op, baseRevision: dataRef.current.memory.revision, baseEtag: dataRef.current.etag, id: draft2.savedId || void 0, item: op === "retract-setting" ? void 0 : { kind: "fact", setting: settingOf(draft2), source: draft2.source }, actor: "author", clientSchemaVersion: 2, operationId: newOperationId() };
+        request.requestHash = await requestHashOf({ op, id: request.id || null, item: request.item || null, actor: request.actor });
+        pending = { request };
+        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: pending }), true);
+      }
+      const result = await api("memory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pending.request) });
+      if (!alive.current) return;
+      if (!result?.ok) {
+        if (result?.error === "invalid-response") throw new Error("无法确认保存结果，请重试同一操作");
+        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null }));
+        if (["revision-conflict", "etag-conflict", "operation-conflict"].includes(result.error)) {
+          const current = await refresh();
+          setConflict({ draftId: draft2.id, remote: current.memory.items.find((it) => it.id === draft2.savedId) || null });
+        }
+        throw new Error("保存失败，编辑已保留：" + result.error);
+      }
+      if (!result.receipt?.itemId) throw new Error("缺少保存收据，请重试同一操作核对");
+      adopt(result);
+      const saved = result.memory.items.find((it) => it.id === result.receipt.itemId);
+      updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null, savedId: result.receipt.itemId, savedStatus: saved?.status, openedItemRevision: saved?.itemRevision, dirty: false }));
+      setNote(pending.request.op === "save-setting-candidate" ? "候选已保存，可稍后打开确认" : "设定已保存");
+      onChanged?.();
+      onStatus?.({ phase: "saved", receipt: result.receipt });
+      if (pending.request.op !== "save-setting-candidate") {
+        try {
+          const projected = await syncProjection();
+          setNote(projected.preservedPath ? `手稿副本已保留：${projected.preservedPath}；可读稿已同步` : "设定已保存，可读稿已同步");
+        } catch (err) {
+          setNote(err.message);
+        }
+      }
+    } catch (err) {
+      if (alive.current) setNote(err.message || String(err));
+    } finally {
+      busy.current = false;
+      if (alive.current) setPhase("idle");
+    }
+  };
+  const organize = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setPhase("organizing");
+    controller.current = new AbortController();
+    try {
+      writeLocal({ ...localRef.current, interrupted: true }, true);
+      setNote("正在整理所选讨论；普通输入与引用保持不变。");
+      const result = await onRequestOrganize(localRef.current.extra, controller.current.signal);
+      if (!alive.current || controller.current.signal.aborted) return;
+      const parsed = extractSettingsFromAssistantText(result.text);
+      const drafts = parsed.ok ? parsed.settings.map((s) => blankDraft({ ...s, sources: result.sources, source: { kind: "assistant", sessionId: result.sessionId, messageId: result.messageId } })) : [];
+      patchLocal({ drafts: [...localRef.current.drafts, ...drafts], rawReply: result.text, interrupted: false });
+      if (drafts.length) setActive(localRef.current.drafts.length - drafts.length);
+      setNote(parsed.ok ? `新增 ${drafts.length} 条候选；${parsed.rejected?.length || 0} 条格式不符，原文已保留。` : "无法解析整理结果；原文已保留，可手动新建设定。");
+    } catch (err) {
+      if (alive.current) setNote(err.message || String(err));
+    } finally {
+      busy.current = false;
+      if (alive.current) setPhase("idle");
+    }
+  };
+  const runProjection = async (preserve) => {
+    if (busy.current) return;
+    busy.current = true;
+    setPhase("saving");
+    setNote("正在同步可读稿…");
+    try {
+      const r = await syncProjection(preserve);
+      setNote(r.preservedPath ? `已保留手稿副本：${r.preservedPath}；整理稿已重建` : "可读稿已同步");
+    } catch (err) {
+      setNote(err.message);
+    } finally {
+      busy.current = false;
+      setPhase("idle");
+    }
+  };
+  const draft = local.drafts[active] || local.drafts[0];
+  const worldItems = (data?.memory?.items || []).filter((it) => it.setting?.type === "world");
+  const histories = (data?.memory?.changes || []).filter((c) => c.id === historyId).slice().reverse();
+  return h(
+    "section",
+    { className: "dshWmWorldPanel", "data-world-panel": "" },
+    h("h3", null, "世界观整理"),
+    h("p", null, `已选消息 ${selectedMessages?.length || 0} · 设定 ${worldItems.length}`),
+    h("details", null, h("summary", null, "查看整理范围"), ...(selectedMessages || []).map((m) => h("pre", { key: m.id }, `${m.role}：${m.text}`))),
+    h("label", null, "补充要求", h("input", { value: local.extra, onChange: (e) => patchLocal({ extra: e.target.value }) })),
+    h("button", { disabled: phase !== "idle" || !selectedMessages?.length, onClick: organize }, "整理为设定"),
+    h("button", { disabled: phase !== "idle", onClick: onClearSelection }, "清除选择"),
+    h("button", { disabled: phase !== "idle", onClick: () => {
+      patchLocal({ drafts: [...localRef.current.drafts, blankDraft()] });
+      setActive(localRef.current.drafts.length - 1);
+    } }, "手动新建设定"),
+    phase === "organizing" ? h("button", { onClick: () => controller.current?.abort() }, "停止等待") : null,
+    h("p", { role: "status", "data-world-notice": "" }, note),
+    storageError ? h("p", { role: "alert" }, storageError) : null,
+    h("button", { disabled: phase !== "idle", onClick: () => void refresh().catch((err) => setNote(err.message)) }, "重新读取设定"),
+    local.rawReply ? h("details", null, h("summary", null, "整理原文"), h("pre", null, local.rawReply)) : null,
+    h("div", null, ...local.drafts.map((d, i) => h("button", { key: d.id, onClick: () => setActive(i) }, `${d.title || "未命名"}${d.dirty ? " · 本地编辑" : ""}`))),
+    draft ? h(WorldSettingCard, {
+      draft,
+      busy: phase !== "idle" || !!conflict,
+      onChange: changeDraft,
+      onSaveCandidate: () => void requestSave(draft, "save-setting-candidate"),
+      onConfirm: () => void requestSave(draft, "confirm-setting"),
+      onDiscard: () => {
+        if (draft.dirty && !window.confirm("关闭这份本地编辑？已保存的设定不会删除。")) return;
+        patchLocal({ drafts: localRef.current.drafts.filter((d) => d.id !== draft.id) });
+        setActive(0);
+      },
+      notice: draft.pendingOperation ? "结果待核对；重试会使用原操作编号，不重复新增。" : "本窗口编辑已缓存；确认后才更新项目设定。"
+    }) : null,
+    draft?.pendingOperation ? h("button", { disabled: phase !== "idle", onClick: () => void requestSave(draft, null, true) }, "核对并重试保存") : null,
+    conflict ? h(
+      "div",
+      { role: "alert" },
+      h("strong", null, "保存冲突：本地编辑保留"),
+      h("pre", null, JSON.stringify(conflict.remote?.setting || {}, null, 2)),
+      h("button", { onClick: () => {
+        const d = localRef.current.drafts.find((x) => x.id === conflict.draftId);
+        if (d) updateDraft(d.id, (x) => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null }));
+        setConflict(null);
+        setNote("已采用最新基线；请核对后再次确认保存。");
+      } }, "已比较，保留本地修订"),
+      h("button", { onClick: () => setConflict(null) }, "暂不保存")
+    ) : null,
+    data?.memory?.projection && data.memory.projection.status !== "idle" ? h(
+      "div",
+      { className: "dshWmWorldProjection" },
+      h("p", null, data?.memory?.projection?.status === "synced" ? "可读稿已同步" : `可读稿待同步：${data?.memory?.projection?.lastError || "pending"}`),
+      h("button", { disabled: phase !== "idle", onClick: () => void runProjection(false) }, "重试同步可读稿"),
+      h("button", { onClick: () => void api("setting-projection", void 0, { path: path2 }).then((r) => r.ok ? setProjection(r) : setNote(r.error)).catch((err) => setNote(err.message)) }, "查看可读稿差异")
+    ) : null,
+    projection ? h(
+      "div",
+      null,
+      h("h4", null, "磁盘原文"),
+      h("pre", null, projection.content),
+      h("h4", null, "将生成的内容"),
+      h("pre", null, projection.proposed),
+      projection.exists ? h("button", { disabled: phase !== "idle", onClick: () => void runProjection(true) }, "保留手稿副本并重建整理稿") : null
+    ) : null,
+    h("h4", null, "已保存设定"),
+    ...worldItems.map((it) => h(
+      "article",
+      { key: it.id, "data-world-item": it.id },
+      h("strong", null, it.setting.title),
+      h("span", null, ` · ${it.status} · 修订 ${it.itemRevision}`),
+      h("p", null, it.setting.conclusion),
+      h("button", { disabled: phase !== "idle", onClick: () => openItem(it) }, it.status === "proposed" ? "打开候选" : "编辑设定"),
+      h("button", { onClick: () => setHistoryId(it.id) }, "设定历史"),
+      h("button", { disabled: phase !== "idle" || it.status === "retracted", onClick: () => {
+        const d = blankDraft({ ...it.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision });
+        patchLocal({ drafts: [...localRef.current.drafts, d] });
+        setActive(localRef.current.drafts.length - 1);
+        void requestSave(d, "retract-setting");
+      } }, "撤回设定")
+    )),
+    historyId ? h("div", null, h("h4", null, "历史内容（恢复将创建新修订）"), ...histories.map((c, i) => h(
+      "div",
+      { key: i },
+      h("small", null, `${c.at} · ${c.actor} · ${c.op}`),
+      h("pre", null, JSON.stringify(c.before?.setting || c.after?.setting || {}, null, 2)),
+      h("button", { disabled: phase !== "idle", onClick: () => {
+        const it = worldItems.find((x) => x.id === historyId);
+        if (it) openItem(it, c.before?.setting ? c.before : c.after);
+      } }, "载入这版为修订稿")
+    ))) : null
+  );
+}
+
+// plugin/writing-mode/src/client/features/companion/index.js
+var react3 = __toESM(require("react"), 1);
 var jsx8 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/state/companion-drafts.js
@@ -10229,9 +10830,9 @@ function createTokenizer(parser, initialize, from) {
     const startStack = Array.from(stack);
     return {
       from: startEventsIndex,
-      restore
+      restore: restore2
     };
-    function restore() {
+    function restore2() {
       point4 = startPoint;
       context.previous = startPrevious;
       context.currentConstruct = startCurrentConstruct;
@@ -17179,18 +17780,18 @@ var noSubscribe = () => () => {
 };
 var emptySnapshot = () => emptyCompanionSnapshot;
 function useCompanionStore(store) {
-  const subscribe = react2.useCallback((fn) => store ? store.subscribe(fn) : noSubscribe(), [store]);
-  const snapshot = react2.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store]);
-  return react2.useSyncExternalStore(subscribe, snapshot);
+  const subscribe = react3.useCallback((fn) => store ? store.subscribe(fn) : noSubscribe(), [store]);
+  const snapshot = react3.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store]);
+  return react3.useSyncExternalStore(subscribe, snapshot);
 }
 function companionRows(snapshot) {
   return Array.isArray(snapshot?.messages) ? snapshot.messages : [];
 }
-function CompanionTranscript({ snapshot, onFull, onCandidate }) {
+function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect }) {
   const rows = companionRows(snapshot);
-  const scroll = react2.useRef(null);
-  const follow = react2.useRef(true);
-  react2.useLayoutEffect(() => {
+  const scroll = react3.useRef(null);
+  const follow = react3.useRef(true);
+  react3.useLayoutEffect(() => {
     if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [snapshot]);
   return jsx8.jsxs("div", { className: "dshWmConversation", ref: scroll, onScroll: (e) => {
@@ -17205,7 +17806,7 @@ function CompanionTranscript({ snapshot, onFull, onCandidate }) {
     ] }) : rows.map((row) => row.kind === "detail" ? jsx8.jsxs("details", { className: "dshWmActivity", children: [
       jsx8.jsx("summary", { children: row.text }),
       jsx8.jsx("pre", { children: JSON.stringify(row.detail, null, 2) })
-    ] }, row.key) : jsx8.jsxs("article", { className: "dshWmMessage is-" + row.kind, children: [
+    ] }, row.key) : jsx8.jsxs("article", { className: "dshWmMessage is-" + row.kind + (worldSelectedIds?.includes(row.key) ? " is-world-selected" : ""), children: [
       jsx8.jsx("span", { className: "dshWmMessageWho", children: row.kind === "user" ? "你" : "写作伙伴" }),
       jsx8.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
       row.reference ? jsx8.jsxs("details", { className: "dshWmActivity", children: [jsx8.jsx("summary", { children: "引用的稿件" }), jsx8.jsx("pre", { children: row.reference })] }) : null,
@@ -17214,6 +17815,11 @@ function CompanionTranscript({ snapshot, onFull, onCandidate }) {
         "data-wm-candidate": row.key,
         onClick: () => onCandidate({ text: row.text, messageId: row.key }),
         children: "记为候选"
+      }) : null,
+      onToggleWorldSelect ? jsx8.jsx("button", {
+        className: "dshWmQuiet dshWmMessageAction" + (worldSelectedIds?.includes(row.key) ? " is-on" : ""),
+        onClick: () => onToggleWorldSelect({ id: row.key, role: row.kind === "user" ? "author" : "assistant", text: row.text }),
+        children: worldSelectedIds?.includes(row.key) ? "✓ 整理范围" : "选入整理"
       }) : null
     ] }, row.key)),
     (snapshot.queue || []).map((row) => jsx8.jsx("div", { className: "dshWmActivity", children: "等待回复后发送 · " + (row.text || row.preview || "消息") }, row.id)),
@@ -17227,42 +17833,44 @@ function CompanionTranscript({ snapshot, onFull, onCandidate }) {
 function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit }) {
   const sessions = harnessSessions();
   const adapter = harnessAdapter();
-  const [binding, setBinding] = react2.useState(initialBinding);
+  const [binding, setBinding] = react3.useState(initialBinding);
   const project = binding.project;
   const cached = companionDrafts.get(project) || { text: "", reference: null };
-  const [localDraft, setLocalDraft] = react2.useState(cached.text);
-  const [reference, setReference] = react2.useState(cached.reference);
-  const [busy, setBusy] = react2.useState(false);
-  const [error, setError] = react2.useState("");
-  const [memOpen, setMemOpen] = react2.useState(false);
-  const [candidate, setCandidate] = react2.useState(null);
-  const [draftCandidates, setDraftCandidates] = react2.useState([]);
-  const [previewCandidate, setPreviewCandidate] = react2.useState(null);
-  const [contextOpen, setContextOpen] = react2.useState(false);
-  const [includeMemory, setIncludeMemory] = react2.useState(true);
-  const [pinned, setPinned] = react2.useState([]);
-  const [excluded, setExcluded] = react2.useState([]);
-  const [memoryItems, setMemoryItems] = react2.useState([]);
-  const [memoryMeta, setMemoryMeta] = react2.useState({ revision: null, etag: null, ok: true, error: "" });
-  const [memoryBlock, setMemoryBlock] = react2.useState(null);
-  const [notice, setNotice] = react2.useState("");
-  const alive = react2.useRef(true);
-  const sending = react2.useRef(false);
+  const [localDraft, setLocalDraft] = react3.useState(cached.text);
+  const [reference, setReference] = react3.useState(cached.reference);
+  const [busy, setBusy] = react3.useState(false);
+  const [error, setError] = react3.useState("");
+  const [memOpen, setMemOpen] = react3.useState(false);
+  const [candidate, setCandidate] = react3.useState(null);
+  const [draftCandidates, setDraftCandidates] = react3.useState([]);
+  const [previewCandidate, setPreviewCandidate] = react3.useState(null);
+  const [contextOpen, setContextOpen] = react3.useState(false);
+  const [includeMemory, setIncludeMemory] = react3.useState(true);
+  const [pinned, setPinned] = react3.useState([]);
+  const [excluded, setExcluded] = react3.useState([]);
+  const [memoryItems, setMemoryItems] = react3.useState([]);
+  const [memoryMeta, setMemoryMeta] = react3.useState({ revision: null, etag: null, ok: true, error: "" });
+  const [memoryBlock, setMemoryBlock] = react3.useState(null);
+  const [notice, setNotice] = react3.useState("");
+  const [worldSelection, setWorldSelection] = react3.useState([]);
+  const [worldStatus, setWorldStatus] = react3.useState(null);
+  const alive = react3.useRef(true);
+  const sending = react3.useRef(false);
   const id = binding.sessionId;
-  const [handle2, setHandle] = react2.useState(() => id ? adapter.attach(project, id, { binding }) : null);
-  const opRef = react2.useRef(null);
-  const operationIdRef = react2.useRef(null);
+  const [handle2, setHandle] = react3.useState(() => id ? adapter.attach(project, id, { binding }) : null);
+  const opRef = react3.useRef(null);
+  const operationIdRef = react3.useRef(null);
   const snapshot = useCompanionStore(handle2);
   const draft = handle2 ? snapshot.draft || "" : localDraft;
   const needsFullComposer = Boolean(snapshot.imageIds && snapshot.imageIds.length || snapshot.claim || draft.trimStart().startsWith("/"));
   const recovery = handle2 && snapshot.status !== "ready" ? snapshot.status : null;
-  const setNativeDraft = react2.useCallback((text7) => {
+  const setNativeDraft = react3.useCallback((text7) => {
     try {
       handle2?.setDraft(text7);
     } catch {
     }
   }, [handle2]);
-  const ensureHandle = react2.useCallback(async () => {
+  const ensureHandle = react3.useCallback(async () => {
     if (handle2 && handle2.status() !== "missing" && handle2.status() !== "waiting") return handle2;
     if (!opRef.current) opRef.current = newOperationToken();
     const next = await adapter.connect(path2, opRef.current);
@@ -17272,7 +17880,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     }
     return next;
   }, [adapter, handle2, path2]);
-  const reloadMemory = react2.useCallback(async () => {
+  const reloadMemory = react3.useCallback(async () => {
     const data = await loadProjectMemory(project);
     setMemoryItems(data.ok ? data.memory?.items || [] : []);
     setMemoryMeta({
@@ -17283,27 +17891,27 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     });
     return data;
   }, [project]);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     void reloadMemory();
   }, [reloadMemory]);
-  const reloadCandidates = react2.useCallback(async () => {
+  const reloadCandidates = react3.useCallback(async () => {
     const list4 = await listDraftCandidates(project);
     setDraftCandidates(list4);
   }, [project]);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     void reloadCandidates();
   }, [reloadCandidates]);
-  const startCandidate = react2.useCallback((msg) => {
+  const startCandidate = react3.useCallback((msg) => {
     setCandidate({ text: msg.text, source: { kind: "assistant", sessionId: snapshot.sessionId || null, messageId: msg.messageId || null } });
     setMemOpen(true);
   }, [snapshot.sessionId]);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     if (!id) return;
     const started = id ? adapter.attach(project, id, { binding }) : null;
     setHandle(started);
@@ -17312,24 +17920,24 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     } catch {
     }
   }, [adapter, id, project]);
-  react2.useEffect(() => () => {
+  react3.useEffect(() => () => {
     handle2?.dispose();
   }, [handle2]);
-  const handleRef = react2.useRef(null);
-  const setNativeDraftRef = react2.useRef(null);
-  react2.useEffect(() => {
+  const handleRef = react3.useRef(null);
+  const setNativeDraftRef = react3.useRef(null);
+  react3.useEffect(() => {
     handleRef.current = handle2 ?? null;
   }, [handle2]);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     setNativeDraftRef.current = setNativeDraft;
   }, [setNativeDraft]);
-  const recoveryGen = react2.useRef(0);
-  const [draftUi, setDraftUi] = react2.useState(() => ({
+  const recoveryGen = react3.useRef(0);
+  const [draftUi, setDraftUi] = react3.useState(() => ({
     conflict: null,
     dirty: false,
     status: { phase: "idle", error: "", code: "" }
   }));
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     const read = () => setDraftUi({
       conflict: companionDraftConflict.get(project) || null,
       dirty: Boolean(companionDraftDirty.get(project)),
@@ -17338,7 +17946,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     read();
     return subscribeDraftStatus(read);
   }, [project]);
-  react2.useEffect(() => {
+  react3.useEffect(() => {
     let cancelled = false;
     const started = recoveryGen.current;
     companionRecoveryState.set(project, "pending");
@@ -17382,8 +17990,8 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       cancelled = true;
     };
   }, [project]);
-  const editGen = react2.useRef(0);
-  const adopting = react2.useRef(false);
+  const editGen = react3.useRef(0);
+  const adopting = react3.useRef(false);
   const bumpEdit = () => {
     editGen.current++;
   };
@@ -17532,7 +18140,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   const statusNote = !handle2 || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
   const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
   const injectables = memoryItems.filter(isPinnable);
-  const memoryPreview = react2.useMemo(
+  const memoryPreview = react3.useMemo(
     () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
     [memoryItems, pinned, excluded]
   );
@@ -17560,12 +18168,26 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setMemOpen((v) => !v), children: memOpen ? "收起备忘" : "项目备忘" }),
       jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), disabled: busy || !sessions, title: "打开完整会话，调整模型、工具或处理请求", children: "会话设置 ↗" })
     ] }),
-    memOpen ? jsx8.jsx(CompanionMemoryPanel, {
-      path: project,
-      candidate,
-      onCandidateConsumed: () => setCandidate(null),
-      onChanged: () => void reloadMemory()
-    }) : null,
+    memOpen ? jsx8.jsxs("div", { className: "dshWmMemoryWorkspace", children: [
+      jsx8.jsx(CompanionMemoryPanel, {
+        path: project,
+        candidate,
+        onCandidateConsumed: () => setCandidate(null),
+        onChanged: () => void reloadMemory()
+      }),
+      jsx8.jsx(WorldSettingsPanel, {
+        path: project,
+        selectedMessages: worldSelection,
+        onClearSelection: () => setWorldSelection([]),
+        onStatus: setWorldStatus,
+        key: project,
+        onChanged: () => void reloadMemory(),
+        onRequestOrganize: async (extra, signal) => {
+          const current = await ensureHandle();
+          return organizeWorld({ handle: current, selected: worldSelection, extra, signal });
+        }
+      })
+    ] }) : null,
     statusNote ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-status": snapshot.status, children: [
       statusNote,
       jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => void handle2?.refresh(), children: "重查状态" }),
@@ -17586,7 +18208,19 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         children: "查看完整会话"
       })
     ] }) : null,
-    jsx8.jsx(CompanionTranscript, { snapshot, onFull: () => void fullConversation(), onCandidate: startCandidate }),
+    jsx8.jsx(CompanionTranscript, {
+      snapshot,
+      onFull: () => void fullConversation(),
+      onCandidate: startCandidate,
+      worldSelectedIds: worldSelection.map((m) => m.id),
+      onToggleWorldSelect: snapshot.running ? null : (msg) => {
+        setWorldSelection((list4) => {
+          const has2 = list4.some((m) => m.id === msg.id);
+          return has2 ? list4.filter((m) => m.id !== msg.id) : [...list4, msg];
+        });
+        setMemOpen(true);
+      }
+    }),
     draftUi.conflict ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
       draftUi.conflict.remoteStatus === "valid" ? "草稿与另一处写入冲突，自动保存已暂停。" : draftUi.conflict.remoteStatus === "failed" ? "冲突后无法读取远端草稿。" : "冲突处理中，正在读取远端草稿…",
       jsx8.jsx("button", {
@@ -17794,9 +18428,9 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   ] });
 }
 function WritingCompanion({ path: path2, contextText, sourceInfo, onExit }) {
-  const [result, setResult] = react2.useState(null);
-  const [retry, setRetry] = react2.useState(0);
-  react2.useEffect(() => {
+  const [result, setResult] = react3.useState(null);
+  const [retry, setRetry] = react3.useState(0);
+  react3.useEffect(() => {
     let active = true;
     if (path2) void api("companion", void 0, { path: path2 }).then(async (data) => {
       if (data.ok && data.sessionId && harnessSessions()) {
@@ -17819,14 +18453,14 @@ function WritingCompanion({ path: path2, contextText, sourceInfo, onExit }) {
 // plugin/writing-mode/src/client/app/WritingModeApp.js
 var LS_FILE = "dsh-writing-mode-file";
 function WritingModeApp() {
-  const [active, setActive] = react3.useState(getModeActive);
-  react3.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
+  const [active, setActive] = react4.useState(getModeActive);
+  react4.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
   const open = () => setModeActive(true);
   const close = () => setModeActive(false);
-  const [roots, setRoots] = react3.useState([]);
-  const [tree, setTree] = react3.useState([]);
-  const [activeRoot, setActiveRoot] = react3.useState(null);
-  const editorRef = react3.useRef(null);
+  const [roots, setRoots] = react4.useState([]);
+  const [tree, setTree] = react4.useState([]);
+  const [activeRoot, setActiveRoot] = react4.useState(null);
+  const editorRef = react4.useRef(null);
   if (!editorRef.current) {
     let recovered = null;
     let recoveryKey = "dsh-writing-recovery";
@@ -17863,52 +18497,52 @@ function WritingModeApp() {
     }, recovered);
   }
   const editor = editorRef.current;
-  const [documentState, setDocumentState] = react3.useState(editor.get);
-  react3.useEffect(() => editor.subscribe(setDocumentState), [editor]);
+  const [documentState, setDocumentState] = react4.useState(editor.get);
+  react4.useEffect(() => editor.subscribe(setDocumentState), [editor]);
   const { path: filePath, content: content3, dirty, status: saveState } = documentState;
   const setContent = (value) => editor.change(value);
   const setFilePath = (path2) => {
     void editor.open(path2);
   };
-  const [aiOpen, setAiOpen] = react3.useState(true);
-  const [aiTab, setAiTab] = react3.useState("companion");
-  const [aiOut, setAiOut] = react3.useState("");
-  const [aiBusy, setAiBusy] = react3.useState(false);
-  const [aiErr, setAiErr] = react3.useState("");
-  const [gate, setGate] = react3.useState(null);
-  const [gateBusy, setGateBusy] = react3.useState(false);
-  const [gateErr, setGateErr] = react3.useState("");
-  const [focus, setFocus] = react3.useState(false);
-  const [libOpen, setLibOpen] = react3.useState(true);
-  const [libQuery, setLibQuery] = react3.useState("");
-  const [collapsed, setCollapsed] = react3.useState(() => /* @__PURE__ */ new Set());
-  const [copied, setCopied] = react3.useState(false);
-  const [diffLines, setDiffLines] = react3.useState(null);
-  const [diffLabel, setDiffLabel] = react3.useState("");
-  const [ledger, setLedger] = react3.useState(null);
-  const [gateOpen, setGateOpen] = react3.useState(false);
-  const [ledgerOpen, setLedgerOpen] = react3.useState(false);
-  const [newDocMode, setNewDocMode] = react3.useState(false);
-  const [newDocName, setNewDocName] = react3.useState("");
-  const [projMode, setProjMode] = react3.useState(false);
-  const [projTitle, setProjTitle] = react3.useState("");
-  const [projPremise, setProjPremise] = react3.useState("");
-  const [projTemplate, setProjTemplate] = react3.useState("novel");
-  const [templates, setTemplates] = react3.useState([]);
-  const [addRootMode, setAddRootMode] = react3.useState(false);
-  const [addRootPath, setAddRootPath] = react3.useState("");
-  const [flash, setFlash] = react3.useState("");
-  const [prefs, setPrefs] = react3.useState(getPrefs);
-  react3.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
-  react3.useEffect(() => {
+  const [aiOpen, setAiOpen] = react4.useState(true);
+  const [aiTab, setAiTab] = react4.useState("companion");
+  const [aiOut, setAiOut] = react4.useState("");
+  const [aiBusy, setAiBusy] = react4.useState(false);
+  const [aiErr, setAiErr] = react4.useState("");
+  const [gate, setGate] = react4.useState(null);
+  const [gateBusy, setGateBusy] = react4.useState(false);
+  const [gateErr, setGateErr] = react4.useState("");
+  const [focus, setFocus] = react4.useState(false);
+  const [libOpen, setLibOpen] = react4.useState(true);
+  const [libQuery, setLibQuery] = react4.useState("");
+  const [collapsed, setCollapsed] = react4.useState(() => /* @__PURE__ */ new Set());
+  const [copied, setCopied] = react4.useState(false);
+  const [diffLines, setDiffLines] = react4.useState(null);
+  const [diffLabel, setDiffLabel] = react4.useState("");
+  const [ledger, setLedger] = react4.useState(null);
+  const [gateOpen, setGateOpen] = react4.useState(false);
+  const [ledgerOpen, setLedgerOpen] = react4.useState(false);
+  const [newDocMode, setNewDocMode] = react4.useState(false);
+  const [newDocName, setNewDocName] = react4.useState("");
+  const [projMode, setProjMode] = react4.useState(false);
+  const [projTitle, setProjTitle] = react4.useState("");
+  const [projPremise, setProjPremise] = react4.useState("");
+  const [projTemplate, setProjTemplate] = react4.useState("novel");
+  const [templates, setTemplates] = react4.useState([]);
+  const [addRootMode, setAddRootMode] = react4.useState(false);
+  const [addRootPath, setAddRootPath] = react4.useState("");
+  const [flash, setFlash] = react4.useState("");
+  const [prefs, setPrefs] = react4.useState(getPrefs);
+  react4.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
+  react4.useEffect(() => {
     void loadPrefs();
   }, [active]);
-  const taRef = react3.useRef(null);
-  const fillOpRef = react3.useRef(null);
-  const aiTarget = react3.useRef(null);
-  const saveTimer = react3.useRef(0);
-  const fileInputRef = react3.useRef(null);
-  const runGateRef = react3.useRef(() => {
+  const taRef = react4.useRef(null);
+  const fillOpRef = react4.useRef(null);
+  const aiTarget = react4.useRef(null);
+  const saveTimer = react4.useRef(0);
+  const fileInputRef = react4.useRef(null);
+  const runGateRef = react4.useRef(() => {
   });
   const docBasename = filePath ? String(filePath).split(/[\\/]/).filter(Boolean).pop() : "";
   const docFolder = filePath ? (() => {
@@ -17916,7 +18550,7 @@ function WritingModeApp() {
     if (parts.length < 2) return "";
     return parts[parts.length - 2];
   })() : "";
-  const versionSeries = react3.useMemo(() => {
+  const versionSeries = react4.useMemo(() => {
     if (!filePath) return [];
     const curVer = versionOf(docBasename);
     if (curVer == null) return [];
@@ -17941,23 +18575,23 @@ function WritingModeApp() {
   const curVerNum = versionOf(docBasename);
   const latestVer = versionSeries.length > 0 ? versionSeries[versionSeries.length - 1] : null;
   const isHistoryDoc = curVerNum != null && latestVer != null && curVerNum < latestVer.v;
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     applyBodyAttr(active);
   }, [active]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     try {
       if (focus) document.body.setAttribute("data-writing-focus", "1");
       else document.body.removeAttribute("data-writing-focus");
     } catch {
     }
   }, [focus]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     try {
       document.body.setAttribute("data-writing-lib", libOpen ? "1" : "0");
     } catch {
     }
   }, [libOpen]);
-  const refreshTree = react3.useCallback(async () => {
+  const refreshTree = react4.useCallback(async () => {
     const data = await api("config");
     if (!data.ok) return;
     setRoots(data.roots || []);
@@ -17965,11 +18599,11 @@ function WritingModeApp() {
     const active2 = data.config && data.config.activeRoot || (data.roots || []).find((r) => r.default && !r.missing)?.path || (data.roots || [])[0]?.path || null;
     setActiveRoot(active2);
   }, []);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active) return;
     void refreshTree();
   }, [active, refreshTree]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active || !harnessSessions()) return;
     let running = /* @__PURE__ */ new Set();
     const update = () => {
@@ -17985,9 +18619,9 @@ function WritingModeApp() {
     update();
     return harnessSessions().list.subscribe(update);
   }, [active, editor, refreshTree]);
-  const persist = react3.useCallback(() => editor.flush(), [editor]);
+  const persist = react4.useCallback(() => editor.flush(), [editor]);
   const saveAsNewVersion = () => editor.version();
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active) return;
     let reading = false;
     const refresh = async () => {
@@ -18006,7 +18640,7 @@ function WritingModeApp() {
       window.removeEventListener("focus", refresh);
     };
   }, [active, editor]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active || editor.get().path) return;
     try {
       const p = localStorage.getItem(LS_FILE);
@@ -18014,7 +18648,7 @@ function WritingModeApp() {
     } catch {
     }
   }, [active, editor]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     setCloseGuard(async () => {
       if (await editor.close()) commitModeActive(false);
     });
@@ -18029,7 +18663,7 @@ function WritingModeApp() {
       window.removeEventListener("beforeunload", protect);
     };
   }, [editor]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!filePath) return;
     let cancelled = false;
     setGate(null);
@@ -18053,14 +18687,14 @@ function WritingModeApp() {
       cancelled = true;
     };
   }, [filePath, documentState.revision, refreshTree]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active || !dirty || !filePath || documentState.loading || documentState.status === "error") return;
     saveTimer.current = window.setTimeout(() => {
       void persist();
     }, prefs.autoSaveMs || 800);
     return () => window.clearTimeout(saveTimer.current);
   }, [active, dirty, filePath, content3, documentState.loading, documentState.status, persist, prefs.autoSaveMs]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active) return;
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -18141,7 +18775,8 @@ function WritingModeApp() {
     });
     setProjMode(false);
     if (!data.ok) {
-      flashMsg(data.error === "project-exists" ? "同名项目已存在" : "创建失败：" + (data.error || ""));
+      const msg = data.error === "project-exists" ? "同名项目已存在" : data.error === "directory-not-empty" ? "目标文件夹已有内容，请换名或先清空" : data.error === "invalid-project-name" ? "项目名不合法" : "创建失败：" + (data.error || "");
+      flashMsg(msg);
       return;
     }
     flashMsg(T.created + "：" + (data.project?.name || ""));
@@ -18207,7 +18842,7 @@ function WritingModeApp() {
       setAiBusy(false);
     }
   }
-  const runGate = react3.useCallback(async () => {
+  const runGate = react4.useCallback(async () => {
     setGateBusy(true);
     setGateErr("");
     try {
@@ -18229,7 +18864,7 @@ function WritingModeApp() {
     }
   }, [filePath, content3]);
   runGateRef.current = runGate;
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!active || !filePath || !prefs.autoGate) return;
     const ext = String(filePath).toLowerCase().split(".").pop();
     if (ext !== "md" && ext !== "markdown" && ext !== "fountain") return;
@@ -18678,7 +19313,7 @@ function WritingModeApp() {
                               ),
                               openP ? groups.map(
                                 (g) => jsx10.jsx(
-                                  react3.Fragment,
+                                  react4.Fragment,
                                   {
                                     children: [
                                       jsx10.jsx(
@@ -19288,14 +19923,14 @@ function ensureDomFloat() {
 }
 
 // plugin/writing-mode/src/client/features/settings/WritingModeSettings.js
-var react4 = __toESM(require("react"), 1);
+var react5 = __toESM(require("react"), 1);
 var jsx12 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeSettings() {
-  const [prefs, setPrefsLocal] = react4.useState(getPrefs);
-  const [roots, setRoots] = react4.useState([]);
-  const [pathDraft, setPathDraft] = react4.useState("");
-  react4.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
-  react4.useEffect(() => {
+  const [prefs, setPrefsLocal] = react5.useState(getPrefs);
+  const [roots, setRoots] = react5.useState([]);
+  const [pathDraft, setPathDraft] = react5.useState("");
+  react5.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
+  react5.useEffect(() => {
     void loadPrefs();
     void api("config").then((d) => {
       if (d.ok) setRoots(d.roots || []);
@@ -19649,11 +20284,11 @@ function WritingModeSettings() {
 }
 
 // plugin/writing-mode/src/client/features/settings/entries.js
-var react5 = __toESM(require("react"), 1);
+var react6 = __toESM(require("react"), 1);
 var jsx14 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeFooterEntry() {
-  const [on, setOn] = react5.useState(getModeActive);
-  react5.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  const [on, setOn] = react6.useState(getModeActive);
+  react6.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
   return jsx14.jsx("button", {
     type: "button",
     className: on ? "dshWmBtn is-primary" : "dshWmBtn",
@@ -19664,8 +20299,8 @@ function WritingModeFooterEntry() {
   });
 }
 function WritingModeHeaderEntry() {
-  const [on, setOn] = react5.useState(getModeActive);
-  react5.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  const [on, setOn] = react6.useState(getModeActive);
+  react6.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
   return jsx14.jsx("button", {
     type: "button",
     className: "dshWmBtn",

@@ -1,0 +1,27 @@
+{
+  "pid": 15584,
+  "exe": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-world-settings-20260920\\win-unpacked\\DeepSeek Harness Desktop.exe",
+  "packageRoot": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-world-settings-20260920",
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed",
+  "home": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\home",
+  "desktopHome": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\desktop-home",
+  "userData": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\user-data",
+  "localAppData": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\localappdata",
+  "library": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\library",
+  "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-world-20260920-S8W1ed\\library\\雾港夜航",
+  "repoHead": "a9aa8b801df0ad79c245274139d5f02468d14c8b",
+  "version": "0.1.40",
+  "createdAt": "2026-09-20T11:11:47.242Z",
+  "keptRunning": true,
+  "credentialPersisted": false,
+  "trialSteps": [
+    "打开写作模式，库根应指向预览库",
+    "打开项目「雾港夜航」",
+    "在写作伙伴中聊世界观（如雾季禁航）",
+    "勾选消息 →「选入整理」→「整理为设定」",
+    "编辑候选 →「确认设定」",
+    "查看 bible/世界观整理.md 与项目备忘",
+    "改设定后再聊，确认默认注入为结论+边界",
+    "刷新或另一窗口验证不丢设定"
+  ]
+}

@@ -18,6 +18,25 @@ const ok = (name, cond, extra = '') => {
   }
 }
 
+const reactStub = {
+  memo: (c) => c,
+  createElement: () => null,
+  cloneElement: (c) => c,
+  Fragment: 'Fragment',
+  createContext: (d) => ({ _default: d, Provider: null, Consumer: null }),
+  useContext: () => ({}),
+  useState: (i) => [typeof i === 'function' ? i() : i, () => {}],
+  useEffect: () => {},
+  useLayoutEffect: () => {},
+  useMemo: (f) => f(),
+  useCallback: (f) => f,
+  useRef: (i) => ({ current: i }),
+  forwardRef: (f) => f,
+  Component: class Component {},
+  PureComponent: class PureComponent {},
+}
+const jsxStub = { jsx: () => null, jsxs: () => null, Fragment: 'Fragment' }
+
 const code = fs.readFileSync(path.join(process.cwd(), 'plugin/writing-mode/client.js'), 'utf8')
 let mod = null
 let nextDraftResponse = { ok: true, checkpoint: { rev: 1 } }
@@ -31,12 +50,22 @@ const sandbox = {
   sessionStorage: { getItem: () => 'w', setItem: () => {} },
   navigator: { language: 'zh-CN' },
   console,
+  document: {
+    createElement: () => ({ innerHTML: '', textContent: '', getAttribute: () => null }),
+    getElementById: () => null,
+    head: { appendChild() {} },
+  },
   fetch: async () => ({
     ok: true,
     status: 200,
     json: async () => nextDraftResponse,
   }),
-  window: { __ModuleLoader__: { load: (e) => { mod = e.factory(() => ({})) } } },
+  window: { __ModuleLoader__: { load: (e) => { mod = e.factory(hostRequire) } } },
+}
+function hostRequire(name) {
+  if (name === 'react') return reactStub
+  if (name === 'react/jsx-runtime' || name === 'react/jsx-dev-runtime') return jsxStub
+  return {}
 }
 vm.runInNewContext(code, sandbox)
 
