@@ -25,10 +25,13 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
 let client
 const sandbox = {
+  // This suite exercises the controller, not rendering. The browser Markdown
+  // decoder allocates an element on load; fail loudly if a test tries to use it.
+  document: { getElementById: () => ({}), createElement: () => ({ set innerHTML(_) { throw new Error('Use the Electron reading suite for DOM rendering') } }) },
   URLSearchParams, AbortController, setTimeout, clearTimeout, crypto: globalThis.crypto,
   localStorage: { getItem: () => null }, navigator: { language: 'zh-CN' },
   fetch: (url, opts) => fetch(origin + url, opts), console,
-  window: { __ModuleLoader__: { load: m => { client = m.factory(() => ({})) } } },
+  window: { __ModuleLoader__: { load: m => { client = m.factory(() => ({ memo: component => component })) } } },
 }
 vm.runInNewContext(fs.readFileSync(path.join(repo, 'plugin/writing-mode/client.js'), 'utf8'), sandbox)
 const post = (route, body) => client.api(route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
