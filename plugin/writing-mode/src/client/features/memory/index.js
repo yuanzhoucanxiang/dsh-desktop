@@ -56,6 +56,9 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
   const [text, setText] = react.useState('')
   const [kind, setKind] = react.useState('fact')
   const [asCandidate, setAsCandidate] = react.useState(false)
+  // The parent consumes its one-shot candidate immediately. Keep provenance
+  // with the editable text until this compose draft is cleared or replaced.
+  const [candidateSource, setCandidateSource] = react.useState(null)
   const [editing, setEditing] = react.useState(null) // { id, text }
   const [history, setHistory] = react.useState(null) // { id, entries }
   const [notice, setNotice] = react.useState('')
@@ -82,6 +85,7 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
     setText(candidate.text || '')
     setKind(candidate.kind || 'fact')
     setAsCandidate(true)
+    setCandidateSource(candidate.source ? { ...candidate.source } : { kind: 'assistant' })
     setNotice('正在从助手消息记为候选：可以删改后保存（保存后仍是候选，不会自动当成事实）')
     onCandidateConsumed?.()
   }, [candidate, onCandidateConsumed])
@@ -100,6 +104,7 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
         if (!keepText) {
           setText('')
           setAsCandidate(false)
+          setCandidateSource(null)
         }
         setNotice(op === 'add' ? (body?.item?.status === 'proposed' ? '已存为候选（未确认前不会自动带入对话）' : '已记下') : '已更新')
         onChanged?.(data)
@@ -124,7 +129,7 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
   function saveNew() {
     const body = String(text || '').trim()
     if (!body) return
-    const source = asCandidate && candidate?.source ? candidate.source : { kind: 'author' }
+    const source = asCandidate ? (candidateSource || { kind: 'assistant' }) : { kind: 'author' }
     void post('add', { item: { kind, text: body, status: asCandidate ? 'proposed' : 'confirmed', source } }, { keepText: true })
   }
 
@@ -149,9 +154,11 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
             jsx.jsx('option', { value: k, children: KIND_LABEL[k] }, k)
           ),
         }),
-        jsx.jsx('input', {
+        jsx.jsx('textarea', {
           className: 'dshWmSearch',
-          style: { margin: 0, flex: 1 },
+          rows: 3,
+          'aria-label': '项目备忘内容',
+          style: { margin: 0, flex: 1, minWidth: 0, resize: 'vertical', maxHeight: 140, font: 'inherit' },
           placeholder: asCandidate ? '候选内容（可删改）…' : '写下一条设定、偏好或待定问题…',
           value: text,
           disabled: busy,
@@ -197,8 +204,10 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
         ] }),
         editing && editing.id === it.id
           ? jsx.jsxs('div', { className: 'dshWmMemoryEdit', children: [
-              jsx.jsx('input', {
+              jsx.jsx('textarea', {
                 className: 'dshWmSearch',
+                rows: 3,
+                'aria-label': '编辑项目备忘',
                 value: editing.text,
                 autoFocus: true,
                 onChange: (e) => setEditing({ id: it.id, text: e.target.value }),

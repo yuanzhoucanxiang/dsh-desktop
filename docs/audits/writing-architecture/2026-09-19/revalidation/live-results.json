@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "results": [
+    "Real candidate UI: proposed -> confirmed -> edited -> retracted; response semantics need review",
+    "Real tool rewrite created v2 and preserved original v1"
+  ],
+  "failures": []
+}

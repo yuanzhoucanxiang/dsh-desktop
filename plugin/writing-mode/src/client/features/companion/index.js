@@ -12,6 +12,7 @@ import { harnessSessions } from '../../adapters/harness/runtime.js'
 import { harnessAdapter } from '../../adapters/harness/runtime.js'
 import { newOperationToken } from '../../adapters/harness/adapter.js'
 import { buildPreparedTurn } from '../../../shared/context-builder.js'
+import { CompanionMessage } from './CompanionMessage.js'
 
 export const emptyCompanionSnapshot = Object.freeze({})
 export const noSubscribe = () => () => {}
@@ -47,7 +48,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate }) {
       jsx.jsx('summary', { children: row.text }), jsx.jsx('pre', { children: JSON.stringify(row.detail, null, 2) }),
     ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind, children: [
       jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
-      jsx.jsx('div', { className: 'dshWmMessageText', children: row.text }),
+      jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
       row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
       row.kind === 'assistant' && onCandidate
         ? jsx.jsx('button', {

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "projectKey": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-live-NPAeSL\\library\\灯塔来信",
+  "items": [
+    {
+      "id": "a95c7d3b-14c2-4e62-bd83-3c6a12951ecb",
+      "kind": "fact",
+      "status": "proposed",
+      "text": "灯塔停电后，备用发电机也无法启动。",
+      "source": {
+        "kind": "author"
+      },
+      "createdAt": "2026-09-19T12:58:48.362Z",
+      "updatedAt": "2026-09-19T12:58:48.362Z",
+      "confirmedAt": null,
+      "resolvedAt": null,
+      "retractedAt": null
+    }
+  ],
+  "changes": [
+    {
+      "at": "2026-09-19T12:58:48.362Z",
+      "actor": "author",
+      "op": "add",
+      "id": "a95c7d3b-14c2-4e62-bd83-3c6a12951ecb",
+      "kind": "fact",
+      "status": "proposed",
+      "after": {
+        "text": "灯塔停电后，备用发电机也无法启动。",
+        "source": {
+          "kind": "author"
+        }
+      }
+    }
+  ]
+}

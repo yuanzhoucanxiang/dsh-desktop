@@ -36,6 +36,7 @@ export async function buildWritingClient(outFile) {
     entryPoints: [ENTRY],
     bundle: true,
     write: false,
+    metafile: true,
     format: 'cjs',
     platform: 'browser',
     target: 'es2022',
@@ -46,8 +47,32 @@ export async function buildWritingClient(outFile) {
     absWorkingDir: root,
   })
   const code = result.outputFiles[0].text.replace(/\n*$/, '\n')
+  // The parser is bundled into the single published client. Carry the notices
+  // of exactly those packages whose sources esbuild included, in stable order.
+  const notices = new Map()
+  for (const input of Object.keys(result.metafile.inputs)) {
+    if (!input.replace(/\\/g, '/').includes('node_modules/')) continue
+    let dir = path.dirname(path.resolve(root, input))
+    while (dir !== root && dir !== path.dirname(dir)) {
+      const metadata = path.join(dir, 'package.json')
+      if (fs.existsSync(metadata)) {
+        const pkg = JSON.parse(fs.readFileSync(metadata, 'utf8'))
+        const key = `${pkg.name}@${pkg.version}`
+        if (!notices.has(key)) {
+          const license = fs.readdirSync(dir).sort().find(name => /^licen[cs]e(?:\.md|\.txt)?$/i.test(name))
+          if (!license) throw new Error(`Missing bundled license: ${key}`)
+          notices.set(key, fs.readFileSync(path.join(dir, license), 'utf8').replace(/\r\n/g, '\n').trim())
+        }
+        break
+      }
+      dir = path.dirname(dir)
+    }
+  }
+  const attribution = [...notices].sort(([a], [b]) => a.localeCompare(b, 'en')).map(([name, text]) =>
+    `/*! Bundled dependency: ${name}\n${text.replace(/\*\//g, '* /')}\n*/\n`).join('')
   const factory =
     banner +
+    attribution +
     'window.__ModuleLoader__.load({\n' +
     `  id: ${JSON.stringify(PLUGIN_ID)},\n` +
     '  factory: (require) => {\n' +

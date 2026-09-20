@@ -1,0 +1,70 @@
+{
+  "source": "manifest",
+  "wanted": [
+    "CONTRACT.md",
+    "client.js",
+    "index.js",
+    "lib/companion.cordis.yml",
+    "lib/coordination.js",
+    "lib/domain.js",
+    "lib/draft-checkpoints.js",
+    "lib/file-lock.js",
+    "lib/knowledge.js",
+    "lib/project-memory.js",
+    "lib/store.js",
+    "lib/templates.js",
+    "lib/websearch.js",
+    "package.json",
+    "runtime-manifest.json"
+  ],
+  "results": [
+    {
+      "id": "filter",
+      "title": "manifest ↔ 打包 filter 逐文件一致",
+      "status": "PASS",
+      "detail": "manifest 发布集合 15 个文件，filter 展开后完全一致"
+    },
+    {
+      "id": "main-deps",
+      "title": "主进程依赖闭包被 build.files 覆盖",
+      "status": "PASS",
+      "detail": "9 个本地模块全部会被打进包（含 lib 内部依赖）"
+    },
+    {
+      "id": "asar",
+      "title": "app.asar 内主进程依赖齐全",
+      "status": "PASS",
+      "detail": "9 个本地模块都在 app.asar 内"
+    },
+    {
+      "id": "asar-bytes",
+      "title": "app.asar 内主进程模块与仓库逐字节一致",
+      "status": "PASS",
+      "detail": "9 个模块内容一致"
+    },
+    {
+      "id": "asar-no-repo-dep",
+      "title": "包内主进程不依赖源码目录（A02）",
+      "status": "PASS",
+      "detail": "9 个模块均未发现仓库路径引用"
+    },
+    {
+      "id": "resources",
+      "title": "extraResources 资源完整（插件 + 运行时 + 内置插件树）",
+      "status": "PASS",
+      "detail": "写作模式插件、runtime.tar.gz、runtime-marker.json、builtin-plugins 均在"
+    },
+    {
+      "id": "package",
+      "title": "manifest ↔ 安装包产物",
+      "status": "PASS",
+      "detail": "全部 15 个文件一致（C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-release-0.1.39\\win-unpacked\\resources\\plugin\\writing-mode）"
+    },
+    {
+      "id": "profile",
+      "title": "manifest ↔ profile 已种入副本",
+      "status": "NOT_RUN",
+      "detail": "不存在：C:\\Users\\DL\\AppData\\Local\\Temp\\wm-no-profile-6b4167fa-5370-45e3-8229-2e05ffa015f4\\profiles\\node_modules\\@dsh-local\\writing-mode（该机尚未种入写作模式）"
+    }
+  ]
+}

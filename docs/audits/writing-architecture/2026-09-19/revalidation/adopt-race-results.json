@@ -1,0 +1,20 @@
+{
+  "id": "N03-adoption-response-preserves-later-edit",
+  "status": "PASS",
+  "visible": "NEW_AUTHOR_EDIT_DURING_ADOPT",
+  "checkpoints": [
+    {
+      "windowId": "e3944ba9-2c91-4f9a-a689-436b917bdf16",
+      "text": "NEW_AUTHOR_EDIT_DURING_ADOPT"
+    },
+    {
+      "windowId": "e3944ba9-2c91-4f9a-a689-436b917bdf16-before-adopt-1789822179124",
+      "text": "ORIGINAL_BEFORE_ADOPT"
+    },
+    {
+      "windowId": "other-window",
+      "text": "OTHER_WINDOW_CANDIDATE"
+    }
+  ],
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-SRbxYS"
+}

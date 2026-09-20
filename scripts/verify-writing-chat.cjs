@@ -167,15 +167,25 @@ app.whenReady().then(async () => {
   await waitFor(`!!document.querySelector('[data-wm-candidate]')`)
   await evaluate(`document.querySelector('[data-wm-candidate]').click()`)
   await waitFor(`document.querySelector('.dshWmMemory [data-wm-memory-save]')?.textContent==='存为候选'`)
+  // Consume the one-shot parent candidate, then edit and persist it through UI.
+  // Provenance must survive the intervening renders and author edits.
+  await input('.dshWmMemoryCompose .dshWmSearch', '她可能已经猜到信里写了什么。')
   await waitFor(`!document.querySelector('.dshWmMemory [data-wm-memory-save]')?.disabled`)
   await button('存为候选')
   await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="proposed"]')`)
+  const candidateOnDisk = JSON.parse(fs.readFileSync(path.join(project, 'state/writing-memory.json'), 'utf8')).items.find(it => it.status === 'proposed')
+  assert.equal(candidateOnDisk.text, '她可能已经猜到信里写了什么。')
+  assert.equal(candidateOnDisk.source.kind, 'assistant')
+  assert.equal(candidateOnDisk.source.messageId, 'a')
+  assert.equal(candidateOnDisk.source.sessionId, 'fixture')
   assert.ok(
     await evaluate(`document.querySelector('[data-wm-context-toggle]').textContent==='本次没有可参考的已确认条目'`),
     '候选不算"可参考"，提示条不能把它算进去'
   )
   await button('确认')
   await waitFor(`!!document.querySelector('.dshWmMemoryStatus[data-status="confirmed"]')`)
+  const confirmedOnDisk = JSON.parse(fs.readFileSync(path.join(project, 'state/writing-memory.json'), 'utf8')).items.find(it => it.id === candidateOnDisk.id)
+  assert.deepEqual(confirmedOnDisk.source, candidateOnDisk.source, 'Author confirmation must not relabel assistant provenance')
   await waitFor(`document.querySelector('[data-wm-context-toggle]')?.textContent==='参考项目备忘 · 1 条'`)
   // 关掉本次参考：请求里就不再自动带备忘（正文照发）
   await evaluate(`document.querySelector('[data-wm-context-enabled]').click()`)

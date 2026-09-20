@@ -1,0 +1,7 @@
+  诊断：a=63372 alive=true · b=62320 alive=true
+PASS 清理集合只包含显式登记的 PID（同名未登记的不会被收进去）
+  诊断：清理 a 之后 a=false b=true
+PASS 按 PID 清理只影响该进程，同名的另一个仍存活
+PASS 收尾：清掉剩余的测试进程（仍是按 PID）
+
+pid-cleanup: 3 项通过

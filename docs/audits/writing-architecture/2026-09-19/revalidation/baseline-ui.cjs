@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),Module=require('node:modul
 const repo=path.resolve(__dirname,'../../../../..')
 let s=fs.readFileSync(path.join(repo,'docs/audits/writing-architecture/2026-09-13/review9-ui.cjs'),'utf8').replace(/\r\n/g,'\n')
 s=s.replace("const repo=path.resolve(__dirname,'../../../..')",`const repo=${JSON.stringify(repo)}`)
-s=s.replace("reviewedImplementation:'1a67496',head:'1664467'","reviewedImplementation:'95b138d',head:'95b138d'")
+s=s.replace("reviewedImplementation:'1a67496',head:'1664467'","reviewedImplementation:'0e111510d107f6851aaf080d4a7a8fb65b9e7dc2',head:'0e111510d107f6851aaf080d4a7a8fb65b9e7dc2'")
 s=s.replace("path.join(temp,'review9-ui.json')",JSON.stringify(path.join(__dirname,'baseline-ui-results.json')))
 
 const oldBlock = `  // Memory warning also survives successful send/checkpoint clear.

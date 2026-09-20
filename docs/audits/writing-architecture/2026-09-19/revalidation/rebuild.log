@@ -1,0 +1,14 @@
+[rebuild] output = C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19
+[rebuild] electronDist = E:\Deepseek harness\dsh-desktop\node_modules\electron\dist
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=43.4.0 arch=x64 buildFromSource=false workspaceRoot=E:\Deepseek harness\dsh-desktop projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=43.4.0 appOutDir=C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19\win-unpacked
+  • using custom unpacked Electron distribution  electronDist=node_modules\electron\dist
+  • copying unpacked Electron  source=E:\Deepseek harness\dsh-desktop\node_modules\electron\dist destination=C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19\win-unpacked
+  • searching for node modules  pm=npm searchDir=E:\Deepseek harness\dsh-desktop
+  • updating asar integrity executable resource  executablePath=C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19\win-unpacked\DeepSeek Harness Desktop.exe
+  • executable resource editing and code signing skipped — signAndEditExecutable is false. To skip only code signing while keeping icon and metadata applied, use signExecutable: false instead.  exe=C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19\win-unpacked\DeepSeek Harness Desktop.exe
+[rebuild] BUILD_OK C:\Users\DL\AppData\Local\Temp\wm-acceptance-2026-09-19

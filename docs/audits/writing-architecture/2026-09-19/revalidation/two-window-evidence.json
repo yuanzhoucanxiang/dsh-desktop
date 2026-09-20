@@ -1,0 +1,34 @@
+{
+  "ids": [
+    "98ce36fd-c839-4b37-92f3-7e94fd9a14a8",
+    "fdf3d6b3-d16f-41e0-a758-d486e41614c9"
+  ],
+  "sessionIds": [
+    "session-ffd1c177-b3e0-4527-9b3f-fc1ca6ef352e"
+  ],
+  "nativeSessionCount": 1,
+  "drafts": [
+    "WINDOW_ONE_DRAFT",
+    "WINDOW_TWO_DRAFT"
+  ],
+  "checkpoints": [
+    {
+      "schemaVersion": 2,
+      "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-native-DxQ10d\\library\\灯塔来信",
+      "windowId": "98ce36fd-c839-4b37-92f3-7e94fd9a14a8",
+      "text": "WINDOW_ONE_DRAFT",
+      "reference": null,
+      "rev": 1,
+      "updatedAt": "2026-09-19T13:03:32.212Z"
+    },
+    {
+      "schemaVersion": 2,
+      "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-native-DxQ10d\\library\\灯塔来信",
+      "windowId": "fdf3d6b3-d16f-41e0-a758-d486e41614c9",
+      "text": "WINDOW_TWO_DRAFT",
+      "reference": null,
+      "rev": 1,
+      "updatedAt": "2026-09-19T13:03:32.210Z"
+    }
+  ]
+}

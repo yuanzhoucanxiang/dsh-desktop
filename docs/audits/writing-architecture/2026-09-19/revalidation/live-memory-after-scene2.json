@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "revision": 4,
+  "projectKey": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-live-NPAeSL\\library\\灯塔来信",
+  "items": [
+    {
+      "id": "a8890f6f-1e1d-420b-a62f-4f5f7611de9f",
+      "kind": "fact",
+      "status": "retracted",
+      "text": "备用发电机可以正常启动，只是她还没走到开关前。",
+      "source": {
+        "kind": "assistant",
+        "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+        "messageId": "14:assistant-step2:2"
+      },
+      "createdAt": "2026-09-19T12:59:51.597Z",
+      "updatedAt": "2026-09-19T13:00:24.701Z",
+      "confirmedAt": "2026-09-19T12:59:51.675Z",
+      "resolvedAt": null,
+      "retractedAt": "2026-09-19T13:00:24.701Z"
+    }
+  ],
+  "changes": [
+    {
+      "at": "2026-09-19T12:59:51.597Z",
+      "actor": "author",
+      "op": "add",
+      "id": "a8890f6f-1e1d-420b-a62f-4f5f7611de9f",
+      "kind": "fact",
+      "status": "proposed",
+      "after": {
+        "text": "灯塔停电后，备用发电机也无法启动。",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      }
+    },
+    {
+      "at": "2026-09-19T12:59:51.675Z",
+      "actor": "author",
+      "op": "update",
+      "id": "a8890f6f-1e1d-420b-a62f-4f5f7611de9f",
+      "status": "confirmed",
+      "before": {
+        "text": "灯塔停电后，备用发电机也无法启动。",
+        "status": "proposed",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      },
+      "after": {
+        "text": "灯塔停电后，备用发电机也无法启动。",
+        "status": "confirmed",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      }
+    },
+    {
+      "at": "2026-09-19T13:00:05.450Z",
+      "actor": "author",
+      "op": "update",
+      "id": "a8890f6f-1e1d-420b-a62f-4f5f7611de9f",
+      "status": "confirmed",
+      "before": {
+        "text": "灯塔停电后，备用发电机也无法启动。",
+        "status": "confirmed",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      },
+      "after": {
+        "text": "备用发电机可以正常启动，只是她还没走到开关前。",
+        "status": "confirmed",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      }
+    },
+    {
+      "at": "2026-09-19T13:00:24.701Z",
+      "actor": "author",
+      "op": "retract",
+      "id": "a8890f6f-1e1d-420b-a62f-4f5f7611de9f",
+      "before": {
+        "text": "备用发电机可以正常启动，只是她还没走到开关前。",
+        "status": "confirmed",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      },
+      "after": {
+        "text": "备用发电机可以正常启动，只是她还没走到开关前。",
+        "status": "retracted",
+        "source": {
+          "kind": "assistant",
+          "sessionId": "session-87bcfe2f-d5be-4f7a-8089-fe618c866517",
+          "messageId": "14:assistant-step2:2"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "pid": 636,
+  "exe": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-reading-final-2026-09-20\\win-unpacked\\DeepSeek Harness Desktop.exe",
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-reading-20260920-DXxkU2",
+  "home": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\writing-reading-20260920-DXxkU2\\home",
+  "library": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-live-NPAeSL\\library",
+  "createdAt": "2026-09-20T01:28:15.445Z",
+  "keptRunning": true,
+  "credentialPersisted": false,
+  "windowVerified": {
+    "title": "DeepSeek Harness",
+    "handle": 659042,
+    "responding": true
+  }
+}

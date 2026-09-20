@@ -1,0 +1,111 @@
+{
+  "results": [
+    {
+      "id": "markdown-and-streaming",
+      "status": "PASS",
+      "dom": {
+        "strong": "先听声音",
+        "quote": "\n她还没决定拆开那封信。\n",
+        "list": 2,
+        "table": 1,
+        "code": "long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_\n",
+        "links": [
+          {
+            "href": "https://example.org/story",
+            "target": "_blank",
+            "rel": "noopener noreferrer"
+          },
+          {
+            "href": "https://example.invalid/picture.png",
+            "target": "_blank",
+            "rel": "noopener noreferrer"
+          }
+        ],
+        "images": 0,
+        "scripts": 0,
+        "attack": false,
+        "author": "作者原文：**不要改动**"
+      }
+    },
+    {
+      "id": "candidate-uses-original-markdown",
+      "status": "PASS"
+    },
+    {
+      "id": "narrow-column-and-long-history",
+      "status": "PASS",
+      "geometry": [
+        {
+          "viewport": 1500,
+          "side": {
+            "left": 989.2685546875,
+            "right": 1500.0000305175781,
+            "width": 510.7314758300781,
+            "bottom": 900.0000457763672
+          },
+          "compose": {
+            "left": 1005.9981689453125,
+            "right": 1484.0029907226562,
+            "width": 478.00482177734375,
+            "bottom": 884.0029602050781
+          },
+          "message": {
+            "left": 1007.9956665039062,
+            "right": 1472.1154174804688,
+            "width": 464.1197509765625,
+            "bottom": 602.8102111816406
+          },
+          "scrollWidth": 510,
+          "clientWidth": 510
+        },
+        {
+          "viewport": 1280,
+          "side": {
+            "left": 844.213623046875,
+            "right": 1280.2198181152344,
+            "width": 436.0061950683594,
+            "bottom": 900.0000457763672
+          },
+          "compose": {
+            "left": 860.9432373046875,
+            "right": 1264.2227783203125,
+            "width": 403.279541015625,
+            "bottom": 884.0029602050781
+          },
+          "message": {
+            "left": 862.9407348632812,
+            "right": 1252.335205078125,
+            "width": 389.39447021484375,
+            "bottom": 774.6050720214844
+          },
+          "scrollWidth": 435,
+          "clientWidth": 435
+        },
+        {
+          "viewport": 980,
+          "side": {
+            "left": 619.4883422851562,
+            "right": 980.2198181152344,
+            "width": 360.7314758300781,
+            "bottom": 900.0000457763672
+          },
+          "compose": {
+            "left": 636.2179565429688,
+            "right": 964.2227783203125,
+            "width": 328.00482177734375,
+            "bottom": 884.0029602050781
+          },
+          "message": {
+            "left": 638.2154541015625,
+            "right": 952.335205078125,
+            "width": 314.1197509765625,
+            "bottom": 774.6050720214844
+          },
+          "scrollWidth": 360,
+          "clientWidth": 360
+        }
+      ]
+    }
+  ],
+  "externalRequests": []
+}

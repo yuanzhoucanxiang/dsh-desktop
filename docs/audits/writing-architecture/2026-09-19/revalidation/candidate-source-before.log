@@ -1,0 +1,18 @@
+
+LIVE_CONFIGURATION {"provider":"deepseek-official","model":"deepseek-v4-flash","reasoningEffort":"max"}
+LIVE_TEMP C:\Users\DL\AppData\Local\Temp\dsh-writing-live-NPAeSL
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'author'
+- 'assistant'
+
+    at E:\Deepseek harness\dsh-desktop\docs\audits\writing-architecture\2026-09-19\revalidation\live-writing.cjs:129:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'author',
+  expected: 'assistant',
+  operator: 'strictEqual',
+  diff: 'simple'
+}

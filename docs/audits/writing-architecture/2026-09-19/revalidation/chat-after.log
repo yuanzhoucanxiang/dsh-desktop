@@ -1,0 +1,8 @@
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS CHAT 失败保留输入与引用；仅发送选区；原生 queue 协议
+PASS CHAT 发送成功不擦除等待期间新输入
+PASS CHAT 历史/流式更新/工具折叠/授权与问题入口/排队/停止
+PASS CHAT 中文输入法不误发送；普通 Enter 发送后清空已提交草稿
+PASS CHAT 作者新增→带入→撤回→下轮变更；助手建议转候选→确认后带入；关掉参考即不带
+WRITING_CHAT_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-chat-5xy52E

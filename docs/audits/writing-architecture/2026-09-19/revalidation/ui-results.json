@@ -1,0 +1,70 @@
+{
+  "commit": "0e111510d107f6851aaf080d4a7a8fb65b9e7dc2",
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-MFiKD8",
+  "results": [
+    {
+      "id": "B06-adopt-keeps-recoverable-original",
+      "status": "PASS",
+      "evidence": {
+        "disk": [
+          {
+            "windowId": "16047768-66d6-4fbb-bc93-e9504c5a3a85",
+            "text": "OTHER_WINDOW_CANDIDATE",
+            "reference": null
+          },
+          {
+            "windowId": "16047768-66d6-4fbb-bc93-e9504c5a3a85-before-adopt-1789822250390",
+            "text": "AUTHOR_ORIGINAL_UNIQUE_DRAFT",
+            "reference": {
+              "label": "选区 · 第1章-v1.md · 3 字",
+              "text": "第一章",
+              "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-MFiKD8\\library\\演示项目\\draft\\novel\\第1章-v1.md",
+              "revision": "5c6c93e2112df38b82bd55c68d6d53326e693726490120655fa7045b58213de4",
+              "selection": {
+                "start": 0,
+                "end": 3
+              },
+              "snapshotFingerprint": null,
+              "note": "请以我随后补充的想法为准。"
+            }
+          },
+          {
+            "windowId": "other-window",
+            "text": "OTHER_WINDOW_CANDIDATE",
+            "reference": null
+          }
+        ],
+        "visibleRef": ""
+      }
+    },
+    {
+      "id": "B06-adopt-null-reference-clears-old-source",
+      "status": "PASS",
+      "evidence": {
+        "reference": null,
+        "visibleRef": ""
+      }
+    },
+    {
+      "id": "B04-memory-failure-waits-for-explicit-choice",
+      "status": "PASS",
+      "evidence": {
+        "calls": 0,
+        "input": "PRESERVE_UNTIL_AUTHOR_CHOICE",
+        "alerts": [
+          "项目备忘读取失败（fixture-memory-503）：本轮还没有发出，正文与引用都保留着。请选择：重试读取不参考备忘发送"
+        ]
+      }
+    },
+    {
+      "id": "B02-rejected-turn-retains-visible-and-disk-draft",
+      "status": "PASS",
+      "evidence": {
+        "after": "ENTIRELY_NEW_REJECTED_QUESTION",
+        "disk": "ENTIRELY_NEW_REJECTED_QUESTION",
+        "calls": 1
+      }
+    }
+  ],
+  "rendererErrors": []
+}

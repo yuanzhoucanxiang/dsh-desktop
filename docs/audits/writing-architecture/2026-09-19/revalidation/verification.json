@@ -1,0 +1,36 @@
+{
+  "sha": "0e111510d107f6851aaf080d4a7a8fb65b9e7dc2",
+  "dirty": [
+    "M docs/audits/writing-architecture/2026-09-14/v2-review/baseline-ui.cjs",
+    " M plugin/writing-mode/client.js",
+    "?? .gitattributes",
+    "?? docs/audits/writing-architecture/2026-09-19/",
+    "?? plugin/writing-mode/test/hunt-host.mjs"
+  ],
+  "releaseTag": "17eeec1549f1279e7adb124a966cdfe35a9d7c0b",
+  "setupSha256": "f668f973ae76ce264c23615776d456b4429afc9f04358382a21706fa7621c064",
+  "asarSha256": "a257f7330e54eabaeed51470ff54dfa38bc6be31d9cc9271da9444f482d76370",
+  "lineEnding": [
+    {
+      "file": "plugin/writing-mode/client.js",
+      "checkoutWithAutocrlfEqualsWork": true,
+      "workEqualsPackage": true,
+      "sha256": "c7fd8478a09f80f306afe42686ed2ceedba4117cfc71364d7128215a70e1d30b"
+    }
+  ],
+  "missingPackage": {
+    "exitCode": 1,
+    "result": {
+      "artifact": null,
+      "results": [
+        {
+          "id": "PKG-0",
+          "title": "真包存在（必做项）",
+          "status": "FAIL",
+          "detail": "未找到真包 exe（C:\\Users\\DL\\AppData\\Local\\Temp\\wm-missing-ae032160-2402-43e9-b79f-4855c9a4ab3c\\win-unpacked\\DeepSeek Harness Desktop.exe）——先构建，再用 WM_PKG 指向解包目录"
+        }
+      ]
+    }
+  },
+  "packageExit": 0
+}

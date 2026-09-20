@@ -1,0 +1,65 @@
+{
+  "artifact": {
+    "sourceCommit": "0e111510d107f6851aaf080d4a7a8fb65b9e7dc2",
+    "sourceDirty": true,
+    "asarSha256": "a257f7330e54eabaeed51470ff54dfa38bc6be31d9cc9271da9444f482d76370",
+    "exe": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-release-0.1.39\\win-unpacked\\DeepSeek Harness Desktop.exe",
+    "pkgDir": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-release-0.1.39"
+  },
+  "results": [
+    {
+      "id": "PKG-cold-1",
+      "title": "真包冷启动前 profile 不存在",
+      "status": "PASS",
+      "detail": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-packaged-KbIz7c\\home\\profiles\\node_modules\\@dsh-local\\writing-mode"
+    },
+    {
+      "id": "PKG-cold-2",
+      "title": "真包空环境启动到就绪",
+      "status": "PASS",
+      "detail": "SMOKE_OK"
+    },
+    {
+      "id": "PKG-cold-3",
+      "title": "真包自动同步的 profile 与 manifest 逐文件一致",
+      "status": "PASS",
+      "detail": "15 个文件哈希一致"
+    },
+    {
+      "id": "PKG-cold-4",
+      "title": "同步集合不含测试/源码",
+      "status": "PASS",
+      "detail": "15 个发布文件"
+    },
+    {
+      "id": "PKG-cold-5",
+      "title": "真包正常启动首启种子（内置插件 + stamp）",
+      "status": "PASS",
+      "detail": "stamp 已写，palis 主题已就位"
+    },
+    {
+      "id": "PKG-cleanup-scope",
+      "title": "清理只按本轮 PID（不扫同名进程）",
+      "status": "PASS",
+      "detail": "本轮 PID=47760；实现与隔离测试见 lib/pid-cleanup.js / lib/pid-cleanup.test.js"
+    },
+    {
+      "id": "PKG-cleanup-done",
+      "title": "本轮进程树已退出",
+      "status": "PASS",
+      "detail": "PID=47760"
+    },
+    {
+      "id": "PKG-theme-1",
+      "title": "真包主题开启（端点 / 内核页属性 / 注入样式表与调色 / 关闭后移除）",
+      "status": "PASS",
+      "detail": "UI_SMOKE_OK"
+    },
+    {
+      "id": "PKG-theme-2",
+      "title": "真包主题恢复（不重写设置，二次启动仍是同一皮肤）",
+      "status": "PASS",
+      "detail": "UI_SMOKE_OK"
+    }
+  ]
+}

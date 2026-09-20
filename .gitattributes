@@ -1,0 +1,3 @@
+# The generated writing bundle must stay byte-identical to esbuild output and
+# the packaged plugin, including on Windows with core.autocrlf=true.
+/plugin/writing-mode/client.js text eol=lf

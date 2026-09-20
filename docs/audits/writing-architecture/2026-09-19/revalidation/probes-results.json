@@ -1,0 +1,138 @@
+{
+  "commit": "0e111510d107f6851aaf080d4a7a8fb65b9e7dc2",
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-v2-review-ZqqChK",
+  "results": [
+    {
+      "id": "B02-historical-memory-prefix-is-not-current-acceptance",
+      "status": "PASS",
+      "evidence": {
+        "result": {
+          "result": "rejected",
+          "code": "busy",
+          "error": "NOT ACCEPTED",
+          "projectKey": "c:/fixture/project",
+          "operationId": "op-mu8e3dxt-602bjncm",
+          "sessionId": "s"
+        },
+        "calls": 1,
+        "nodeCount": 1,
+        "messagesDiffer": true
+      }
+    },
+    {
+      "id": "B03-continue-link-keeps-existing-session",
+      "status": "PASS",
+      "evidence": {
+        "firstMissingIdentity": false,
+        "before": "s1",
+        "after": "s1",
+        "creates": 1,
+        "liveSessions": [
+          "s1"
+        ]
+      }
+    },
+    {
+      "id": "B05-sync-junction-does-not-write-outside-profile",
+      "status": "PASS",
+      "evidence": {
+        "result": {
+          "ok": false,
+          "source": "manifest",
+          "version": null,
+          "copied": [
+            "package.json",
+            "runtime-manifest.json"
+          ],
+          "updated": [],
+          "removed": [],
+          "keptEdited": [],
+          "removedFailed": [],
+          "foreign": [],
+          "unchanged": 0,
+          "errors": [
+            "拒绝：目标路径越出 profile 目录（可能是 junction/symlink）：lib/owned.js"
+          ],
+          "refused": [
+            {
+              "rel": "lib/owned.js",
+              "reason": "dest-outside-real-root"
+            }
+          ]
+        },
+        "outsideContent": "USER DATA"
+      }
+    },
+    {
+      "id": "B05-managed-record-traversal-does-not-delete-outside",
+      "status": "PASS",
+      "evidence": {
+        "result": {
+          "ok": true,
+          "source": "fallback",
+          "version": null,
+          "copied": [
+            "package.json"
+          ],
+          "updated": [],
+          "removed": [],
+          "keptEdited": [],
+          "removedFailed": [],
+          "foreign": [],
+          "unchanged": 0,
+          "errors": [],
+          "refused": [],
+          "recordDropped": 1
+        },
+        "victimExists": true
+      }
+    },
+    {
+      "id": "B08-reference-fingerprint-survives-checkpoint",
+      "status": "PASS",
+      "evidence": {
+        "before": {
+          "label": "未保存选区",
+          "text": "片段",
+          "path": "C:/fixture/story.md",
+          "revision": "disk-r1",
+          "selection": {
+            "start": 2,
+            "end": 4
+          },
+          "snapshotFingerprint": "unsaved:2:579163e9",
+          "note": null
+        },
+        "after": {
+          "label": "未保存选区",
+          "text": "片段",
+          "path": "C:/fixture/story.md",
+          "revision": "disk-r1",
+          "selection": {
+            "start": 2,
+            "end": 4
+          },
+          "snapshotFingerprint": "unsaved:2:579163e9",
+          "note": null
+        },
+        "afterStatus": "unsaved"
+      }
+    },
+    {
+      "id": "B08-distinct-legacy-references-are-not-equal",
+      "status": "PASS",
+      "evidence": {
+        "same": false
+      }
+    },
+    {
+      "id": "C02-unicode-budget-counts-codepoints",
+      "status": "PASS",
+      "evidence": {
+        "codePoints": 3500,
+        "utf16Units": 7000,
+        "omissions": []
+      }
+    }
+  ]
+}

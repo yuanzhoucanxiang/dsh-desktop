@@ -1,0 +1,36 @@
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS T03 outgoing writes are serialized {}
+PASS Newer input remains dirty after older save succeeds {}
+PASS W02 queued latest input uses confirmed server revision {"baseRevs":[0,1],"statuses":[200,200],"disk":"LATEST_KEYSTROKES"}
+PASS W03 send then next draft saves {"statuses":[200,200],"disk":"NEW_THOUGHT_AFTER_SEND"}
+PASS T02 late recovery preserves visible input {}
+PASS W02 recovery defers writes and flushes latest edits {"baseRevs":[5,6],"statuses":[200,200],"disk":"NEW_DURING_RECOVERY"}
+PASS R01 restored text survives reference removal {"visible":"NEW_DURING_RECOVERY","disk":{"schemaVersion":2,"project":"C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-JzYVhI\\library\\演示项目","windowId":"ab30b046-2be0-4c9e-8c2b-7d9c6f580af5","text":"NEW_DURING_RECOVERY","reference":null,"rev":8,"updatedAt":"2026-09-19T12:55:56.352Z","cleared":false}}
+PASS R01 changing text preserves recovered reference across reload {}
+PASS R01 native nonempty draft retained in cache during reference-only edit {}
+PASS R02 empty recovery edit persists across reload {"afterReload":""}
+PASS R03 conflict pauses pre-existing queue without overwrite {"statuses":[409],"remoteRev":14,"finalText":"NEWER_OTHER_WRITER"}
+PASS Explicit local resolution saves latest local input {"disk":"LOCAL_EDIT_WHILE_PAUSED"}
+PASS S01 bound remote selection updates native input {"visible":"BOUND_REMOTE","disk":"BOUND_REMOTE"}
+PASS S01 send after remote choice {"sent":[{"type":"text","text":"【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-JzYVhI\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"}]}
+PASS S02 recovery-flush conflict presents recovery actions {"hasConflictAction":true,"visible":"LOCAL_PENDING","disk":"REMOTE_AFTER_GET"}
+PASS S03 failed remote read preserves local and blocks remote adoption {}
+PASS S03 retry then unbound remote adoption succeeds {}
+PASS Editing after remote adoption saves with correct revision {}
+PASS V01 recovery 413 produces visible save error {"response":{"status":413,"data":{"ok":false,"error":"draft-too-large"}},"alerts":["草稿过长，未能保存。请缩短后重试。重试保存"],"length":500001,"disk":"AFTER_REMOTE_ADOPT"}
+PASS Shorter draft saves after 413 and clears error {}
+PASS Resolve local with a second 409 preserves both drafts and restores choice {}
+PASS V01 failed local resolution exposes current save failure {"alerts":["草稿未能保存：fixture-write-unavailable重试保存"],"hasChoice":false,"visible":"LOCAL_RESOLVE","disk":"REMOTE_RESOLVE_2"}
+PASS Retry local resolution without altering author text saves {}
+PASS X01 successful conflict retry clears obsolete errors {"alerts":[],"disk":"LOCAL_RESOLVE"}
+PASS Input remains editable and can save after resolution 503 {}
+PASS Native remote tombstone adoption and next draft save {}
+PASS V01 recovery network rejection is observable to author {"alerts":["网络中断，草稿尚未保存。可重试保存。重试保存"],"rejections":[],"visible":"NETWORK_UNSAVED","disk":"AFTER_REMOTE_TOMBSTONE"}
+PASS Recovery network retry saves unchanged text and clears error {}
+PASS X01 ordinary edit retry clears obsolete errors {"alerts":[],"disk":"NORMAL_NETWORK_UNSAVED","status":"saved"}
+PASS Business send failure survives successful draft save {}
+PASS Reference save retry clears only draft error {"alerts":["BUSINESS_SEND_FAILED"]}
+PASS Memory failure waits for author choice (v2 §4.2); draft/reference retained {}
+PASS Bypass-memory send clears only the submitted draft (v2 §4.2) {"alerts":[]}
+REVIEW9_UI_EVIDENCE C:\Users\DL\AppData\Local\Temp\dsh-writing-chat-JzYVhI

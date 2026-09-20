@@ -1,0 +1,6 @@
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS 独立写作 UI / 原生项目会话 / 完整会话共享输入
+PASS 选区引用可移除；输入独立；切换工具与专注保留草稿和引用
+PASS 独立输入区在侧栏内；未产生模型回合；无控制台错误
+WRITING_NATIVE_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-native-GSwQGX
