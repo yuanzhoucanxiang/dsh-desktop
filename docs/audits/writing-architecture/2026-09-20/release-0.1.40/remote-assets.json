@@ -1,0 +1,38 @@
+{
+  "url": "https://github.com/yuanzhoucanxiang/dsh-desktop/releases/tag/v0.1.40",
+  "tag": "v0.1.40",
+  "publishedAt": "2026-09-20T02:05:43Z",
+  "windowsHashesVerified": true,
+  "assets": [
+    {
+      "name": "dsh-desktop-0.1.40-mac.dmg",
+      "size": 238932112,
+      "digest": "sha256:0800d1979d21b1f6503510dc0c3a03934d79831188da007afda7e49760f353ec",
+      "state": "uploaded"
+    },
+    {
+      "name": "dsh-desktop-0.1.40-setup.exe",
+      "size": 229978627,
+      "digest": "sha256:6e24484a028ba060ad06f782a5dc7ecb53dd5ce54eac908d8207b177a7041cfa",
+      "state": "uploaded"
+    },
+    {
+      "name": "dsh-desktop-0.1.40-setup.exe.blockmap",
+      "size": 241799,
+      "digest": "sha256:91df654e0165e8a09f8370ad30b4b800d5c1686db3310dfbe4eef4c83f294e20",
+      "state": "uploaded"
+    },
+    {
+      "name": "latest-mac.yml",
+      "size": 350,
+      "digest": "sha256:613d2213637d3d5d5421ababe47fb78a63197ed4893a6ce278ae5e8883ebc44e",
+      "state": "uploaded"
+    },
+    {
+      "name": "latest.yml",
+      "size": 354,
+      "digest": "sha256:cfc6fd8cdc8f9fb6cb44cdcc2628f3239f5070df39d841cb60e158a208d6944f",
+      "state": "uploaded"
+    }
+  ]
+}

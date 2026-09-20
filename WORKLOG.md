@@ -13,6 +13,8 @@
 
 ---
 
+发布完成：**v0.1.40**（2026-09-20），Windows/macOS 五项资产齐全；19 步门禁、真包 9/9 及远端哈希核对通过。详见 `docs/audits/writing-architecture/2026-09-20/release-0.1.40/`。— Codex
+
 ## 现有日志
 
 | 日期 | 文件 | 摘要 | 署名 |

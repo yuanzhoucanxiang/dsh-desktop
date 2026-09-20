@@ -1,0 +1,372 @@
+
+> dsh-desktop@0.1.40 verify:writing-all
+> npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run verify:ui-smoke && npm run verify:writing-packaged
+
+
+> dsh-desktop@0.1.40 verify:writing-architecture
+> node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs
+
+PASS R1 客户端源码无 Node 内置依赖
+PASS R4 27 个源文件的相对 import 全部可解析
+PASS R2 shared 模块（3 个）不依赖 React/DOM/适配器/服务
+PASS R3 adapters 模块（5 个）不含 React/JSX/组件/样式依赖
+PASS R5 清单 13 个运行时文件均存在
+PASS R5 lib 下 10 个模块已全部登记（1 个测试专用排除）
+PASS R6 入口不含样式数组（已移入 styles/）
+PASS R6 入口不含草稿保存队列（已移入 state/）
+PASS R8 目标结构 11 个目录均在位且有模块
+PASS R8 src/shared 在位
+PASS R8 src/client 根下只有入口与文案表
+
+WRITING_ARCHITECTURE_OK
+PASS R7 24 个客户端模块无跨模块漏 import
+WRITING_IMPORTS_OK
+PASS 阴性对照：未注入漏 import 时 PASS
+PASS 注入「主应用漏 import 组件（历史漏报现场）」时 R7 报错并点名 WritingCompanion
+PASS 注入「记忆 feature 漏 import 服务模块」时 R7 报错并点名 api
+PASS 注入「companion feature 从多名 import 里漏一个（最隐蔽的形态）」时 R7 报错并点名 getDraftStatus
+PASS 复原后 PASS
+
+R7 自检：5 通过 / 0 失败
+
+> dsh-desktop@0.1.40 verify:writing-build
+> node scripts/verify-writing-build.mjs
+
+PASS client.js matches src (no overwrite)
+PASS node --check client.js
+
+> dsh-desktop@0.1.40 verify:writing
+> node scripts/verify-writing-mode.mjs
+
+PASS 真实 HTTP：中文、空格、& 路径正确读取；配置不回传 Key
+PASS 保存期间继续输入：两次写入排队，最终字节和已保存状态一致
+PASS 快速 A→B→C：B 的迟到响应不能覆盖 C
+PASS 读取失败保留原文和目标；编辑后关闭先保存
+PASS 外部修改冲突阻止覆盖和切换；当前文字可另存新版
+PASS v1 另存跳过已有 v2，历史稿禁止覆盖；不同项目编号独立
+PASS 缺版本条件及空 revision 不能覆盖已有文件
+PASS 新建独立文稿保存后可从树中找回
+PASS 关闭前草稿恢复：保留基线，外部冲突不会自动覆盖
+PASS 路径越界、伪造 Origin/Host、text/plain 写请求均拒绝
+PASS junction 外部目录不进入树、台账或 AI 摘要
+PASS 原子替换失败保留原字节并清理临时文件
+PASS 门禁只检查适用稿件；Fountain 引号不漏过；台账最高版本不由 mtime 逆转
+PASS Harness 默认使用全局模型；多个文本块完整保留
+PASS 原生伙伴：项目隔离、重进复用、预设持久化且不覆盖自定义
+PASS 伙伴或外部编辑：干净稿刷新，未保存稿保留并提示冲突
+RESULT 16/16 report=C:\Users\DL\AppData\Local\Temp\dsh-writing-regression-pD0mmo\results.json
+
+> dsh-desktop@0.1.40 verify:writing-adapter
+> node plugin/writing-mode/test/coordination.mjs && node plugin/writing-mode/test/adapter-coordination.mjs
+
+--- 阶段机与 token 语义
+PASS H01 第二个窗口同一作品 claim 拿到 in-progress，不重复创建
+PASS H02 同一 operationToken 重复 claim 幂等（连点发送/设置）
+PASS 创建成功后 confirm → bound，之后的 claim 直接用已有绑定
+PASS 过期 token 在 bound 之后也不能改写绑定
+PASS H04 workspace 已建但 session 结果丢失 → 只写部分绑定，不假装 bound
+PASS H05 绑定确认失败 → uncertain，保留已知标识；新窗口看到 uncertain 而不是重新创建
+PASS B03 forget 必须带条件：无守卫/过期 token/版本不符一律拒绝，不做删除
+PASS H06 会话被删：明确 forget 之后才允许重新 claim
+--- 释放的安全边界
+PASS 预留后尚未创建任何对象 → 可以释放（记录删除）
+PASS creating 阶段拒绝释放（外部创建可能已发生，删了就找不回来）
+PASS 已建过对象的 reserved 也拒绝释放
+PASS 释放需 token 一致
+--- 分桶与坏记录
+PASS 项目身份分桶：不同作品互不干扰，路径写法归一
+PASS 坏 JSON 保留原件，读取报 corrupt-record 且不被覆盖
+PASS 未知 schema 记录不当作空记录
+--- 跨进程互斥
+PASS 另一进程持锁时本进程拿不到锁（不抢活锁），超时报 lock-timeout
+PASS 持锁进程已消失 → lock-stale（报诊断而不是抢占）
+PASS 子进程可正常完成一次 claim（真实跨进程写入）
+
+coordination: 18 项通过
+--- H01 两个窗口同时首次关联
+PASS H01 只创建一个会话：后到窗口拿 in-progress 并采用先到窗口的绑定
+PASS H02 同窗口连点：进程内共用创建 Promise，只创建一个会话
+--- H03 A 创建中切 B / 迟到结果归位
+PASS H03 A 创建中切到 B：B 不被 A 拖住，A 的结果只回到 A
+PASS H03 绑定后会话消失于列表：send 拒绝，不静默新建
+--- H04/H05 创建结果与确认失败
+PASS H04 workspace 已建但 session 创建结果丢失 → uncertain，保留 workspaceId
+PASS H05 绑定确认失败（会话已建）→ uncertain 且保住 sessionId，不重建
+--- H06 会话删除
+PASS H06 记录仍有绑定但会话已消失 → missing + 恢复入口；作者明确恢复才新建
+--- H07 受理与网络
+PASS N04 明确拒绝 + 期间别处出现新消息 → rejected（文本证据不得翻案）
+PASS N04 抛异常但无可证明标识 → uncertain 且保留正文（宁可不确定也不误判受理）
+PASS N04 内核给出可证明标识（requestId 出现在新队列项）→ accepted
+PASS H07 交出去但无任何证据 → uncertain 且保留正文，绝不自动重发
+PASS H07 原生明确拒绝 → rejected（可以改完再发）
+--- 能力缺失与订阅
+PASS 缺少 workspaces.create：connect 明确报能力缺失并释放预留（不留悬空记录）
+PASS dispose 只释放订阅：不取消模型任务、不删会话、不动记录
+PASS 快照引用稳定：无变化时同引用，有变化时换引用
+
+adapter 协调验收: 15 项通过
+
+> dsh-desktop@0.1.40 verify:writing-memory-ui
+> node plugin/writing-mode/test/p3-memory-context.mjs --group=M
+
+--- M组：备忘最小完整操作（§4.1）
+PASS M01 作者手工新增直接 confirmed，来源 author，可注入
+PASS M02 助手消息"记为候选"：proposed + 真实来源，不编造 ID、不自动升级为事实
+PASS M03 编辑候选后仍是 proposed（改文字不等于确认）
+PASS M04 确认候选：作者操作、审计 actor=author、原始来源保留
+PASS M05 编辑已确认条目：新 revision + before/after 轨迹
+PASS M06 撤回/已解决保留条目与历史，且不再自动注入；恢复产生新 revision 不回退
+PASS M07 冲突（etag 过期）被拒绝且不写坏数据
+--- C组：当轮上下文（§4.2）
+--- D组：引用与恢复候选（§4.3）
+
+P3 记忆/上下文/引用: 7 项通过
+
+> dsh-desktop@0.1.40 verify:writing-context
+> node plugin/writing-mode/test/p3-memory-context.mjs --group=C && node plugin/writing-mode/test/p3-memory-context.mjs --group=D
+
+--- M组：备忘最小完整操作（§4.1）
+--- C组：当轮上下文（§4.2）
+PASS C01 默认开启参考，只带 confirmed 的设定/偏好；候选/撤回/已解决/待定都不自动进
+PASS C02 作者固定优先（按作者顺序），其余确定性补齐；待定问题只在作者勾选时带入并单独标识
+PASS C03 预算按 Unicode 字符数生效：超出的省略并计数；作者正文与引用不受预算影响
+PASS C04 preparedTurn 不可变（含嵌套），并带上核对用字段
+PASS C05 关闭本次参考：正文与引用照常，明文不含备忘
+PASS C06 提示条数量与实际可自动参考条数一致
+--- D组：引用与恢复候选（§4.3）
+
+P3 记忆/上下文/引用: 6 项通过
+--- M组：备忘最小完整操作（§4.1）
+--- C组：当轮上下文（§4.2）
+--- D组：引用与恢复候选（§4.3）
+PASS D01 引用身份用结构相等（path/revision/选区/指纹），正文不同不改变身份
+PASS D02 源稿状态：current / stale / unsaved / unknown（源稿没打开时不谎报）
+PASS D03 旧 checkpoint 的 {label,text} 引用按原样兼容：缺的来源字段保持 null，不猜测
+PASS D04 恢复候选：其他窗口的非空草稿列为候选，不含本窗口；采用是显式写回而非合并
+
+P3 记忆/上下文/引用: 4 项通过
+
+> dsh-desktop@0.1.40 verify:writing-package
+> node scripts/verify-writing-package.mjs && node scripts/verify-writing-coldstart.mjs
+
+写作模式发布一致性（发布集合来源：manifest，共 15 个文件）
+PASS  manifest ↔ 打包 filter 逐文件一致
+      manifest 发布集合 15 个文件，filter 展开后完全一致
+PASS  主进程依赖闭包被 build.files 覆盖
+      9 个本地模块全部会被打进包（含 lib 内部依赖）
+待跑  解包产物实检（app.asar + 资源）
+      未提供 --package（构建后带路径重跑）
+待跑  manifest ↔ profile 已种入副本
+      缺失：无；内容不一致：client.js(677c0dcb6d47→c7fd8478a09f)（应用下次启动会自动换成当版）；另有 8 个非发布集合文件（历史遗留/用户添加，保留）：lib/editor-session.js, src/shared/context-builder.js, src/shared/editor-session.js, test/architecture-cde.mjs, test/p1-regression.mjs, test/review-f01-f06.mjs, test/review5-protocol.mjs, test/review7-status.mjs
+
+合计 4 项：2 通过 / 0 失败 / 2 待跑
+写作模式环境验收（发布集合来源：manifest，15 个文件）
+PASS  启动前 profile 不存在（证明同步由应用完成，不是手工预置）
+      C:\Users\DL\AppData\Local\Temp\wm-cold-k08wTJ\desktop-home\profiles\node_modules\@dsh-local\writing-mode
+PASS  空环境冷启动到就绪（隔离 DSH_HOME/DSH_DESKTOP_HOME/userData/LOCALAPPDATA）
+      SMOKE_OK
+PASS  自动同步出的 profile 与 manifest 逐文件一致
+      全部 15 个文件哈希一致
+PASS  不多发文件（测试/源码不进用户机器）
+      发布集合恰好 15 个文件
+PASS  受管记录落盘（下次可安全清理）
+      .dsh-managed.json
+PASS  包内 JS 逐个语法可解析（无悬空/坏文件）
+      10 个文件全部通过 node --check
+PASS  旧环境启动到就绪（不清空、不重建）
+      SMOKE_OK
+PASS  受管文件换成当版（漂移被修好）
+      15 个文件一致
+PASS  无法证明归属的旧文件保留（只上报不删）
+      保留 2 个：src/shared/old.js, test/old-suite.mjs
+PASS  设置与备忘字节不变（无破坏性迁移）
+      writing-mode.json 一致；writing-memory.json 一致
+PASS  旧数据可发现/可读/可继续保存（生产模块）
+      库根可达=true；旧备忘条目保留=true；旧草稿与引用可读=true；继续保存成功=true（revision 4→5）
+PASS  坏 JSON 备忘：生产读取报诊断且原件保留
+      字节一致；诊断=corrupt-memory
+
+合计 12 项：12 通过 / 0 失败
+
+> dsh-desktop@0.1.40 plugin-sync-test
+> node lib/plugin-sync.test.js
+
+--- 发布集合
+PASS R1 有清单时只发布 entry/files/docs + 清单自身
+PASS R2 无清单时退回按扩展名递归（老行为）
+--- 同步：复制 / 更新 / 幂等
+PASS R3 首次同步复制发布集合，并落在受管清单里
+PASS R4 重复同步零改动（幂等），源改动后只更新那一个文件
+--- 清理的安全边界
+PASS R5 上一版受管、这一版不发布 → 删除（test/ 从 profile 移除的迁移路径）
+PASS R6 非受管文件一律保留并上报（绝不删用户文件）
+PASS R7 受管但已被用户改过的旧文件 → 保留并计入 keptEdited
+PASS R8 首次同步（无受管清单）不删除任何既有文件
+--- 比对（验收脚本判据）
+PASS R9 一致时 ok，改动/缺失/多余各自上报
+PASS R10 源缺 package.json 时比对判失败，不抛异常
+
+plugin-sync: 10 项通过
+
+> dsh-desktop@0.1.40 test:writing-f
+> node plugin/writing-mode/test/review-f01-f06.mjs
+
+PASS resolveProjectDir A is project A C:\Users\DL\AppData\Local\Temp\wm-f01-qwPZ69\lib\A
+PASS resolveProjectDir B is project B C:\Users\DL\AppData\Local\Temp\wm-f01-qwPZ69\lib\B
+PASS A has sentinel 
+PASS B does not have A sentinel 
+PASS B memory file not sharing A path 
+PASS corrupt structure rejected bad-memory
+PASS corrupt file not wiped 
+PASS junction write rejected state-dir-escape leaked=false
+PASS junction read rejected state-dir-escape
+PASS verify fails on stale without overwrite status=1 stillStale=true
+
+10 passed, 0 failed
+
+> dsh-desktop@0.1.40 test:writing-cde
+> node plugin/writing-mode/test/architecture-cde.mjs
+
+PASS memory add proposed 
+PASS proposed not injectable 
+PASS confirm with etag 
+PASS confirmed injectable 
+PASS stale etag conflicts etag-conflict
+PASS retract 
+PASS retracted not injectable 
+PASS bad etag rejected etag-conflict
+PASS revision required when file non-empty revision-required
+PASS null/empty tokens rejected revision-required
+PASS draft roundtrip 
+PASS stale draft rev rejected draft-rev-conflict
+PASS disk keeps new text 
+PASS clear tombstone keeps rev {"rev":2,"cleared":true}
+PASS pre-clear baseRev rejected after clear draft-rev-conflict
+PASS next draft after clear saves 
+PASS draft rev required draft-rev-required
+PASS prepared frozen 
+PASS includes confirmed fact 
+PASS includes preference 
+PASS excludes proposed 
+PASS includes reference 
+PASS includes message 
+PASS hint counts 2 
+PASS budget omits items 29
+
+25 passed, 0 failed
+
+> dsh-desktop@0.1.40 test:writing-p1
+> node plugin/writing-mode/test/p1-regression.mjs
+
+PASS createVersion 不覆盖已有 v2 C:\Users\DL\AppData\Local\Temp\wm-p1-T5T6Sg\demo\draft\novel\chap-v3.md
+PASS v2 原文仍在 
+PASS 历史稿 writeDoc 拒绝 undefined
+PASS 竞态后内容为 B edited B
+PASS 竞态后 dirty 已清且磁盘为 B dirty=false disk=edited B
+PASS research 结果不含库外密文（domain 层） 【旁注·写作经验（非事实）】
+· 前三秒/前三百字：读者很少「再给一次机会」。短剧几乎在三秒内定生死；网文前几章要让人物有具体麻烦，而不是先铺设定。开场可以先给
+PASS route 与 path 分离 /api/writing-mode?route=get&path=%2Fx%2Fy.md
+
+7 passed, 0 failed
+
+> dsh-desktop@0.1.40 verify:writing-ui
+> electron scripts/verify-writing-ui.cjs
+
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS UI 文件切换先保存原文，不串稿
+PASS UI 服务端升版本与历史只读
+PASS UI 退出/重进无 Hooks 异常且文字已保存
+PASS UI 冲突提示、保全外部稿、另存恢复
+WRITING_UI_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-ui-k5QGMn
+
+> dsh-desktop@0.1.40 verify:writing-chat
+> electron scripts/verify-writing-chat.cjs
+
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS CHAT 失败保留输入与引用；仅发送选区；原生 queue 协议
+PASS CHAT 发送成功不擦除等待期间新输入
+PASS CHAT 历史/流式更新/工具折叠/授权与问题入口/排队/停止
+PASS CHAT 中文输入法不误发送；普通 Enter 发送后清空已提交草稿
+PASS CHAT 作者新增→带入→撤回→下轮变更；助手建议转候选→确认后带入；关掉参考即不带
+WRITING_CHAT_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-chat-p2drX1
+
+> dsh-desktop@0.1.40 verify:writing-reading
+> electron scripts/verify-writing-reading.cjs
+
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+WRITING_READING_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-chat-9SUpOi [{"id":"markdown-and-streaming","status":"PASS","dom":{"strong":"先听声音","quote":"\n她还没决定拆开那封信。\n","list":2,"table":1,"code":"long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_long_unbroken_line_\n","links":[{"href":"https://example.org/story","target":"_blank","rel":"noopener noreferrer"},{"href":"https://example.invalid/picture.png","target":"_blank","rel":"noopener noreferrer"}],"images":0,"scripts":0,"attack":false,"author":"作者原文：**不要改动**"}},{"id":"candidate-uses-original-markdown","status":"PASS"},{"id":"narrow-column-and-long-history","status":"PASS","geometry":[{"viewport":1500,"side":{"left":989.2685546875,"right":1500.0000305175781,"width":510.7314758300781,"bottom":900.0000457763672},"compose":{"left":1005.9981689453125,"right":1484.0029907226562,"width":478.00482177734375,"bottom":884.0029602050781},"message":{"left":1007.9956665039062,"right":1472.1154174804688,"width":464.1197509765625,"bottom":602.8102111816406},"scrollWidth":510,"clientWidth":510},{"viewport":1280,"side":{"left":844.213623046875,"right":1280.2198181152344,"width":436.0061950683594,"bottom":900.0000457763672},"compose":{"left":860.9432373046875,"right":1264.2227783203125,"width":403.279541015625,"bottom":884.0029602050781},"message":{"left":862.9407348632812,"right":1252.335205078125,"width":389.39447021484375,"bottom":774.6050720214844},"scrollWidth":435,"clientWidth":435},{"viewport":980,"side":{"left":619.4883422851562,"right":980.2198181152344,"width":360.7314758300781,"bottom":900.0000457763672},"compose":{"left":636.2179565429688,"right":964.2227783203125,"width":328.00482177734375,"bottom":884.0029602050781},"message":{"left":638.2154541015625,"right":952.335205078125,"width":314.1197509765625,"bottom":774.6050720214844},"scrollWidth":360,"clientWidth":360}]}]
+
+> dsh-desktop@0.1.40 verify:writing-native
+> electron scripts/verify-writing-native.cjs
+
+
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+PASS 独立写作 UI / 原生项目会话 / 完整会话共享输入
+PASS 选区引用可移除；输入独立；切换工具与专注保留草稿和引用
+PASS 独立输入区在侧栏内；未产生模型回合；无控制台错误
+WRITING_NATIVE_OK C:\Users\DL\AppData\Local\Temp\dsh-writing-native-8lf1B0
+
+> dsh-desktop@0.1.40 verify:writing-review-probes
+> node docs/audits/writing-architecture/2026-09-14/v2-review/probes.mjs && node scripts/run-review-ui-probes.mjs
+
+{"id":"B02-historical-memory-prefix-is-not-current-acceptance","status":"PASS","evidence":{"result":{"result":"rejected","code":"busy","error":"NOT ACCEPTED","projectKey":"c:/fixture/project","operationId":"op-mu95qpk6-3oiu4v4e","sessionId":"s"},"calls":1,"nodeCount":1,"messagesDiffer":true}}
+{"id":"B03-continue-link-keeps-existing-session","status":"PASS","evidence":{"firstMissingIdentity":false,"before":"s1","after":"s1","creates":1,"liveSessions":["s1"]}}
+{"id":"B05-sync-junction-does-not-write-outside-profile","status":"PASS","evidence":{"result":{"ok":false,"source":"manifest","version":null,"copied":["package.json","runtime-manifest.json"],"updated":[],"removed":[],"keptEdited":[],"removedFailed":[],"foreign":[],"unchanged":0,"errors":["拒绝：目标路径越出 profile 目录（可能是 junction/symlink）：lib/owned.js"],"refused":[{"rel":"lib/owned.js","reason":"dest-outside-real-root"}]},"outsideContent":"USER DATA"}}
+{"id":"B05-managed-record-traversal-does-not-delete-outside","status":"PASS","evidence":{"result":{"ok":true,"source":"fallback","version":null,"copied":["package.json"],"updated":[],"removed":[],"keptEdited":[],"removedFailed":[],"foreign":[],"unchanged":0,"errors":[],"refused":[],"recordDropped":1},"victimExists":true}}
+{"id":"B08-reference-fingerprint-survives-checkpoint","status":"PASS","evidence":{"before":{"label":"未保存选区","text":"片段","path":"C:/fixture/story.md","revision":"disk-r1","selection":{"start":2,"end":4},"snapshotFingerprint":"unsaved:2:579163e9","note":null},"after":{"label":"未保存选区","text":"片段","path":"C:/fixture/story.md","revision":"disk-r1","selection":{"start":2,"end":4},"snapshotFingerprint":"unsaved:2:579163e9","note":null},"afterStatus":"unsaved"}}
+{"id":"B08-distinct-legacy-references-are-not-equal","status":"PASS","evidence":{"same":false}}
+{"id":"C02-unicode-budget-counts-codepoints","status":"PASS","evidence":{"codePoints":3500,"utf16Units":7000,"omissions":[]}}
+{"id":"B06-adopt-keeps-recoverable-original","status":"PASS","evidence":{"disk":[{"windowId":"d700ce29-a501-4998-9e86-d6f6fbd5dee3","text":"OTHER_WINDOW_CANDIDATE","reference":null},{"windowId":"d700ce29-a501-4998-9e86-d6f6fbd5dee3-before-adopt-1789868921305","text":"AUTHOR_ORIGINAL_UNIQUE_DRAFT","reference":{"label":"选区 · 第1章-v1.md · 3 字","text":"第一章","path":"C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-3LT9k4\\library\\演示项目\\draft\\novel\\第1章-v1.md","revision":"5c6c93e2112df38b82bd55c68d6d53326e693726490120655fa7045b58213de4","selection":{"start":0,"end":3},"snapshotFingerprint":null,"note":"请以我随后补充的想法为准。"}},{"windowId":"other-window","text":"OTHER_WINDOW_CANDIDATE","reference":null}],"visibleRef":""}}
+{"id":"B06-adopt-null-reference-clears-old-source","status":"PASS","evidence":{"reference":null,"visibleRef":""}}
+{"id":"B04-memory-failure-waits-for-explicit-choice","status":"PASS","evidence":{"calls":0,"input":"PRESERVE_UNTIL_AUTHOR_CHOICE","alerts":["项目备忘读取失败（fixture-memory-503）：本轮还没有发出，正文与引用都保留着。请选择：重试读取不参考备忘发送"]}}
+{"id":"B02-rejected-turn-retains-visible-and-disk-draft","status":"PASS","evidence":{"after":"ENTIRELY_NEW_REJECTED_QUESTION","disk":"ENTIRELY_NEW_REJECTED_QUESTION","calls":1}}
+verify-writing-review-probes: PASS（4 项 UI 负向探针全过）
+
+> dsh-desktop@0.1.40 verify:writing-baseline-ui
+> node scripts/run-baseline-ui.mjs
+
+PASS Reference save retry clears only draft error {"alerts":["BUSINESS_SEND_FAILED"]}
+PASS Memory failure waits for author choice (v2 §4.2); draft/reference retained {}
+PASS Bypass-memory send clears only the submitted draft (v2 §4.2) {"alerts":[]}
+REVIEW9_UI_EVIDENCE C:\Users\DL\AppData\Local\Temp\dsh-writing-chat-0YS8sx
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+
+verify-writing-baseline-ui: PASS（原 32 条正向时序）
+
+> dsh-desktop@0.1.40 verify:ui-smoke
+> node scripts/verify-ui-smoke.mjs
+
+启动=开发态 electron .  首启就绪=SMOKE_OK  种子=已种入：dsh-better-sidebar, dsh-pet, @dsh-local/palis-theme-panel
+隔离路径：C:\Users\DL\AppData\Local\Temp\dsh-ui-smoke-Mo55vW
+verify-ui-smoke: PASS（主题开启 × 恢复两次均 UI_SMOKE_OK）
+
+> dsh-desktop@0.1.40 verify:writing-packaged
+> node scripts/verify-writing-packaged.mjs
+
+真包：C:\Users\DL\AppData\Local\Temp\wm-release-0.1.40-20260920\win-unpacked\DeepSeek Harness Desktop.exe
+被测源码：e0096a8e6d1e4cf6e796c12be6243af7af17a6f9 (dirty) · asar dd1ddaa4f1a61e07…
+PASS  真包冷启动前 profile 不存在
+      C:\Users\DL\AppData\Local\Temp\wm-packaged-CREf3Q\home\profiles\node_modules\@dsh-local\writing-mode
+PASS  真包空环境启动到就绪
+      SMOKE_OK
+PASS  真包自动同步的 profile 与 manifest 逐文件一致
+      15 个文件哈希一致
+PASS  同步集合不含测试/源码
+      15 个发布文件
+PASS  真包正常启动首启种子（内置插件 + stamp）
+      stamp 已写，palis 主题已就位
+PASS  清理只按本轮 PID（不扫同名进程）
+      本轮 PID=55732；实现与隔离测试见 lib/pid-cleanup.js / lib/pid-cleanup.test.js
+PASS  本轮进程树已退出
+      PID=55732
+PASS  真包主题开启（端点 / 内核页属性 / 注入样式表与调色 / 关闭后移除）
+      UI_SMOKE_OK
+PASS  真包主题恢复（不重写设置，二次启动仍是同一皮肤）
+      UI_SMOKE_OK
+
+隔离环境：C:\Users\DL\AppData\Local\Temp\wm-packaged-CREf3Q
+合计 9 项：9 通过 / 0 失败 / 0 待跑

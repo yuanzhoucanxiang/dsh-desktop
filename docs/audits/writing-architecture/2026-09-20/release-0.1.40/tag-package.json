@@ -1,0 +1,98 @@
+{
+  "tag": "v0.1.40",
+  "commit": "b6db6a4a1907ed8d6528564b1f9be4f9e37125c9",
+  "results": [
+    {
+      "file": "CONTRACT.md",
+      "sha256": "85421d383deec881ce2e15b3963e81fd0e2fbc13f9ebb860845a706cda30b7bc",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "client.js",
+      "sha256": "677c0dcb6d470c7434ea1bc57641adbab3eb403e3aca42f524195b9597707352",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "index.js",
+      "sha256": "cabc5dc65cd9e80d7cfd2e1a16dc49d311b254586db4e1d0c3867f9da614a94f",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/companion.cordis.yml",
+      "sha256": "f640d769be564d805429777f9e707b1898a27f0e38d08542941557e918cca8d7",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/coordination.js",
+      "sha256": "adaf43ddc6bd2847645b53679e728b2b05e2bcab94b3a4bdedf966b2cc0d1df2",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/domain.js",
+      "sha256": "8ec424bece7eb7153ef9424e463ee235cf88bc8f391363d3e5aa26f6c9958478",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/draft-checkpoints.js",
+      "sha256": "e31c7d7fe9b3a412a0d096113073246cfd6245e2af434516a5fe62523f604847",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/file-lock.js",
+      "sha256": "f1922a43d9975331de72cda98d9c8c67900447c533af65230fa0e5df071bfed5",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/knowledge.js",
+      "sha256": "2d0868c869722c1cf6198a9479512d5817baf6ecd4c5e7c348cd8cb2bd9fba98",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/project-memory.js",
+      "sha256": "6c6510f7c5c708cef848df2e7de88a9d206f440a8dbeafd027a71ca9b4e9c439",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/store.js",
+      "sha256": "3ad64da895d8c17eafd39a73b52114f1863805631871156041b8d1981bd2c59b",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/templates.js",
+      "sha256": "8e4892f650637b6ef2af2c09b96f8048c6dbc3a80bea065037550ecba1759f92",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "lib/websearch.js",
+      "sha256": "a6126cab765209189a98a45d96b3e9ab9ef0bb1b66bbaf3b1866697566586444",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "package.json",
+      "sha256": "617060eaf6aeca7b65a4727448960f6a64bcba244d84c514644e694f4a8c2507",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    },
+    {
+      "file": "runtime-manifest.json",
+      "sha256": "f3bd79bb80fa296cb9c64a54f3958c69fc1ccd6685b297e5c213eb0e2cbc3fbe",
+      "status": "PASS",
+      "comparison": "UTF-8 text; CRLF normalized to match Git blob"
+    }
+  ],
+  "installerSha256": "6e24484a028ba060ad06f782a5dc7ecb53dd5ce54eac908d8207b177a7041cfa",
+  "asarSha256": "dd1ddaa4f1a61e0799588d356157c7d9bf441002e53f39c52da5788214d812ba"
+}
