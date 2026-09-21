@@ -1,0 +1,7 @@
+{
+  "ok": true,
+  "status": 0,
+  "error": null,
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-installer-smoke-TJPqHs",
+  "note": "Extracted actual NSIS payload cold-start; no registry/install wizard execution"
+}
