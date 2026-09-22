@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('dshShell', {
   gitPush: () => ipcRenderer.invoke('shell:git-push'),
   notifyCommand: (cmd) => ipcRenderer.invoke('shell:notify-command', cmd),
   notifyCommandTest: () => ipcRenderer.invoke('shell:notify-command-test'),
+  // 全局热键：状态经 status() 的 hotkey / hotkeyPresets 字段下发，改键走这个专用通道
+  // （主进程会再校一次发送方是否为设置窗口，并过 accelerator 白名单校验）。
+  setGlobalHotkey: (acc) => ipcRenderer.invoke('shell:set-global-hotkey', acc),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),

@@ -105,6 +105,27 @@
     <span class="hint" id="notify-hint"></span>
   </section>
 
+  <section class="card neutral-card">
+    <div class="card-title">全局唤起热键</div>
+    <p class="hint" style="margin:0 0 10px">
+      按一次唤起并聚焦，再按一次收起。这是<strong>系统级</strong>热键：如果其他程序已占用同一组合键，注册就会失败，
+      下面会直接告知而不是静默失效。为防误伤，<strong>裸键</strong>（如 <code>D</code>，会在整个系统里劫持那个按键）
+      与 <code>Control+字母</code>（会让所有应用的复制/保存/撤销失效）一律不接受；字母/数字主键请搭配 <code>Alt</code>。
+    </p>
+    <div class="card-actions" style="align-items:center;gap:8px;flex-wrap:wrap">
+      <span id="hotkey-status" class="hint" style="font-weight:600"></span>
+    </div>
+    <div class="card-actions" id="hotkey-presets" style="align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+    <div class="card-actions" style="align-items:center;gap:8px;margin-top:8px">
+      <input id="hotkey-custom" type="text" spellcheck="false"
+             placeholder="例如：Control+Alt+H"
+             style="flex:1;min-width:200px;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#333);background:var(--bg,#111);color:inherit;font:12px/1.4 Consolas,monospace">
+      <button id="btn-hotkey-save" type="button" class="primary">设置</button>
+      <button id="btn-hotkey-off" type="button">关闭热键</button>
+    </div>
+    <span class="hint" id="hotkey-hint"></span>
+  </section>
+
   <footer class="page-foot">
     系统通知开关在托盘菜单「回合完成时通知」。钩子与系统通知相互独立：可只开钩子、只开通知，或两者都开。
   </footer>

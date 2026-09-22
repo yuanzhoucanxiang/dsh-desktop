@@ -426,3 +426,88 @@ if (window.dshShell && window.dshShell.notifyCommand) {
 
 refresh()
 loadUpdate()
+
+/* ─────────────────────── 全局热键（A 可见反馈 + B 改键）───────────────────── */
+
+// 为什么需要这一块：以前热键被其他程序占着时，唯一的线索是 kernel.log 里一行字，
+// 用户按 Ctrl+Alt+D 没反应却看不到任何解释；而托盘只能开关、**不能改键**，
+// 一旦被占就没有自救出口。实测日志里 17 次成功对 92 次被拒。
+let hotkeyPresets = []
+
+const HOTKEY_TONE = {
+  ok: { text: (h) => `已生效：${h.accelerator}`, color: 'var(--ok,#3dd68c)' },
+  disabled: { text: () => '已关闭', color: '' },
+  invalid: { text: (h) => `无效：${h.message || h.error || ''}`, color: 'var(--danger,#e5484d)' },
+  rejected: { text: (h) => `${h.accelerator} · 被其他程序占用（系统里已有程序占着这个组合键）`, color: 'var(--danger,#e5484d)' },
+  retrying: { text: (h) => `${h.accelerator} · 注册失败，正在退避重试（1s / 3s / 8s）…`, color: 'var(--warn,#f5a623)' },
+  error: { text: (h) => `注册异常：${h.error || ''}`, color: 'var(--danger,#e5484d)' },
+  idle: { text: () => '尚未注册', color: '' },
+}
+
+function renderHotkeyStatus(h) {
+  const el = $('hotkey-status')
+  if (!el) return
+  const st = (h && h.status) || 'idle'
+  const tone = HOTKEY_TONE[st] || { text: () => String(st), color: '' }
+  // 一律走 textContent：accelerator / message 都来自 settings.json，可能被手工改成任意内容
+  el.textContent = tone.text(h || {})
+  el.style.color = tone.color
+  const input = $('hotkey-custom')
+  if (input && h && h.accelerator) input.placeholder = `当前：${h.accelerator}`
+}
+
+function renderHotkeyPresets() {
+  const box = $('hotkey-presets')
+  if (!box) return
+  box.textContent = ''
+  for (const p of hotkeyPresets) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = p.label // textContent，不走 innerHTML
+    b.addEventListener('click', () => setHotkey(p.accelerator))
+    box.appendChild(b)
+  }
+}
+
+async function setHotkey(acc) {
+  const hint = $('hotkey-hint')
+  const say = (t) => { if (hint) hint.textContent = t }
+  if (!window.dshShell || !window.dshShell.setGlobalHotkey) { say('此外壳版本不支持改键'); return }
+  try {
+    const r = await window.dshShell.setGlobalHotkey(acc)
+    if (r && r.ok) {
+      say(r.accelerator
+        ? (r.changed ? `已按标准写法保存：${r.accelerator}` : `已保存：${r.accelerator}`)
+        : '已关闭全局热键')
+      renderHotkeyStatus(r.hotkey)
+      // 重试是异步的（1s/3s/8s），稍后再拉一次状态，让“重试中→已生效/被占用”能自己刷新
+      setTimeout(loadHotkey, 1500)
+      setTimeout(loadHotkey, 4000)
+      setTimeout(loadHotkey, 9000)
+    } else {
+      say('设置失败：' + ((r && r.message) || (r && r.error) || '未知原因'))
+    }
+  } catch (err) { say('设置失败：' + err.message) }
+}
+
+async function loadHotkey() {
+  if (!window.dshShell || !window.dshShell.status) return
+  try {
+    const s = await window.dshShell.status()
+    if (Array.isArray(s && s.hotkeyPresets) && s.hotkeyPresets.length) {
+      hotkeyPresets = s.hotkeyPresets
+      renderHotkeyPresets()
+    }
+    renderHotkeyStatus(s && s.hotkey)
+  } catch {}
+}
+
+if (window.dshShell && window.dshShell.setGlobalHotkey) {
+  const btnSave = $('btn-hotkey-save')
+  if (btnSave) btnSave.addEventListener('click', () => setHotkey($('hotkey-custom').value))
+  const btnOff = $('btn-hotkey-off')
+  if (btnOff) btnOff.addEventListener('click', () => setHotkey(''))
+  const input = $('hotkey-custom')
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') setHotkey(input.value) })
+}
+loadHotkey()

@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+以下为全局热键静默失效的排查与修复（用户报“回来 debug”，按正式版 kernel.log 挖出）。— ox-alpha
+
+- **修复：全局热键失败一直是静默的，而且用户无法自救。** 正式版 `kernel.log`（跨 08-13→09-22，4098 行）里热键**成功注册 17 次、被拒 92 次**，最后一次成功是 `2026-09-15T14:22:28Z`，此后三次启动全部 `rejected`；Win32 `RegisterHotKey` 直接探测证实 `Ctrl+Alt+D` 当前**真的被其他进程占着**（`Win32Error=1409 ERROR_HOTKEY_ALREADY_REGISTERED`），所以注册逻辑本身没 bug。真正的缺陷是：这件事**唯一的信号是日志里一行字**，用户按了没反应看不到任何解释；而托盘只能开关、**不能改键**，一旦被占就只能手改 `settings.json`。现改为：注册结果进 `state.hotkey` 并经 `shell:get-state` 下发，托盘标签直接写“· 被其他程序占用”，重试到头仍失败发系统通知并指路设置面板；失败后按 **1s/3s/8s 退避重试**（占用可能是瞬时的，例如两个实例启动重叠），任一次成功都补一条“已生效”通知，并用代号作废旧重试以免覆盖新设置。— ox-alpha
+
+- **新增：设置面板可改全局热键。** 新增 `shell:set-global-hotkey`，**只允许设置窗口**调用（与 notify-command 同一口径：全局热键是系统级的，让内核页面里的插件 JS 能改它等于给它一个键盘劫持面）；「通知」页新增热键卡片（状态行 + 4 个候选键 + 自定义输入 + 关闭按钮，渲染全走 `textContent`）。新增 `lib/hotkey.js` 做 accelerator 白名单校验，拦两类 Electron **不会替你挡**的自我伤害：裸键（如 `D`，注册成功后全系统再按 D 都不会输入字母）与 `Control+字母`（`Control+C`/`Control+S`/`Control+Z` 会 shadow 掉所有应用的复制/保存/撤销）；字母/数字主键必须搭配 Alt 或 Super/Command。同时拒控制字符/换行/引号/尖括号（这个串会进 settings.json、日志与菜单标签）。— ox-alpha
+
+- 验收：新增 `npm run hotkey-test` → **HOTKEY_OK 68 项**；`shell-hardening-test` 42 → **47 项**；`verify-ipc-authz` 11 → **23 项**且 **dev 与装机版各跑一次均 IPC_AUTHZ_OK**——这轮补上了一个**一直存在的验证缺口**：此前只测过“非设置窗口被拒”，从没测过“设置窗口被放行”（万一 `isSettingsSender` 恒为假，S1 就是静默的功能损坏，而只看“被拒”断言是全绿的）。现在探针会真开设置窗口，实测：面板状态行渲染为 `Control+Alt+D · 被其他程序占用（…）`、4 个候选按钮齐备、改成 `Control+Alt+K` 后 `status:"ok"`、裸键/`Control+C`/换行注入各自被对应错误码拒、`attempts:3` 证明退避重试真在跑。外壳侧 Electron 4/4；真包重打 asar `d2c94c55…` → **`5e633510…`**，字节核对 8通过/0失败/1待跑、冷启动 12/12、真包 9/9（`lib/hotkey.js` 已被主进程依赖闭包与 asar 齐全两项覆盖）。**未查出到底哪个进程占着 Ctrl+Alt+D**（Windows 不提供热键归属查询，逐个关应用需用户授权）；但 6 个候选逐个探测的结果是**只有 `Control+Alt+D` 被占**，H/K/F1/J/Insert 全部空闲。未提交、未发布。— ox-alpha
+
 以下为复核裁决中**影响面小的两条**（裁决 4 / 裁决 6）。本轮刻意避开正在进行的“项目模板创建 + 库分组导航”那一轮的文件，也未跑 `build:writing`（会覆写对方在改的 `client.js`）。— ox-alpha
 
 - **加固（复核裁决 4）：`shell:get-state` 不再向所有窗口无差别返回通知钩子命令。** 该通道无条件暴露给所有窗口，而主窗口承载内核页面（第三方插件 client 代码就跑在那里）；钩子命令可能带敏感参数（令牌、内网地址、个人路径）。动手前先查清消费面：本仓库唯一消费者 `renderer/settings.js` 走的是**已按发送方授权**的专用 getter、不读 get-state；外部主题面板（palis）的 `ShellState` 只声明 `version/kernelVersion/port/workspace/elapsedMs`——所以这个字段在 get-state 里无任何消费者，可安全收紧。现改为 sender-aware：只有设置窗口拿真值，其余给空串（**保留键**，避免形状突变）并额外给一个不含内容的 `hasNotifyCommand` 布尔位，UI 仍能显示“已配置钩子”。**未一并改的**：`logTail` / `lastError` / `workspace` 同样是敏感面，但确有消费方（审阅侧栏与主题面板），不属本轮“影响小”的范围。— ox-alpha

@@ -31,6 +31,7 @@ const path = require('node:path')
 const os = require('node:os')
 const { pathToFileURL, fileURLToPath } = require('node:url')
 const { createGitReview } = require('./lib/git-review')
+const { normalizeAccelerator, explainAcceleratorError, PRESETS: HOTKEY_PRESETS } = require('./lib/hotkey')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
@@ -96,6 +97,10 @@ const state = {
   quarantined: [],   // 本次会话被自动隔离的坏插件名（用于汇总提示）
   pluginProblems: null, // 插件体检发现的异常条数（null=尚未体检）；托盘/左下角入口据此亮标
   agentBusy: false,   // 内核是否正在跑回合（审阅流 turn/start·end 驱动；窗口标题/托盘提示消费）
+  // 全局热键的注册结果。以前“被其他程序占用”只存在于 kernel.log 里，
+  // 用户按了没反应也看不到任何解释（实测日志里 17 次成功对 92 次被拒）。
+  // status: idle | disabled | invalid | ok | rejected | retrying | error
+  hotkey: { accelerator: '', status: 'idle', error: null, message: null, attempts: 0, updatedAt: null },
 }
 
 /* ─────────────────────────────── 设置持久化 ───────────────────────────────── */
@@ -1574,22 +1579,114 @@ function openExtraWindow() {
   return w
 }
 
-/** 全局热键：按一次唤起并聚焦，再按一次收起（不打断当前应用的心智）。 */
+/**
+ * 全局热键：按一次唤起并聚焦，再按一次收起（不打断当前应用的心智）。
+ *
+ * 两件事是这轮加的：
+ *   A（让失败可见）：注册结果记进 state.hotkey，经 shell:get-state 给设置面板，
+ *     并写进托盘菜单标签；重试到头仍失败时发一条系统通知。在此之前唯一的线索
+ *     是 kernel.log 里一行字——实测那份日志里 17 次成功对 92 次被拒，
+ *     最后一次成功是 09-15，之后一直坏着而无人知晓。
+ *   C（退避重试）：占用很可能是瞬时的（两个实例启动重叠、或某程序刚抢又放），
+ *     所以失败后按 1s/3s/8s 重试；任何一次成功都补一条通知并刷新托盘。
+ *     用代号（hotkeyGen）作废旧重试，避免改了热键后旧定时器又把新设置覆盖回去。
+ */
+const HOTKEY_RETRY_DELAYS = [1000, 3000, 8000]
+let hotkeyGen = 0
+
+function setHotkeyState(patch) {
+  state.hotkey = Object.assign({}, state.hotkey, patch, { updatedAt: new Date().toISOString() })
+  return state.hotkey
+}
+
+function notifyHotkey(title, body) {
+  try {
+    if (!Notification.isSupported()) return
+    new Notification({ title, body }).show()
+  } catch {}
+}
+
+/** 托盘菜单标签：把注册结果一并显示，否则“按了没反应”没有任何线索。 */
+function hotkeyLabel() {
+  const h = state.hotkey || {}
+  const acc = settings.globalHotkey || ''
+  if (!acc) return '已关闭'
+  if (h.status === 'rejected') return `${acc} · 被其他程序占用`
+  if (h.status === 'invalid') return `${acc} · 无效`
+  if (h.status === 'retrying') return `${acc} · 重试中`
+  if (h.status === 'error') return `${acc} · 注册失败`
+  return acc
+}
+
 function applyGlobalHotkey() {
+  const gen = ++hotkeyGen // 作废上一轮排队的重试
   try {
     globalShortcut.unregisterAll()
   } catch {}
-  const acc = settings.globalHotkey
-  if (!acc || SMOKE || UI_SMOKE) return
-  try {
-    const ok = globalShortcut.register(acc, () => {
-      if (win && !win.isDestroyed() && win.isFocused()) win.hide()
-      else showMainWindow()
-    })
-    log(ok ? `global hotkey: ${acc}` : `global hotkey rejected (被占用?): ${acc}`)
-  } catch (err) {
-    log(`global hotkey failed: ${err.message}`)
+  const raw = String(settings.globalHotkey || '').trim()
+  if (!raw) {
+    setHotkeyState({ accelerator: '', status: 'disabled', error: null, message: null, attempts: 0 })
+    return state.hotkey
   }
+  if (SMOKE || UI_SMOKE) {
+    setHotkeyState({ accelerator: raw, status: 'disabled', error: 'smoke-mode', attempts: 0 })
+    return state.hotkey
+  }
+
+  // settings.json 可能被手工改成任意内容，所以启动时也要过一遍校验：
+  // 裸键（如 D）会在系统级劫持那个按键，Control+字母会 shadow 掉全局的复制/保存/撤销。
+  const norm = normalizeAccelerator(raw)
+  if (!norm.ok) {
+    const text = explainAcceleratorError(norm.error)
+    log(`global hotkey invalid (${norm.error}): ${text}`)
+    setHotkeyState({ accelerator: raw, status: 'invalid', error: norm.error, message: text, attempts: 0 })
+    notifyHotkey('全局热键无效', text)
+    return state.hotkey
+  }
+  const acc = norm.accelerator
+
+  const attempt = () => {
+    const prevAttempts = (state.hotkey && state.hotkey.attempts) || 0
+    try {
+      const ok = globalShortcut.register(acc, () => {
+        if (win && !win.isDestroyed() && win.isFocused()) win.hide()
+        else showMainWindow()
+      })
+      if (ok) {
+        log(`global hotkey: ${acc}`)
+        setHotkeyState({ accelerator: acc, status: 'ok', error: null, message: null, attempts: prevAttempts + 1 })
+        return true
+      }
+      log(`global hotkey rejected (被占用?): ${acc}`)
+      setHotkeyState({ accelerator: acc, status: 'rejected', error: 'in-use', message: null, attempts: prevAttempts + 1 })
+      return false
+    } catch (err) {
+      log(`global hotkey failed: ${err.message}`)
+      setHotkeyState({ accelerator: acc, status: 'error', error: String((err && err.message) || err), attempts: prevAttempts + 1 })
+      return false
+    }
+  }
+
+  if (attempt()) return state.hotkey
+
+  setHotkeyState({ status: 'retrying' })
+  HOTKEY_RETRY_DELAYS.forEach((delay, i) => {
+    setTimeout(() => {
+      if (gen !== hotkeyGen || state.quitting) return // 已被更新的一次 apply 覆盖 / 正在退出
+      if (attempt()) {
+        notifyHotkey('全局热键已生效', `${acc} 现在可以用了（此前被其他程序占用）。`)
+        try { refreshTray() } catch {}
+        return
+      }
+      if (i === HOTKEY_RETRY_DELAYS.length - 1) {
+        // A：重试到头仍失败——必须让用户看见，而不是只写日志
+        notifyHotkey('全局热键被其他程序占用',
+          `${acc} 注册失败：系统里已有程序占着这个组合键。可在设置面板「通知」页换一个热键。`)
+        try { refreshTray() } catch {}
+      }
+    }, delay)
+  })
+  return state.hotkey
 }
 
 /** 深链接：dsh://open | dsh://review | dsh://restart（外部工具/浏览器可直接唤起）。 */
@@ -2164,7 +2261,7 @@ function buildTrayMenu() {
       click: (mi) => { settings.notifyOnTurnEnd = mi.checked; saveSettings(); refreshMenus() },
     },
     {
-      label: `全局唤起热键（${settings.globalHotkey || '已关闭'}）`, type: 'checkbox', checked: !!settings.globalHotkey,
+      label: `全局唤起热键（${hotkeyLabel()}）`, type: 'checkbox', checked: !!settings.globalHotkey,
       click: (mi) => {
         settings.globalHotkey = mi.checked ? (settings.globalHotkey || 'Control+Alt+D') : ''
         saveSettings()
@@ -2232,6 +2329,10 @@ function registerIpc() {
       agentBusy: state.agentBusy,
       notifyCommand: privileged ? (settings.notifyCommand || '') : '',
       hasNotifyCommand: Boolean(settings.notifyCommand),
+      // 热键注册结果与候选（不含敏感信息，所有窗口可读）：
+      // 设置面板靠它把“被占用/无效/重试中”说清楚，而不是让用户对着没反应的键盘猜。
+      hotkey: state.hotkey,
+      hotkeyPresets: HOTKEY_PRESETS,
     }
   })
   ipcMain.handle('shell:changes', () => collectChanges())
@@ -2287,6 +2388,36 @@ function registerIpc() {
     }
     runNotifyHook(0)
     return { ok: true, command: settings.notifyCommand || '' }
+  })
+  // B：改键入口。以前只能在托盘里开关、不能换键，一旦 Control+Alt+D 被别的程序占住，
+  // 用户就没有自救出口（只能手改 settings.json）。同样**只允许设置窗口**调用：
+  // 全局热键是系统级的，让内核页面里的插件 JS 能改它等于给它一个键盘劫持面；
+  // 而且写入前一律过 normalizeAccelerator（裸键 / Control+字母 一律拒）。
+  ipcMain.handle('shell:set-global-hotkey', (event, raw) => {
+    if (!isSettingsSender(event)) {
+      log('set-global-hotkey: rejected（发送方不是设置窗口）')
+      return { ok: false, error: 'only-settings-window' }
+    }
+    const next = String(raw ?? '').trim()
+    if (!next) {
+      settings.globalHotkey = ''
+      saveSettings()
+      applyGlobalHotkey()
+      refreshTray()
+      log('globalHotkey 已关闭')
+      return { ok: true, accelerator: '', hotkey: state.hotkey }
+    }
+    const norm = normalizeAccelerator(next)
+    if (!norm.ok) {
+      log(`set-global-hotkey: rejected (${norm.error})`)
+      return { ok: false, error: norm.error, message: explainAcceleratorError(norm.error) }
+    }
+    settings.globalHotkey = norm.accelerator
+    saveSettings()
+    applyGlobalHotkey()
+    refreshTray()
+    log(`globalHotkey 设为：${norm.accelerator}（当前状态 ${state.hotkey.status}）`)
+    return { ok: true, accelerator: norm.accelerator, changed: norm.changed, hotkey: state.hotkey }
   })
   // 插件体检面板：只读报告 / registry 更新比对 / 恢复被隔离插件（内部会重启内核）
   ipcMain.handle('shell:plugins-report', () => pluginReportForRenderer(runPluginInspection()))

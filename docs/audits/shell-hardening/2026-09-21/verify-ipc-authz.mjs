@@ -56,6 +56,9 @@ fs.writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({
   workspace: '',
   notifyOnTurnEnd: false, // 不让探针期间真的触发钩子
   notifyCommand: PROBE_SECRET,
+  // 显式写默认热键：下面的断言要比对“改键被拒后 settings.json 未变”，
+  // 不能依赖应用是否已经因其他原因落盘过（否则字段缺失会让断言变成假失败）。
+  globalHotkey: 'Control+Alt+D',
 }, null, 2), 'utf8')
 
 function freePort() {
@@ -189,11 +192,97 @@ try {
     Boolean(st && st.version && st.port && typeof st.workspace === 'string'),
     JSON.stringify(st && { version: st.version, port: st.port }))
 
+  // 全局热键：状态对所有窗口可见（不含敏感信息），但**改键只允许设置窗口**。
+  // 理由：全局热键是系统级的，让内核页面里的插件 JS 能改它，等于给它一个键盘劫持面
+  // （改成裸键就能让全系统打不出那个字母）。
+  check('热键 注册状态经 get-state 下发（面板才能把“被占用”说清楚）',
+    Boolean(st) && Boolean(st.hotkey) && typeof st.hotkey.status === 'string',
+    JSON.stringify(st && st.hotkey))
+  check('热键 候选键随 get-state 下发且自身完整（≥3 个）',
+    Array.isArray(st && st.hotkeyPresets) && st.hotkeyPresets.length >= 3
+      && st.hotkeyPresets.every((p) => p && p.accelerator && p.label),
+    JSON.stringify(st && st.hotkeyPresets))
+  const hkRes = await evaluate(target.webSocketDebuggerUrl,
+    "window.dshShell.setGlobalHotkey('Control+Alt+K')")
+  check('热键 非设置窗口改键被拒（防内核页插件 JS 劫持键盘）',
+    hkRes && hkRes.ok === false && hkRes.error === 'only-settings-window', JSON.stringify(hkRes))
+  const hkBare = await evaluate(target.webSocketDebuggerUrl, "window.dshShell.setGlobalHotkey('D')")
+  check('热键 裸键也先撞授权闸（授权先于校验，不泄露校验细节）',
+    hkBare && hkBare.ok === false && hkBare.error === 'only-settings-window', JSON.stringify(hkBare))
+  await sleep(400)
+  const afterHkRaw = fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, 'utf8') : ''
+  let afterHkVal = ''
+  try { afterHkVal = afterHkRaw ? (JSON.parse(afterHkRaw).globalHotkey ?? '') : '' } catch { afterHkVal = '(解析失败)' }
+  check('热键 settings.json 里的 globalHotkey 未被非设置窗口改动',
+    afterHkVal === 'Control+Alt+D', JSON.stringify(afterHkVal))
+
   // 同类通道对照：破坏性操作仍按既有分寸走原生确认（这里只验它没被我的改动弄坏）
   const restoreRes = await evaluate(target.webSocketDebuggerUrl, 'window.dshShell.pluginsRestore()')
   check('S2 pluginsRestore 在无隔离记录时安全返回（有记录时会先弹原生确认）',
     restoreRes && (restoreRes.ok === true && restoreRes.restored === 0 || restoreRes.canceled === true || restoreRes.ok === false),
     JSON.stringify(restoreRes))
+
+  // ── 授权闸的**放行侧** ──
+  // 此前只测过“非设置窗口被拒”，从没测过“设置窗口确实能用”。
+  // 万一 isSettingsSender 恒为假，S1 就会变成静默的功能损坏（没人能再改钩子/热键），
+  // 而那在只看“被拒”断言时是全绿的。所以必须双向验。
+  await evaluate(target.webSocketDebuggerUrl, 'window.dshShell.openSettings()')
+  let sTarget = null
+  const sDeadline = Date.now() + 25000
+  while (Date.now() < sDeadline) {
+    const list = await cdpTargets(debugPort)
+    sTarget = list.find((t) => t.type === 'page' && /settings\.html/.test(t.url || '') && t.webSocketDebuggerUrl)
+    if (sTarget) break
+    await sleep(300)
+  }
+  check('前置：设置窗口能被打开（放行侧验证的前提）',
+    Boolean(sTarget), sTarget ? sTarget.url : '25s 内未出现 settings.html target')
+
+  if (sTarget) {
+    const sState = await evaluate(sTarget.webSocketDebuggerUrl, 'window.dshShell.status()')
+    check('S1 放行侧：设置窗口能读到 notifyCommand 真值（证明授权闸不是恒拒）',
+      sState && sState.notifyCommand === PROBE_SECRET, JSON.stringify(sState && sState.notifyCommand))
+
+    const ui = await evaluate(sTarget.webSocketDebuggerUrl, `(() => {
+      const st = document.getElementById('hotkey-status')
+      const box = document.getElementById('hotkey-presets')
+      return {
+        hasStatus: !!st,
+        statusText: st ? st.textContent : '',
+        presetButtons: box ? box.querySelectorAll('button').length : 0,
+        hasCustomInput: !!document.getElementById('hotkey-custom'),
+        hasSaveBtn: !!document.getElementById('btn-hotkey-save'),
+        hasOffBtn: !!document.getElementById('btn-hotkey-off'),
+      }
+    })()`)
+    check('B 设置面板真的渲染出热键卡片（状态 + 候选键 + 自定义输入 + 关闭按钮）',
+      Boolean(ui) && ui.hasStatus && ui.presetButtons >= 3 && ui.hasCustomInput && ui.hasSaveBtn && ui.hasOffBtn,
+      JSON.stringify(ui))
+    check('A 状态行把注册结果说清楚了（不是空白）',
+      Boolean(ui) && typeof ui.statusText === 'string' && ui.statusText.length > 0,
+      JSON.stringify(ui && ui.statusText))
+
+    const setRes = await evaluate(sTarget.webSocketDebuggerUrl, "window.dshShell.setGlobalHotkey('Control+Alt+K')")
+    check('B 放行侧：设置窗口能真的改键（不再返回 only-settings-window）',
+      setRes && setRes.ok === true && setRes.accelerator === 'Control+Alt+K', JSON.stringify(setRes))
+
+    const bare = await evaluate(sTarget.webSocketDebuggerUrl, "window.dshShell.setGlobalHotkey('D')")
+    check('热键 裸键被白名单拒绝（否则会在系统级劫持 D 键）且带人话解释',
+      bare && bare.ok === false && bare.error === 'missing-modifier'
+        && typeof bare.message === 'string' && bare.message.length > 4, JSON.stringify(bare))
+    const ctrlC = await evaluate(sTarget.webSocketDebuggerUrl, "window.dshShell.setGlobalHotkey('Control+C')")
+    check('热键 Control+C 被拒（否则全系统无法复制）',
+      ctrlC && ctrlC.ok === false && ctrlC.error === 'letter-needs-alt-or-super', JSON.stringify(ctrlC))
+    const injected = await evaluate(sTarget.webSocketDebuggerUrl, "window.dshShell.setGlobalHotkey('Control+Alt+D\\nX')")
+    check('热键 换行注入被拒（这个串会进 settings.json / 日志 / 托盘菜单标签）',
+      injected && injected.ok === false && injected.error === 'illegal-char', JSON.stringify(injected))
+
+    await sleep(500)
+    let finalHk = ''
+    try { finalHk = JSON.parse(fs.readFileSync(settingsFile, 'utf8')).globalHotkey } catch { finalHk = '(解析失败)' }
+    check('B 改键结果已落盘，且被拒的那几个没写进去',
+      finalHk === 'Control+Alt+K', JSON.stringify(finalHk))
+  }
 
   // 清理：只按本轮 PID
   if (pidAlive(myPid)) {

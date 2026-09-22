@@ -58,6 +58,7 @@
     "verify:writing-quick": "npm run verify:writing-architecture && npm run verify:writing-build && npm run verify:writing && npm run verify:writing-adapter && npm run verify:writing-memory-ui && npm run verify:writing-context && npm run verify:writing-package && npm run plugin-sync-test && npm run test:writing-f && npm run test:writing-cde && npm run test:writing-p1 && npm run verify:writing-ui && npm run verify:writing-navigation && npm run verify:writing-chat && npm run verify:writing-reading && npm run verify:writing-native && npm run verify:writing-review-probes && npm run verify:writing-baseline-ui && npm run test:writing-world && npm run test:writing-hardening && npm run test:writing-existing && npm run verify:writing-existing-ui && npm run verify:writing-world-ui && npm run verify:ui-smoke",
     "pid-cleanup-test": "node lib/pid-cleanup.test.js",
     "shell-hardening-test": "node lib/shell-hardening.test.js",
+    "hotkey-test": "node lib/hotkey.test.js",
     "verify:release-artifacts": "node scripts/verify-release-artifacts.mjs",
     "plugin-manager-test": "node lib/plugin-manager.test.js",
     "verify:writing-reading": "electron scripts/verify-writing-reading.cjs",
