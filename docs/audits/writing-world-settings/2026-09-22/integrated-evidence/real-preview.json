@@ -1,0 +1,70 @@
+{
+  "pid": 4792,
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\existing-project-frMoCF",
+  "home": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\existing-project-frMoCF\\home",
+  "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\existing-project-frMoCF\\library\\赫尔帝国",
+  "port": 10107,
+  "sourceDirectory": "E:\\BaiduNetdiskDownload\\剧本创作",
+  "keptRunning": false,
+  "results": [
+    "UI attaches unmodified existing folder and shows all 13 original Markdown documents",
+    "Different source folders share the same real native companion session",
+    "Memory resolves to the project without creating confirmed facts or changing files",
+    "Configuration survives preference update and renderer restart; missing directories and file paths rejected",
+    "13/13 original source copies remain byte-identical after opening and switching documents"
+  ],
+  "hashes": [
+    {
+      "path": "00_设定\\设定总汇.md",
+      "sha256": "d90364c908369c7233383ae33a078fb4fd6ab662a2c5daee9164420781e91406"
+    },
+    {
+      "path": "00_设定\\设定档案.md",
+      "sha256": "4be27cfd0ae6775a667bc0fc6cd141a65025dd24c3775ae2c807f3c77cd91909"
+    },
+    {
+      "path": "01_概念设计\\00_设计原则.md",
+      "sha256": "aa9f3db48ed1d1d157e445a81c63a1979a3b21e2fa5b52aa26e5ce509663fc6e"
+    },
+    {
+      "path": "01_概念设计\\01_世界定调.md",
+      "sha256": "d4902725a5f2b85ad9e8feb3c97499a3cd30350e63ce835bb34fdaaaa46891fc"
+    },
+    {
+      "path": "01_概念设计\\05_参考项目.md",
+      "sha256": "df684468ec28ca651393f35412cd7b24d132b2ea910de9e6a23323d76f978984"
+    },
+    {
+      "path": "01_概念设计\\10_美术语言.md",
+      "sha256": "3951ea8ac1b1b5d1b9754db69da13c3b940c0358d62a351af15c95422ec8091d"
+    },
+    {
+      "path": "01_概念设计\\20_地理与环境.md",
+      "sha256": "aecce4e86baf2a9694ccb3efe0364811d5b0459bc3bfb59fabb4918cd02a8acc"
+    },
+    {
+      "path": "01_概念设计\\30_社会与物质文化.md",
+      "sha256": "9a9c7b2e71efd151b14fb66de202c8b140430b0784da76ea174ae393c9c50199"
+    },
+    {
+      "path": "01_概念设计\\40_势力设计系统.md",
+      "sha256": "db7b4e8ddbfa5d39b1dbd5d9c721f4447372fb20c002db03f865d4b6c789c45a"
+    },
+    {
+      "path": "01_概念设计\\50_历史与遗迹.md",
+      "sha256": "ee0edf7683c20403f6a58ed2f3acfd0aa556a65e0f1ba84e872ea616414e5a99"
+    },
+    {
+      "path": "10_故事\\主线骨架.md",
+      "sha256": "7d5f8391a7b8a6eac22c60e56980f76b3fbc1f055c75a39a09fff70de6b05f95"
+    },
+    {
+      "path": "90_笔记\\Claude试稿(非正文).md",
+      "sha256": "b180ab2ce8f18e6c38f88afaf12ca92968bc61435b5a63dd8d4a9f3ea7c9b07c"
+    },
+    {
+      "path": "90_笔记\\工作日志.md",
+      "sha256": "178fbafad5d3e823316c76fef2d8a62b19fa2f232fca8c19182a6d2d3f592051"
+    }
+  ]
+}

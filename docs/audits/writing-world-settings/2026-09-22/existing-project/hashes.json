@@ -1,0 +1,22 @@
+[
+  {
+    "path": "plugin/writing-mode/lib/store.js",
+    "baseSha256": "3a3cfdaf64fd477333b176ad66d7cecd908f86839abe32334873bd8fd77c0def",
+    "newSha256": "81a6a0f335c797334ec4bf393aab55181da70d7279079fc063cf5e5324b64d9a"
+  },
+  {
+    "path": "plugin/writing-mode/index.js",
+    "baseSha256": "07f79b194f76d8807ac67c0147429fb0415ff694226a380419a76d4921fec43c",
+    "newSha256": "f31ac31a75a37bac4b4552d54c2693df3b988f5cba00ae21e7633ec25c2a5be2"
+  },
+  {
+    "path": "plugin/writing-mode/src/client/app/WritingModeApp.js",
+    "baseSha256": "af5c8b8e6cc18f1009f86e774d23a6607dfed459f919b64b46f27e52ce6d111d",
+    "newSha256": "0b9eaefec0249962f403fd00c6c3b40aa0f93fbbdfeb1ca850064096f26e8c66"
+  },
+  {
+    "path": "plugin/writing-mode/src/client/features/library/grouping.js",
+    "baseSha256": "65bde1a7031129e2b02b6f05f3dbd16c7805cda9868a6825fad5e420c1410631",
+    "newSha256": "bd8d5441b2f71965275306f112dc0d02b1bdbbc0578a299c04abea7d131b54ac"
+  }
+]

@@ -69,7 +69,18 @@
 | `memory-operation` | GET | path,operationId | {found, receipt}；不触发重写 |
 | `setting-projection` | GET / POST | GET:path；POST:path,baseRevision,baseEtag[,preserve,expectedFileHash] | GET 返回磁盘稿/拟生成稿/hash；POST 在项目锁内生成固定路径，preserve 显式保留手稿副本后重建；其它 targetPath → 409 |
 | `coordination` | GET/POST | … | 会话创建协调（不变） |
-| `draft` | GET/POST | project,window | 草稿 checkpoint（不变） |
+| `draft` | GET/POST | project,window | 草稿 checkpoint。**project 用规范路径分桶**（host 侧 `resolveUnderRoots().abs`，不用客户端原始串）；GET 回本窗口全文 `checkpoint` + **其他窗口的元数据列表** |
+| `world-draft` | GET/POST | project,window | 世界观窗口编辑日志；与 `draft` 同协议，分桶后缀 `\0world` |
+| `project-recovery` | GET/POST | GET:path；POST:path,oldPath,token | 项目目录搬迁后的显式恢复。候选**必须携带关联证据**才 `importable` |
+| `maintenance` | GET/POST | GET:[path]；POST:action | GET 回锁诊断 + 当前作品配额；POST `action=clear-stale-locks` 隔离持有者已消失的残留锁 |
+
+路由×方法白名单：未在 `ROUTE_METHODS` 里的 route → **404**；白名单外的方法（PUT/DELETE/PATCH…）→ **405**。
+非 GET 一律要求 `application/json`，否则 **415**。理由：`trustedRequest` 把缺失的 `sec-fetch-site`
+视为可信（本地非浏览器进程可直连），方法白名单是仅剩的一层纵深防御。
+
+草稿列表（`checkpoints`）**不含正文**：每项为 `{windowId, rev, updatedAt, cleared, chars, preview(≤120字), hasReference, reference?}`，
+世界观桶额外给 `summary:{version,draftCount,titles}`；列表最多 `MAX_DRAFT_LIST`(24) 项，并回 `total`/`truncated`。
+作者要恢复某一份时再按 `window=<id>` 单独取那一个桶的全文。**移动恢复不走这个上限**（库层 `listCheckpoints` 不设限，不漏桶）。
 
 ### memory POST op
 
@@ -80,6 +91,14 @@
 | `confirm-setting` | operationId, requestHash, id?, item.setting, clientSchemaVersion | 作者确认；status=confirmed；projection→pending |
 | `retract-setting` | operationId,id,clientSchemaVersion | 幂等撤回，完整历史，projection→pending |
 | `update-projection` | — | HTTP 拒绝；投影由 host 的同锁事务更新 |
+| `archive-history` | keep? | 把最早的变更历史整体写进 `state/backups/` 后裁到 keep（默认 100）。**历史已满时仍可用**（否则就是满了再也清不了的死锁） |
+| `prune-operations` | keep? | 同上，裁幂等收据（默认保留 40）。被裁的 operationId 进**有界墓碑环**；其迟到重试返回 `operation-pruned`，绝不当新操作重复建条目 |
+| `purge-retracted` | statuses? | 先备份再移除终态条目（只允许 `retracted`/`resolved`；其他值 → `bad-statuses`），释放条目配额 |
+
+配额与出口：`items ≤ 400`、`changes ≤ 800`、`operations ≤ 200`。三个上限都是**硬拒**（不静默裁剪需恢复记录），
+但必须同时给出口——否则一个长篇写到上限后，它的备忘与世界观就永久停摆。
+因此：`memory` GET/POST 均回 `quota:{items,changes,operations,maxItems,maxChanges,maxOperations}`，
+`capabilities.maintenanceOps` 公开三个归档 op，UI 常驻显示用量并在撞墙前提供归档按钮。
 
 幂等：setting 类 op 必带 operationId；host 对 op/id/item/actor 完整递归规范化并计算 hash，不信任客户端 requestHash。相同 ID、相同载荷返回原收据与最新文档；同 ID 不同载荷/操作返回 409。客户端发送前将原请求与 operationId 写入本窗口 sessionStorage，响应丢失后重试同一请求，新编辑或确认使用新 ID。
 
@@ -104,10 +123,19 @@
 }
 ```
 
-- 容量：setting 结构化文字合计 ≤ **16000** Unicode 码点；来源摘录合计 ≤ 8000；来源 ≤ 20 条；HTTP body ≤ 1 MiB。超限 **413**，保留本地输入，不静默截断。
+- 容量：setting 结构化文字合计 ≤ **16000** Unicode 码点；来源摘录合计 ≤ 8000；来源 ≤ 20 条；HTTP body ≤ 1 MiB（**按字节计**，声明长度超限直接 413，流式超限中断后给 400）。超限 **413**，保留本地输入，不静默截断。
+- 请求体必须**按字节收集后一次性 UTF-8 解码**；逐 chunk 解码会把跨 chunk 的多字节字符变成 U+FFFD 并静默写进手稿。
 - schema **1** 只读兼容；**写路径**在锁内校验 token 后原子迁移为 schema 2（原字节进 `state/backups/`）。坏 JSON / 未知 schema 原件不动。
-- schema 2 历史达到上限返回 `history-full`（不静默裁剪需恢复记录）；去重收据配额满 → `operations-full`。
+- schema 2 历史达到上限返回 `history-full`（不静默裁剪需恢复记录）；去重收据配额满 → `operations-full`；两者均可用 `archive-history` / `prune-operations` 归档后继续。
 - 默认注入只取 confirmed 的 **结论+边界**（派生 text）；`explanation` 不进 preparedTurn 自动部分。
+- **项目身份单一口径**：所有按作品分桶的键（草稿 / 记忆 / 协调 / 移动恢复）均经 `lib/project-identity.js` 的 `identityKey()`
+  （分隔符归一 + 剥尾部斜杠 + 小写，保留 `\0` 分桶后缀）。realpath 由解析阶段完成，不在分桶函数里做，
+  避免既有桶名因一次 realpath 结果变化而整体失联；旧口径（不剥尾斜杠）写过的桶由 `readCheckpoint` **只读回退**，下次保存自然迁移。
+- **配置文件（`writing-mode.json`）损坏 ≠ 不存在**：只有 ENOENT 才当空配置；解析失败时保留损坏原件字节（`.damaged-<ts>` 副本）、
+  回 `corrupt-config`，并拒绝任何回写（`config-damaged-refused`）——否则一次“只改字号”就会把库根/伙伴绑定/AI Key 清零。
+  配置写入走 `updateConfig()`（读-改-写在同一锁内）并带单调 `revision`。
+- **锁**：跨进程文件锁等待不再空转（`Atomics.wait`）；草稿路径 deadline 1.5s、残留锁 250ms 快速失败（回可重试的 `lock-stale`）。
+  持有者已消失的残留锁由**内核启动清扫**与 `maintenance` 入口改名隔离（不删除、保留取证）；**活锁绝不动**（W01），也不在获取路径上抢占。
 
 ### 统一错误码（memory / projection）
 
@@ -118,9 +146,24 @@
 | upgrade-required | 428 | 旧客户端写 setting 条目 |
 | setting-required / bad-setting / empty-title / empty-conclusion / bad-setting-type | 400 | 设定校验 |
 | setting-too-long / sources-too-long / sources-too-many / text-too-long | 413 | 容量 |
-| history-full | 409 | schema2 历史配额 |
+| history-full | 409 | schema2 历史配额（可用 `archive-history` 归档后继续） |
+| memory-full | 400 | 条目配额（可用 `purge-retracted` 清理终态条目后继续） |
+| operation-pruned | 409 | 收据已归档；迟到重试不得当新操作执行（防重复建条目） |
+| bad-statuses | 400 | `purge-retracted` 只接受 retracted / resolved |
 | projection-conflict / projection-path-fixed / projection-path-escape | 409 / 409 / 403 | 可读稿 |
 | unknown-schema / corrupt-memory | 400 / 500 | 损坏诊断，不覆盖 |
+
+### 统一错误码（host 全局）
+
+| code | HTTP | 含义 |
+|---|---|---|
+| unknown-route / method-not-allowed | 404 / 405 | 路由×方法白名单 |
+| json-required / invalid-json | 415 / 400 | 非 GET 必须 JSON 对象 |
+| body-too-large | 413 | 声明长度超 1 MiB |
+| corrupt-config / config-damaged-refused / config-read-failed / config-conflict | 409 | 配置文件损坏与并发保护 |
+| corrupt-draft / draft-read-failed / draft-rev-required / draft-rev-conflict / draft-too-large | 409 / 409 / 428 / 409 / 413 | 草稿 checkpoint |
+| recovery-source-changed / recovery-source-unrelated | 409 / 409 | 移动恢复：候选已变 / 无关联证据 |
+| lock-stale / lock-timeout / lock-failed / lock-lost | 503 / 503 / 500 / 503 | 跨进程锁；前两个可重试，在线仅诊断残留锁，maintenance 拒绝清理；关掉所有写入进程后才可离线处理 |
 
 请求必须来自 loopback 和可信 Host，Origin 必须同源；POST 为 JSON 对象。route 与 query 分别编码。原子替换失败保留旧文件。该 revision 检查不等于对所有外部进程的文件事务锁。
 
@@ -170,6 +213,14 @@
 - 无受管记录的同名文件一律冲突，固定提示语不是授权。差异面板允许作者明确“保留手稿副本并重建”；需 expectedFileHash 匹配才执行，副本路径回传。外部编辑器不受本锁约束，重查 hash 加可恢复副本降低竞争风险，不宣称完整文件系统事务隔离。
 - 已存结构化设定由世界观面板编辑、确认、撤回、查看历史；普通备忘面板过滤 setting，防止用旧协议误编辑。
 - 整理基于点击时冻结的真实消息、来源 ID/角色/原文/SHA256；模型 sources 被丢弃。只关联新出现且完整匹配本次带唯一编号作者请求的最终助手回复；遇其他回合插入、切会话、拒绝或不确定时保留输入、提示核对，不自动重发。
-- 本地候选和保存中的原请求按项目放 sessionStorage，跨刷新恢复但不承诺关闭整个窗口后恢复；缓存失败显式提示，无法持久化操作编号则不发送保存。停止等待只取消本地等待，原生回合在完整会话核对。
+- 本地候选和保存中的原请求按项目写入浏览器持久缓存与 host 窗口 checkpoint；关闭窗口后可从恢复副本找回，保留 modelMark/pending 与操作编号。落盘失败显式提示；恢复等待期间保留新编辑，关闭面板后忽略迟到结果。停止等待只取消本地等待，原生回合在完整会话核对。
 
 署名：Codex
+## 已有项目接入与恢复（2026-09-22，工作树未发布）
+
+- roots 的 kind 为 library（默认，保持原作品库语义）或 project（所选目录本身就是作品）。打开已有目录不需要 project.md，不自动创建备忘或改写正文。
+- project 根递归识别 Markdown 自定义目录，分组保留完整相对父路径；隐藏目录、依赖目录和越界链接不进入递归。扫描有深度、目录与文件数量上限，达到上限提示扫描未完整。
+- 文档、会话、备忘、设定都按同一个显式项目根识别；嵌套配置取最具体项目根。旧设置页未传 kind 时保留原配置类型。
+- 旧位置恢复只把备忘或投影记录中的旧路径视为关联证据；同名稿件甚至相同内容不构成作品身份。无关联导入需作者单独确认来源与目的，导入成副本，不重绑原生会话工作区。
+- 第五份及之后的恢复副本按需读取；失败可重试、等待期间不得覆盖新编辑、面板卸载后不得采用迟到内容。
+- lock-owner-unknown 表示未知持有者，503，可重试；在线绝不移走他人的锁，包括貌似已死的残留锁。

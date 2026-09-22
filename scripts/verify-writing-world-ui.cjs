@@ -37,6 +37,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   assert.ok(memory().items[0].setting.sources[0].snapshotHash);
   evidence.push('Two candidates saved separately; candidate-to-confirm; real source overrides forged source; author draft retained');
   await field('explanation','刷新前未保存\n仍在本窗口');
+  await waitFor('document.querySelector("[data-world-journal]").innerText.includes("已保留")');
   await win.webContents.reload();
   await waitFor('!!document.querySelector(".dshWmChatInput")');await button('项目备忘');
   await waitFor('document.querySelector("[data-world-field=explanation]")?.value.includes("刷新前未保存")');

@@ -2314,7 +2314,9 @@ function normalizeSetting(input, { requireTitleConclusion = false } = {}) {
     if (!title) throw settingError("empty-title");
     if (!conclusion) throw settingError("empty-conclusion");
   }
-  const setting = { type, title, conclusion, explanation, boundaries, tags, sources };
+  const modelMark = ["open", "suggestion"].includes(raw.modelMark) ? raw.modelMark : null;
+  const pending = modelMark === "open" || raw.pending === true;
+  const setting = { type, title, conclusion, explanation, boundaries, tags, sources, modelMark, pending };
   return { setting, chars };
 }
 function deriveSettingText(setting) {
@@ -3937,14 +3939,14 @@ function groupFiles(files, q) {
       const hay = (f.name + " " + f.rel).toLowerCase();
       if (!hay.includes(query)) continue;
     }
-    const top = String(f.rel || "").includes("/") ? String(f.rel).split("/")[0] : "·";
+    const top = String(f.rel || "").includes("/") ? String(f.rel).slice(0, String(f.rel).lastIndexOf("/")) : "·";
     if (!map3.has(top)) map3.set(top, []);
     map3.get(top).push(f);
   }
   const order2 = ["draft", "bible", "outline", "state", "reviews", "·"];
   const keys2 = [...map3.keys()].sort((a, b) => {
-    const ia = order2.indexOf(a);
-    const ib = order2.indexOf(b);
+    const ia = order2.indexOf(a.split("/")[0]);
+    const ib = order2.indexOf(b.split("/")[0]);
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b, "zh");
   });
   return keys2.map((k) => ({ key: k, files: map3.get(k) }));
@@ -4122,6 +4124,17 @@ var jsx3 = __toESM(require("react/jsx-runtime"), 1);
 var KIND_LABEL = { fact: "设定", preference: "偏好", "open-question": "待定" };
 var STATUS_LABEL = { proposed: "候选", confirmed: "已确认", retracted: "已撤回", resolved: "已解决" };
 var SOURCE_LABEL = { author: "作者", assistant: "助手建议", host: "内核" };
+var QUOTA_ERROR_COPY = {
+  "operations-full": "世界观操作收据已满（200 条），本作品暂时无法再保存或确认设定。点下面的「归档操作收据」：最早的收据会整体备份到 state/backups/ 后清出空间，已确认的设定与可读稿不受影响。",
+  "memory-full": "备忘条目已满（400 条，已撤回/已解决的也占配额）。点下面的「清理已撤回条目」腾出空间，清理前会整体备份。",
+  "history-full": "变更历史已满（800 条）。点下面的「归档变更历史」：最早的变更会整体备份后清出空间，条目本身不受影响。",
+  "operation-pruned": "这次操作的收据已被归档裁掉。为避免重复建一条设定，主机拒绝再次执行它——请重新发起一次新的保存。"
+};
+var MAINTENANCE_OPS = ["archive-history", "prune-operations", "purge-retracted"];
+var MAINTENANCE_LABEL = { "archive-history": "归档变更历史", "prune-operations": "归档操作收据", "purge-retracted": "清理已撤回条目" };
+function isQuotaError(code4) {
+  return Object.prototype.hasOwnProperty.call(QUOTA_ERROR_COPY, String(code4 || ""));
+}
 async function loadProjectMemory(path2) {
   try {
     return await api("memory", void 0, { path: path2 });
@@ -4144,7 +4157,7 @@ function restorableText(entry) {
   return entry?.after && entry.after.text || entry?.before && entry.before.text || "";
 }
 function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onChanged }) {
-  const [state, setState] = react.useState({ loading: true, items: [], etag: "", revision: 0, error: "", raw: null });
+  const [state, setState] = react.useState({ loading: true, items: [], etag: "", revision: 0, error: "", raw: null, quota: null });
   const [text7, setText] = react.useState("");
   const [kind, setKind] = react.useState("fact");
   const [asCandidate, setAsCandidate] = react.useState(false);
@@ -4155,14 +4168,14 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
   const [busy, setBusy] = react.useState(false);
   const refresh = react.useCallback(async () => {
     if (!path2) {
-      setState({ loading: false, items: [], etag: "", revision: 0, error: "", raw: null });
+      setState({ loading: false, items: [], etag: "", revision: 0, error: "", raw: null, quota: null });
       return;
     }
     const data = await loadProjectMemory(path2);
     if (data.ok) {
-      setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: "", raw: data.memory });
+      setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: "", raw: data.memory, quota: data.quota || null });
     } else {
-      setState({ loading: false, items: [], etag: "", revision: 0, error: String(data.error || "unavailable"), raw: null });
+      setState({ loading: false, items: [], etag: "", revision: 0, error: String(data.error || "unavailable"), raw: null, quota: null });
     }
   }, [path2]);
   react.useEffect(() => {
@@ -4187,19 +4200,29 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
         body: JSON.stringify({ path: path2, op, baseEtag: state.etag, baseRevision: state.revision, actor: "author", ...body })
       });
       if (data.ok) {
-        setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: "", raw: data.memory });
+        setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: "", raw: data.memory, quota: data.quota || null });
         if (!keepText) {
           setText("");
           setAsCandidate(false);
           setCandidateSource(null);
         }
-        setNotice(op === "add" ? body?.item?.status === "proposed" ? "已存为候选（未确认前不会自动带入对话）" : "已记下" : "已更新");
+        if (MAINTENANCE_OPS.includes(op)) {
+          const dropped = data.archived?.dropped ?? 0;
+          setNotice(dropped ? `${MAINTENANCE_LABEL[op]}：已归档 ${dropped} 条${data.archived?.backup ? "，备份在 " + data.archived.backup : ""}` : `${MAINTENANCE_LABEL[op]}：没有需要归档的内容`);
+        } else {
+          setNotice(op === "add" ? body?.item?.status === "proposed" ? "已存为候选（未确认前不会自动带入对话）" : "已记下" : "已更新");
+        }
         onChanged?.(data);
         return true;
       }
       if (data.error === "etag-conflict" || data.error === "revision-conflict") {
         await refresh();
         setNotice("备忘已在别处修改，已刷新。你写的内容还在编辑框里，请比对后重试。");
+        return false;
+      }
+      if (isQuotaError(data.error)) {
+        setNotice(QUOTA_ERROR_COPY[data.error]);
+        await refresh();
         return false;
       }
       setNotice("操作失败：" + String(data.error || "unknown"));
@@ -4218,6 +4241,23 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
     void post2("add", { item: { kind, text: body, status: asCandidate ? "proposed" : "confirmed", source } }, { keepText: true });
   }
   const items = state.items.filter((it) => !it.setting).slice().reverse();
+  const q = state.quota;
+  const quotaRow = q ? jsx3.jsxs("div", { className: "dshWmMemoryNote", "data-wm-memory-quota": "", style: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }, children: [
+    jsx3.jsx("span", { children: `用量：备忘 ${q.items}/${q.maxItems} · 历史 ${q.changes}/${q.maxChanges} · 操作收据 ${q.operations}/${q.maxOperations}` }),
+    jsx3.jsx("button", { className: "dshWmQuiet", disabled: busy || q.changes <= 0, "data-wm-memory-archive": "history", onClick: () => void post2("archive-history", {}), children: MAINTENANCE_LABEL["archive-history"] }),
+    jsx3.jsx("button", { className: "dshWmQuiet", disabled: busy || q.operations <= 0, "data-wm-memory-archive": "operations", onClick: () => void post2("prune-operations", {}), children: MAINTENANCE_LABEL["prune-operations"] }),
+    jsx3.jsx("button", {
+      className: "dshWmQuiet",
+      disabled: busy || !state.items.some((it) => it.status === "retracted"),
+      "data-wm-memory-archive": "retracted",
+      onClick: () => {
+        if (!window.confirm("清理已撤回的备忘条目？清理前会整体备份到 state/backups/，已确认与候选条目不受影响。")) return;
+        void post2("purge-retracted", {});
+      },
+      children: MAINTENANCE_LABEL["purge-retracted"]
+    }),
+    jsx3.jsx("span", { children: "归档一律先备份再裁；已确认设定与可读稿不受影响。" })
+  ] }) : null;
   return jsx3.jsxs("div", { className: "dshWmMemory", children: [
     jsx3.jsx("div", {
       className: "dshWmCompanionEmpty",
@@ -4264,8 +4304,9 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
       asCandidate ? jsx3.jsx("div", { className: "dshWmMemoryNote", children: "来源：助手消息（保存后仍是候选，需你确认才生效）" }) : null
     ] }),
     notice ? jsx3.jsx("div", { className: "dshWmMemoryNote", role: "status", children: notice }) : null,
+    quotaRow,
     state.error ? jsx3.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
-      state.error === "corrupt-memory" || state.error === "unknown-schema" ? `备忘文件格式异常（${state.error}）。原件已原样保留、没有被覆盖：可以让我在完整会话里先诊断再安全恢复。` : `备忘暂不可用：${state.error}`,
+      state.error === "corrupt-memory" || state.error === "unknown-schema" ? `备忘文件格式异常（${state.error}）。原件已原样保留、没有被覆盖：可以让我在完整会话里先诊断再安全恢复。` : isQuotaError(state.error) ? QUOTA_ERROR_COPY[state.error] : `备忘暂不可用：${state.error}`,
       jsx3.jsx("button", { className: "dshWmQuiet", onClick: () => void refresh(), children: "重试" })
     ] }) : null,
     // ── 条目列表 ─────────────────────────────────────────────────
@@ -4418,331 +4459,6 @@ ${s.excerpt}`).join("\n\n");
 
 // plugin/writing-mode/src/client/features/world-settings/index.js
 var react2 = __toESM(require("react"), 1);
-var h = react2.createElement;
-function newOperationId() {
-  return crypto.randomUUID();
-}
-async function requestHashOf(payload) {
-  return snapshotHash(stableStringify(payload));
-}
-function extractSettingsFromAssistantText(text7) {
-  const raw = String(text7 || "");
-  const fence = raw.match(/```json\s*([\s\S]*?)```/i);
-  const parsed = parseOrganizeResult(fence ? fence[1] : raw);
-  return parsed.ok ? parsed : { ...parsed, raw };
-}
-function blankDraft(setting = {}) {
-  return { id: newOperationId(), title: "", conclusion: "", explanation: "", boundaries: "", tags: [], sources: [], ...setting, dirty: true };
-}
-function storageKey(path2) {
-  return "dsh-world-drafts-v1:" + path2;
-}
-function restore(path2) {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(storageKey(path2)) || "null");
-    if (value?.version === 1 && Array.isArray(value.drafts)) return value;
-  } catch {
-  }
-  return { version: 1, drafts: [], rawReply: "", extra: "", interrupted: false };
-}
-function settingOf(d) {
-  return { type: "world", title: d.title, conclusion: d.conclusion, explanation: d.explanation || "", boundaries: d.boundaries || "", tags: d.tags || [], sources: d.sources || [] };
-}
-function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, onDiscard, busy, notice }) {
-  const fields = [["title", "标题"], ["conclusion", "结论"], ["explanation", "说明（可选）"], ["boundaries", "边界 / 例外（可选）"]];
-  return h(
-    "div",
-    { className: "dshWmWorldCard" },
-    h("strong", null, draft.savedId ? "设定修订" : "设定候选"),
-    h("p", null, draft.modelMark === "open" ? "仍待讨论，确认前请核对。" : draft.modelMark === "suggestion" ? "助手建议，尚未由作者确认。" : "尚待作者确认。"),
-    ...fields.map(([key, title]) => h(
-      "label",
-      { key },
-      title,
-      h(key === "title" ? "input" : "textarea", { "data-world-field": key, value: draft[key] || "", rows: key === "explanation" ? 4 : 2, disabled: busy || Boolean(draft.pendingOperation), onChange: (e) => onChange({ ...draft, [key]: e.target.value, dirty: true }) })
-    )),
-    h("details", null, h("summary", null, `来源 ${draft.sources?.length || 0} 条`), ...(draft.sources || []).map((s, i) => h(
-      "div",
-      { key: i },
-      h("small", null, `${s.role || "未知"} · ${s.sessionId || "来源不可用"} / ${s.messageId || "来源不可用"}`),
-      h("pre", null, s.excerpt || "")
-    ))),
-    notice ? h("p", { role: "status" }, notice) : null,
-    h(
-      "div",
-      { className: "dshWmWorldOps" },
-      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onConfirm }, draft.savedId ? "确认修改" : "确认设定"),
-      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || draft.savedStatus === "confirmed" || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onSaveCandidate }, "存为候选"),
-      h("button", { type: "button", disabled: busy || !!draft.pendingOperation, onClick: onDiscard }, "关闭本地编辑")
-    )
-  );
-}
-function WorldSettingsPanel({ path: path2, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged }) {
-  const [local, setLocal] = react2.useState(() => restore(path2));
-  const localRef = react2.useRef(local);
-  const [data, setData] = react2.useState(null);
-  const dataRef = react2.useRef(null);
-  const [active, setActive] = react2.useState(0);
-  const [phase, setPhase] = react2.useState("idle");
-  const [note, setNote] = react2.useState(() => local.interrupted ? "上次整理等待已中断，请先查看完整会话；不会自动重发。" : "");
-  const [storageError, setStorageError] = react2.useState("");
-  const [conflict, setConflict] = react2.useState(null);
-  const [projection, setProjection] = react2.useState(null);
-  const [historyId, setHistoryId] = react2.useState(null);
-  const alive = react2.useRef(true);
-  const busy = react2.useRef(false);
-  const generation = react2.useRef(0);
-  const controller = react2.useRef(null);
-  const writeLocal = (next, required = false) => {
-    localRef.current = next;
-    if (alive.current) setLocal(next);
-    try {
-      sessionStorage.setItem(storageKey(path2), JSON.stringify(next));
-      setStorageError("");
-    } catch {
-      setStorageError("本窗口草稿未能缓存，请复制保留后再离开。");
-      if (required) throw new Error("无法持久化操作编号，本次未发送保存请求");
-    }
-  };
-  const patchLocal = (patch2) => writeLocal({ ...localRef.current, ...patch2 });
-  const updateDraft = (id, fn, required = false) => writeLocal({ ...localRef.current, drafts: localRef.current.drafts.map((d) => d.id === id ? fn(d) : d) }, required);
-  const adopt = (result) => {
-    dataRef.current = result;
-    if (alive.current) setData(result);
-  };
-  const refresh = async () => {
-    const seq = ++generation.current;
-    const result = await api("memory", void 0, { path: path2 });
-    if (!result?.ok) throw new Error(result?.error || "读取设定失败");
-    if (alive.current && seq === generation.current) adopt(result);
-    return result;
-  };
-  react2.useEffect(() => {
-    alive.current = true;
-    void refresh().catch((err) => {
-      if (alive.current) setNote(err.message);
-    });
-    return () => {
-      alive.current = false;
-      generation.current++;
-      controller.current?.abort();
-    };
-  }, [path2]);
-  react2.useEffect(() => {
-    const protect = (e) => {
-      if (storageError) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", protect);
-    return () => window.removeEventListener("beforeunload", protect);
-  }, [storageError]);
-  const changeDraft = (next) => updateDraft(next.id, () => next);
-  const openItem = (it, snapshot = null) => {
-    const source = snapshot || it;
-    const d = blankDraft({ ...source.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision, dirty: Boolean(snapshot), source: source.source });
-    patchLocal({ drafts: [...localRef.current.drafts, d] });
-    setActive(localRef.current.drafts.length - 1);
-  };
-  const syncProjection = async (preserve = false) => {
-    const current = await refresh();
-    const result = await api("setting-projection", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, baseRevision: current.memory.revision, baseEtag: current.etag, preserve, expectedFileHash: preserve ? projection?.hash : void 0 }) });
-    if (!result.ok) {
-      await refresh();
-      throw new Error(`设定已保存，可读稿待同步：${result.error}`);
-    }
-    adopt(result);
-    setProjection(null);
-    return result;
-  };
-  const requestSave = async (draft2, op, retry = false) => {
-    if (busy.current || conflict) return;
-    busy.current = true;
-    setPhase("saving");
-    setNote("正在保存…");
-    try {
-      if (!dataRef.current) await refresh();
-      let pending = draft2.pendingOperation;
-      if (!pending) {
-        if (retry) throw new Error("没有待重试操作");
-        const remote = dataRef.current.memory.items.find((it) => it.id === draft2.savedId);
-        if (remote && draft2.openedItemRevision != null && remote.itemRevision !== draft2.openedItemRevision) {
-          setConflict({ draftId: draft2.id, remote });
-          throw new Error("远端设定已更新；请先比较当前修订与远端");
-        }
-        const request = { path: path2, op, baseRevision: dataRef.current.memory.revision, baseEtag: dataRef.current.etag, id: draft2.savedId || void 0, item: op === "retract-setting" ? void 0 : { kind: "fact", setting: settingOf(draft2), source: draft2.source }, actor: "author", clientSchemaVersion: 2, operationId: newOperationId() };
-        request.requestHash = await requestHashOf({ op, id: request.id || null, item: request.item || null, actor: request.actor });
-        pending = { request };
-        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: pending }), true);
-      }
-      const result = await api("memory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pending.request) });
-      if (!alive.current) return;
-      if (!result?.ok) {
-        if (result?.error === "invalid-response") throw new Error("无法确认保存结果，请重试同一操作");
-        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null }));
-        if (["revision-conflict", "etag-conflict", "operation-conflict"].includes(result.error)) {
-          const current = await refresh();
-          setConflict({ draftId: draft2.id, remote: current.memory.items.find((it) => it.id === draft2.savedId) || null });
-        }
-        throw new Error("保存失败，编辑已保留：" + result.error);
-      }
-      if (!result.receipt?.itemId) throw new Error("缺少保存收据，请重试同一操作核对");
-      adopt(result);
-      const saved = result.memory.items.find((it) => it.id === result.receipt.itemId);
-      updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null, savedId: result.receipt.itemId, savedStatus: saved?.status, openedItemRevision: saved?.itemRevision, dirty: false }));
-      setNote(pending.request.op === "save-setting-candidate" ? "候选已保存，可稍后打开确认" : "设定已保存");
-      onChanged?.();
-      onStatus?.({ phase: "saved", receipt: result.receipt });
-      if (pending.request.op !== "save-setting-candidate") {
-        try {
-          const projected = await syncProjection();
-          setNote(projected.preservedPath ? `手稿副本已保留：${projected.preservedPath}；可读稿已同步` : "设定已保存，可读稿已同步");
-        } catch (err) {
-          setNote(err.message);
-        }
-      }
-    } catch (err) {
-      if (alive.current) setNote(err.message || String(err));
-    } finally {
-      busy.current = false;
-      if (alive.current) setPhase("idle");
-    }
-  };
-  const organize = async () => {
-    if (busy.current) return;
-    busy.current = true;
-    setPhase("organizing");
-    controller.current = new AbortController();
-    try {
-      writeLocal({ ...localRef.current, interrupted: true }, true);
-      setNote("正在整理所选讨论；普通输入与引用保持不变。");
-      const result = await onRequestOrganize(localRef.current.extra, controller.current.signal);
-      if (!alive.current || controller.current.signal.aborted) return;
-      const parsed = extractSettingsFromAssistantText(result.text);
-      const drafts = parsed.ok ? parsed.settings.map((s) => blankDraft({ ...s, sources: result.sources, source: { kind: "assistant", sessionId: result.sessionId, messageId: result.messageId } })) : [];
-      patchLocal({ drafts: [...localRef.current.drafts, ...drafts], rawReply: result.text, interrupted: false });
-      if (drafts.length) setActive(localRef.current.drafts.length - drafts.length);
-      setNote(parsed.ok ? `新增 ${drafts.length} 条候选；${parsed.rejected?.length || 0} 条格式不符，原文已保留。` : "无法解析整理结果；原文已保留，可手动新建设定。");
-    } catch (err) {
-      if (alive.current) setNote(err.message || String(err));
-    } finally {
-      busy.current = false;
-      if (alive.current) setPhase("idle");
-    }
-  };
-  const runProjection = async (preserve) => {
-    if (busy.current) return;
-    busy.current = true;
-    setPhase("saving");
-    setNote("正在同步可读稿…");
-    try {
-      const r = await syncProjection(preserve);
-      setNote(r.preservedPath ? `已保留手稿副本：${r.preservedPath}；整理稿已重建` : "可读稿已同步");
-    } catch (err) {
-      setNote(err.message);
-    } finally {
-      busy.current = false;
-      setPhase("idle");
-    }
-  };
-  const draft = local.drafts[active] || local.drafts[0];
-  const worldItems = (data?.memory?.items || []).filter((it) => it.setting?.type === "world");
-  const histories = (data?.memory?.changes || []).filter((c) => c.id === historyId).slice().reverse();
-  return h(
-    "section",
-    { className: "dshWmWorldPanel", "data-world-panel": "" },
-    h("h3", null, "世界观整理"),
-    h("p", null, `已选消息 ${selectedMessages?.length || 0} · 设定 ${worldItems.length}`),
-    h("details", null, h("summary", null, "查看整理范围"), ...(selectedMessages || []).map((m) => h("pre", { key: m.id }, `${m.role}：${m.text}`))),
-    h("label", null, "补充要求", h("input", { value: local.extra, onChange: (e) => patchLocal({ extra: e.target.value }) })),
-    h("button", { disabled: phase !== "idle" || !selectedMessages?.length, onClick: organize }, "整理为设定"),
-    h("button", { disabled: phase !== "idle", onClick: onClearSelection }, "清除选择"),
-    h("button", { disabled: phase !== "idle", onClick: () => {
-      patchLocal({ drafts: [...localRef.current.drafts, blankDraft()] });
-      setActive(localRef.current.drafts.length - 1);
-    } }, "手动新建设定"),
-    phase === "organizing" ? h("button", { onClick: () => controller.current?.abort() }, "停止等待") : null,
-    h("p", { role: "status", "data-world-notice": "" }, note),
-    storageError ? h("p", { role: "alert" }, storageError) : null,
-    h("button", { disabled: phase !== "idle", onClick: () => void refresh().catch((err) => setNote(err.message)) }, "重新读取设定"),
-    local.rawReply ? h("details", null, h("summary", null, "整理原文"), h("pre", null, local.rawReply)) : null,
-    h("div", null, ...local.drafts.map((d, i) => h("button", { key: d.id, onClick: () => setActive(i) }, `${d.title || "未命名"}${d.dirty ? " · 本地编辑" : ""}`))),
-    draft ? h(WorldSettingCard, {
-      draft,
-      busy: phase !== "idle" || !!conflict,
-      onChange: changeDraft,
-      onSaveCandidate: () => void requestSave(draft, "save-setting-candidate"),
-      onConfirm: () => void requestSave(draft, "confirm-setting"),
-      onDiscard: () => {
-        if (draft.dirty && !window.confirm("关闭这份本地编辑？已保存的设定不会删除。")) return;
-        patchLocal({ drafts: localRef.current.drafts.filter((d) => d.id !== draft.id) });
-        setActive(0);
-      },
-      notice: draft.pendingOperation ? "结果待核对；重试会使用原操作编号，不重复新增。" : "本窗口编辑已缓存；确认后才更新项目设定。"
-    }) : null,
-    draft?.pendingOperation ? h("button", { disabled: phase !== "idle", onClick: () => void requestSave(draft, null, true) }, "核对并重试保存") : null,
-    conflict ? h(
-      "div",
-      { role: "alert" },
-      h("strong", null, "保存冲突：本地编辑保留"),
-      h("pre", null, JSON.stringify(conflict.remote?.setting || {}, null, 2)),
-      h("button", { onClick: () => {
-        const d = localRef.current.drafts.find((x) => x.id === conflict.draftId);
-        if (d) updateDraft(d.id, (x) => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null }));
-        setConflict(null);
-        setNote("已采用最新基线；请核对后再次确认保存。");
-      } }, "已比较，保留本地修订"),
-      h("button", { onClick: () => setConflict(null) }, "暂不保存")
-    ) : null,
-    data?.memory?.projection && data.memory.projection.status !== "idle" ? h(
-      "div",
-      { className: "dshWmWorldProjection" },
-      h("p", null, data?.memory?.projection?.status === "synced" ? "可读稿已同步" : `可读稿待同步：${data?.memory?.projection?.lastError || "pending"}`),
-      h("button", { disabled: phase !== "idle", onClick: () => void runProjection(false) }, "重试同步可读稿"),
-      h("button", { onClick: () => void api("setting-projection", void 0, { path: path2 }).then((r) => r.ok ? setProjection(r) : setNote(r.error)).catch((err) => setNote(err.message)) }, "查看可读稿差异")
-    ) : null,
-    projection ? h(
-      "div",
-      null,
-      h("h4", null, "磁盘原文"),
-      h("pre", null, projection.content),
-      h("h4", null, "将生成的内容"),
-      h("pre", null, projection.proposed),
-      projection.exists ? h("button", { disabled: phase !== "idle", onClick: () => void runProjection(true) }, "保留手稿副本并重建整理稿") : null
-    ) : null,
-    h("h4", null, "已保存设定"),
-    ...worldItems.map((it) => h(
-      "article",
-      { key: it.id, "data-world-item": it.id },
-      h("strong", null, it.setting.title),
-      h("span", null, ` · ${it.status} · 修订 ${it.itemRevision}`),
-      h("p", null, it.setting.conclusion),
-      h("button", { disabled: phase !== "idle", onClick: () => openItem(it) }, it.status === "proposed" ? "打开候选" : "编辑设定"),
-      h("button", { onClick: () => setHistoryId(it.id) }, "设定历史"),
-      h("button", { disabled: phase !== "idle" || it.status === "retracted", onClick: () => {
-        const d = blankDraft({ ...it.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision });
-        patchLocal({ drafts: [...localRef.current.drafts, d] });
-        setActive(localRef.current.drafts.length - 1);
-        void requestSave(d, "retract-setting");
-      } }, "撤回设定")
-    )),
-    historyId ? h("div", null, h("h4", null, "历史内容（恢复将创建新修订）"), ...histories.map((c, i) => h(
-      "div",
-      { key: i },
-      h("small", null, `${c.at} · ${c.actor} · ${c.op}`),
-      h("pre", null, JSON.stringify(c.before?.setting || c.after?.setting || {}, null, 2)),
-      h("button", { disabled: phase !== "idle", onClick: () => {
-        const it = worldItems.find((x) => x.id === historyId);
-        if (it) openItem(it, c.before?.setting ? c.before : c.after);
-      } }, "载入这版为修订稿")
-    ))) : null
-  );
-}
-
-// plugin/writing-mode/src/client/features/companion/index.js
-var react3 = __toESM(require("react"), 1);
-var jsx8 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/state/companion-drafts.js
 var companionDrafts = /* @__PURE__ */ new Map();
@@ -4760,6 +4476,7 @@ try {
 async function loadCompanionDraft(project) {
   try {
     const data = await api("draft", void 0, { project, window: companionWindowId });
+    if (!data.ok) return { error: data.error || "draft-read-failed" };
     if (data.ok && data.checkpoint) {
       return {
         text: data.checkpoint.text || "",
@@ -4769,7 +4486,7 @@ async function loadCompanionDraft(project) {
     }
     return { text: "", reference: null, rev: 0 };
   } catch {
-    return { text: "", reference: null, rev: 0 };
+    return { error: "draft-read-failed" };
   }
 }
 function draftSnapshotIdentity(text7, reference) {
@@ -4796,18 +4513,31 @@ async function stashDraftForRecovery(project, { text: text7, reference }) {
     return { ok: false, error: String(err?.message || err) };
   }
 }
+var MAX_DRAFT_CANDIDATES = 8;
+async function fetchDraftSnapshot(project, windowId) {
+  const data = await api("draft", void 0, { project, window: windowId });
+  if (!data?.ok) return null;
+  return data.checkpoint || null;
+}
 async function listDraftCandidates(project) {
   try {
     const data = await api("draft", void 0, { project, window: companionWindowId });
     if (!data.ok) return [];
     const mine = companionWindowId;
-    return (data.checkpoints || []).filter((c) => c && c.windowId !== mine && String(c.text || "").trim()).map((c) => ({
-      windowId: c.windowId,
-      updatedAt: c.updatedAt || null,
-      rev: c.rev ?? 0,
-      text: c.text || "",
-      reference: c.reference || null
-    }));
+    const metas = (data.checkpoints || []).filter((c) => c && c.windowId !== mine && !c.cleared && Number(c.chars || 0) > 0).slice(0, MAX_DRAFT_CANDIDATES);
+    const out = [];
+    for (const m of metas) {
+      const cp = await fetchDraftSnapshot(project, m.windowId);
+      if (!cp || !String(cp.text || "").trim()) continue;
+      out.push({
+        windowId: cp.windowId || m.windowId,
+        updatedAt: cp.updatedAt || m.updatedAt || null,
+        rev: cp.rev ?? m.rev ?? 0,
+        text: cp.text || "",
+        reference: cp.reference || null
+      });
+    }
+    return out;
   } catch {
     return [];
   }
@@ -4848,6 +4578,7 @@ function isDraftConflict(project) {
   return Boolean(companionDraftConflict.get(project));
 }
 function draftErrorText(code4) {
+  if (code4 === "corrupt-draft") return "原草稿文件已损坏，已停止覆盖；可保留损坏副本后保存当前文字。";
   if (code4 === "draft-too-large") return "草稿过长，未能保存。请缩短后重试。";
   if (code4 === "reference-too-large") return "引用过长，未能保存。请缩短选区后重试。";
   if (code4 === "draft-conflict") return "草稿与另一处写入冲突，请选择保留本地或采用远端。";
@@ -5037,6 +4768,567 @@ function persistCompanionDraft(project, onStatus) {
   }));
   return next;
 }
+async function recoverDamagedDraft(project) {
+  const observed = await api("draft", void 0, { project, window: companionWindowId });
+  if (observed.error !== "corrupt-draft" || !observed.damagedHash) return { ok: false, error: "recovery-source-changed" };
+  const local = companionDrafts.get(project) || { text: "", reference: null };
+  const r = await api("draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project, windowId: companionWindowId, text: local.text, reference: local.reference, recoverDamaged: true, expectedHash: observed.damagedHash }) });
+  if (r.ok) {
+    const current = companionDrafts.get(project) || local;
+    companionDrafts.set(project, { ...current, rev: r.checkpoint.rev });
+    if (draftSnapshotIdentity(current.text, current.reference) === draftSnapshotIdentity(local.text, local.reference)) {
+      companionDraftDirty.delete(project);
+      setDraftStatus(project, { phase: "saved", error: "", code: "" });
+    } else void persistCompanionDraft(project);
+  }
+  return r;
+}
+
+// plugin/writing-mode/src/client/services/world-drafts.js
+var journals = /* @__PURE__ */ new Map();
+function parseWorldDraft(text7) {
+  try {
+    const d = JSON.parse(text7);
+    return d?.version === 1 && Array.isArray(d.drafts) ? d : null;
+  } catch {
+    return null;
+  }
+}
+var PREFETCH = 4;
+function titlesOf(entry) {
+  if (entry?.snapshot?.drafts?.length) return entry.snapshot.drafts.map((d) => d.title || "未命名");
+  return entry?.titles || [];
+}
+function createWorldJournal(project, notify) {
+  if (journals.has(project)) {
+    const existing = journals.get(project);
+    existing.listen(notify);
+    return existing;
+  }
+  const windowId = companionWindowId || crypto.randomUUID();
+  const key = "dsh-world-journal:" + project + ":" + windowId;
+  let revision = null;
+  let queue = Promise.resolve();
+  let latest = null;
+  let pending = false;
+  const read = () => api("world-draft", void 0, { project, window: windowId });
+  const list4 = async () => {
+    const r = await read();
+    if (!r.ok) throw new Error(r.error);
+    return {
+      items: (r.checkpoints || []).filter((c) => c && !c.cleared && (c.summary?.draftCount || 0) > 0),
+      total: Number(r.total) || 0,
+      truncated: Boolean(r.truncated)
+    };
+  };
+  const snapshotOf = async (id) => {
+    const r = await api("world-draft", void 0, { project, window: id });
+    if (!r?.ok) throw new Error(r.error || "draft-read-failed");
+    return parseWorldDraft(r.checkpoint?.text || "");
+  };
+  const save = (state) => {
+    localStorage.setItem(key, JSON.stringify(state));
+    latest = JSON.stringify(state);
+    pending = true;
+    notify("正在保留窗口编辑…");
+    const body = latest;
+    queue = queue.catch(() => {
+    }).then(async () => {
+      if (revision === null) {
+        const r2 = await read();
+        if (!r2.ok) throw new Error(r2.error);
+        revision = r2.checkpoint?.rev || 0;
+      }
+      const r = await api("world-draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project, windowId, text: body, baseRev: revision }) });
+      if (!r.ok) throw new Error(r.error);
+      revision = r.checkpoint?.rev ?? r.rev;
+      if (body === latest) {
+        pending = false;
+        notify("窗口编辑已保留，关闭后可恢复");
+      }
+    }).catch((err) => {
+      pending = true;
+      notify("窗口编辑尚未落盘，请重试：" + err.message);
+    });
+    return queue;
+  };
+  const recoveries = async () => {
+    const { items, total, truncated } = await list4();
+    const all2 = items.map((c) => ({
+      windowId: c.windowId,
+      updatedAt: c.updatedAt || null,
+      titles: c.summary?.titles || [],
+      draftCount: c.summary?.draftCount || 0,
+      snapshot: null
+      // 惰取：见 snapshotOf
+    }));
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith("dsh-world-journal:" + project + ":")) continue;
+      const id = k.slice(("dsh-world-journal:" + project + ":").length);
+      const snapshot = parseWorldDraft(localStorage.getItem(k));
+      if (snapshot?.drafts?.length) {
+        const old = all2.findIndex((c) => c.windowId === id);
+        if (old >= 0) all2.splice(old, 1);
+        all2.push({ windowId: id, updatedAt: null, titles: snapshot.drafts.map((d) => d.title || "未命名"), draftCount: snapshot.drafts.length, snapshot });
+      }
+    }
+    const others = all2.filter((c) => c.windowId !== windowId);
+    await Promise.all(others.slice(0, PREFETCH).map(async (c) => {
+      if (c.snapshot) return;
+      try {
+        c.snapshot = await snapshotOf(c.windowId);
+      } catch {
+        c.snapshot = null;
+      }
+    }));
+    return { items: others, total, truncated };
+  };
+  const journal = { save, recoveries, snapshotOf, listen: (listener) => {
+    notify = listener;
+  }, pending: () => pending, own: () => parseWorldDraft(localStorage.getItem(key)), windowId };
+  journals.set(project, journal);
+  return journal;
+}
+
+// plugin/writing-mode/src/client/features/world-settings/index.js
+var h = react2.createElement;
+function newOperationId() {
+  return crypto.randomUUID();
+}
+async function requestHashOf(payload) {
+  return snapshotHash(stableStringify(payload));
+}
+function extractSettingsFromAssistantText(text7) {
+  const raw = String(text7 || "");
+  const fence = raw.match(/```json\s*([\s\S]*?)```/i);
+  const parsed = parseOrganizeResult(fence ? fence[1] : raw);
+  return parsed.ok ? parsed : { ...parsed, raw };
+}
+function blankDraft(setting = {}) {
+  return { id: newOperationId(), title: "", conclusion: "", explanation: "", boundaries: "", tags: [], sources: [], ...setting, dirty: true };
+}
+function storageKey(path2) {
+  return "dsh-world-drafts-v1:" + path2;
+}
+function restore(path2) {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(storageKey(path2)) || "null");
+    if (value?.version === 1 && Array.isArray(value.drafts)) return value;
+  } catch {
+  }
+  return { version: 1, drafts: [], rawReply: "", extra: "", interrupted: false };
+}
+function settingOf(d) {
+  return { type: "world", title: d.title, conclusion: d.conclusion, explanation: d.explanation || "", boundaries: d.boundaries || "", tags: d.tags || [], sources: d.sources || [], modelMark: d.modelMark || null, pending: d.pending === true };
+}
+function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, onDiscard, busy, notice }) {
+  const fields = [["title", "标题"], ["conclusion", "结论"], ["explanation", "说明（可选）"], ["boundaries", "边界 / 例外（可选）"]];
+  return h(
+    "div",
+    { className: "dshWmWorldCard" },
+    h("strong", null, draft.savedId ? "设定修订" : "设定候选"),
+    h("p", null, draft.modelMark === "open" ? "仍待讨论，确认前请核对。" : draft.modelMark === "suggestion" ? "助手建议，尚未由作者确认。" : "尚待作者确认。"),
+    ...fields.map(([key, title]) => h(
+      "label",
+      { key },
+      title,
+      h(key === "title" ? "input" : "textarea", { "data-world-field": key, value: draft[key] || "", rows: key === "explanation" ? 4 : 2, disabled: busy || Boolean(draft.pendingOperation), onChange: (e) => onChange({ ...draft, [key]: e.target.value, dirty: true }) })
+    )),
+    h("details", null, h("summary", null, `来源 ${draft.sources?.length || 0} 条`), ...(draft.sources || []).map((s, i) => h(
+      "div",
+      { key: i },
+      h("small", null, `${s.role || "未知"} · ${s.sessionId || "来源不可用"} / ${s.messageId || "来源不可用"}`),
+      h("pre", null, s.excerpt || "")
+    ))),
+    notice ? h("p", { role: "status" }, notice) : null,
+    h(
+      "div",
+      { className: "dshWmWorldOps" },
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onConfirm }, draft.savedId ? "确认修改" : "确认设定"),
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation || draft.savedStatus === "confirmed" || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onSaveCandidate }, "存为候选"),
+      h("button", { type: "button", disabled: busy || !!draft.pendingOperation, onClick: onDiscard }, "关闭本地编辑")
+    )
+  );
+}
+function WorldSettingsPanel({ path: path2, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged, onReadHistory }) {
+  const [local, setLocal] = react2.useState(() => restore(path2));
+  const localRef = react2.useRef(local);
+  const [data, setData] = react2.useState(null);
+  const dataRef = react2.useRef(null);
+  const [active, setActive] = react2.useState(0);
+  const [phase, setPhase] = react2.useState("idle");
+  const [note, setNote] = react2.useState(() => local.interrupted ? "上次整理等待已中断，请先查看完整会话；不会自动重发。" : "");
+  const [storageError, setStorageError] = react2.useState("");
+  const [journalNote, setJournalNote] = react2.useState("");
+  const [recoveries, setRecoveries] = react2.useState([]);
+  const [recoveringId, setRecoveringId] = react2.useState(null);
+  const recoveryEpoch = react2.useRef(0);
+  const recoveryBusy = react2.useRef(false);
+  const [recoveryMeta, setRecoveryMeta] = react2.useState({ total: 0, truncated: false });
+  const [relocation, setRelocation] = react2.useState({ candidates: [], histories: [] });
+  const journal = react2.useRef(null);
+  if (!journal.current) journal.current = createWorldJournal(path2, (message) => {
+    if (alive.current) setJournalNote(message);
+  });
+  const refreshRecoveries = async () => {
+    try {
+      const r = await journal.current.recoveries();
+      setRecoveries(r.items || []);
+      setRecoveryMeta({ total: r.total || 0, truncated: Boolean(r.truncated) });
+    } catch (err) {
+      setJournalNote("恢复列表读取失败：" + err.message);
+    }
+    try {
+      const r = await api("project-recovery", void 0, { path: path2 });
+      if (r.ok) setRelocation(r);
+    } catch {
+    }
+  };
+  const [conflict, setConflict] = react2.useState(null);
+  const [projection, setProjection] = react2.useState(null);
+  const [historyId, setHistoryId] = react2.useState(null);
+  const alive = react2.useRef(true);
+  const busy = react2.useRef(false);
+  const generation = react2.useRef(0);
+  const controller = react2.useRef(null);
+  const writeLocal = (next, required = false) => {
+    localRef.current = next;
+    if (alive.current) setLocal(next);
+    try {
+      sessionStorage.setItem(storageKey(path2), JSON.stringify(next));
+      void journal.current.save(next);
+      setStorageError("");
+    } catch {
+      setStorageError("本窗口草稿未能缓存，请复制保留后再离开。");
+      if (required) throw new Error("无法持久化操作编号，本次未发送保存请求");
+    }
+  };
+  const patchLocal = (patch2) => writeLocal({ ...localRef.current, ...patch2 });
+  const updateDraft = (id, fn, required = false) => writeLocal({ ...localRef.current, drafts: localRef.current.drafts.map((d) => d.id === id ? fn(d) : d) }, required);
+  const adopt = (result) => {
+    dataRef.current = result;
+    if (alive.current) setData(result);
+  };
+  const refresh = async () => {
+    const seq = ++generation.current;
+    const result = await api("memory", void 0, { path: path2 });
+    if (!result?.ok) throw new Error(result?.error || "读取设定失败");
+    if (alive.current && seq === generation.current) adopt(result);
+    return result;
+  };
+  react2.useEffect(() => {
+    alive.current = true;
+    void refresh().catch((err) => {
+      if (alive.current) setNote(err.message);
+    });
+    try {
+      const fallback = journal.current.own();
+      if (fallback && !localRef.current.drafts.length) writeLocal(fallback);
+      else if (localRef.current.drafts.length) writeLocal(localRef.current);
+    } catch (err) {
+      setStorageError("无法读取窗口恢复副本：" + err.message);
+    }
+    void refreshRecoveries();
+    return () => {
+      alive.current = false;
+      generation.current++;
+      recoveryEpoch.current++;
+      controller.current?.abort();
+    };
+  }, [path2]);
+  react2.useEffect(() => {
+    const protect = (e) => {
+      if (storageError || journal.current.pending()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [storageError]);
+  const changeDraft = (next) => updateDraft(next.id, () => next);
+  const openItem = (it, snapshot = null) => {
+    const source = snapshot || it;
+    const d = blankDraft({ ...source.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision, dirty: Boolean(snapshot), source: source.source });
+    patchLocal({ drafts: [...localRef.current.drafts, d] });
+    setActive(localRef.current.drafts.length - 1);
+  };
+  const syncProjection = async (preserve = false) => {
+    const current = await refresh();
+    const result = await api("setting-projection", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, baseRevision: current.memory.revision, baseEtag: current.etag, preserve, expectedFileHash: preserve ? projection?.hash : void 0 }) });
+    if (!result.ok) {
+      await refresh();
+      throw new Error(`设定已保存，可读稿待同步：${result.error}`);
+    }
+    adopt(result);
+    setProjection(null);
+    return result;
+  };
+  const requestSave = async (draft2, op, retry = false) => {
+    if (busy.current || conflict) return;
+    busy.current = true;
+    setPhase("saving");
+    setNote("正在保存…");
+    try {
+      if (!dataRef.current) await refresh();
+      let pending = draft2.pendingOperation;
+      if (!pending) {
+        if (retry) throw new Error("没有待重试操作");
+        const remote = dataRef.current.memory.items.find((it) => it.id === draft2.savedId);
+        if (remote && draft2.openedItemRevision != null && remote.itemRevision !== draft2.openedItemRevision) {
+          setConflict({ draftId: draft2.id, remote });
+          throw new Error("远端设定已更新；请先比较当前修订与远端");
+        }
+        const request = { path: path2, op, baseRevision: dataRef.current.memory.revision, baseEtag: dataRef.current.etag, id: draft2.savedId || void 0, item: op === "retract-setting" ? void 0 : { kind: "fact", setting: settingOf(draft2), source: draft2.source }, actor: "author", clientSchemaVersion: 2, operationId: newOperationId() };
+        request.requestHash = await requestHashOf({ op, id: request.id || null, item: request.item || null, actor: request.actor });
+        pending = { request };
+        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: pending }), true);
+      }
+      const result = await api("memory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pending.request) });
+      if (!alive.current) return;
+      if (!result?.ok) {
+        if (result?.error === "invalid-response") throw new Error("无法确认保存结果，请重试同一操作");
+        updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null }));
+        if (["revision-conflict", "etag-conflict", "operation-conflict"].includes(result.error)) {
+          const current = await refresh();
+          setConflict({ draftId: draft2.id, remote: current.memory.items.find((it) => it.id === draft2.savedId) || null });
+        }
+        throw new Error(isQuotaError(result.error) ? QUOTA_ERROR_COPY[result.error] : "保存失败，编辑已保留：" + result.error);
+      }
+      if (!result.receipt?.itemId) throw new Error("缺少保存收据，请重试同一操作核对");
+      adopt(result);
+      const saved = result.memory.items.find((it) => it.id === result.receipt.itemId);
+      updateDraft(draft2.id, (d) => ({ ...d, pendingOperation: null, savedId: result.receipt.itemId, savedStatus: saved?.status, openedItemRevision: saved?.itemRevision, dirty: false }));
+      setNote(pending.request.op === "save-setting-candidate" ? "候选已保存，可稍后打开确认" : "设定已保存");
+      onChanged?.();
+      onStatus?.({ phase: "saved", receipt: result.receipt });
+      if (pending.request.op !== "save-setting-candidate") {
+        try {
+          const projected = await syncProjection();
+          setNote(projected.preservedPath ? `手稿副本已保留：${projected.preservedPath}；可读稿已同步` : "设定已保存，可读稿已同步");
+        } catch (err) {
+          setNote(err.message);
+        }
+      }
+    } catch (err) {
+      if (alive.current) setNote(err.message || String(err));
+    } finally {
+      busy.current = false;
+      if (alive.current) setPhase("idle");
+    }
+  };
+  const organize = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setPhase("organizing");
+    controller.current = new AbortController();
+    try {
+      writeLocal({ ...localRef.current, interrupted: true }, true);
+      setNote("正在整理所选讨论；普通输入与引用保持不变。");
+      const result = await onRequestOrganize(localRef.current.extra, controller.current.signal);
+      if (!alive.current || controller.current.signal.aborted) return;
+      const parsed = extractSettingsFromAssistantText(result.text);
+      const drafts = parsed.ok ? parsed.settings.map((s) => blankDraft({ ...s, sources: result.sources, source: { kind: "assistant", sessionId: result.sessionId, messageId: result.messageId } })) : [];
+      patchLocal({ drafts: [...localRef.current.drafts, ...drafts], rawReply: result.text, interrupted: false });
+      if (drafts.length) setActive(localRef.current.drafts.length - drafts.length);
+      setNote(parsed.ok ? `新增 ${drafts.length} 条候选；${parsed.rejected?.length || 0} 条格式不符，原文已保留。` : "无法解析整理结果；原文已保留，可手动新建设定。");
+    } catch (err) {
+      if (alive.current) setNote(err.message || String(err));
+    } finally {
+      busy.current = false;
+      if (alive.current) setPhase("idle");
+    }
+  };
+  const runProjection = async (preserve) => {
+    if (busy.current) return;
+    busy.current = true;
+    setPhase("saving");
+    setNote("正在同步可读稿…");
+    try {
+      const r = await syncProjection(preserve);
+      setNote(r.preservedPath ? `已保留手稿副本：${r.preservedPath}；整理稿已重建` : "可读稿已同步");
+    } catch (err) {
+      setNote(err.message);
+    } finally {
+      busy.current = false;
+      setPhase("idle");
+    }
+  };
+  const draft = local.drafts[active] || local.drafts[0];
+  const worldItems = (data?.memory?.items || []).filter((it) => it.setting?.type === "world");
+  const histories = (data?.memory?.changes || []).filter((c) => c.id === historyId).slice().reverse();
+  return h(
+    "section",
+    { className: "dshWmWorldPanel", "data-world-panel": "" },
+    h("h3", null, "世界观整理"),
+    h("p", null, `已选消息 ${selectedMessages?.length || 0} · 设定 ${worldItems.length}`),
+    h("details", null, h("summary", null, "查看整理范围"), ...(selectedMessages || []).map((m) => h("pre", { key: m.id }, `${m.role}：${m.text}`))),
+    h("label", null, "补充要求", h("input", { value: local.extra, onChange: (e) => patchLocal({ extra: e.target.value }) })),
+    h("button", { disabled: phase !== "idle" || !selectedMessages?.length, onClick: organize }, "整理为设定"),
+    h("button", { disabled: phase !== "idle", onClick: onClearSelection }, "清除选择"),
+    h("button", { disabled: phase !== "idle", onClick: () => {
+      patchLocal({ drafts: [...localRef.current.drafts, blankDraft()] });
+      setActive(localRef.current.drafts.length - 1);
+    } }, "手动新建设定"),
+    phase === "organizing" ? h("button", { onClick: () => controller.current?.abort() }, "停止等待") : null,
+    h("p", { role: "status", "data-world-notice": "" }, note),
+    storageError ? h("p", { role: "alert" }, storageError) : null,
+    h("button", { disabled: phase !== "idle", onClick: () => void refresh().catch((err) => setNote(err.message)) }, "重新读取设定"),
+    h("p", { "data-world-journal": "" }, journalNote),
+    h("button", { onClick: () => {
+      try {
+        void journal.current.save(localRef.current);
+      } catch (err) {
+        setStorageError(err.message);
+      }
+    } }, "重试保留窗口编辑"),
+    h("button", { onClick: () => void refreshRecoveries() }, "查找可恢复编辑"),
+    recoveryMeta.truncated ? h("p", { role: "status" }, `列表只显示最新 ${recoveries.length} 份副本（共 ${recoveryMeta.total} 份）。项目移动后的导入不走这个上限，会复制全部旧桶。`) : null,
+    ...recoveries.map((c) => h(
+      "div",
+      { key: c.windowId },
+      h("span", null, `恢复副本（${c.draftCount || titlesOf(c).length} 条）：` + (titlesOf(c).join("、") || "（无标题）")),
+      h("button", { disabled: phase !== "idle" || recoveringId !== null, onClick: () => void (async () => {
+        if (recoveryBusy.current) return;
+        recoveryBusy.current = true;
+        const epoch = recoveryEpoch.current;
+        setRecoveringId(c.windowId);
+        try {
+          const snapshot = c.snapshot || await journal.current.snapshotOf(c.windowId);
+          if (!alive.current || recoveryEpoch.current !== epoch) return;
+          if (!snapshot?.drafts?.length) {
+            setJournalNote("这份副本读不回来了（可能已被清理或损坏）；原桶未被改动。");
+            return;
+          }
+          const existing = new Map(localRef.current.drafts.map((d) => [d.id, d]));
+          const drafts = snapshot.drafts.filter((d) => JSON.stringify(existing.get(d.id)) !== JSON.stringify(d)).map((d) => ({ ...d, id: existing.has(d.id) ? newOperationId() : d.id, pendingOperation: d.pendingOperation ? { ...d.pendingOperation, request: { ...d.pendingOperation.request, path: path2 } } : void 0 }));
+          patchLocal({ drafts: [...localRef.current.drafts, ...drafts], rawReply: localRef.current.rawReply || snapshot.rawReply });
+          if (drafts.length) setActive(localRef.current.drafts.length - drafts.length);
+          setNote(drafts.length ? "恢复副本已加入，本窗口已有编辑保留。" : "这份副本已在本窗口中，未重复添加。");
+        } catch (err) {
+          if (alive.current && recoveryEpoch.current === epoch) setJournalNote("恢复失败：" + err.message);
+        } finally {
+          recoveryBusy.current = false;
+          if (alive.current && recoveryEpoch.current === epoch) setRecoveringId(null);
+        }
+      })() }, recoveringId === c.windowId ? "正在读取副本…" : "恢复这份编辑")
+    )),
+    h(
+      "details",
+      null,
+      h("summary", null, "项目移动后的恢复"),
+      h("p", null, "仅列出已不存在的旧位置。每条会说明它与当前作品有没有关联证据——证据只有两种：作品备忘里记过这个旧路径，或可读稿抬头里记过这个旧路径。有证据的可直接导入；没证据的仍可以导，但需你显式确认这是同一部作品——否则两部作品的草稿会被混在一起。注意：“旧草稿引用的手稿在本作品里同名同位”**不算证据**（两部不同作品都会很自然地有 draft/第一章.md），它只会作为提示列出；内容一致也只是辅助线索。导入只复制到独立恢复桶，保留旧记录，不合并会话，重试不覆盖已恢复的编辑。旧会话仍属于旧工作目录，请勿直接在那里执行文件操作。"),
+      ...relocation.candidates.map((c) => h(
+        "div",
+        { key: c.oldPath, "data-relocation-candidate": c.relation || "unrelated", "data-relocation-importable": c.importable ? "yes" : "no" },
+        h("span", null, c.oldPath),
+        h("small", null, c.importable ? `可导入 · 依据：${c.detail}` : `无关联证据 · ${c.detail}`),
+        h("button", { onClick: async () => {
+          const ask = c.importable ? `确认导入旧位置草稿？
+
+来源（旧位置）：${c.oldPath}
+目的（当前作品）：${path2}
+依据：${c.detail}
+
+将复制到独立恢复桶，保留旧记录，不合并会话。` : `没找到这个旧位置属于当前作品的证据。
+
+来源（旧位置）：${c.oldPath}
+目的（当前作品）：${path2}
+
+${c.detail}
+
+如果它其实是另一部作品，导入会把两部作品的草稿混在一起（导入后只能逐份丢弃）。
+确认这确实是同一部作品的旧位置吗？`;
+          if (!window.confirm(ask)) return;
+          try {
+            const r = await api("project-recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, oldPath: c.oldPath, token: c.token, confirmUnrelated: !c.importable }) });
+            setNote(r.ok ? `旧位置草稿已导入 ${r.copied} 份${r.skipped ? `，跳过 ${r.skipped} 份（已存在或读不回来，未被覆盖）` : ""}${r.confirmedUnrelated ? "（无关联证据，已按你的确认导入并记入历史）" : ""}；聊天草稿请在伙伴区查看其他窗口草稿。` : "恢复失败：" + (r.error === "recovery-source-unrelated" ? "没找到关联证据，且未带上你的显式确认，已拒绝导入（旧记录未改动）。" : r.error));
+            await refreshRecoveries();
+          } catch (err) {
+            setNote("恢复失败：" + err.message);
+          }
+        } }, "导入旧位置草稿")
+      )),
+      ...relocation.histories.flatMap((c) => c.sessions.map((id) => h("button", { key: c.oldPath + id, onClick: () => onReadHistory?.(c.oldPath, id) }, "查看旧位置会话 " + id.slice(0, 8))))
+    ),
+    local.rawReply ? h("details", null, h("summary", null, "整理原文"), h("pre", null, local.rawReply)) : null,
+    h("div", null, ...local.drafts.map((d, i) => h("button", { key: d.id, onClick: () => setActive(i) }, `${d.title || "未命名"}${d.dirty ? " · 本地编辑" : ""}`))),
+    draft ? h(WorldSettingCard, {
+      draft,
+      busy: phase !== "idle" || !!conflict,
+      onChange: changeDraft,
+      onSaveCandidate: () => void requestSave(draft, "save-setting-candidate"),
+      onConfirm: () => void requestSave(draft, "confirm-setting"),
+      onDiscard: () => {
+        if (draft.dirty && !window.confirm("关闭这份本地编辑？已保存的设定不会删除。")) return;
+        patchLocal({ drafts: localRef.current.drafts.filter((d) => d.id !== draft.id) });
+        setActive(0);
+      },
+      notice: draft.pendingOperation ? "结果待核对；重试会使用原操作编号，不重复新增。" : "本窗口编辑已缓存；确认后才更新项目设定。"
+    }) : null,
+    draft?.pendingOperation ? h("button", { disabled: phase !== "idle", onClick: () => void requestSave(draft, null, true) }, "核对并重试保存") : null,
+    conflict ? h(
+      "div",
+      { role: "alert" },
+      h("strong", null, "保存冲突：本地编辑保留"),
+      ...["title", "conclusion", "explanation", "boundaries"].map((key, i) => h("div", { key }, h("strong", null, ["标题", "结论", "说明", "边界"][i]), h("p", null, "本地：" + (local.drafts.find((d) => d.id === conflict.draftId)?.[key] || "（空）")), h("p", null, "远端：" + (conflict.remote?.setting?.[key] || "（空）")))),
+      h("button", { onClick: () => {
+        const d = localRef.current.drafts.find((x) => x.id === conflict.draftId);
+        if (d) updateDraft(d.id, (x) => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null }));
+        setConflict(null);
+        setNote("已采用最新基线；请核对后再次确认保存。");
+      } }, "已比较，保留本地修订"),
+      h("button", { onClick: () => setConflict(null) }, "暂不保存")
+    ) : null,
+    data?.memory?.projection && data.memory.projection.status !== "idle" ? h(
+      "div",
+      { className: "dshWmWorldProjection" },
+      h("p", null, data?.memory?.projection?.status === "synced" ? "可读稿已同步" : `可读稿待同步：${data?.memory?.projection?.lastError || "pending"}`),
+      h("button", { disabled: phase !== "idle", onClick: () => void runProjection(false) }, "重试同步可读稿"),
+      h("button", { onClick: () => void api("setting-projection", void 0, { path: path2 }).then((r) => r.ok ? setProjection(r) : setNote(r.error)).catch((err) => setNote(err.message)) }, "查看可读稿差异")
+    ) : null,
+    projection ? h(
+      "div",
+      null,
+      h("h4", null, "磁盘原文"),
+      h("pre", null, projection.content),
+      h("h4", null, "将生成的内容"),
+      h("pre", null, projection.proposed),
+      projection.exists ? h("button", { disabled: phase !== "idle", onClick: () => void runProjection(true) }, "保留手稿副本并重建整理稿") : null
+    ) : null,
+    h("h4", null, "已保存设定"),
+    ...worldItems.map((it) => h(
+      "article",
+      { key: it.id, "data-world-item": it.id },
+      h("strong", null, it.setting.title),
+      h("span", null, ` · ${it.status} · 修订 ${it.itemRevision}`),
+      h("p", null, it.setting.conclusion),
+      h("button", { disabled: phase !== "idle", onClick: () => openItem(it) }, it.status === "proposed" ? "打开候选" : "编辑设定"),
+      h("button", { onClick: () => setHistoryId(it.id) }, "设定历史"),
+      h("button", { disabled: phase !== "idle" || it.status === "retracted", onClick: () => {
+        const d = blankDraft({ ...it.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision });
+        patchLocal({ drafts: [...localRef.current.drafts, d] });
+        setActive(localRef.current.drafts.length - 1);
+        void requestSave(d, "retract-setting");
+      } }, "撤回设定")
+    )),
+    historyId ? h("div", null, h("h4", null, "历史内容（恢复将创建新修订）"), ...histories.map((c, i) => h(
+      "div",
+      { key: i },
+      h("small", null, `${c.at} · ${c.actor} · ${c.op}`),
+      h("pre", null, JSON.stringify(c.before?.setting || c.after?.setting || {}, null, 2)),
+      h("button", { disabled: phase !== "idle", onClick: () => {
+        const it = worldItems.find((x) => x.id === historyId);
+        if (it) openItem(it, c.before?.setting ? c.before : c.after);
+      } }, "载入这版为修订稿")
+    ))) : null
+  );
+}
+
+// plugin/writing-mode/src/client/features/companion/index.js
+var react3 = __toESM(require("react"), 1);
+var jsx8 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/features/companion/CompanionMessage.js
 var import_react2 = require("react");
@@ -17952,6 +18244,11 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     companionRecoveryState.set(project, "pending");
     void loadCompanionDraft(project).then((c) => {
       if (cancelled) return;
+      if (c.error) {
+        companionRecoveryState.set(project, "done");
+        setDraftStatus(project, { phase: "error", code: c.error, error: "草稿读取失败，原文件已保留：" + c.error });
+        return;
+      }
       const typedDuring = recoveryGen.current !== started;
       if (!typedDuring) {
         let nativeDraft = "";
@@ -18177,6 +18474,17 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       }),
       jsx8.jsx(WorldSettingsPanel, {
         path: project,
+        onReadHistory: (oldPath, sessionId) => {
+          const old = adapter.attach(oldPath, sessionId);
+          try {
+            old.openFullSession();
+            onExit();
+          } catch (err) {
+            setError("旧会话无法打开：" + err.message);
+          } finally {
+            old.dispose();
+          }
+        },
         selectedMessages: worldSelection,
         onClearSelection: () => setWorldSelection([]),
         onStatus: setWorldStatus,
@@ -18251,6 +18559,15 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     ] }) : null,
     draftUi.status.phase === "error" && !draftUi.conflict ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
       draftUi.status.error,
+      draftUi.status.code === "corrupt-draft" ? jsx8.jsx("button", { onClick: async () => {
+        if (!window.confirm("保留损坏文件副本，并把当前编辑内容保存为新草稿？")) return;
+        try {
+          const r = await recoverDamagedDraft(project);
+          setNotice(r.ok ? "损坏副本已保留，当前草稿已保存。" : "恢复失败：" + r.error);
+        } catch (err) {
+          setNotice("恢复失败：" + err.message);
+        }
+      }, children: "保留损坏副本并保存当前草稿" }) : null,
       jsx8.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => void persistCompanionDraft(project),
@@ -18531,6 +18848,7 @@ function WritingModeApp() {
   const [templates, setTemplates] = react4.useState([]);
   const [addRootMode, setAddRootMode] = react4.useState(false);
   const [addRootPath, setAddRootPath] = react4.useState("");
+  const [addRootKind, setAddRootKind] = react4.useState("library");
   const [flash, setFlash] = react4.useState("");
   const [prefs, setPrefs] = react4.useState(getPrefs);
   react4.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
@@ -18724,11 +19042,14 @@ function WritingModeApp() {
     const data = await api("roots", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "add", path: p, active: true })
+      body: JSON.stringify({ mode: "add", path: p, active: true, kind: addRootKind })
     });
+    if (!data.ok) {
+      flashMsg("打开文件夹失败：" + (data.error || "unknown"));
+      return;
+    }
     setAddRootMode(false);
     setAddRootPath("");
-    if (!data.ok) flashMsg("添加库失败：" + (data.error || "unknown"));
     void refreshTree();
   }
   async function activateRoot(p) {
@@ -18995,30 +19316,45 @@ function WritingModeApp() {
             jsx10.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
-              onClick: () => setAddRootMode(true),
+              onClick: () => {
+                setAddRootKind("library");
+                setAddRootMode(true);
+              },
               title: T.addRoot,
               children: "+"
             }),
             jsx10.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
-              onClick: () => setAddRootMode(true),
-              children: "…",
-              title: T.addRoot
+              onClick: () => {
+                setAddRootKind("project");
+                setAddRootPath("");
+                setAddRootMode(true);
+              },
+              children: "打开已有",
+              title: "读取原有目录，不搬动资料、不自动确认设定"
             }),
             addRootMode ? jsx10.jsx(
               "span",
               {
                 className: "dshWmBarGroup",
                 children: [
+                  jsx10.jsx("select", {
+                    "aria-label": "文件夹用途",
+                    value: addRootKind,
+                    onChange: (e) => setAddRootKind(e.target.value),
+                    children: [jsx10.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx10.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
+                  }),
                   jsx10.jsx("input", {
                     className: "dshWmSearch",
                     style: { width: 180, margin: 0 },
                     value: addRootPath,
-                    placeholder: "E:\\剧本",
+                    placeholder: addRootKind === "project" ? "已有作品文件夹完整路径" : "E:\\剧本",
+                    "aria-label": "文件夹路径",
                     autoFocus: true,
                     onChange: (e) => setAddRootPath(e.target.value),
                     onKeyDown: (e) => {
+                      if (e.nativeEvent?.isComposing || e.keyCode === 229) return;
                       if (e.key === "Enter") void commitAddRoot();
                       if (e.key === "Escape") setAddRootMode(false);
                     }
@@ -19027,7 +19363,7 @@ function WritingModeApp() {
                     type: "button",
                     className: "dshWmBtn is-primary",
                     onClick: () => void commitAddRoot(),
-                    children: "OK"
+                    children: addRootKind === "project" ? "打开项目" : "添加库"
                   })
                 ]
               },
@@ -19311,6 +19647,7 @@ function WritingModeApp() {
                                 },
                                 "pt"
                               ),
+                              proj.scanWarning ? jsx10.jsx("p", { role: "status", children: proj.scanWarning }) : null,
                               openP ? groups.map(
                                 (g) => jsx10.jsx(
                                   react4.Fragment,

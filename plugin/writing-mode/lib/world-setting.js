@@ -81,7 +81,9 @@ export function normalizeSetting(input, { requireTitleConclusion = false } = {})
     if (!title) throw settingError('empty-title')
     if (!conclusion) throw settingError('empty-conclusion')
   }
-  const setting = { type, title, conclusion, explanation, boundaries, tags, sources }
+  const modelMark = ['open', 'suggestion'].includes(raw.modelMark) ? raw.modelMark : null
+  const pending = modelMark === 'open' || raw.pending === true
+  const setting = { type, title, conclusion, explanation, boundaries, tags, sources, modelMark, pending }
   return { setting, chars }
 }
 

@@ -4,6 +4,9 @@ import { api } from '../../services/writing-api.js'
 import { parseOrganizeResult, stableStringify } from '../../../shared/world-setting.js'
 import { snapshotHash } from '../../services/world-organizer.js'
 
+import { createWorldJournal, titlesOf } from '../../services/world-drafts.js'
+import { QUOTA_ERROR_COPY, isQuotaError } from '../memory/index.js'
+
 const h = react.createElement
 export function newOperationId() { return crypto.randomUUID() }
 export async function requestHashOf(payload) { return snapshotHash(stableStringify(payload)) }
@@ -25,7 +28,7 @@ function restore(path) {
   return { version: 1, drafts: [], rawReply: '', extra: '', interrupted: false }
 }
 function settingOf(d) {
-  return { type: 'world', title: d.title, conclusion: d.conclusion, explanation: d.explanation || '', boundaries: d.boundaries || '', tags: d.tags || [], sources: d.sources || [] }
+  return { type: 'world', title: d.title, conclusion: d.conclusion, explanation: d.explanation || '', boundaries: d.boundaries || '', tags: d.tags || [], sources: d.sources || [], modelMark: d.modelMark || null, pending: d.pending === true }
 }
 
 export function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, onDiscard, busy, notice }) {
@@ -44,7 +47,7 @@ export function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, 
       h('button', { type: 'button', disabled: busy || !!draft.pendingOperation, onClick: onDiscard }, '关闭本地编辑')))
 }
 
-export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged }) {
+export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged, onReadHistory }) {
   const [local, setLocal] = react.useState(() => restore(path))
   const localRef = react.useRef(local)
   const [data, setData] = react.useState(null)
@@ -53,6 +56,23 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
   const [phase, setPhase] = react.useState('idle')
   const [note, setNote] = react.useState(() => local.interrupted ? '上次整理等待已中断，请先查看完整会话；不会自动重发。' : '')
   const [storageError, setStorageError] = react.useState('')
+  const [journalNote, setJournalNote] = react.useState('')
+  const [recoveries, setRecoveries] = react.useState([])
+  const [recoveringId, setRecoveringId] = react.useState(null)
+  const recoveryEpoch = react.useRef(0)
+  const recoveryBusy = react.useRef(false)
+  const [recoveryMeta, setRecoveryMeta] = react.useState({ total: 0, truncated: false })
+  const [relocation, setRelocation] = react.useState({ candidates: [], histories: [] })
+  const journal = react.useRef(null)
+  if (!journal.current) journal.current = createWorldJournal(path, message => { if (alive.current) setJournalNote(message) })
+  const refreshRecoveries = async () => {
+    try {
+      const r = await journal.current.recoveries()
+      setRecoveries(r.items || [])
+      setRecoveryMeta({ total: r.total || 0, truncated: Boolean(r.truncated) })
+    } catch (err) { setJournalNote('恢复列表读取失败：' + err.message) }
+    try { const r = await api('project-recovery', undefined, { path }); if (r.ok) setRelocation(r) } catch {}
+  }
   const [conflict, setConflict] = react.useState(null)
   const [projection, setProjection] = react.useState(null)
   const [historyId, setHistoryId] = react.useState(null)
@@ -63,7 +83,7 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
   const writeLocal = (next, required = false) => {
     localRef.current = next
     if (alive.current) setLocal(next)
-    try { sessionStorage.setItem(storageKey(path), JSON.stringify(next)); setStorageError('') }
+    try { sessionStorage.setItem(storageKey(path), JSON.stringify(next)); void journal.current.save(next); setStorageError('') }
     catch { setStorageError('本窗口草稿未能缓存，请复制保留后再离开。'); if (required) throw new Error('无法持久化操作编号，本次未发送保存请求') }
   }
   const patchLocal = patch => writeLocal({ ...localRef.current, ...patch })
@@ -79,10 +99,16 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
   react.useEffect(() => {
     alive.current = true
     void refresh().catch(err => { if (alive.current) setNote(err.message) })
-    return () => { alive.current = false; generation.current++; controller.current?.abort() }
+    try {
+      const fallback = journal.current.own()
+      if (fallback && !localRef.current.drafts.length) writeLocal(fallback)
+      else if (localRef.current.drafts.length) writeLocal(localRef.current)
+    } catch (err) { setStorageError('无法读取窗口恢复副本：' + err.message) }
+    void refreshRecoveries()
+    return () => { alive.current = false; generation.current++; recoveryEpoch.current++; controller.current?.abort() }
   }, [path])
   react.useEffect(() => {
-    const protect = e => { if (storageError) { e.preventDefault(); e.returnValue = '' } }
+    const protect = e => { if (storageError || journal.current.pending()) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload', protect)
     return () => window.removeEventListener('beforeunload', protect)
   }, [storageError])
@@ -126,7 +152,7 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
           const current = await refresh()
           setConflict({ draftId: draft.id, remote: current.memory.items.find(it => it.id === draft.savedId) || null })
         }
-        throw new Error('保存失败，编辑已保留：' + result.error)
+        throw new Error(isQuotaError(result.error) ? QUOTA_ERROR_COPY[result.error] : '保存失败，编辑已保留：' + result.error)
       }
       if (!result.receipt?.itemId) throw new Error('缺少保存收据，请重试同一操作核对')
       adopt(result)
@@ -177,6 +203,53 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
     phase === 'organizing' ? h('button', { onClick: () => controller.current?.abort() }, '停止等待') : null,
     h('p', { role: 'status', 'data-world-notice': '' }, note), storageError ? h('p', { role: 'alert' }, storageError) : null,
     h('button', { disabled: phase !== 'idle', onClick: () => void refresh().catch(err => setNote(err.message)) }, '重新读取设定'),
+    h('p', { 'data-world-journal': '' }, journalNote),
+    h('button', { onClick: () => { try { void journal.current.save(localRef.current) } catch (err) { setStorageError(err.message) } } }, '重试保留窗口编辑'),
+    h('button', { onClick: () => void refreshRecoveries() }, '查找可恢复编辑'),
+    recoveryMeta.truncated
+      ? h('p', { role: 'status' }, `列表只显示最新 ${recoveries.length} 份副本（共 ${recoveryMeta.total} 份）。项目移动后的导入不走这个上限，会复制全部旧桶。`)
+      : null,
+    ...recoveries.map(c => h('div', { key: c.windowId },
+      h('span', null, `恢复副本（${c.draftCount || titlesOf(c).length} 条）：` + (titlesOf(c).join('、') || '（无标题）')),
+      h('button', { disabled: phase !== 'idle' || recoveringId !== null, onClick: () => void (async () => {
+        // V7：正文惰取。列表只有标题汇总，点了才去取那一个桶的全文。
+        if (recoveryBusy.current) return
+        recoveryBusy.current = true
+        const epoch = recoveryEpoch.current
+        setRecoveringId(c.windowId)
+        try {
+          const snapshot = c.snapshot || await journal.current.snapshotOf(c.windowId)
+          if (!alive.current || recoveryEpoch.current !== epoch) return
+          if (!snapshot?.drafts?.length) { setJournalNote('这份副本读不回来了（可能已被清理或损坏）；原桶未被改动。'); return }
+          const existing = new Map(localRef.current.drafts.map(d => [d.id, d]))
+          const drafts = snapshot.drafts.filter(d => JSON.stringify(existing.get(d.id)) !== JSON.stringify(d)).map(d => ({ ...d, id: existing.has(d.id) ? newOperationId() : d.id, pendingOperation: d.pendingOperation ? { ...d.pendingOperation, request: { ...d.pendingOperation.request, path } } : undefined }))
+          patchLocal({ drafts: [...localRef.current.drafts, ...drafts], rawReply: localRef.current.rawReply || snapshot.rawReply })
+          if (drafts.length) setActive(localRef.current.drafts.length - drafts.length)
+          setNote(drafts.length ? '恢复副本已加入，本窗口已有编辑保留。' : '这份副本已在本窗口中，未重复添加。')
+        } catch (err) { if (alive.current && recoveryEpoch.current === epoch) setJournalNote('恢复失败：' + err.message) }
+        finally { recoveryBusy.current = false; if (alive.current && recoveryEpoch.current === epoch) setRecoveringId(null) }
+      })() }, recoveringId === c.windowId ? '正在读取副本…' : '恢复这份编辑'))),
+    h('details', null, h('summary', null, '项目移动后的恢复'),
+      h('p', null, '仅列出已不存在的旧位置。每条会说明它与当前作品有没有关联证据——证据只有两种：作品备忘里记过这个旧路径，或可读稿抬头里记过这个旧路径。有证据的可直接导入；没证据的仍可以导，但需你显式确认这是同一部作品——否则两部作品的草稿会被混在一起。注意：“旧草稿引用的手稿在本作品里同名同位”**不算证据**（两部不同作品都会很自然地有 draft/第一章.md），它只会作为提示列出；内容一致也只是辅助线索。导入只复制到独立恢复桶，保留旧记录，不合并会话，重试不覆盖已恢复的编辑。旧会话仍属于旧工作目录，请勿直接在那里执行文件操作。'),
+      ...relocation.candidates.map(c => h('div', { key: c.oldPath, 'data-relocation-candidate': c.relation || 'unrelated', 'data-relocation-importable': c.importable ? 'yes' : 'no' },
+        h('span', null, c.oldPath),
+        h('small', null, c.importable ? `可导入 · 依据：${c.detail}` : `无关联证据 · ${c.detail}`),
+        h('button', { onClick: async () => {
+          // CXR02 / 复核裁决 1：确认框必须**同时显示来源与目的项目**，
+          // 不能只说“当前作品”——作者要能看出这是从哪个目录往哪个目录导。
+          const ask = c.importable
+            ? `确认导入旧位置草稿？\n\n来源（旧位置）：${c.oldPath}\n目的（当前作品）：${path}\n依据：${c.detail}\n\n将复制到独立恢复桶，保留旧记录，不合并会话。`
+            : `没找到这个旧位置属于当前作品的证据。\n\n来源（旧位置）：${c.oldPath}\n目的（当前作品）：${path}\n\n${c.detail}\n\n如果它其实是另一部作品，导入会把两部作品的草稿混在一起（导入后只能逐份丢弃）。\n确认这确实是同一部作品的旧位置吗？`
+          if (!window.confirm(ask)) return
+          try {
+            const r = await api('project-recovery', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, oldPath: c.oldPath, token: c.token, confirmUnrelated: !c.importable }) })
+            setNote(r.ok
+              ? `旧位置草稿已导入 ${r.copied} 份${r.skipped ? `，跳过 ${r.skipped} 份（已存在或读不回来，未被覆盖）` : ''}${r.confirmedUnrelated ? '（无关联证据，已按你的确认导入并记入历史）' : ''}；聊天草稿请在伙伴区查看其他窗口草稿。`
+              : '恢复失败：' + (r.error === 'recovery-source-unrelated' ? '没找到关联证据，且未带上你的显式确认，已拒绝导入（旧记录未改动）。' : r.error))
+            await refreshRecoveries()
+          } catch (err) { setNote('恢复失败：' + err.message) }
+        } }, '导入旧位置草稿'))),
+      ...relocation.histories.flatMap(c => c.sessions.map(id => h('button', { key: c.oldPath + id, onClick: () => onReadHistory?.(c.oldPath, id) }, '查看旧位置会话 ' + id.slice(0, 8))))),
     local.rawReply ? h('details', null, h('summary', null, '整理原文'), h('pre', null, local.rawReply)) : null,
     h('div', null, ...local.drafts.map((d, i) => h('button', { key: d.id, onClick: () => setActive(i) }, `${d.title || '未命名'}${d.dirty ? ' · 本地编辑' : ''}`))),
     draft ? h(WorldSettingCard, { draft, busy: phase !== 'idle' || !!conflict, onChange: changeDraft,
@@ -184,7 +257,7 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
       onDiscard: () => { if (draft.dirty && !window.confirm('关闭这份本地编辑？已保存的设定不会删除。')) return; patchLocal({ drafts: localRef.current.drafts.filter(d => d.id !== draft.id) }); setActive(0) },
       notice: draft.pendingOperation ? '结果待核对；重试会使用原操作编号，不重复新增。' : '本窗口编辑已缓存；确认后才更新项目设定。' }) : null,
     draft?.pendingOperation ? h('button', { disabled: phase !== 'idle', onClick: () => void requestSave(draft, null, true) }, '核对并重试保存') : null,
-    conflict ? h('div', { role: 'alert' }, h('strong', null, '保存冲突：本地编辑保留'), h('pre', null, JSON.stringify(conflict.remote?.setting || {}, null, 2)),
+    conflict ? h('div', { role: 'alert' }, h('strong', null, '保存冲突：本地编辑保留'), ...['title', 'conclusion', 'explanation', 'boundaries'].map((key, i) => h('div', { key }, h('strong', null, ['标题', '结论', '说明', '边界'][i]), h('p', null, '本地：' + (local.drafts.find(d => d.id === conflict.draftId)?.[key] || '（空）')), h('p', null, '远端：' + (conflict.remote?.setting?.[key] || '（空）')))),
       h('button', { onClick: () => { const d = localRef.current.drafts.find(x => x.id === conflict.draftId); if (d) updateDraft(d.id, x => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null })); setConflict(null); setNote('已采用最新基线；请核对后再次确认保存。') } }, '已比较，保留本地修订'),
       h('button', { onClick: () => setConflict(null) }, '暂不保存')) : null,
     data?.memory?.projection && data.memory.projection.status !== 'idle' ? h('div', { className: 'dshWmWorldProjection' },

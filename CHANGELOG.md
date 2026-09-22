@@ -1,5 +1,69 @@
 ## [Unreleased]
 
+- 审查：v0.1.41后续数据可靠性检查复现D01–D04（窗口草稿、候选标记、坏checkpoint、目录移动关联），尚未修复；既有投影/冲突保护回归通过。见 docs/audits/writing-world-settings/2026-09-21/review.md。— Codex
+
+以下为独立复核（Codex，2026-09-22）复现的 CXR01/CXR02 整改，含复核裁决 3 的第三条。报告：`docs/audits/writing-world-settings/2026-09-22/`。
+
+- **修复（P1）：残留锁清扫能把别人刚取得的活锁移走，打破互斥。** 原实现是“改名前再复核一次 owner”，并声称窗口已收敛到微秒级、即使重叠也有 revision/etag 兜底。复核正确地推翻了两点：**check-then-rename 本质上不是原子的**，把窗口缩短不等于互斥保证（时序：清扫 B 复核后暂停 → 清扫 A 移走旧死锁 → 写入 W 取得新锁进临界区 → B 恢复并把 **W 的活锁**改名 → 写入 X 又取同路径锁 → W/X 重叠）；而 **revision/etag 兜不了这个底**——它们是临界区**内部**的读后比较，前提是互斥已成立，互斥失效后不会自动变成 CAS。现改为：**在线一律不移动他人的锁**。`quarantineStaleLock` 必须显式传 `{ offline: true }` 才动作；会移动的 `sweepStale*Locks()` 删除，改为只读的 `listStale*Locks()`；内核启动只把残留锁的**绝对路径**打进警告日志；维护接口 `clear-stale-locks` 改为 **409 拒绝**（`stale-lock-clear-refused-online`）并返回可操作指引；`lock-stale` 错误新增 `lockPath`/`lockOwner`。**代价**：崩溃留下的残留锁会一直卡着那个桶直到作者关掉应用手动删除——宁可暂时不可写，不要重叠静默覆写。— ox-alpha
+
+- **修复（P1）：同名稿件被当成同一部作品的证据。** 两部完全不同的作品都会很自然地有 `draft/第一章.md`，而 `relocationRelation` 只要看到“旧草稿引用的手稿在目标作品里同相对路径”就判 `importable=true`，界面于是声称“有证据属于当前作品”并跳过无证据确认（复核实测 `copied=1`）。现把该分支移除：证据只剩两种——作品备忘里记过这个旧路径（`memory-project-key`）、可读稿抬头里记过（`projection-record`）；同相对路径的观察降级为 `unrelated-filename-hint`、**importable 永远 false**；内容指纹只当辅助线索写进 detail，同样不授予导入资格。客户端确认框按复核裁决 **同时显示来源（旧位置）与目的（当前作品）**，面板说明不再把“同名同位”列为证据。显式知情覆盖（`confirmUnrelated === true`）与审计留痕（`unrelated-author-confirmed` 写进历史桶）保持不变；真迁移的强证据路径未被误伤。— ox-alpha
+
+- **改进：未知锁持有者不再白等 8 秒（复核裁决 3）。** `withFileLock` 现有三种等待预算对应三种状态：活的持有者 → 8000ms 报 `lock-timeout`；可证明已死 → 400ms 报 `lock-stale`；读不出持有者 → 800ms 报新错误码 **`lock-owner-unknown`**（可重试，带 `lockPath`/`lockOwner`）。垃圾内容的锁文件不再让每次写入白等 8s；而对方 `openSync` 后、`writeSync` 前的微秒级空档仍会在几轮重试内变成可解析的活令牌。新分支在放弃前会**再确认一次锁是否已消失**（否则就会重演 W23：`existsSync` 为真后文件被释放、`readLockOwner` 拿到空串，把本该成功的获取变成硬失败），并已用源码形状断言钉住这一行。— ox-alpha
+
+- 验收：`test:writing-hardening` 77 → **92 项全过**；新增 `fix-verification.mjs`（照复核探针原场景重放，含同一个 `fs.renameSync` 注入 seam）→ **CXR_FIX_OK 25 项 0 失败**，其中在线调用 `quarantineStaleLock` 的 **rename 尝试次数 = 0**；复核的 `handoff-probes.mjs` 现停在 `assert.ok(quarantined)`（它 assert 的是缺陷成立，这正是修复生效的证据，未改它）；Node 门禁 19 步 0 非零、Electron/根级 9 项 0 非零（含复核方的 `repair-ui.cjs`）、`test:writing-world` 连跑 5/5；真包重打后字节核对 8通过/0失败/1待跑、冷启动 12/12、真包验收 9/9（asar 仍 `d74ca818…`，main.js 本轮未改）。**未做**：D04 fixture 未按裁决 1 拆成两组（属复核方文件，未动）；裁决 2/4/5/6 未做；原子所有权锁机制与作品稳定 ID 属长期解法，未做。未提交、未发布。— ox-alpha
+
+以下为打包 / 更新供应链的 U1–U5 hunt 与修复（5 项全部实锤复现并全部修复）。报告与只读探针：`docs/audits/release-chain-hardening/2026-09-21/`。
+
+- **修复：`install-update.ps1` 无参数时会静默把应用装成旧版。** 它按 **LastWriteTime** 从 `~/Downloads` / 脚本目录 / `dist` 里挑安装包，不解析版本、不校验哈希、无降级防护；而 `dist/` 堆着 20 个历史安装包（实测会挑中 `0.1.37`，而当前版本是 **0.1.41**）。更要紧的是它的动作顺序：**先强杀正在运行的桌面与内核**，再静默 `/S` 安装，事后只在“版本没变”时给 WARNING——降级不报。现改为按解析出的版本降序选包（名字解析不出的候选直接跳过）、若旁边有 `latest.yml` 则校验 version + sha512（base64）+ size 不符即拒装、比已安装版本旧时默认拒绝（需显式 `-Force`）；三项检查全部前移到**杀进程之前**。— ox-alpha
+
+- **修复：发布前没有任何一致性闸门，陈旧 `latest.yml` 可被当成本轮产物发上去。** `release.ps1` 在未认证分支会把 `gh release upload` 命令**打印出来让人手工执行**，而它上传的 `dist\latest.yml` 是 electron-updater 唯一信任的清单；实测本机那份是 **0.1.37**（清单自身自洽，sha512/size 与 0.1.37 的 exe 实算一致，但整份指向 4 个版本前的构建），发上去就会把全量自动更新客户端指向旧版或 404。新增 `scripts/verify-release-artifacts.mjs`（`npm run verify:release-artifacts`），接进 `build.ps1` 步骤 5b 与 `release.ps1` 步骤 1b；硬失败项含版本不符、path/url 不指本轮包、exe 缺失、**sha512/size 与实算不符**、本轮 blockmap 缺失、更新源或缓存目录名漂移、.ps1 非 ASCII/不可解析；孤儿 blockmap、遗留 `.tmp`、历史包堆积等卫生问题只警告不失败。开发态用 `--allow-stale`（`dist/` 已 gitignore，陈旧清单属本地工作区隐患，不随仓库分发）。— ox-alpha
+
+- **修复：GitHub 更新源在 5 处各自硬编码且零校验。** owner/repo 同时写在 `package.json build.publish`、`main.js DEFAULT_UPDATE_REPO`、`build.ps1` 的 `app-update.yml` heredoc、`release.ps1`、`install-update.ps1`；`updaterCacheDirName` 同样散在三处。当前取值一致纯属巧合，改任一处都不会有检查报错，而 `--dir` + `--prepackaged` 两步流程不会自动生成 `app-update.yml`，所以它不会跟着 `package.json` 走。现让 `build.ps1` **从 `package.json build.publish` 派生** owner/repo（消除一处硬编码），并由新闸门比对全部来源、含 `--dir` 指定的解包产物里**真正生效的** `resources/app-update.yml`。— ox-alpha
+
+- **加固：`killStaleUpdaterInstallers()` 不再把路径裸拼进 PowerShell。** 旧写法把 `LOCALAPPDATA` 派生的目录拼进单引号串（`StartsWith('" + dir + "'`），路径含单引号（如 `C:\Users\o'brien\…`）时拼出的命令串单引号数为奇数=字符串未闭合，而紧邻的正是 `Stop-Process -Force` 管道。改为经 `$env:DSH_UPDATER_DIR` 传值、完全不做拼接，并加了变量非空判断（避免缺失时 `StartsWith($null)` 匹配一切）。实际可控性有限（需能控制启动外壳的父进程环境），但没理由留着这个形态。— ox-alpha
+
+- **拆哑弹：`build.ps1` / `prepare-runtime.ps1` 里的中文注释违反了它们自己的 ASCII-only 规则。** `build.ps1` 头部明文写着 PS 5.1 把无 BOM 的 .ps1 当 ANSI/GBK 读、非 ASCII 字节能吞掉行尾并弄坏解析器，还记了真实事故（"This actually bit us: adding Chinese comments here produced 'Unexpected token' and the build died"）——但它自己有 2 行中文（**v0.1.31 / commit `31f5943`** 引入），`prepare-runtime.ps1` 还有 1 行且未声明该规则，至今碰巧能解析。全部改为 ASCII，并给 `prepare-runtime.ps1` 补上声明；新闸门对四个 .ps1 断言零非 ASCII 字节 + 能被 PowerShell 解析器解析（只解析不执行）。— ox-alpha
+
+- **回归修复（门禁抓到）：上一轮 V4 的锁快速失败把三种不同状态压成了一种。** 把“陈旧锁快速失败”从等满 8s 收到 250–400ms 后，`world-settings-p3.mjs` 的 **W23**（子进程持锁 2.5s）间歇性报 `lock-stale` 而不是获取成功（连跑 3 次：1 红 2 绿）。根因：“读不出持有者”其实有三种成因——锁刚被释放（应**立即重试获取**）、对方已 `openSync('wx')` 但未 `writeSync` 的空文件（它是**活锁**）、令牌可解析且 PID 已消失（才是陈旧锁），而 `!isOwnerAlive(owner)` 把它们全归为“死”。旧代码同样误判，但陈旧分支要等满 8s，下一轮 `tryAcquire()` 就成功了，所以从未暴露——缩短 deadline 等于把一颗一直存在的哑弹点了火。现新增 `ownerIsProvablyDead()`（必须能解析出 PID **且**该 PID 确实不存在）、获取循环里先判锁文件不存在就 `continue`、读不出持有者一律按活锁预算等；`inspectLock()` 增 `dead` 字段，`quarantineStaleLock()` 与两处启动清扫改为**只认 `dead`**（否则空锁文件会被改名隔离，那是真会丢数据的路径）。`hardening-v1-v9.mjs` 加 11 条断言钉住（含真子进程持锁→unlink 的 6 轮并发复现，要求 `lock-stale` 计数为 0），**66 → 77 项全过**；`test:writing-world` 连跑 3 次 3/3。— ox-alpha
+
+以下为外壳本体（Electron 桌面版）的 S1–S6 hunt 与修复（6 项全部实锤复现并全部修复）。报告与可复跑探针：`docs/audits/shell-hardening/2026-09-21/`。
+
+- **修复（P1）：内核页面里的插件 JS 可零确认拿到本机命令执行。** `dshShell` 桥是无条件暴露给所有用该 preload 的窗口的，而主窗口承载内核页面（其主世界跑着第三方插件的 client 代码）；`shell:notify-command` / `-test` 既不弹确认也不看发送方，主进程收到就 `spawn(命令串, {shell:true})`，而且写进 settings.json 后每个回合结束重放。外壳对同类风险早有明文策略并逐个收口过（open-file 改 showItemInFolder「不给执行面」、quit / restart-kernel / update-install 一律过原生确认框），这个入口是那次收口漏掉的。现在读/写/试跑三个通道全部按发送方窗口授权（仅设置窗口），命令变更时过原生确认框并原样展示要执行的命令串，每次变更写审计日志。— ox-alpha
+
+- **修复：「重新启用被隔离的插件」会重启内核却不弹确认。** `restoreQuarantinedBundles()` 在恢复成功后调 `restartKernel()`，而 `shell:restart-kernel` 明文要求确认（「无确认等于让 XSS/恶意插件一键杀掉用户正在用的会话」）——两道门只锁一道等于没锁，且它还会把「之前因把内核搞崩而被自动隔离」的插件顺手重新启用。补上原生确认框（文案点明会重启、会启用哪些插件、它们当初为何被隔离）；同时移除设置页里那个可被页面脚本改写的渲染侧 `window.confirm`，并让 UI 区分「已取消」与「失败」。— ox-alpha
+
+- **修复：通知钩子的 `{cwd}` / `{workspace}` 未加引号就拼进 shell 命令串。** 工作区路径里的 `& | > < ^ "` 会被 cmd.exe 当命令分隔符——实测工作区名为 `ws & node s3-payload.js` 时，钩子命令 `echo hook {cwd}` 真的执行了 `&` 后面的载荷。新增 `lib/shell-quote.js` 按平台加引号（win32 双引号 + `""` 逸出；POSIX 单引号 + `'\''` 逸出），`{files}` 强制成整数；**只含安全字符时原样返回**，既有钩子命令逐字节不变。这也修了正确性问题：含 `&` 的合法路径以前会让钩子静默跑错命令。— ox-alpha
+
+- **修复：插件开关写入的 entry id 未校验就插值进 YAML。** `setEntryDisabled` 把 id 原样拼进 `- id: ${id}`，而 id 来自插件自己的 `dsh.bundle.patch`；实测一个含换行的 id 能把 `- id: hijacked` + `name: '@attacker/pkg'` 这样的额外补丁条目写进决定内核加载什么的 `cordis.patch.yml`，另一种 payload 能写出解析器不认的形状、把插件开关功能锁死（正好绕过该模块「解析不了就拒写、宁可不给开关也不毁手工编辑」的承诺）。加白名单校验，不符即拒写；已验证不误伤 `dsh-better-sidebar` / `@dsh-local/palis-theme-panel` / `a.b-c_d:e/f` 等真实形态。— ox-alpha
+
+- **修复：审阅侧栏每次刷新都搬运整个会话事件流。** 流里每条 write 的 tool-call 都带 `new: <整个文件内容>`，会话期间单调增长（只在内核启动时清一次），而 `readSessionChanges()` 无任何上限：实测 20 次 400KB 写入 = 7.8MB 流、每次刷新搬 7.8MB（主进程与渲染侧双份内存），长会话 + 大文件的 agent 工作能把面板拖到卡顿乃至 OOM。新增 `lib/ndjson-tail.js` 只读尾部（4 MiB / 2000 条双闸，丢掉起读处残行以免切碎多字节字符）；逐条回退**不依赖**这份流（bridge 用自己内存里的 session events 按 callId 查），所以尾部截断安全；截断时侧栏如实告知并指路 Git 工作区视图看全量。— ox-alpha
+
+- **加固：** `/api/review-bridge/revert` 补 1 MiB 请求体上限与 413（原本 `for await` 无上限收集，本机任意进程 POST 巨体就能撑爆内核内存；同仓库 writing-mode 早已限 1 MiB，两处口径现在一致）。新增 `lib/shell-hardening.test.js`（39 项，`npm run shell-hardening-test`）与 `plugin-manager-test` 入口；探针重跑 0/6 复现；隔离 userData 冒烟 `SMOKE_HANDOFF acked=true` / `SMOKE_OK`；review-ui-check / sidebar-skin-check / splash-check / plugin-manager 19 / git-review / atomic-file 14 / profile-inspect 7 / pid-cleanup 3 / plugin-sync 10 / selector-check 全绿。— ox-alpha
+
+- 发版条件补齐（外壳 S1–S6 + 插件 V1–V9/G1–G4 两轮修复）：在 %TEMP% 建 dir 目标真包（离线、不签名、不发布、输出在工作区外），**字节核对 9/9**（app.asar 内 11 个主进程本地模块齐全且与仓库逐字节一致、无仓库路径引用、extraResources 完整、manifest↔产物 19 文件一致）、**隔离冷启动与升级 12/12**（含旧数据可发现/可读/可继续保存 revision 4→5，正好压到旧草稿桶只读回退）、**真包验收 9/9**（`app.isPackaged` 分支启动到就绪 SMOKE_OK、profile 哈希一致、首启种子、主题开启/恢复、清理只按本轮 PID；被测身份已入档：源码 6783647 dirty · asar a59c3550…）。新增 `verify-ipc-authz.mjs`：在**装机版 exe** 上连 CDP、在真实内核页面里证明 `notifyCommand`/`notifyCommandTest` 被拒且 `settings.json` 一字未改（**IPC_AUTHZ_OK 0 项失败**），并带两条前置断言防假通过。**仍未验收**：两个原生确认框需人工目检（已拉起可见隔离实例 PID 77680 交作者，保持运行由其关窗）、NSIS 安装向导/注册表、macOS 实机、受控离线、真实模型场景。— ox-alpha
+
+以下为本轮 V1–V9 / G1–G4 hunt 与修复（13 项缺陷全部实锤复现并全部修复）。报告与可复跑探针：`docs/audits/writing-hardening/2026-09-21/`。
+
+- **修复（P0，已在 v0.1.36–v0.1.41 发布版里）：大体积中文正文保存时静默出现乱码。** host 的 `readBody` 逐 chunk 独立做 UTF-8 解码，socket chunk 边界把一个三字节汉字切开时两半各自变成 U+FFFD，而 `JSON.parse` 对它完全合法，于是乱码一路写进手稿。实测 276KB / 92000 码点正文 round-trip 后出现 7 个 U+FFFD（首个差异在第 21751 字）。改为按字节收集后一次性解码；body 上限改按字节计（1 MiB，与 CONTRACT 一致），超限不再静默当空对象。影响 `save`/`version`/`draft`/`world-draft`/`memory` 全部 POST 路由。— ox-alpha
+
+- **修复：审阅面板对中文文件名失效。** git 默认 `core.quotepath=true` 会把非 ASCII 路径转成八进制转义，而 `parseStatus` 只脱引号不解码——中文文件在面板里路径是乱码、diff 空白、块数 0，且暂存按钮的显示条件两个都不成立，**按钮根本不出现**（本项目默认库根就是中文路径，写作模式投影生成的正是 `bible/世界观整理.md`）。所有 git 调用统一带 `-c core.quotepath=false`，status 改用 `-z --untracked-files=all`，并补上按 UTF-8 字节的 C 风格反转义。— ox-alpha
+
+- **修复：对中文未跟踪文件点「删除」会报成功而文件原封不动。** `revertFile` 用 `rmSync(force:true)`，ENOENT 被 force 吞掉；配上上一条的转义路径就是活生生的假成功（破坏性按钮给出成功回执）。改为删除前确认存在且非目录、删除后复核已消失，任一步不满足即 `ok:false`。同时新目录不再折叠成一行 `dir/`（目录内新文件此前全部不可见，而单个删不掉、全部丢弃却能删）。— ox-alpha
+
+- **修复：配置文件损坏后一次「只改字号」就会清空库根、全部伙伴会话绑定与自定义 AI Key。** `readConfig` 原先把损坏与「文件不存在」一律降级成空默认值（连 `companions` 键都没有），下一条写配置路由就把空值落盘，无备份无诊断。现在只有 ENOENT 才当空配置；解析失败保留损坏原件字节（按内容哈希命名的 `.damaged-<hash>`，幂等）、回 `corrupt-config` 并拒绝任何回写。另修并发丢更新：`prefs`/`companion`/`roots` 三条路由改为 `updateConfig()`，读-改-写在同一把锁内并带单调 `revision`。— ox-alpha
+
+- **修复：一部作品的写作伙伴绑定可能被永久锁死。** 窗口 A 预留后作者放弃关联（记录被删），A 在途的确认迟到抵达时会把 `phase:null` 写进协调记录，此后读取/预留/释放全部 `bad-record` 500，连 `forget --force` 也只回 `corrupt-record` 且不删文件——唯一出路是手工删文件。现在没推进到合法相位的结果不落盘，既有中毒记录读时自愈，`forget --force` 先把原件改名保留再清。— ox-alpha
+
+- **修复：残留锁会让每次草稿保存卡满 8 秒并冻结整个内核。** 跨进程文件锁的等待是 `while (Date.now()<waitUntil) {}` 空转、deadline 8s；任一进程崩溃留下 `.lock` 后，该桶每次保存都卡满 8s 再 503，期间内核所有 HTTP 与流式回复一起停（实测 `setInterval(1ms)` 触发 0 次），而锁文件对作者完全不可见、无清理入口。改为 `Atomics.wait` 休眠、残留锁 250ms 快速失败、草稿路径 deadline 收到 1.5s，并新增内核启动清扫与 `maintenance` 维护入口（改名隔离、保留取证、活锁绝不动）。**实测 8038ms → 275ms。** 残留局限：等待仍是同步的，彻底不阻塞需把写路径改异步（独立重构）。— ox-alpha
+
+- **修复：项目目录搬迁后的草稿恢复可能张冠李戴，也可能「报成功但界面永远读不到」。** 前者：恢复候选此前只判「绝对路径 + 不等于当前 + 已不存在」，与当前作品毫无关系，两部作品都移动过时打开 B 会列出 A 的旧路径，确认即把 A 的草稿写进 B。现在候选必须携带关联证据（作品备忘/可读稿里记录的旧路径，或旧草稿引用的手稿在本作品同名同位）才可直接导入；无证据的默认硬拒，仅在作者显式知情确认后才导入，并把关系记为 `unrelated-author-confirmed` 写进历史桶供追查。后者：草稿桶此前用客户端原始路径串分桶，而记忆/协调/恢复用 realpath 规范身份，库根经 junction 或映射盘访问时两者不一致。新增单一口径 `lib/project-identity.js`，全部子系统改走它，旧口径写过的桶由只读回退接住、下次保存自然迁移。— ox-alpha
+
+- **修复：备忘与世界观写到配额上限后永久停摆。** 条目 400 / 历史 800 / 操作收据 200 三个上限原本只拒绝、不给出口：一部长篇写到 200 次世界观操作后，保存与确认全部 409，而作者只看到「备忘暂不可用：operations-full」和一个永远失败的重试按钮；撤回条目也不释放配额。新增三个归档 op（`archive-history` / `prune-operations` / `purge-retracted`），一律先把被裁字节整体备份到 `state/backups/` 再裁；清理只允许终态条目，已确认与候选绝不可被清走；被裁收据的 operationId 进有界墓碑环，其迟到重试回 `operation-pruned` 而不是重复建一条设定。备忘面板常驻显示用量并在撞墙前提供归档按钮，四个错误码有可读文案。附带：权威记录落盘补 `fsync`（此前比配置文件还弱，掉电正是 `corrupt-memory` 的成因之一）。— ox-alpha
+
+- **加固：** host 路由新增路由×方法白名单（未知 route → 404，白名单外方法 → 405），非 GET 一律要求 `application/json`；此前 `PUT`/`DELETE`/`PATCH` 能绕过 JSON 门禁，且 `project-recovery` 在非 GET 方法下一律进写分支。草稿列表改为元数据投影（不含正文，上限 24 项并回 `total`/`truncated`），正文按窗口惰取（世界观副本预取最近 4 份避免渲染竞态）；库层列表刻意不设限，移动恢复不漏桶。— ox-alpha
+
+- 测试与门禁：新增 `plugin/writing-mode/test/hardening-v1-v9.mjs`（66 项，`npm run test:writing-hardening`，已接入 `verify:writing-all`/`verify:writing-quick`）与 `lib/git-review.test.js` 的 G1–G4（+14 项，共 55 项）。归档探针重跑 V 0/9、G 0/4 复现；Node 层 17 步门禁 exit 0，Electron 层 ui/chat/reading/world-ui（含并行修改方 `repair-ui.cjs` 的 D01–D04 四项 PASS）/ui-smoke/native 通过。**未提交、未发布**；真包字节核对、隔离冷启动、macOS 实机、受控离线与真实模型场景仍未验收。— ox-alpha
+
 - 发布自动化：macOS上传前查询已有Release，避免重复创建同标签条目导致Windows/macOS资产分散。YAML检查通过，下次工作流尚待实跑。— Codex
 
 ## [0.1.41] - 2026-09-20
@@ -941,3 +1005,15 @@
 ### 署名
 
 - deepseek-v4-pro（2026-08-13）
+
+### 2026-09-21 · 资料接入试用（非发布变更）
+- 以《赫尔帝国》13 份 Markdown 做隔离真实模型试用，保留工具与对话证据；明确原目录自动接入仍缺失，未更改作品原文件。见 docs/audits/writing-world-settings/2026-09-21/hel-trial/report.md。— Codex
+
+
+### 2026-09-22 · 交回定向复核（未发布）
+- 独立复核发现锁清扫竞态与同名稿件误判项目关联；已有基线通过，仍需整改。已有项目接入在独立副本验证，不覆盖并行工作树。见 docs/audits/writing-world-settings/2026-09-22/handoff-review.md。— Codex
+
+
+- 2026-09-22：已有项目接入已从独立副本整合，支持自定义 Markdown 文件夹、完整路径分组与统一项目身份；修正列表排序回归。延迟恢复增加重复点击与卸载保护。补充真实目录移动/无关联确认/第五份副本延迟/网络失败重试 UI 探针。24 步最终门禁结果见 integration.md；本轮未提交、未发布。— Codex
+
+2026-09-22：用户授权提交并发布 v0.1.42；已有项目接入与审计整改进入本次发布候选。按同一 Release ID 合并 Windows/macOS 资产，最终结果另记。— Codex

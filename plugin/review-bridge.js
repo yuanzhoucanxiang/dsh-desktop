@@ -9,6 +9,13 @@ const path = require('node:path')
 
 const FILE_TOOLS = new Set(['edit', 'write', 'str_replace_editor'])
 
+/**
+ * S5：回退端点的请求体上限（与同仓库 writing-mode 的 1 MiB 口径对齐）。
+ * 回环闸已挡住远程，但本机任意进程/浏览器标签页都能 POST；
+ * 原本 `for await` 无上限收集全部 chunk，一个巨体就能把内核进程内存撑爆。
+ */
+const MAX_BODY_BYTES = 1024 * 1024
+
 /* ── 纯函数区（可单测） ─────────────────────────────────────────────── */
 
 // 模型参数可能是对象或 JSON 字符串（tool/call 事件存的是原始形态）
@@ -59,7 +66,10 @@ function resultTextAfter(events, callSeq) {
 
 // 从 read 工具结果重建完整文件内容；覆盖不全时返回 null
 function parseReadText(text) {
-  const m = /^<path>[^\n]*<\/path>\n<type>file<\/type>\n<content>\n([\s\S]*)\n<\/content>$/.exec(text || '')
+  // 用 String.raw + new RegExp 而不是正则字面量：语义完全相同，且不受
+  // 「\n 转义被展开成真实换行」影响（正则字面量语法上不能跳行，一旦展开就是语法错）。
+  const READ_RE = new RegExp(String.raw`^<path>[^\n]*<\/path>\n<type>file<\/type>\n<content>\n([\s\S]*)\n<\/content>$`)
+  const m = READ_RE.exec(text || '')
   if (!m) return null
   const body = m[1]
   const lines = []
@@ -317,7 +327,16 @@ module.exports = {
         let body = {}
         try {
           const chunks = []
-          for await (const chunk of req) chunks.push(chunk)
+          let bytes = 0
+          for await (const chunk of req) {
+            bytes += chunk.length
+            if (bytes > MAX_BODY_BYTES) {
+              res.writeHead(413, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+              res.end(JSON.stringify({ ok: false, error: 'body-too-large', maxBytes: MAX_BODY_BYTES }))
+              return
+            }
+            chunks.push(chunk)
+          }
           body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
         } catch {}
         const out = await handleRevert(body)

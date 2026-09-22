@@ -238,12 +238,14 @@ async function checkPluginUpdates() {
 }
 
 async function restore() {
-  if (!window.confirm('恢复所有被隔离的插件并重启内核？')) return
+  // 确认改到主进程原生框（见 main.js 的 shell:plugins-restore）：渲染侧 window.confirm
+  // 可被页面脚本改写，而且与原生框叠在一起会变成两次询问。
   const btn = $('btn-restore')
   btn.disabled = true
   try {
     const res = await window.dshShell.pluginsRestore()
-    btn.textContent = res && res.restored ? `已恢复 ${res.restored} 个，内核重启中…` : '没有待恢复的插件'
+    if (res && res.canceled) btn.textContent = '已取消（未恢复、未重启）'
+    else btn.textContent = res && res.restored ? `已恢复 ${res.restored} 个，内核重启中…` : '没有待恢复的插件'
     setTimeout(refresh, 4000)
   } catch (err) {
     $('error-banner').textContent = '恢复失败：' + (err && err.message ? err.message : String(err))
@@ -398,17 +400,26 @@ if (window.dshShell && window.dshShell.notifyCommand) {
   $('btn-notify-save').addEventListener('click', async () => {
     const r = await window.dshShell.notifyCommand($('notify-cmd').value)
     if (r && r.ok) {
-      $('notify-hint').textContent = r.command ? `已保存：${r.command}` : '已清空（不执行钩子）'
+      $('notify-hint').textContent = r.unchanged ? '未变更' : (r.command ? `已保存：${r.command}` : '已清空（不执行钩子）')
+    } else if (r && r.canceled) {
+      // 主进程弹了原生确认框而用户选了取消：回显仍生效的那一份，不让输入框骗人
+      $('notify-cmd').value = r.command || ''
+      $('notify-hint').textContent = '已取消，未保存（仍执行原命令，或原本就为空）'
     } else {
-      $('notify-hint').textContent = '保存失败'
+      $('notify-hint').textContent = '保存失败' + (r && r.error ? `：${r.error}` : '')
     }
   })
   $('btn-notify-test').addEventListener('click', async () => {
-    await window.dshShell.notifyCommand($('notify-cmd').value)
+    // 试跑执行的是 settings 里的那一份，所以必须先落盘；用户取消保存就不试跑
+    const saved = await window.dshShell.notifyCommand($('notify-cmd').value)
+    if (!saved || !saved.ok) {
+      if (saved && saved.canceled) { $('notify-cmd').value = saved.command || ''; $('notify-hint').textContent = '已取消保存，未试跑' } else { $('notify-hint').textContent = '保存失败，未试跑' + (saved && saved.error ? `：${saved.error}` : '') }
+      return
+    }
     const r = await window.dshShell.notifyCommandTest()
     $('notify-hint').textContent = r && r.ok
       ? (r.command ? `已触发试跑：${r.command}` : '命令为空，未执行')
-      : '试跑失败'
+      : '试跑失败' + (r && r.error ? `：${r.error}` : '')
   })
   loadNotify()
 }

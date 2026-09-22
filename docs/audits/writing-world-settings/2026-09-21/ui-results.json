@@ -1,0 +1,29 @@
+{
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-native-ktV6KT",
+  "observations": [
+    {
+      "id": "D02",
+      "status": "REPRODUCED",
+      "issue": "Saved/reopened open candidate loses unresolved marker",
+      "stored": {
+        "type": "world",
+        "title": "未决的钟声规则",
+        "conclusion": "钟声含义还待讨论",
+        "explanation": "",
+        "boundaries": "",
+        "tags": [],
+        "sources": []
+      }
+    },
+    {
+      "id": "D01",
+      "status": "REPRODUCED",
+      "issue": "Closing actual BrowserWindow loses unsaved world candidate; saved candidate survives",
+      "prevented": false,
+      "returned": {
+        "editor": null,
+        "cache": []
+      }
+    }
+  ]
+}

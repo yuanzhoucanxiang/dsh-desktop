@@ -1327,6 +1327,17 @@ function injectReviewSidebar() {
     body.textContent = ''
     const { prompts, reverted, results, changes } = sessionModel(sessionData.entries || [])
 
+    // 主进程只读流的尾部（防长会话把几十上百 MB 整体搬过 IPC），截断时必须如实告知，
+    // 不能让作者以为这就是本次会话的全部改动。用 textContent，不用 innerHTML。
+    if (sessionData.truncated) {
+      const note = document.createElement('div')
+      note.id = `${S}-truncated`
+      note.style.cssText = 'padding:6px 10px;font-size:12px;opacity:.75'
+      const mb = Number(sessionData.streamBytes) > 0 ? (Number(sessionData.streamBytes) / 1048576).toFixed(1) + 'MB' : ''
+      note.textContent = `只显示最近的改动（事件流已达读取上限${mb ? ' · 全量 ' + mb : ''}）。逐条回退不受影响；要看全量请用下面的 Git 工作区视图。`
+      body.appendChild(note)
+    }
+
     if (changes.length === 0) {
       const empty = document.createElement('div')
       empty.id = `${S}-empty`

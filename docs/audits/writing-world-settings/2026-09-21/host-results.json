@@ -1,0 +1,24 @@
+{
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-audit-0921-RP51m6",
+  "observations": [
+    {
+      "id": "D03",
+      "status": "REPRODUCED",
+      "issue": "Corrupt checkpoint read returns null; baseRev=0 overwrites damaged original without backup",
+      "file": "C:\\Users\\DL\\AppData\\Local\\Temp\\wm-audit-0921-RP51m6\\home\\writing-mode\\drafts\\f4b20be806cdd90f3b11c39ef9f44794.json",
+      "remainingFiles": [
+        "f4b20be806cdd90f3b11c39ef9f44794.json"
+      ]
+    },
+    {
+      "id": "D04",
+      "status": "REPRODUCED",
+      "issue": "Project directory move preserves memory but disconnects path-keyed checkpoints and session coordination; old files still exist",
+      "memoryPreserved": true,
+      "oldDrafts": 2,
+      "newDrafts": 0,
+      "oldSession": "session-before-move",
+      "newSession": null
+    }
+  ]
+}

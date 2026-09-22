@@ -23,6 +23,7 @@ export async function loadCompanionDraft(project) {
   // Do NOT mutate shared cache here — adopt only after generation check (T02/W02).
   try {
     const data = await api('draft', undefined, { project, window: companionWindowId })
+    if (!data.ok) return { error: data.error || 'draft-read-failed' }
     if (data.ok && data.checkpoint) {
       return {
         text: data.checkpoint.text || '',
@@ -32,7 +33,7 @@ export async function loadCompanionDraft(project) {
     }
     return { text: '', reference: null, rev: 0 }
   } catch {
-    return { text: '', reference: null, rev: 0 }
+    return { error: 'draft-read-failed' }
   }
 }
 
@@ -80,20 +81,39 @@ export async function stashDraftForRecovery(project, { text, reference }) {
   }
 }
 
+/** V7：列表只有元数据，正文按 windowId 惰取。候选最多取 8 份，避免无界拉全文。 */
+const MAX_DRAFT_CANDIDATES = 8
+
+/** 取指定窗口桶的全文 checkpoint；读不回来返回 null。 */
+export async function fetchDraftSnapshot(project, windowId) {
+  const data = await api('draft', undefined, { project, window: windowId })
+  if (!data?.ok) return null
+  return data.checkpoint || null
+}
+
 export async function listDraftCandidates(project) {
   try {
     const data = await api('draft', undefined, { project, window: companionWindowId })
     if (!data.ok) return []
     const mine = companionWindowId
-    return (data.checkpoints || [])
-      .filter((c) => c && c.windowId !== mine && String(c.text || '').trim())
-      .map((c) => ({
-        windowId: c.windowId,
-        updatedAt: c.updatedAt || null,
-        rev: c.rev ?? 0,
-        text: c.text || '',
-        reference: c.reference || null,
-      }))
+    // host 现在回元数据（chars/preview/updatedAt）而不是全文，所以先筛后取：
+    // 只对作者真能看到的那几份候选发请求，返回结构与以前一致（调用方无需改）。
+    const metas = (data.checkpoints || [])
+      .filter((c) => c && c.windowId !== mine && !c.cleared && Number(c.chars || 0) > 0)
+      .slice(0, MAX_DRAFT_CANDIDATES)
+    const out = []
+    for (const m of metas) {
+      const cp = await fetchDraftSnapshot(project, m.windowId)
+      if (!cp || !String(cp.text || '').trim()) continue
+      out.push({
+        windowId: cp.windowId || m.windowId,
+        updatedAt: cp.updatedAt || m.updatedAt || null,
+        rev: cp.rev ?? m.rev ?? 0,
+        text: cp.text || '',
+        reference: cp.reference || null,
+      })
+    }
+    return out
   } catch {
     return []
   }
@@ -140,6 +160,7 @@ export function isDraftConflict(project) {
   return Boolean(companionDraftConflict.get(project))
 }
 export function draftErrorText(code) {
+  if (code === 'corrupt-draft') return '原草稿文件已损坏，已停止覆盖；可保留损坏副本后保存当前文字。'
   if (code === 'draft-too-large') return '草稿过长，未能保存。请缩短后重试。'
   if (code === 'reference-too-large') return '引用过长，未能保存。请缩短选区后重试。'
   if (code === 'draft-conflict') return '草稿与另一处写入冲突，请选择保留本地或采用远端。'
@@ -335,4 +356,19 @@ export function persistCompanionDraft(project, onStatus) {
   })
   draftSaveQueue.set(project, next.catch(() => {}))
   return next
+}
+
+export async function recoverDamagedDraft(project) {
+  const observed = await api('draft', undefined, { project, window: companionWindowId })
+  if (observed.error !== 'corrupt-draft' || !observed.damagedHash) return { ok: false, error: 'recovery-source-changed' }
+  const local = companionDrafts.get(project) || { text: '', reference: null }
+  const r = await api('draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, windowId: companionWindowId, text: local.text, reference: local.reference, recoverDamaged: true, expectedHash: observed.damagedHash }) })
+  if (r.ok) {
+    const current = companionDrafts.get(project) || local
+    companionDrafts.set(project, { ...current, rev: r.checkpoint.rev })
+    if (draftSnapshotIdentity(current.text, current.reference) === draftSnapshotIdentity(local.text, local.reference)) {
+      companionDraftDirty.delete(project); setDraftStatus(project, { phase: 'saved', error: '', code: '' })
+    } else void persistCompanionDraft(project)
+  }
+  return r
 }

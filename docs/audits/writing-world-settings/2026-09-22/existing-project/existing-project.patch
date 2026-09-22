@@ -1,0 +1,246 @@
+diff --git a/plugin/writing-mode/lib/store.js b/plugin/writing-mode/lib/store.js
+index 239cf06..be90c98 100644
+--- a/plugin/writing-mode/lib/store.js
++++ b/plugin/writing-mode/lib/store.js
+@@ -86,6 +86,7 @@ export function readConfig() {
+           path: String(r.path),
+           label: String(r.label || path.basename(r.path) || r.path),
+           default: Boolean(r.default),
++          kind: r.kind === 'project' ? 'project' : 'library',
+         })),
+       activeRoot: typeof parsed?.activeRoot === 'string' ? parsed.activeRoot : null,
+       prefs: normalizePrefs(parsed?.prefs),
+@@ -228,7 +229,9 @@ export function resolveUnderRoots(filePath, roots) {
+   return null
+ }
+ 
+-export function listProjectFiles(projectDir, shallow = false) {
++export function listProjectFiles(projectDir, shallow = false, options = {}) {
++  let visited = 0
++  const warn = () => { options.truncated = true }
+   const files = []
+   const scope = [{ path: projectDir, real: realOrNull(projectDir) }]
+   const seen = new Set()
+@@ -261,7 +264,7 @@ export function listProjectFiles(projectDir, shallow = false) {
+     })
+   }
+   const walk = (dir, depth) => {
+-    if (depth > 4) return
++    if (depth > (options.recursive ? 12 : 4) || ++visited > 2000) { warn(); return }
+     if (!resolveUnderRoots(dir, scope)) return
+     let ents
+     try {
+@@ -270,7 +273,8 @@ export function listProjectFiles(projectDir, shallow = false) {
+       return
+     }
+     for (const ent of ents) {
+-      if (ent.name.startsWith('.')) continue
++      if (ent.name.startsWith('.') || ['node_modules', 'vendor'].includes(ent.name)) continue
++      if (files.length >= 5000) { warn(); break }
+       const full = path.join(dir, ent.name)
+       if (ent.isDirectory()) walk(full, depth + 1)
+       else if (ent.isFile()) pushFile(full)
+@@ -282,7 +286,8 @@ export function listProjectFiles(projectDir, shallow = false) {
+         pushFile(path.join(projectDir, ent.name))
+       }
+     }
+-    for (const sub of shallow ? [] : PROJECT_SCAN_DIRS) {
++    const dirs = options.recursive ? fs.readdirSync(projectDir, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.') && !['node_modules', 'vendor'].includes(e.name)).map(e => e.name) : PROJECT_SCAN_DIRS
++    for (const sub of shallow ? [] : dirs) {
+       const d = path.join(projectDir, sub)
+       if (fs.existsSync(d)) walk(d, 1)
+     }
+@@ -299,7 +304,11 @@ export function scanTree(cfg) {
+     if (r.real) {
+       try {
+         const ents = fs.readdirSync(r.real, { withFileTypes: true })
+-        if (fs.existsSync(path.join(r.real, 'project.md'))) {
++        if (r.kind === 'project') {
++          const options = { recursive: true }
++          const files = listProjectFiles(r.real, false, options)
++          projects.push({ name: r.label || path.basename(r.real), path: r.real, isRootProject: true, isExistingProject: true, files, scanWarning: options.truncated ? '资料较多或目录过深，列表未完全展开。可在伙伴中指定原文路径读取。' : null })
++        } else if (fs.existsSync(path.join(r.real, 'project.md'))) {
+           projects.push({
+             name: path.basename(r.real),
+             path: r.real,
+@@ -310,7 +319,7 @@ export function scanTree(cfg) {
+           const files = listProjectFiles(r.real, true)
+           if (files.length) projects.push({ name: '独立文稿', path: r.real, isLoose: true, files })
+         }
+-        for (const ent of ents) {
++        for (const ent of r.kind === 'project' ? [] : ents) {
+           if (!ent.isDirectory() || ent.name.startsWith('.')) continue
+           const dir = path.join(r.real, ent.name)
+           if (!fs.existsSync(path.join(dir, 'project.md'))) continue
+@@ -414,6 +423,8 @@ export function readTextOrNull(p) {
+ export function findProjectRoot(absPath) {
+   const roots = effectiveRoots(readConfig())
+   const start = path.resolve(String(absPath || ''))
++  const attached = configuredProject(start, roots)
++  if (attached) return attached
+   try {
+     if (fs.existsSync(start) && fs.statSync(start).isDirectory()) {
+       if (readTextOrNull(path.join(start, 'project.md')) !== null) {
+@@ -431,9 +442,18 @@ export function findProjectRoot(absPath) {
+   return null
+ }
+ 
++/** Explicit project roots are configuration, never marker files in the author's folder. */
++export function configuredProject(absPath, roots) {
++  const matches = roots.filter(r => r.kind === 'project' && r.real && resolveUnderRoots(absPath, [r]))
++  matches.sort((a, b) => b.real.length - a.real.length)
++  return matches[0]?.real || null
++}
++
+ /** Canonical project dir for a file or directory path under a library root. */
+ export function resolveProjectDir(absPath, roots = effectiveRoots(readConfig())) {
+   const start = path.resolve(String(absPath || ''))
++  const attached = configuredProject(start, roots)
++  if (attached) return attached
+   const asDir = (() => {
+     try {
+       return fs.existsSync(start) && fs.statSync(start).isDirectory()
+diff --git a/plugin/writing-mode/index.js b/plugin/writing-mode/index.js
+index 6443aab..4548e0e 100644
+--- a/plugin/writing-mode/index.js
++++ b/plugin/writing-mode/index.js
+@@ -270,6 +270,7 @@ export function apply(ctx) {
+               path: r.path,
+               label: r.label,
+               default: r.default,
++              kind: r.kind,
+               missing: r.missing,
+             })),
+             tree: scanTree(cfg),
+@@ -357,6 +358,7 @@ export function apply(ctx) {
+                     path: path.resolve(String(r.path)),
+                     label: String(r.label || path.basename(String(r.path)) || r.path),
+                     default: Boolean(r.default),
++                    kind: r.kind === 'project' ? 'project' : (cur.roots.find(old => path.resolve(old.path) === path.resolve(r.path))?.kind || 'library'),
+                   }))
+                 next.activeRoot =
+                   typeof parsed.activeRoot === 'string' && parsed.activeRoot !== ''
+@@ -364,11 +366,15 @@ export function apply(ctx) {
+                     : null
+               } else if (mode === 'add') {
+                 const p = path.resolve(parsed.path)
++                if (parsed.kind !== undefined && !['project', 'library'].includes(parsed.kind)) throw storeError('bad-root-kind', 400)
++                if (parsed.kind === 'project' && (!fs.existsSync(p) || !fs.statSync(p).isDirectory())) throw storeError('project-directory-missing', 400)
++                if (parsed.kind === 'project') next.roots = next.roots.map(r => path.resolve(r.path).toLowerCase() === p.toLowerCase() ? { ...r, kind: 'project' } : r)
+                 if (!next.roots.some((r) => path.resolve(r.path).toLowerCase() === p.toLowerCase())) {
+                   next.roots = [...next.roots, {
+                     path: p,
+                     label: String(parsed?.label || path.basename(p) || p),
+                     default: next.roots.length === 0,
++                    kind: parsed.kind === 'project' ? 'project' : 'library',
+                   }]
+                 }
+                 if (parsed?.active === true || next.activeRoot === null) next.activeRoot = p
+diff --git a/plugin/writing-mode/src/client/app/WritingModeApp.js b/plugin/writing-mode/src/client/app/WritingModeApp.js
+index 2a92da7..fce0cc6 100644
+--- a/plugin/writing-mode/src/client/app/WritingModeApp.js
++++ b/plugin/writing-mode/src/client/app/WritingModeApp.js
+@@ -90,6 +90,7 @@ export function WritingModeApp() {
+   const [templates, setTemplates] = react.useState([])
+   const [addRootMode, setAddRootMode] = react.useState(false)
+   const [addRootPath, setAddRootPath] = react.useState('')
++  const [addRootKind, setAddRootKind] = react.useState('library')
+   const [flash, setFlash] = react.useState('')
+   const [prefs, setPrefs] = react.useState(getPrefs)
+   react.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), [])
+@@ -280,11 +281,11 @@ export function WritingModeApp() {
+     const data = await api('roots', {
+       method: 'POST',
+       headers: { 'content-type': 'application/json' },
+-      body: JSON.stringify({ mode: 'add', path: p, active: true }),
++      body: JSON.stringify({ mode: 'add', path: p, active: true, kind: addRootKind }),
+     })
++    if (!data.ok) { flashMsg('打开文件夹失败：' + (data.error || 'unknown')); return }
+     setAddRootMode(false)
+     setAddRootPath('')
+-    if (!data.ok) flashMsg('添加库失败：' + (data.error || 'unknown'))
+     void refreshTree()
+   }
+ 
+@@ -598,14 +599,14 @@ export function WritingModeApp() {
+             jsx.jsx('button', {
+               type: 'button',
+               className: 'dshWmBtn is-ghost',
+-              onClick: () => setAddRootMode(true),
++              onClick: () => { setAddRootKind('library'); setAddRootMode(true) },
+               title: T.addRoot,
+               children: '+',
+             }),
+             jsx.jsx('button', {
+               type: 'button',
+               className: 'dshWmBtn is-ghost',
+-              onClick: () => setAddRootMode(true),
++              onClick: () => { setAddRootKind('library'); setAddRootMode(true) },
+               children: '…',
+               title: T.addRoot,
+             }),
+@@ -615,14 +616,21 @@ export function WritingModeApp() {
+                   {
+                     className: 'dshWmBarGroup',
+                     children: [
++                      jsx.jsx('select', {
++                        'aria-label': '文件夹用途', value: addRootKind,
++                        onChange: e => setAddRootKind(e.target.value),
++                        children: [jsx.jsx('option', { value: 'library', children: '作品库（包含多个项目）' }), jsx.jsx('option', { value: 'project', children: '已有项目（保留原目录）' })],
++                      }),
+                       jsx.jsx('input', {
+                         className: 'dshWmSearch',
+                         style: { width: 180, margin: 0 },
+                         value: addRootPath,
+-                        placeholder: 'E:\\剧本',
++                        placeholder: addRootKind === 'project' ? '已有作品文件夹完整路径' : 'E:\\剧本',
++                        'aria-label': '文件夹路径',
+                         autoFocus: true,
+                         onChange: (e) => setAddRootPath(e.target.value),
+                         onKeyDown: (e) => {
++                          if (e.nativeEvent?.isComposing || e.keyCode === 229) return
+                           if (e.key === 'Enter') void commitAddRoot()
+                           if (e.key === 'Escape') setAddRootMode(false)
+                         },
+@@ -631,7 +639,7 @@ export function WritingModeApp() {
+                         type: 'button',
+                         className: 'dshWmBtn is-primary',
+                         onClick: () => void commitAddRoot(),
+-                        children: 'OK',
++                        children: addRootKind === 'project' ? '打开项目' : '添加库',
+                       }),
+                     ],
+                   },
+@@ -710,6 +718,11 @@ export function WritingModeApp() {
+                       className: 'dshWmSideHead',
+                       children: [
+                         jsx.jsx('span', { children: T.docs }),
++                        jsx.jsx('button', {
++                          type: 'button', className: 'dshWmBtn',
++                          onClick: () => { setAddRootKind('project'); setAddRootPath(''); setAddRootMode(true) },
++                          title: '读取原有目录，不搬动资料、不自动确认设定', children: '打开已有',
++                        }),
+                         jsx.jsx('span', { style: { flex: 1 } }),
+                         jsx.jsx('button', {
+                           type: 'button',
+@@ -931,6 +944,7 @@ export function WritingModeApp() {
+                                         },
+                                         'pt'
+                                       ),
++                                      proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
+                                       openP
+                                         ? groups.map((g) =>
+                                             jsx.jsx(
+diff --git a/plugin/writing-mode/src/client/features/library/grouping.js b/plugin/writing-mode/src/client/features/library/grouping.js
+index a33a97e..4a77ab2 100644
+--- a/plugin/writing-mode/src/client/features/library/grouping.js
++++ b/plugin/writing-mode/src/client/features/library/grouping.js
+@@ -18,7 +18,7 @@ export function groupFiles(files, q) {
+       if (!hay.includes(query)) continue
+     }
+     const top = String(f.rel || '').includes('/')
+-      ? String(f.rel).split('/')[0]
++      ? String(f.rel).slice(0, String(f.rel).lastIndexOf('/'))
+       : '·'
+     if (!map.has(top)) map.set(top, [])
+     map.get(top).push(f)

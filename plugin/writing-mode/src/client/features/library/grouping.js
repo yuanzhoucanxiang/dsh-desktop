@@ -18,15 +18,15 @@ export function groupFiles(files, q) {
       if (!hay.includes(query)) continue
     }
     const top = String(f.rel || '').includes('/')
-      ? String(f.rel).split('/')[0]
+      ? String(f.rel).slice(0, String(f.rel).lastIndexOf('/'))
       : '·'
     if (!map.has(top)) map.set(top, [])
     map.get(top).push(f)
   }
   const order = ['draft', 'bible', 'outline', 'state', 'reviews', '·']
   const keys = [...map.keys()].sort((a, b) => {
-    const ia = order.indexOf(a)
-    const ib = order.indexOf(b)
+    const ia = order.indexOf(a.split('/')[0])
+    const ib = order.indexOf(b.split('/')[0])
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b, 'zh')
   })
   return keys.map((k) => ({ key: k, files: map.get(k) }))

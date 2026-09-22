@@ -47,6 +47,7 @@ param(
   [switch]$Interactive,
   [switch]$UninstallFirst,
   [switch]$KeepCache,
+  [switch]$Force,
   [int]$LockTimeoutSec = 40
 )
 
@@ -62,6 +63,84 @@ function Say([string]$msg) {
 }
 function Note([string]$msg) { Write-Host ("      {0}" -f $msg) }
 function Fail([string]$msg) { Write-Host ""; Write-Host ("FAILED: {0}" -f $msg) -ForegroundColor Red; exit 1 }
+
+# ------------------------------------------------------------- version helpers
+# U1: dist/ accumulates EVERY historical installer, and a re-downloaded old
+# package gets a fresh mtime. Selecting by LastWriteTime can therefore pick an
+# older build and silently downgrade the install (this script force-kills the
+# running app first, so the downgrade is not something the user notices).
+# Selection is by parsed version; unparseable names are never preferred.
+function Get-PackageVersion([string]$name) {
+  $leaf = [System.IO.Path]::GetFileName($name)
+  $m = [regex]::Match($leaf, '^dsh-desktop-(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?)-setup\.exe$')
+  if (-not $m.Success) { return '' }
+  return $m.Groups[1].Value
+}
+
+# Compare two dotted versions. Returns 1 / 0 / -1. Numeric parts compare as
+# numbers, anything else compares as text so pre-release tails stay deterministic.
+function Compare-PackageVersion([string]$a, [string]$b) {
+  if ($a -eq $b) { return 0 }
+  $pa = @($a -split '[.\-]')
+  $pb = @($b -split '[.\-]')
+  $n = [Math]::Max($pa.Count, $pb.Count)
+  for ($i = 0; $i -lt $n; $i++) {
+    $sa = ''; if ($i -lt $pa.Count) { $sa = $pa[$i] }
+    $sb = ''; if ($i -lt $pb.Count) { $sb = $pb[$i] }
+    $na = 0; $nb = 0
+    $aNum = [int]::TryParse($sa, [ref]$na)
+    $bNum = [int]::TryParse($sb, [ref]$nb)
+    if ($aNum -and $bNum) {
+      if ($na -ne $nb) { if ($na -gt $nb) { return 1 } else { return -1 } }
+    } else {
+      $c = [string]::Compare($sa, $sb, $true)
+      if ($c -ne 0) { return $c }
+    }
+  }
+  return 0
+}
+
+# U1: verify the chosen installer against the latest.yml sitting next to it.
+# electron-updater trusts that manifest, so when it is present it is authoritative.
+# A mismatch means dist/ holds a stale manifest (observed: latest.yml for 0.1.37
+# while package.json was 0.1.41) or a partially replaced installer. Absent
+# manifest = a hand-downloaded package, so it is a note, not a failure.
+function Test-InstallerManifest([string]$pkgPath) {
+  $yml = Join-Path (Split-Path -Parent $pkgPath) 'latest.yml'
+  if (-not (Test-Path $yml)) { Note 'no latest.yml next to the installer; skipping hash verification'; return $true }
+  $text = Get-Content -LiteralPath $yml -Raw
+  $mVer = [regex]::Match($text, '(?m)^version:\s*(.+)$')
+  $mSha = [regex]::Match($text, '(?m)^sha512:\s*(.+)$')
+  $mSize = [regex]::Match($text, '(?m)^\s+size:\s*(\d+)\s*$')
+  $pkgVer = Get-PackageVersion $pkgPath
+  if ($mVer.Success -and $pkgVer) {
+    $yVer = $mVer.Groups[1].Value.Trim()
+    if ($yVer -ne $pkgVer) {
+      Note ("latest.yml describes version " + $yVer + " but the installer is " + $pkgVer)
+      Note 'the manifest next to this installer is for a DIFFERENT build; refusing to guess'
+      return $false
+    }
+  }
+  if ($mSha.Success) {
+    $hex = (Get-FileHash -LiteralPath $pkgPath -Algorithm SHA512).Hash
+    $bytes = New-Object 'byte[]' ($hex.Length / 2)
+    for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16) }
+    $b64 = [Convert]::ToBase64String($bytes)
+    if ($b64 -ne $mSha.Groups[1].Value.Trim()) {
+      Note 'sha512 does NOT match latest.yml - the file is corrupt, partial, or not the published build'
+      return $false
+    }
+    Note 'sha512 verified against latest.yml'
+  }
+  if ($mSize.Success) {
+    $len = (Get-Item -LiteralPath $pkgPath).Length
+    if ([long]$mSize.Groups[1].Value -ne $len) {
+      Note ("size mismatch: manifest=" + $mSize.Groups[1].Value + " actual=" + $len)
+      return $false
+    }
+  }
+  return $true
+}
 
 # ---------------------------------------------------------------- install dir
 # Facts verified on a real machine (0.1.10 install):
@@ -134,10 +213,18 @@ function Resolve-Installer {
   ) | Where-Object { $_ -and (Test-Path $_) }
   $cand = @()
   foreach ($d in $dirs) {
-    $cand += Get-ChildItem $d -Filter 'dsh-desktop-*-setup.exe' -File -ErrorAction SilentlyContinue
+    foreach ($f in @(Get-ChildItem $d -Filter 'dsh-desktop-*-setup.exe' -File -ErrorAction SilentlyContinue)) {
+      $v = Get-PackageVersion $f.Name
+      if ($v) { $cand += [pscustomobject]@{ File = $f; Version = $v } }
+      else { Note ("skipping installer with unparseable name: " + $f.Name) }
+    }
   }
-  if (-not $cand) { return '' }
-  return ($cand | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+  if (-not $cand.Count) { return '' }
+  # U1: highest VERSION wins, never the newest mtime.
+  $best = $cand[0]
+  foreach ($c in $cand) { if ((Compare-PackageVersion $c.Version $best.Version) -gt 0) { $best = $c } }
+  Note ("selected by version: " + $best.File.Name + " (" + $best.Version + ") from " + $cand.Count + " candidate(s)")
+  return $best.File.FullName
 }
 
 function Get-LatestFromGitHub {
@@ -274,6 +361,29 @@ if ($Download) {
   }
 }
 Note "package : $pkg"
+
+# U1: integrity + downgrade checks run BEFORE anything is killed, so a bad
+# package can never leave the user with no running app and an older install.
+Say "verifying the package..."
+$pkgVer = Get-PackageVersion $pkg
+if ($pkgVer) {
+  Note ("package version : " + $pkgVer)
+} else {
+  Note 'package version : (unparseable name - was passed explicitly via -Installer)'
+}
+if (-not (Test-InstallerManifest $pkg)) { Fail 'installer failed verification against latest.yml' }
+if ($info -and $pkgVer -and $info.Version -and $info.Version -ne '(unknown)') {
+  $cmp = Compare-PackageVersion $pkgVer $info.Version
+  if ($cmp -lt 0) {
+    Note ("installed version : " + $info.Version)
+    if (-not $Force) { Fail ("package " + $pkgVer + " is OLDER than the installed " + $info.Version + "; re-run with -Force to downgrade anyway") }
+    Note 'DOWNGRADE explicitly requested via -Force'
+  } elseif ($cmp -eq 0) {
+    Note ("same version as installed (" + $info.Version + "); reinstalling anyway")
+  } else {
+    Note ("installed version : " + $info.Version + "  -> upgrading")
+  }
+}
 
 Say "checking what is still running..."
 $apps = @(Get-AppProcesses)

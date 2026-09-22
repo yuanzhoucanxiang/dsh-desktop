@@ -20,6 +20,26 @@ const KIND_LABEL = { fact: '设定', preference: '偏好', 'open-question': '待
 const STATUS_LABEL = { proposed: '候选', confirmed: '已确认', retracted: '已撤回', resolved: '已解决' }
 const SOURCE_LABEL = { author: '作者', assistant: '助手建议', host: '内核' }
 
+/**
+ * V9：配额类错误的可读文案。
+ *
+ * 为什么不能只给裸错误码：备忘/世界观有三个硬上限（条目 400 / 历史 800 / 操作收据 200），
+ * 写满之后这个作品的备忘与世界观就**永久停摆**，而作者看到的只有
+ * 「备忘暂不可用：operations-full」和一个永远失败的重试按钮。
+ * host 侧已加归档出口（archive-history / prune-operations / purge-retracted，先备份再裁），
+ * 这里负责把出口说清楚并递上按钮。
+ */
+export const QUOTA_ERROR_COPY = {
+  'operations-full': '世界观操作收据已满（200 条），本作品暂时无法再保存或确认设定。点下面的「归档操作收据」：最早的收据会整体备份到 state/backups/ 后清出空间，已确认的设定与可读稿不受影响。',
+  'memory-full': '备忘条目已满（400 条，已撤回/已解决的也占配额）。点下面的「清理已撤回条目」腾出空间，清理前会整体备份。',
+  'history-full': '变更历史已满（800 条）。点下面的「归档变更历史」：最早的变更会整体备份后清出空间，条目本身不受影响。',
+  'operation-pruned': '这次操作的收据已被归档裁掉。为避免重复建一条设定，主机拒绝再次执行它——请重新发起一次新的保存。',
+}
+
+const MAINTENANCE_OPS = ['archive-history', 'prune-operations', 'purge-retracted']
+const MAINTENANCE_LABEL = { 'archive-history': '归档变更历史', 'prune-operations': '归档操作收据', 'purge-retracted': '清理已撤回条目' }
+export function isQuotaError(code) { return Object.prototype.hasOwnProperty.call(QUOTA_ERROR_COPY, String(code || '')) }
+
 export async function loadProjectMemory(path) {
   try {
     return await api('memory', undefined, { path })
@@ -52,7 +72,7 @@ export function restorableText(entry) {
 }
 
 export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onChanged }) {
-  const [state, setState] = react.useState({ loading: true, items: [], etag: '', revision: 0, error: '', raw: null })
+  const [state, setState] = react.useState({ loading: true, items: [], etag: '', revision: 0, error: '', raw: null, quota: null })
   const [text, setText] = react.useState('')
   const [kind, setKind] = react.useState('fact')
   const [asCandidate, setAsCandidate] = react.useState(false)
@@ -66,15 +86,15 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
 
   const refresh = react.useCallback(async () => {
     if (!path) {
-      setState({ loading: false, items: [], etag: '', revision: 0, error: '', raw: null })
+      setState({ loading: false, items: [], etag: '', revision: 0, error: '', raw: null, quota: null })
       return
     }
     const data = await loadProjectMemory(path)
     if (data.ok) {
-      setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '', raw: data.memory })
+      setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '', raw: data.memory, quota: data.quota || null })
     } else {
       // 坏 JSON / 未知 schema：不覆盖、不重建，只诊断
-      setState({ loading: false, items: [], etag: '', revision: 0, error: String(data.error || 'unavailable'), raw: null })
+      setState({ loading: false, items: [], etag: '', revision: 0, error: String(data.error || 'unavailable'), raw: null, quota: null })
     }
   }, [path])
   react.useEffect(() => { void refresh() }, [refresh])
@@ -100,13 +120,20 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
         body: JSON.stringify({ path, op, baseEtag: state.etag, baseRevision: state.revision, actor: 'author', ...body }),
       })
       if (data.ok) {
-        setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '', raw: data.memory })
+        setState({ loading: false, items: data.memory.items || [], etag: data.etag, revision: data.memory.revision, error: '', raw: data.memory, quota: data.quota || null })
         if (!keepText) {
           setText('')
           setAsCandidate(false)
           setCandidateSource(null)
         }
-        setNotice(op === 'add' ? (body?.item?.status === 'proposed' ? '已存为候选（未确认前不会自动带入对话）' : '已记下') : '已更新')
+        if (MAINTENANCE_OPS.includes(op)) {
+          const dropped = data.archived?.dropped ?? 0
+          setNotice(dropped
+            ? `${MAINTENANCE_LABEL[op]}：已归档 ${dropped} 条${data.archived?.backup ? '，备份在 ' + data.archived.backup : ''}`
+            : `${MAINTENANCE_LABEL[op]}：没有需要归档的内容`)
+        } else {
+          setNotice(op === 'add' ? (body?.item?.status === 'proposed' ? '已存为候选（未确认前不会自动带入对话）' : '已记下') : '已更新')
+        }
         onChanged?.(data)
         return true
       }
@@ -114,6 +141,12 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
         // 冲突：保留编辑框内容（keepText=true 的效果），刷新后让作者比较
         await refresh()
         setNotice('备忘已在别处修改，已刷新。你写的内容还在编辑框里，请比对后重试。')
+        return false
+      }
+      // V9：配额类错误给可读说明 + 拉最新用量，让归档按钮就在眼前
+      if (isQuotaError(data.error)) {
+        setNotice(QUOTA_ERROR_COPY[data.error])
+        await refresh()
         return false
       }
       setNotice('操作失败：' + String(data.error || 'unknown'))
@@ -135,6 +168,27 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
 
   // Structured settings have their own schema-aware editor immediately below.
   const items = state.items.filter(it => !it.setting).slice().reverse()
+
+  // V9：配额用量常驻显示，并给三个归档出口。撞墙之前就能看见，不是等报错才知道。
+  const q = state.quota
+  const quotaRow = q
+    ? jsx.jsxs('div', { className: 'dshWmMemoryNote', 'data-wm-memory-quota': '', style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }, children: [
+        jsx.jsx('span', { children: `用量：备忘 ${q.items}/${q.maxItems} · 历史 ${q.changes}/${q.maxChanges} · 操作收据 ${q.operations}/${q.maxOperations}` }),
+        jsx.jsx('button', { className: 'dshWmQuiet', disabled: busy || q.changes <= 0, 'data-wm-memory-archive': 'history', onClick: () => void post('archive-history', {}), children: MAINTENANCE_LABEL['archive-history'] }),
+        jsx.jsx('button', { className: 'dshWmQuiet', disabled: busy || q.operations <= 0, 'data-wm-memory-archive': 'operations', onClick: () => void post('prune-operations', {}), children: MAINTENANCE_LABEL['prune-operations'] }),
+        jsx.jsx('button', {
+          className: 'dshWmQuiet',
+          disabled: busy || !state.items.some((it) => it.status === 'retracted'),
+          'data-wm-memory-archive': 'retracted',
+          onClick: () => {
+            if (!window.confirm('清理已撤回的备忘条目？清理前会整体备份到 state/backups/，已确认与候选条目不受影响。')) return
+            void post('purge-retracted', {})
+          },
+          children: MAINTENANCE_LABEL['purge-retracted'],
+        }),
+        jsx.jsx('span', { children: '归档一律先备份再裁；已确认设定与可读稿不受影响。' }),
+      ] })
+    : null
 
   return jsx.jsxs('div', { className: 'dshWmMemory', children: [
     jsx.jsx('div', {
@@ -184,11 +238,14 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
     ] }),
 
     notice ? jsx.jsx('div', { className: 'dshWmMemoryNote', role: 'status', children: notice }) : null,
+    quotaRow,
     state.error
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
           state.error === 'corrupt-memory' || state.error === 'unknown-schema'
             ? `备忘文件格式异常（${state.error}）。原件已原样保留、没有被覆盖：可以让我在完整会话里先诊断再安全恢复。`
-            : `备忘暂不可用：${state.error}`,
+            : isQuotaError(state.error)
+              ? QUOTA_ERROR_COPY[state.error]
+              : `备忘暂不可用：${state.error}`,
           jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void refresh(), children: '重试' }),
         ] })
       : null,

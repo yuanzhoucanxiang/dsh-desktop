@@ -1,11 +1,19 @@
 # Prepare self-contained kernel runtime: hoisted npm install (short paths) + node.exe
 # Usage: powershell -ExecutionPolicy Bypass -File prepare-runtime.ps1
+#
+# KEEP THIS FILE ASCII-ONLY (same rule as build.ps1 / install-update.ps1 / release.ps1).
+# Windows PowerShell 5.1 reads a .ps1 without a UTF-8 BOM as ANSI/GBK; non-ASCII bytes
+# then decode as double-byte chars that can swallow the line ending and break the parser.
+# Editors and agents routinely rewrite files without a BOM, so the only durable fix is:
+# no non-ASCII bytes. scripts/verify-release-artifacts.mjs enforces this for every .ps1
+# in the build/release path.
 $ErrorActionPreference = 'Stop'
 $proj = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtime = Join-Path $proj 'runtime'
 $nodeExe = (Get-Command node).Source
 
-# 项目本地 npm 缓存（避免污染全局、也规避沙箱缓存路径问题）
+# Project-local npm cache: keeps the global cache clean and sidesteps sandboxed
+# cache-path problems. (U5: this comment used to be Chinese -- see the header.)
 $env:NPM_CONFIG_CACHE = Join-Path $proj '.npm-cache'
 
 Write-Host "installing dsh (hoisted) into runtime..."

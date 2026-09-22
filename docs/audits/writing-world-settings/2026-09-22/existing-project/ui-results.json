@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "results": [
+    "UI attaches unmodified existing folder and shows all 13 original Markdown documents",
+    "Different source folders share the same real native companion session",
+    "Memory resolves to the project without creating confirmed facts or changing files",
+    "Configuration survives preference update and renderer restart; missing directories and file paths rejected",
+    "13/13 original source copies remain byte-identical after opening and switching documents"
+  ],
+  "failures": []
+}

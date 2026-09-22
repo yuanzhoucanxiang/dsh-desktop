@@ -9,7 +9,7 @@ import { referenceStatus, sameReference, normalizeReference } from '../../../sha
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
-import { companionDrafts, loadCompanionDraft, listDraftCandidates, stashDraftForRecovery, applyDraftSnapshot, companionRecoveryState, companionDraftDirty, companionDraftConflict, companionDraftStatus, setDraftStatus, getDraftStatus, subscribeDraftStatus, resolveDraftConflict, retryDraftConflictRemote, persistCompanionDraft } from '../../state/companion-drafts.js'
+import { recoverDamagedDraft, companionDrafts, loadCompanionDraft, listDraftCandidates, stashDraftForRecovery, applyDraftSnapshot, companionRecoveryState, companionDraftDirty, companionDraftConflict, companionDraftStatus, setDraftStatus, getDraftStatus, subscribeDraftStatus, resolveDraftConflict, retryDraftConflictRemote, persistCompanionDraft } from '../../state/companion-drafts.js'
 import { harnessSessions } from '../../adapters/harness/runtime.js'
 import { harnessAdapter } from '../../adapters/harness/runtime.js'
 import { newOperationToken } from '../../adapters/harness/adapter.js'
@@ -190,6 +190,11 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     companionRecoveryState.set(project, 'pending')
     void loadCompanionDraft(project).then((c) => {
       if (cancelled) return
+      if (c.error) {
+        companionRecoveryState.set(project, 'done')
+        setDraftStatus(project, { phase: 'error', code: c.error, error: '草稿读取失败，原文件已保留：' + c.error })
+        return
+      }
       const typedDuring = recoveryGen.current !== started
       // R01: adopt full snapshot into cache (text + reference + rev) when no user edit
       if (!typedDuring) {
@@ -425,6 +430,10 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     }),
     jsx.jsx(WorldSettingsPanel, {
       path: project,
+      onReadHistory: (oldPath, sessionId) => {
+        const old = adapter.attach(oldPath, sessionId)
+        try { old.openFullSession(); onExit() } catch (err) { setError('旧会话无法打开：' + err.message) } finally { old.dispose() }
+      },
       selectedMessages: worldSelection,
       onClearSelection: () => setWorldSelection([]),
       onStatus: setWorldStatus,
@@ -514,6 +523,10 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     draftUi.status.phase === 'error' && !draftUi.conflict
       ? jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [
           draftUi.status.error,
+          draftUi.status.code === 'corrupt-draft' ? jsx.jsx('button', { onClick: async () => {
+            if (!window.confirm('保留损坏文件副本，并把当前编辑内容保存为新草稿？')) return
+            try { const r = await recoverDamagedDraft(project); setNotice(r.ok ? '损坏副本已保留，当前草稿已保存。' : '恢复失败：' + r.error) } catch (err) { setNotice('恢复失败：' + err.message) }
+          }, children: '保留损坏副本并保存当前草稿' }) : null,
           jsx.jsx('button', {
             className: 'dshWmQuiet',
             onClick: () => void persistCompanionDraft(project),

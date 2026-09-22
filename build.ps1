@@ -36,8 +36,14 @@ if ($LASTEXITCODE -ne 0) { throw "tar pack failed (exit $LASTEXITCODE)" }
 Copy-Item "$proj\runtime\runtime.json" "$proj\dist\runtime-marker.json" -Force
 Write-Host "runtime packed ($(([math]::Round((Get-Item "$proj\dist\runtime.tar.gz").Length/1MB,1))) MB)"
 
-# 2b. built-in plugins（见 builtin-plugins.json / scripts/prepare-builtin-plugins.mjs）：
-#     装出 stage 树到 dist/builtin-plugins，extraResources 打进安装包；失败必须挂掉
+# 2b. built-in plugins (see builtin-plugins.json / scripts/prepare-builtin-plugins.mjs):
+#     stage the plugin tree into dist/builtin-plugins; extraResources packs it into the
+#     installer. A failure here MUST abort the build.
+#     U5: these two comment lines used to be Chinese, which violated this file's own
+#     ASCII-only rule stated in the header (PS 5.1 reads a BOM-less .ps1 as ANSI/GBK and
+#     non-ASCII bytes can swallow the line ending -- "this actually bit us"). They parsed
+#     by luck. scripts/verify-release-artifacts.mjs now fails on any non-ASCII byte in the
+#     release .ps1 scripts, so this cannot come back.
 & node "$proj\scripts\prepare-builtin-plugins.mjs"
 if ($LASTEXITCODE -ne 0) { throw "prepare-builtin-plugins.mjs failed (exit $LASTEXITCODE)" }
 
@@ -52,14 +58,25 @@ if ($LASTEXITCODE -ne 0) { throw "electron-builder --dir failed (exit $LASTEXITC
 
 # 3b. app-update.yml: required by electron-updater at download/install time;
 #     the two-step (--dir then --prepackaged) flow does not generate it.
+#     U3: owner/repo are DERIVED from package.json build.publish instead of being
+#     hardcoded here. They used to be hardcoded in five places (package.json,
+#     main.js, this file, release.ps1, install-update.ps1) with nothing checking
+#     that they agree, so editing one would silently point the packaged app at a
+#     different update repo. scripts/verify-release-artifacts.mjs now enforces it.
+#     NOTE: forward slashes below are deliberate -- .NET and node both accept them
+#     on Windows, and this file must stay ASCII-only.
+$pubRepo = (& node -p "const p=require('./package.json').build.publish||{}; (p.owner&&p.repo)?(p.owner+'/'+p.repo):''").Trim()
+if ($LASTEXITCODE -ne 0) { throw "node failed reading package.json build.publish (exit $LASTEXITCODE)" }
+if ($pubRepo -notmatch '^[^/]+/[^/]+$') { throw "cannot derive owner/repo from package.json build.publish (got: '$pubRepo')" }
+$pubParts = $pubRepo.Split('/')
 $updYml = @"
 provider: github
-owner: yuanzhoucanxiang
-repo: dsh-desktop
+owner: $($pubParts[0])
+repo: $($pubParts[1])
 updaterCacheDirName: dsh-desktop-updater
 "@
-[System.IO.File]::WriteAllText("$proj\dist\win-unpacked\resources\app-update.yml", $updYml)
-Write-Host "app-update.yml written"
+[System.IO.File]::WriteAllText("$proj/dist/win-unpacked/resources/app-update.yml", $updYml)
+Write-Host "app-update.yml written (owner/repo derived from package.json: $pubRepo)"
 
 # 4. build NSIS installer from the now-complete prepackaged dir.
 #    Delete any same-version installer first: if the NSIS step fails, a stale
@@ -78,8 +95,18 @@ if (-not (Test-Path $setup)) { throw "NSIS step produced no installer at $setup"
 #    so generate it here, otherwise electron-updater reports
 #    "Cannot find latest.yml ... 404" when checking for updates.
 #    The node script derives the version from package.json itself.
-& node "$proj\gen-update-manifest.js"
+& node "$proj/gen-update-manifest.js"
 if ($LASTEXITCODE -ne 0) { throw "gen-update-manifest.js failed (exit $LASTEXITCODE)" }
+
+# 5b. U4: assert latest.yml really describes THIS build before anyone can publish
+#     it. dist/ keeps every historical installer, and release.ps1 prints manual
+#     `gh release upload` commands in the unauthenticated path -- a stale
+#     latest.yml published there would point every user at an older version (or
+#     404 when that asset is not in the release). Also re-checks that the update
+#     repo / updater cache dir names still agree across all the places that
+#     hardcode them.
+& node "$proj/scripts/verify-release-artifacts.mjs" --dir "$proj/dist/win-unpacked"
+if ($LASTEXITCODE -ne 0) { throw "verify-release-artifacts.mjs failed (exit $LASTEXITCODE)" }
 
 Write-Host "BUILD_OK version=$ver installer=$setup"
 Write-Host "BUILD_DONE"

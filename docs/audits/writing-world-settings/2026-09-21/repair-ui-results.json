@@ -1,0 +1,41 @@
+{
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-native-UwxQSm",
+  "observations": [
+    {
+      "id": "D02",
+      "status": "PASS",
+      "issue": "Saved/reopened open candidate preserves unresolved marker",
+      "stored": {
+        "type": "world",
+        "title": "未决的钟声规则",
+        "conclusion": "钟声含义还待讨论",
+        "explanation": "",
+        "boundaries": "",
+        "tags": [],
+        "sources": [],
+        "modelMark": "open",
+        "pending": true
+      }
+    },
+    {
+      "id": "D01",
+      "status": "PASS",
+      "issue": "Actual window close: host restores candidate after clearing browser cache; saved item survives",
+      "prevented": false,
+      "returned": {
+        "editor": null,
+        "cache": []
+      }
+    },
+    {
+      "id": "D03",
+      "status": "PASS",
+      "issue": "Real HTTP/UI corrupt-draft protection and explicit exact-byte backup recovery"
+    },
+    {
+      "id": "D04",
+      "status": "PASS",
+      "issue": "Real recovery UI imports independent chat/world buckets and exposes historical session without rebinding"
+    }
+  ]
+}

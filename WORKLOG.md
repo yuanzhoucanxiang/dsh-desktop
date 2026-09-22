@@ -1,5 +1,15 @@
 # 工作日志 · 索引与协作规范
 
+CXR01 / CXR02 整改完成（按 Codex 2026-09-22 定向复核）：**两项 P1 均已修，并落实裁决 3 第三条**。CXR01：残留锁清扫能把别人刚取得的活锁移走（check-then-rename 无法原子化，把窗口缩到微秒不是互斥保证；revision/etag 是临界区内部的读后比较，兜不了这个底）——现改为**在线一律不移动他人的锁**：`quarantineStaleLock` 需显式 `{offline:true}`、会移动的 `sweepStale*Locks()` 删除改只读、启动只诊断、维护接口 409 拒绝并给出可操作指引；代价是残留锁会卡着那个桶直到手动删除。CXR02：同名稿件（`draft/第一章.md`）被当成同一作品证据——现降级为 `unrelated-filename-hint`、importable 永远 false，证据只剩备忘/可读稿里记过的旧路径；确认框同时显示来源与目的。裁决3：未知持有者不再白等 8s，新增可重试错误码 `lock-owner-unknown`（800ms）。验收：hardening 77→**92 项全过**、新增 `fix-verification.mjs` **CXR_FIX_OK 25 项**、复核探针现停在 `assert.ok(quarantined)`（=修复生效）、Node 19 步 + Electron/根级 9 项全绿、`test:writing-world` 5/5、真包 8+12+9 全过（asar 仍 `d74ca818…`）。**未做**：D04 fixture 未按裁决 1 拆两组（属复核方文件，未动）、裁决 2/4/5/6、原子所有权锁与作品稳定 ID（长期）。未提交、未发布。— ox-alpha，2026-09-22
+
+打包/更新供应链 U1–U5 hunt 与逐一修复完成：**5 项全部实锤复现并全部修复**。最实际的两项：`install-update.ps1` 按 mtime 挑安装包（实测会挑中 0.1.37 而当前是 0.1.41）且**先强杀正在运行的桌面与内核再静默安装**、降级不报；以及发布前零一致性闸门（本机 `dist/latest.yml` 落后 4 个版本，而 `release.ps1` 未认证分支会把上传命令打印给人手工执行）。另：GitHub 更新源 5 处硬编码零校验（现让 `build.ps1` 从 `package.json` 派生）、`killStaleUpdaterInstallers` 裸拼路径进 PowerShell（紧邻 `Stop-Process -Force`）、`build.ps1`/`prepare-runtime.ps1` 里的中文注释违反其自身 ASCII-only 规则（v0.1.31 引入的哑弹）。新增闸门 `npm run verify:release-artifacts`（已接进 build/release）；探针重跑 0/4。**过程中自己引入的 W23 回归被门禁抓到并已修复**（V4 的锁快速失败把“锁刚释放”与“对方正在写入的空锁”误当陈旧锁；新增 `ownerIsProvablyDead()`，清扫/隔离只认 `dead`），`test:writing-hardening` 66 → **77 项全过**，`test:writing-world` 连跑 3/3。未提交、未发布；`dist/` 里任何文件都未删。报告：`docs/audits/release-chain-hardening/2026-09-21/`。— ox-alpha，2026-09-21
+
+前一轮收尾（发版条件）：真包字节核对 **9/9**、隔离冷启动与升级 **12/12**、真包验收 **9/9**（`app.isPackaged` 分支 `SMOKE_OK`），并新增 `verify-ipc-authz.mjs` 在**装机版 exe** 上连 CDP、在真实内核页面里证明 S1 授权闸生效（**IPC_AUTHZ_OK 0 项失败**，带两条防假通过的前置断言）。两个原生确认框仍需人工目检。— ox-alpha，2026-09-21
+
+外壳本体 S1–S6 hunt 与逐一修复完成：**6 项全部实锤复现并全部修复**。最严重一项（P1）：`dshShell` 桥无条件暴露给所有窗口，而 `shell:notify-command` 零确认、零发送方校验就能让主进程 `spawn(任意命令串, {shell:true})` 并每回合重放——内核页面里的第三方插件 client JS 由此穿透 sandbox 拿到本机命令执行（外壳 09-10〔115〕那次 IPC 收口漏掉的口子）。另：plugins-restore 绕过重启确认、钩子占位符未加引号（实测能执行额外命令）、YAML entry id 未校验、revert 端点无体积上限、会话事件流无界搬运。新增 `shell-hardening-test`（39 项）+ `lib/{shell-quote,ndjson-tail}.js`；探针重跑 0/6；隔离 userData 冒烟 `SMOKE_OK`。未提交、未发布；**未在打包版实测**两个新原生确认框。报告：`docs/audits/shell-hardening/2026-09-21/`。— ox-alpha，2026-09-21
+
+V1–V9 / G1–G4 hunt 与逐一修复完成：**13 项缺陷全部实锤复现并全部修复**（含一项 P0：大体积中文正文保存时因逐 chunk UTF-8 解码而静默出现 U+FFFD 乱码，已在 v0.1.36–v0.1.41 发布版里）。新增 `test:writing-hardening`（66 项）与 `git-review.test.js` 的 G1–G4（+14 项）；归档探针重跑 V 0/9、G 0/4；Node 层 17 步门禁 exit 0，Electron 层（含并行修改方 D01–D04 四项）全过。未提交、未发布；真包/冷启动/macOS/离线/真实模型仍未验收。报告与探针：`docs/audits/writing-hardening/2026-09-21/`。— ox-alpha，2026-09-21
+
 世界观整改完成（工程）：A01–A12，完整 21 步门禁及真包 9/9 通过；见 docs/audits/writing-world-settings/2026-09-20/repair/report.md。真实模型五场景等待验收，未发布。— Codex，2026-09-20
 
 > 项目：`dsh-desktop` —— DeepSeek Harness 桌面快捷启动外壳
@@ -27,6 +37,8 @@
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
+| 2026-09-22 | [`logs/2026-09-22.md`](logs/2026-09-22.md) | Codex：定向复核交回，新增确定性探针复现 CXR01（锁清扫移走活锁）/ CXR02（同名稿件误判作品关联），旧桶兼容怀疑已排除，并对七项取舍给出裁决；“已有项目接入”在独立副本完成 6 组协议 + 5 组界面测试，未合并。ox-alpha：CXR01/CXR02 整改 + 裁决 3 第三条（`lock-owner-unknown` 可重试快失败），hardening 77→92、新增 `fix-verification.mjs` 25 项，全量门禁与真包重验全绿 | Codex / ox-alpha |
+| 2026-09-21 | [`logs/2026-09-21.md`](logs/2026-09-21.md) | ox-alpha：三轮 hunt 与逐一修复共 **24 项**——插件 V1–V9（含 P0：大体积中文正文逐 chunk 解码静默产生 U+FFFD）、Git 审阅层 G1–G4、外壳本体 S1–S6（含 P1：内核页插件 JS 零确认拿到本机命令执行）、发布/更新链 U1–U5；自引入的 W23 回归被门禁抓到并修复。新增三套永久门禁（hardening / shell-hardening / verify-release-artifacts）与装机版 IPC 授权探针；真包字节核对/冷启动/真包验收全过；交接文档 `docs/audits/review-handoff-ox-alpha.md` | ox-alpha |
 | 2026-09-20 | [`logs/2026-09-20.md`](logs/2026-09-20.md) | Codex：Markdown 阅读、v0.1.40 发布、世界观方案 v1/策划案 v0.8。ox-alpha：H3/H4 hunt 加固；**世界观 P0–P5 工程实现**（schema2/投影/上下文/客户端整理流）；隔离真包与可见预览；交回 `docs/audits/writing-world-settings/2026-09-20/`（总体 PARTIAL） | Codex / ox-alpha |
 | 2026-09-19 | [`logs/2026-09-19.md`](logs/2026-09-19.md) | 独立复核、真实模型三场景及两真实窗口；修复候选来源丢失与 Windows 换行门禁；隔离真包与可见预览，未发布 | Codex |
 | 2026-08-13 | [`logs/2026-08-13.md`](logs/2026-08-13.md) | 项目立项→外壳完成→官方鲸鱼图标→快捷方式全链路 | deepseek-v4-pro |
@@ -130,3 +142,7 @@ v2 交回复核：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-r
 ## 补充索引 · 写作模式接手评估
 
 - 2026-09-11〔132〕：[严格评估与 12 项复现证据](docs/audits/writing-mode-2026-09-11/评估.md)；原有未提交 host 分层/打包改动与已发 v0.1.37 分开记录。— 署名：Codex / GPT-6
+
+2026-09-22：CXR01/CXR02 独立正向复验 25 项通过；已有项目接入已整合，D04 两条分支与 V7 延迟/失败/卸载均有真实 Electron 正向测试。最新整合验收见 docs/audits/writing-world-settings/2026-09-22/integration.md，覆盖此前“尚未整合/未补探针”的时点说明；未提交、未发布。— Codex
+
+2026-09-22：用户授权提交并发布 v0.1.42；已有项目接入与审计整改进入本次发布候选。按同一 Release ID 合并 Windows/macOS 资产，最终结果另记。— Codex

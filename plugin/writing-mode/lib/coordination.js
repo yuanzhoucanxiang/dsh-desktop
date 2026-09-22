@@ -18,7 +18,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { withFileLock } from './file-lock.js'
+import { withFileLock, inspectLock } from './file-lock.js'
+// 注：CXR01 之后本文件**不再引入 quarantineStaleLock**——在线移动他人的锁无法原子化，
+// 会把别人刚取得的活锁移走（详见 file-lock.js 里 CXR01 的时序说明）。
+// forgetCoordination 的 catch 分支本来就不得调它：那里是**持锁**执行的，
+// 锁的持有者就是自己（alive），调用永远是空转。
+import { identityKey } from './project-identity.js'
 
 export const COORD_SCHEMA = 1
 export const PHASES = new Set(['reserved', 'creating', 'bound', 'uncertain'])
@@ -43,9 +48,10 @@ export function coordinationDir() {
   return path.join(writingHome(), 'coordination')
 }
 
-/** 项目身份 → 桶文件名（不把路径明文写进文件名；跨平台大小写/分隔符归一）。 */
+/** 项目身份 → 桶文件名（不把路径明文写进文件名；跟 draft / memory 共用同一口径）。 */
 export function bucketOf(projectKey) {
-  const canonical = String(projectKey || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  // V6：改用全库统一的 identityKey，不再自己维护一套规范化规则
+  const canonical = identityKey(projectKey)
   if (!canonical) throw coordinationError('project-identity-required', 400)
   return createHash('sha256').update(canonical).digest('hex').slice(0, 32) + '.json'
 }
@@ -74,7 +80,14 @@ export function emptyRecord(projectKey) {
 function normalizeRecord(raw, projectKey) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyRecord(projectKey)
   if (raw.schemaVersion !== COORD_SCHEMA) throw coordinationError('unknown-schema', 400, { schemaVersion: raw.schemaVersion })
-  if (!PHASES.has(raw.phase)) throw coordinationError('bad-record', 500)
+  if (!PHASES.has(raw.phase)) {
+    // V3 自愈：stale-token 分支曾把 phase=null 的空记录落盘（见 mutate 里的守门），
+    // 之后每次读都抛 bad-record，该作品永久无法再绑定伙伴，且 forget 也清不掉。
+    // 空记录不含任何绑定信息，按「无记录」处理即可自愈；
+    // 仍带着 sessionId / workspaceId 的畸形记录才是真损坏，继续报错不掩盖。
+    if (raw.phase === null && !raw.sessionId && !raw.workspaceId) return emptyRecord(projectKey)
+    throw coordinationError('bad-record', 500)
+  }
   return raw
 }
 
@@ -113,6 +126,10 @@ function mutate(projectKey, fn) {
     }
     const next = fn(current)
     if (!next) return current
+    // V3 守门：**没推进到任何合法相位的结果不得落盘**。
+    // stale-token / absent 这类分支返回的是 `{...current, _outcome}`，当 current 是空记录时
+    // phase 为 null；一旦写盘，normalizeRecord 就再也读不回来（永久 500）。
+    if (!PHASES.has(next.phase)) return next
     next.version = Number(current.version || 0) + 1
     next.updatedAt = Date.now()
     next.projectKey = projectKey
@@ -206,7 +223,14 @@ export function markUncertainCoordination({ projectKey, operationToken, workspac
 export function releaseCoordination({ projectKey, operationToken }) {
   const file = recordPath(projectKey)
   return withFileLock(file, () => {
-    const current = readCoordination(projectKey)
+    let current
+    try {
+      current = readCoordination(projectKey)
+    } catch (err) {
+      // V3：坏记录不能让 release 直接 500——释放本来就是「什么都没建」的退出路径，
+      // 记录读不回来时当作无可释放，保留原件给诊断。
+      return { ...emptyRecord(projectKey), _outcome: 'unreadable', error: err?.code || 'corrupt-record' }
+    }
     if (current.phase === null) return { ...current, _outcome: 'absent' }
     if (current.operationToken !== operationToken) return { ...current, _outcome: 'stale-token' }
     if (current.phase !== 'reserved' || current.workspaceId || current.sessionId) {
@@ -235,8 +259,20 @@ export function forgetCoordination({ projectKey, operationToken = null, expected
     let current
     try {
       current = readCoordination(projectKey)
-    } catch {
-      // 坏记录：不删（原件保留给诊断）
+    } catch (err) {
+      // 坏记录：默认不删（原件保留给诊断）。但 force 时必须给作者一条出路——
+      // V3 实测：phase=null 的中毒记录会让 claim / GET / release 全挂，而 forget 也只会
+      // 回 corrupt-record，唯一恢复手段是手工删文件。现在 force 下先把原件改名保留
+      // （可审计、可回滚），再清掉锁与记录，不静默删除。
+      if (force === true) {
+        const kept = `${file}.corrupt-${Date.now().toString(36)}`
+        try {
+          fs.renameSync(file, kept)
+          return { ok: true, file, quarantined: path.basename(kept), reason: err?.code || 'corrupt-record' }
+        } catch (err2) {
+          return { ok: false, file, error: 'corrupt-record', detail: String(err2?.message || err2) }
+        }
+      }
       return { ok: false, file, error: 'corrupt-record' }
     }
     if (current.phase === null) return { ok: true, file, absent: true, retained: true }
@@ -256,4 +292,28 @@ export function forgetCoordination({ projectKey, operationToken = null, expected
       throw coordinationError('forget-failed', 500, { detail: err.message })
     }
   }, coordinationError)
+}
+
+/** V4：协调记录目录里的锁诊断（含残留锁）。path 为锁文件绝对路径，供作者手动处理。 */
+export function listCoordinationLocks() {
+  const dir = coordinationDir()
+  let names = []
+  try {
+    names = fs.readdirSync(dir).filter((n) => n.endsWith('.json.lock'))
+  } catch {
+    return []
+  }
+  return names.map((n) => {
+    const info = inspectLock(path.join(dir, n.slice(0, -'.lock'.length)))
+    return { lock: n, path: info.lock, owner: info.owner, alive: info.alive, dead: info.dead }
+  })
+}
+
+/**
+ * CXR01（2026-09-22 独立复核，P1）：**只读**列出持有者可证明已消失的残留锁，不做任何移动。
+ * 原 `sweepStaleCoordinationLocks()` 会改名隔离；check-then-rename 无法原子化，
+ * 可能移走别人刚取得的活锁而造成临界区重叠，故在线一律改为只报告（详见 draft-checkpoints.js 同名说明）。
+ */
+export function listStaleCoordinationLocks() {
+  return listCoordinationLocks().filter((row) => row.dead)
 }

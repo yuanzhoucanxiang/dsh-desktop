@@ -1,0 +1,27 @@
+{
+  "base": "C:\\Users\\DL\\AppData\\Local\\Temp\\codex-handoff-review-jluKiF",
+  "results": [
+    {
+      "id": "CXR01",
+      "status": "REPRODUCED",
+      "overlap": true,
+      "movedLiveOwner": true,
+      "method": "deterministic scheduling seam immediately before rename, no production source edits"
+    },
+    {
+      "id": "CXR02",
+      "status": "REPRODUCED",
+      "relation": "manuscript-reference",
+      "importable": true,
+      "copied": 1,
+      "explicitUnrelatedConfirmation": false
+    },
+    {
+      "id": "CXR03",
+      "status": "NOT_REPRODUCED",
+      "listed": true,
+      "legacyBucket": true,
+      "issue": "legacy trailing-separator bucket remains readable"
+    }
+  ]
+}

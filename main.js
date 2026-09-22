@@ -35,6 +35,8 @@ const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_
 const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
 const { createSettingsStore } = require('./lib/settings-store')
+const { expandNotifyCommand } = require('./lib/shell-quote')
+const { readNdjsonTail } = require('./lib/ndjson-tail')
 const { parsePatchList, effectiveDisabled, entryIdsForPackage, setEntryDisabled } = require('./lib/plugin-manager')
 const pluginSync = require('./lib/plugin-sync')
 
@@ -506,17 +508,16 @@ function writeKernelPatch(mode) {
   }
 }
 
+/**
+ * S6：会话改动流只读**尾部**（纯函数在 lib/ndjson-tail.js，有单测）。
+ * 回退功能不依赖这份流（bridge 用自己内存里的 session events 按 callId 查），
+ * 所以尾部截断是安全的；截断时回 truncated，由侧栏如实告知。
+ */
 function readSessionChanges() {
   if (!state.reviewStreamPath) return { ok: false, entries: [], error: 'no stream' }
-  try {
-    const raw = fs.readFileSync(state.reviewStreamPath, 'utf8')
-    const entries = raw.split('\n').filter(Boolean).map((line) => {
-      try { return JSON.parse(line) } catch { return null }
-    }).filter(Boolean)
-    return { ok: true, entries }
-  } catch (err) {
-    return { ok: false, entries: [], error: err.message }
-  }
+  const r = readNdjsonTail(state.reviewStreamPath)
+  if (!r.ok) return { ok: false, entries: [], error: r.error }
+  return r
 }
 
 /* ───────────────────── 回合完成通知（后台感知：失焦时才提醒） ─────────────────
@@ -535,15 +536,16 @@ function setAgentBusy(busy) {
   refreshTray()
 }
 
-/** 回合完成时执行用户配置的外部命令（webhook / 提示音 / 写日志）。 */
+/** 回合完成时执行用户配置的外部命令（webhook / 提示音 / 写日志）。
+ *
+ * S3：占位符替换走 lib/shell-quote（路径按目标 shell 规则加引号）。
+ * 原来直接拼裸路径，工作区名里的 & 会被 cmd.exe 当命令分隔符，实测能把
+ * `echo hook {cwd}` 变成额外执行一段载荷（详见 lib/shell-quote.js 与审查报告 S3）。 */
 function runNotifyHook(files) {
   const raw = String(settings.notifyCommand || '').trim()
   if (!raw) return
   const cwd = kernelCwd()
-  const cmd = raw
-    .replaceAll('{files}', String(files))
-    .replaceAll('{cwd}', cwd)
-    .replaceAll('{workspace}', cwd)
+  const cmd = expandNotifyCommand(raw, { files, cwd })
   try {
     // 用户自配命令：走 shell 解释；detached+unref 让它独立于外壳生命周期
     const child = spawn(cmd, {
@@ -1037,6 +1039,23 @@ function hardenWindow(w, opts) {
   })
 }
 
+/**
+ * S1：判定 IPC 发送方是否就是「设置」窗口。
+ *
+ * 为什么需要：preload 里的 dshShell 桥是无条件 exposeInMainWorld 的，凡是用这个 preload
+ * 的窗口（内核页/设置/启动画面/预览）拿到的是同一份全量能力。对于「只能由作者在设置里做」
+ * 的高危能力（写入要执行的外部命令），必须按发送方窗口授权，而不能只靠“没人会调”。
+ * 读也一并收紧：只有设置面板需要这个值。
+ */
+function isSettingsSender(event) {
+  try {
+    const w = BrowserWindow.fromWebContents(event && event.sender)
+    return !!settingsWin && !settingsWin.isDestroyed() && w === settingsWin
+  } catch {
+    return false
+  }
+}
+
 /** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
 function openSettingsPanel(tab) {
   const target = ['update', 'notify', 'plugins'].includes(tab) ? tab : 'plugins'
@@ -1081,14 +1100,24 @@ function decodeChunk(buf) {
 }
 
 /** 清掉卡在更新器缓存目录里的残留安装器进程——它们会让新安装器误判"同款已在运行"
- *  而中止（实战遇到过 setup.exe --updated /S 僵尸挡住更新的情况）。 */
+ *  而中止（实战遇到过 setup.exe --updated /S 僵尸挡住更新的情况）。
+ *
+ *  U2：目录路径**不做字符串拼接**，改用 $env: 传值。旧写法把路径拼进 PowerShell
+ *  单引号串（`StartsWith('" + dir + "'`），而 dir 派生自 LOCALAPPDATA 环境变量；
+ *  路径里带单引号（如 C:\Users\o'brien\…）就会越出字符串，而紧邻的正是
+ *  `Stop-Process -Force` 管道。实际可控性有限（需能控制启动外壳的父进程环境），
+ *  但没理由留着这个形态。 */
 function killStaleUpdaterInstallers() {
   if (!isWin || !process.env.LOCALAPPDATA) return
   try {
     const dir = path.join(process.env.LOCALAPPDATA, 'dsh-desktop-updater')
     if (!fs.existsSync(dir)) return
-    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith('" + dir + "', 'OrdinalIgnoreCase') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    spawnSync('powershell', ['-NoProfile', '-Command', ps], { windowsHide: true, timeout: 15000 })
+    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $env:DSH_UPDATER_DIR -and $_.ExecutablePath.StartsWith($env:DSH_UPDATER_DIR, 'OrdinalIgnoreCase') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    spawnSync('powershell', ['-NoProfile', '-Command', ps], {
+      windowsHide: true,
+      timeout: 15000,
+      env: { ...process.env, DSH_UPDATER_DIR: dir },
+    })
   } catch {}
 }
 
@@ -2204,22 +2233,70 @@ function registerIpc() {
     return n
   })
   // 通知钩子：设置面板读写外部命令（回合完成时 spawn）
-  ipcMain.handle('shell:notify-command', (_e, cmd) => {
+  //
+  // S1：**只有设置窗口能读写这两个通道**，且变更时要过原生确认框。
+  // 理由：dshShell 桥是无条件暴露给所有用这个 preload 的窗口的，而主窗口承载内核页面——
+  // 内核页面主世界里跑着第三方插件的 client 代码（本项目内置就注入了 better-sidebar /
+  // pet / palis-theme-panel）。notifyCommand 是这套桥里**唯一一个不需任何确认就能让主进程
+  // spawn 任意命令串（shell:true）**的入口，而且写进 settings.json 后会在每个回合结束重复执行。
+  // 外壳对同类风险早有明文策略并逐个收口过：open-file 改 showItemInFolder（不给执行面）、
+  // quit / restart-kernel / update-install 一律过原生确认框。这个入口是那次收口漏掉的。
+  ipcMain.handle('shell:notify-command', async (event, cmd) => {
+    if (!isSettingsSender(event)) {
+      log('notify-command: rejected（发送方不是设置窗口）')
+      return { ok: false, error: 'only-settings-window' }
+    }
     if (cmd === undefined) return { ok: true, command: settings.notifyCommand || '' }
-    settings.notifyCommand = String(cmd || '').trim()
+    const next = String(cmd || '').trim()
+    const prev = settings.notifyCommand || ''
+    if (next === prev) return { ok: true, command: next, unchanged: true }
+    if (next) {
+      const r = await confirm({
+        type: 'warning',
+        buttons: ['保存并允许执行', '取消'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: '保存通知钩子命令',
+        message: '这条命令会在每个回合结束时以你的用户身份执行',
+        detail: `${next}\n\n占位符 {files} {cwd} {workspace} 会被替换（路径按 shell 规则加引号）。只保存你信任的命令。`,
+      })
+      if (r.response !== 0) return { ok: false, canceled: true, command: prev }
+    }
+    settings.notifyCommand = next
     saveSettings()
-    return { ok: true, command: settings.notifyCommand }
+    log(`notifyCommand ${prev ? '变更' : '设置'}为：${next || '（已清空）'}`)
+    return { ok: true, command: next }
   })
-  ipcMain.handle('shell:notify-command-test', () => {
+  ipcMain.handle('shell:notify-command-test', (event) => {
+    if (!isSettingsSender(event)) {
+      log('notify-command-test: rejected（发送方不是设置窗口）')
+      return { ok: false, error: 'only-settings-window' }
+    }
     runNotifyHook(0)
     return { ok: true, command: settings.notifyCommand || '' }
   })
   // 插件体检面板：只读报告 / registry 更新比对 / 恢复被隔离插件（内部会重启内核）
   ipcMain.handle('shell:plugins-report', () => pluginReportForRenderer(runPluginInspection()))
   ipcMain.handle('shell:plugins-check-updates', () => checkPluginUpdates())
-  ipcMain.handle('shell:plugins-restore', () => {
+  ipcMain.handle('shell:plugins-restore', async () => {
     const list = readQuarantine()
     if (!list.length) return { ok: true, restored: 0 }
+    // S2：恢复成功后会 restartKernel()——与 shell:restart-kernel 同一个效果，
+    // 而后者明文要求确认（「无确认等于让 XSS/恶意插件一键杀掉用户正在用的会话」）。
+    // 两道门只锁一道等于没锁：内核页面任意插件 JS 可在有隔离记录时绕过确认中断会话，
+    // 并顺手把之前因崩溃被自动隔离的插件重新启用（可能再搞崩内核）。
+    const r = await confirm({
+      type: 'warning',
+      buttons: ['恢复并重启内核', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: '重新启用被隔离的插件',
+      message: `恢复 ${list.length} 个被隔离的插件并重启内核？`,
+      detail: `将重新启用：${list.map((e) => e.name).join('、')}\n\n当前会话会中断；仍无法安全加载的会保持隔离。这些插件之前是因为把内核搞崩才被自动隔离的。`,
+    })
+    if (r.response !== 0) return { ok: false, canceled: true }
     const before = list.length
     restoreQuarantinedBundles()
     return { ok: true, restored: before }

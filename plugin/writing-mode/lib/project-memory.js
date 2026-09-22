@@ -35,6 +35,30 @@ const MAX_OPERATIONS = 200
 const SETTING_OPS = new Set(['save-setting-candidate', 'confirm-setting', 'retract-setting'])
 const CLIENT_SCHEMA_MIN_FOR_SETTING_ITEM = 2
 
+/**
+ * V9：配额出口。
+ * 上面三个上限是故意设的（不静默裁剪需恢复记录），但**只拒不给出口**就等于：
+ * 一个作品写到 200 次世界观操作 / 400 条备忘 / 800 条历史之后，备忘与世界观永久停摆，
+ * 作者只看到「备忘暂不可用：operations-full」和一个永远失败的重试按钮。
+ * 维护类 op 一律**先把被裁字节整体归档进 state/backups/ 再裁**，保持可恢复。
+ */
+const MAINTENANCE_OPS = new Set(['archive-history', 'prune-operations', 'purge-retracted'])
+const KEEP_CHANGES = 100
+const KEEP_OPERATIONS = 40
+/** purge 只允许清终态条目；confirmed / proposed 绝不可被清走。 */
+const PURGEABLE_STATUSES = new Set(['retracted', 'resolved'])
+
+export const QUOTA = { maxItems: MAX_ITEMS, maxChanges: MAX_CHANGES, maxOperations: MAX_OPERATIONS }
+
+export function quotaOf(memory) {
+  return {
+    items: (memory?.items || []).length,
+    changes: (memory?.changes || []).length,
+    operations: (memory?.operations || []).length,
+    ...QUOTA,
+  }
+}
+
 export function memoryError(code, status = 400) {
   return Object.assign(new Error(code), { status, code })
 }
@@ -165,6 +189,7 @@ function validateExistingMemory(data) {
   }
   if (data.schemaVersion >= 2) {
     if (data.operations != null && !Array.isArray(data.operations)) throw memoryError('bad-memory', 500)
+    if (data.prunedOperationIds != null && !Array.isArray(data.prunedOperationIds)) throw memoryError('bad-memory', 500)
   }
   return data
 }
@@ -233,6 +258,11 @@ function assertIdempotent(memory, { operationId, requestHash, op }) {
   if (!requestHash) throw memoryError('request-hash-required', 400)
   const existing = findOperation(memory, operationId)
   if (!existing) {
+    // V9：收据已被归档裁掉。**绝不能当新操作执行**——那正是「无法确认保存结果」重试
+    // 会造成重复建设定的场景。给一个明确的、不重复建的回答。
+    if (Array.isArray(memory.prunedOperationIds) && memory.prunedOperationIds.includes(String(operationId))) {
+      throw memoryError('operation-pruned', 409)
+    }
     if ((memory.operations || []).length >= MAX_OPERATIONS) throw memoryError('operations-full', 409)
     return { replay: false }
   }
@@ -343,10 +373,81 @@ function backupMemoryFile(file) {
 function commitMemory(file, projectReal, memory, opts) {
   const payload = Buffer.from(JSON.stringify(memory, null, 2), 'utf8')
   const tmp = path.join(path.dirname(file), `.${randomUUID()}.tmp`)
-  fs.writeFileSync(tmp, payload)
-  assertMemoryPathSafe(projectReal, opts)
-  fs.renameSync(tmp, file)
+  // 持久化：不 fsync 就 rename，掉电可能只留下目录项而内容是空/半截——
+  // 那正好造成 corrupt-memory（而 corrupt-memory 只能人工恢复）。
+  // store.js 的 atomicWrite 一直是这么做的，权威记录不该比配置文件还弱。
+  let fd
+  try {
+    fd = fs.openSync(tmp, 'wx', 0o600)
+    fs.writeFileSync(fd, payload)
+    fs.fsyncSync(fd)
+    fs.closeSync(fd)
+    fd = undefined
+    assertMemoryPathSafe(projectReal, opts)
+    fs.renameSync(tmp, file)
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd) } catch {} }
+    try { fs.unlinkSync(tmp) } catch {} // rename 成功后是 ENOENT，失败时不留孤儿 tmp
+  }
   return { memory, etag: etagOf(payload) }
+}
+
+function clampInt(value, dflt, lo, hi) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return dflt
+  return Math.min(hi, Math.max(lo, Math.trunc(n)))
+}
+
+/** 把被裁掉的部分整体归档（wx 独占创建，不覆盖已有备份），返回库内相对路径。 */
+function archiveQuotaBytes(file, payload) {
+  const projectDir = path.dirname(path.dirname(file))
+  const dir = safeProjectPath(projectDir, 'state/backups')
+  fs.mkdirSync(dir, { recursive: true })
+  const name = `writing-memory-quota-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.json`
+  const abs = path.join(dir, name)
+  safeProjectPath(projectDir, path.relative(projectDir, abs))
+  const body = JSON.stringify({ archivedAt: new Date().toISOString(), schemaVersion: MEMORY_SCHEMA, ...payload }, null, 2)
+  fs.writeFileSync(abs, body, { encoding: 'utf8', flag: 'wx' })
+  return path.join('state', 'backups', name).split(path.sep).join('/')
+}
+
+/**
+ * V9：三个配额天花板的归档出口。先备份、后裁剪；无可裁时不做任何事。
+ */
+function applyQuotaMaintenance(file, memory, op, req = {}) {
+  if (op === 'archive-history') {
+    const keep = clampInt(req.keep, KEEP_CHANGES, 0, MAX_CHANGES)
+    const changes = memory.changes || []
+    if (changes.length <= keep) return { op, dropped: 0, keep }
+    const dropped = changes.slice(0, changes.length - keep)
+    const backup = archiveQuotaBytes(file, { kind: 'changes', dropped })
+    memory.changes = changes.slice(changes.length - keep)
+    return { op, dropped: dropped.length, keep, backup }
+  }
+  if (op === 'prune-operations') {
+    const keep = clampInt(req.keep, KEEP_OPERATIONS, 0, MAX_OPERATIONS)
+    const all = memory.operations || []
+    if (all.length <= keep) return { op, dropped: 0, keep }
+    const dropped = all.slice(0, all.length - keep)
+    const backup = archiveQuotaBytes(file, { kind: 'operations', dropped })
+    memory.operations = all.slice(all.length - keep)
+    // 被裁掉的 operationId 进**有界**墓碑环：迟到重试必须被认出来（见 assertIdempotent）。
+    const ring = Array.isArray(memory.prunedOperationIds) ? memory.prunedOperationIds : []
+    memory.prunedOperationIds = [...ring, ...dropped.map((d) => String(d?.operationId))].filter(Boolean).slice(-MAX_OPERATIONS)
+    return { op, dropped: dropped.length, keep, backup }
+  }
+  if (op === 'purge-retracted') {
+    const wanted = Array.isArray(req.statuses) && req.statuses.length ? req.statuses : ['retracted']
+    const statuses = [...new Set(wanted.filter((s) => PURGEABLE_STATUSES.has(s)))]
+    if (!statuses.length) throw memoryError('bad-statuses')
+    const dropped = (memory.items || []).filter((it) => statuses.includes(it?.status))
+    if (!dropped.length) return { op, dropped: 0, statuses }
+    const backup = archiveQuotaBytes(file, { kind: 'items', statuses, dropped })
+    const ids = new Set(dropped.map((it) => it.id))
+    memory.items = (memory.items || []).filter((it) => !ids.has(it.id))
+    return { op, dropped: dropped.length, statuses, backup }
+  }
+  throw memoryError('bad-op')
 }
 
 function assertClientMayTouchSetting(req, target) {
@@ -396,6 +497,19 @@ export function applyMemoryOp(projectDir, req = {}, opts = {}) {
     if (etagTok !== current.etag) throw memoryError('etag-conflict', 409)
     const legacy = memory.schemaVersion === MEMORY_SCHEMA_LEGACY
     if (legacy) memory = migrateSchema1To2(memory)
+
+    // ── V9：配额维护单独走一条路。它必须能在 changes 已满的时候仍然执行，
+    // 所以不能走 pushChange（那里会抛 history-full）——否则就是「满了就再也清不了」的死锁。
+    if (MAINTENANCE_OPS.has(op)) {
+      const archived = applyQuotaMaintenance(file, memory, op, req)
+      memory.revision += 1
+      memory.projectKey = projectReal
+      memory.changes = memory.changes || []
+      memory.changes.push({ at: new Date().toISOString(), actor: String(actor || 'author').slice(0, 40), op, id: null, after: { archived } })
+      if (legacy) backupMemoryFile(file)
+      const committed = commitMemory(file, projectReal, memory, opts)
+      return { ...committed, receipt: null, replay: false, quota: quotaOf(memory), archived, migratedFrom: legacy ? MEMORY_SCHEMA_LEGACY : null }
+    }
 
     memory.revision += 1
     memory.projectKey = projectReal
@@ -666,11 +780,17 @@ export function memoryApiPayload(projectDir, opts = {}) {
       schemaVersion: MEMORY_SCHEMA,
       worldSettings: true,
       settingOps: ['save-setting-candidate', 'confirm-setting'],
+      // V9：配额与维护出口对客户端公开，让 UI 能自己判定何时该提醒归档
+      maintenanceOps: [...MAINTENANCE_OPS],
+      quota: QUOTA,
       maxSettingChars: MAX_SETTING_CHARS,
       maxSources: MAX_SOURCES,
       projectionPath: 'bible/世界观整理.md',
     },
     projection: r.memory.projection || defaultProjection(),
+    // V9：把配额用量随读一起给客户端，让 UI 能在撞墙**之前**提醒并提供归档入口，
+    // 而不是等作者撞到 operations-full 才看到一个裸错误码。
+    quota: quotaOf(r.memory),
   }
 }
 

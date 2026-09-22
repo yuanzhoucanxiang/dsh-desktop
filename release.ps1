@@ -21,6 +21,14 @@ $exe = "dsh-desktop-$ver-setup.exe"
 & powershell -ExecutionPolicy Bypass -File "$proj\build.ps1"
 if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed (exit $LASTEXITCODE)" }
 
+# 1b. U4/U3: refuse to publish unless latest.yml really matches this build.
+#     build.ps1 already ran the same check, but the unauthenticated path below
+#     PRINTS manual `gh release upload` commands for a human to copy-paste --
+#     re-checking here means that human cannot publish a stale dist/latest.yml
+#     (which would point every auto-updating client at an older version, or 404).
+& node "$proj/scripts/verify-release-artifacts.mjs" --dir "$proj/dist/win-unpacked"
+if ($LASTEXITCODE -ne 0) { throw "release artifacts inconsistent; refusing to publish (exit $LASTEXITCODE)" }
+
 # 2. publish (mac dmg is built and uploaded automatically by GitHub Actions once the tag is pushed)
 $assets = @("dist\$exe", "dist\latest.yml", "dist\$exe.blockmap")
 

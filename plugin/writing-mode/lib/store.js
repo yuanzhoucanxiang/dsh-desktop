@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
+import { withFileLock } from './file-lock.js'
 
 export const CONFIG_NAME = 'writing-mode.json'
 export const TEXT_EXTS = new Set(['.md', '.markdown', '.fountain', '.txt'])
@@ -66,9 +67,18 @@ export function ensureCompanionPreset() {
 }
 
 export function readConfig() {
+  const file = configFile()
+  let raw
   try {
-    const raw = JSON.parse(fs.readFileSync(configFile(), 'utf8').replace(/^\uFEFF/, ''))
-    const roots = Array.isArray(raw?.roots) ? raw.roots : []
+    raw = fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    // 真·首次使用：文件不存在。只有这一种情况才当空配置。
+    if (err.code === 'ENOENT') return blankConfig()
+    return { ...blankConfig(), configError: 'config-read-failed', __damaged: true }
+  }
+  try {
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''))
+    const roots = Array.isArray(parsed?.roots) ? parsed.roots : []
     return {
       roots: roots
         .filter((r) => r && typeof r.path === 'string' && r.path.trim() !== '')
@@ -76,27 +86,107 @@ export function readConfig() {
           path: String(r.path),
           label: String(r.label || path.basename(r.path) || r.path),
           default: Boolean(r.default),
+          kind: r.kind === 'project' ? 'project' : 'library',
         })),
-      activeRoot: typeof raw?.activeRoot === 'string' ? raw.activeRoot : null,
-      prefs: normalizePrefs(raw?.prefs),
-      companions: raw?.companions && typeof raw.companions === 'object' && !Array.isArray(raw.companions) ? raw.companions : {},
+      activeRoot: typeof parsed?.activeRoot === 'string' ? parsed.activeRoot : null,
+      prefs: normalizePrefs(parsed?.prefs),
+      companions: parsed?.companions && typeof parsed.companions === 'object' && !Array.isArray(parsed.companions) ? parsed.companions : {},
+      revision: Number.isInteger(Number(parsed?.revision)) ? Number(parsed.revision) : 0,
     }
   } catch {
-    return { roots: [], activeRoot: null, prefs: { ...DEFAULT_PREFS } }
+    // V2：**损坏 ≠ 不存在**。
+    // 旧写法在这里静默返回空默认值（甚至连 companions 键都没有），于是下一次
+    // 任意一个写配置的路由（只改个字号）就会把库根 / activeRoot / 全部伙伴会话绑定 /
+    // 自定义 AI Key 一次清零，无备份无诊断。现在：保留损坏原件字节、明确报错，
+    // 并给这份 cfg 打上 __damaged，writeConfig 拒绝把它回写。
+    const backup = preserveDamagedConfig(file)
+    return { ...blankConfig(), configError: 'corrupt-config', configBackup: backup, __damaged: true }
   }
 }
 
-export function writeConfig(cfg) {
+function blankConfig() {
+  return { roots: [], activeRoot: null, prefs: { ...DEFAULT_PREFS }, companions: {}, revision: 0 }
+}
+
+/**
+ * 把损坏的配置原件复制一份留证。
+ * 按**内容哈希**命名 + COPYFILE_EXCL → 幂等：同一份损坏字节无论被读多少次
+ * 只会留一份副本（否则前端每次轮询 config 都会在 DSH_HOME 里多堆一个文件）。
+ */
+function preserveDamagedConfig(file) {
+  let bak = null
+  try {
+    const raw = fs.readFileSync(file)
+    const tag = createHash('sha256').update(raw).digest('hex').slice(0, 12)
+    bak = `${file}.damaged-${tag}`
+    fs.copyFileSync(file, bak, fs.constants.COPYFILE_EXCL)
+    return bak
+  } catch (err) {
+    // EEXIST = 同一份损坏字节已经留过证，直接回那个路径；其余失败不阻断读取诊断
+    return err?.code === 'EEXIST' ? bak : null
+  }
+}
+
+function rawRevision(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
+    return Number.isInteger(Number(parsed?.revision)) ? Number(parsed.revision) : 0
+  } catch {
+    return null
+  }
+}
+
+export function writeConfig(cfg, opts = {}) {
+  // V2：从损坏读取得到的 cfg 绝不得回写，否则就是把作者的全部配置清零。
+  // 只有显式 allowDamaged（恢复入口）才能跨过这道门。
+  if (cfg?.__damaged && opts.allowDamaged !== true) {
+    throw storeError(cfg.configError === 'config-read-failed' ? 'config-read-failed' : 'config-damaged-refused', 409)
+  }
   const file = configFile()
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const out = {
-    roots: cfg.roots || [],
-    activeRoot: cfg.activeRoot ?? null,
-    prefs: normalizePrefs(cfg.prefs),
-    companions: cfg.companions || {},
-  }
-  atomicWrite(file, JSON.stringify(out, null, 2))
-  return out
+  return withFileLock(file, () => {
+    const onDisk = rawRevision(file)
+    if (Number.isInteger(opts.baseRevision) && onDisk !== null && onDisk !== opts.baseRevision) {
+      throw storeError('config-conflict', 409)
+    }
+    const out = {
+      revision: (onDisk ?? 0) + 1,
+      roots: cfg.roots || [],
+      activeRoot: cfg.activeRoot ?? null,
+      prefs: normalizePrefs(cfg.prefs),
+      companions: cfg.companions || {},
+    }
+    atomicWrite(file, JSON.stringify(out, null, 2))
+    return out
+  }, storeError)
+}
+
+/**
+ * V2：读-改-写全部在同一个锁内完成。
+ *
+ * 为什么：route=prefs / companion / roots 三条路由原本各自 readConfig → 改 → writeConfig，
+ * 无锁无版本。两个窗口同时操作（一个绑伙伴会话、一个改字号）必丢一次更新。
+ * mutator 抛错则不落盘；返回 null/undefined 表示无变更。
+ */
+export function updateConfig(mutator) {
+  const file = configFile()
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  return withFileLock(file, () => {
+    const cfg = readConfig()
+    if (cfg.__damaged) throw storeError(cfg.configError === 'config-read-failed' ? 'config-read-failed' : 'config-damaged-refused', 409)
+    const next = mutator(cfg)
+    if (next === null || next === undefined) return cfg
+    const onDisk = rawRevision(file)
+    const out = {
+      revision: (onDisk ?? 0) + 1,
+      roots: next.roots || [],
+      activeRoot: next.activeRoot ?? null,
+      prefs: normalizePrefs(next.prefs),
+      companions: next.companions || {},
+    }
+    atomicWrite(file, JSON.stringify(out, null, 2))
+    return out
+  }, storeError)
 }
 
 export function realOrNull(p) {
@@ -147,7 +237,9 @@ export function resolveUnderRoots(filePath, roots) {
   return null
 }
 
-export function listProjectFiles(projectDir, shallow = false) {
+export function listProjectFiles(projectDir, shallow = false, options = {}) {
+  let visited = 0
+  const warn = () => { options.truncated = true }
   const files = []
   const scope = [{ path: projectDir, real: realOrNull(projectDir) }]
   const seen = new Set()
@@ -180,7 +272,7 @@ export function listProjectFiles(projectDir, shallow = false) {
     })
   }
   const walk = (dir, depth) => {
-    if (depth > 4) return
+    if (depth > (options.recursive ? 12 : 4) || ++visited > 2000) { warn(); return }
     if (!resolveUnderRoots(dir, scope)) return
     let ents
     try {
@@ -189,7 +281,8 @@ export function listProjectFiles(projectDir, shallow = false) {
       return
     }
     for (const ent of ents) {
-      if (ent.name.startsWith('.')) continue
+      if (ent.name.startsWith('.') || ['node_modules', 'vendor'].includes(ent.name)) continue
+      if (files.length >= 5000) { warn(); break }
       const full = path.join(dir, ent.name)
       if (ent.isDirectory()) walk(full, depth + 1)
       else if (ent.isFile()) pushFile(full)
@@ -201,7 +294,8 @@ export function listProjectFiles(projectDir, shallow = false) {
         pushFile(path.join(projectDir, ent.name))
       }
     }
-    for (const sub of shallow ? [] : PROJECT_SCAN_DIRS) {
+    const dirs = options.recursive ? fs.readdirSync(projectDir, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.') && !['node_modules', 'vendor'].includes(e.name)).map(e => e.name) : PROJECT_SCAN_DIRS
+    for (const sub of shallow ? [] : dirs) {
       const d = path.join(projectDir, sub)
       if (fs.existsSync(d)) walk(d, 1)
     }
@@ -218,7 +312,11 @@ export function scanTree(cfg) {
     if (r.real) {
       try {
         const ents = fs.readdirSync(r.real, { withFileTypes: true })
-        if (fs.existsSync(path.join(r.real, 'project.md'))) {
+        if (r.kind === 'project') {
+          const options = { recursive: true }
+          const files = listProjectFiles(r.real, false, options)
+          projects.push({ name: r.label || path.basename(r.real), path: r.real, isRootProject: true, isExistingProject: true, files, scanWarning: options.truncated ? '资料较多或目录过深，列表未完全展开。可在伙伴中指定原文路径读取。' : null })
+        } else if (fs.existsSync(path.join(r.real, 'project.md'))) {
           projects.push({
             name: path.basename(r.real),
             path: r.real,
@@ -229,7 +327,7 @@ export function scanTree(cfg) {
           const files = listProjectFiles(r.real, true)
           if (files.length) projects.push({ name: '独立文稿', path: r.real, isLoose: true, files })
         }
-        for (const ent of ents) {
+        for (const ent of r.kind === 'project' ? [] : ents) {
           if (!ent.isDirectory() || ent.name.startsWith('.')) continue
           const dir = path.join(r.real, ent.name)
           if (!fs.existsSync(path.join(dir, 'project.md'))) continue
@@ -333,6 +431,8 @@ export function readTextOrNull(p) {
 export function findProjectRoot(absPath) {
   const roots = effectiveRoots(readConfig())
   const start = path.resolve(String(absPath || ''))
+  const attached = configuredProject(start, roots)
+  if (attached) return attached
   try {
     if (fs.existsSync(start) && fs.statSync(start).isDirectory()) {
       if (readTextOrNull(path.join(start, 'project.md')) !== null) {
@@ -350,9 +450,18 @@ export function findProjectRoot(absPath) {
   return null
 }
 
+/** Explicit project roots are configuration, never marker files in the author's folder. */
+export function configuredProject(absPath, roots) {
+  const matches = roots.filter(r => r.kind === 'project' && r.real && resolveUnderRoots(absPath, [r]))
+  matches.sort((a, b) => b.real.length - a.real.length)
+  return matches[0]?.real || null
+}
+
 /** Canonical project dir for a file or directory path under a library root. */
 export function resolveProjectDir(absPath, roots = effectiveRoots(readConfig())) {
   const start = path.resolve(String(absPath || ''))
+  const attached = configuredProject(start, roots)
+  if (attached) return attached
   const asDir = (() => {
     try {
       return fs.existsSync(start) && fs.statSync(start).isDirectory()
@@ -385,7 +494,7 @@ export function readDoc(target) {
 }
 
 export function storeError(code, status = 400) {
-  return Object.assign(new Error(code), { status })
+  return Object.assign(new Error(code), { status, code })
 }
 
 function digest(bytes) { return createHash('sha256').update(bytes).digest('hex') }

@@ -1,0 +1,207 @@
+{
+  "createdAt": "2026-09-21T11:20:05.768Z",
+  "originalFiles": [
+    {
+      "path": "00_设定\\设定总汇.md",
+      "sourceHash": "d90364c908369c7233383ae33a078fb4fd6ab662a2c5daee9164420781e91406",
+      "copyHash": "d90364c908369c7233383ae33a078fb4fd6ab662a2c5daee9164420781e91406"
+    },
+    {
+      "path": "00_设定\\设定档案.md",
+      "sourceHash": "4be27cfd0ae6775a667bc0fc6cd141a65025dd24c3775ae2c807f3c77cd91909",
+      "copyHash": "4be27cfd0ae6775a667bc0fc6cd141a65025dd24c3775ae2c807f3c77cd91909"
+    },
+    {
+      "path": "01_概念设计\\00_设计原则.md",
+      "sourceHash": "aa9f3db48ed1d1d157e445a81c63a1979a3b21e2fa5b52aa26e5ce509663fc6e",
+      "copyHash": "aa9f3db48ed1d1d157e445a81c63a1979a3b21e2fa5b52aa26e5ce509663fc6e"
+    },
+    {
+      "path": "01_概念设计\\01_世界定调.md",
+      "sourceHash": "d4902725a5f2b85ad9e8feb3c97499a3cd30350e63ce835bb34fdaaaa46891fc",
+      "copyHash": "d4902725a5f2b85ad9e8feb3c97499a3cd30350e63ce835bb34fdaaaa46891fc"
+    },
+    {
+      "path": "01_概念设计\\05_参考项目.md",
+      "sourceHash": "df684468ec28ca651393f35412cd7b24d132b2ea910de9e6a23323d76f978984",
+      "copyHash": "df684468ec28ca651393f35412cd7b24d132b2ea910de9e6a23323d76f978984"
+    },
+    {
+      "path": "01_概念设计\\10_美术语言.md",
+      "sourceHash": "3951ea8ac1b1b5d1b9754db69da13c3b940c0358d62a351af15c95422ec8091d",
+      "copyHash": "3951ea8ac1b1b5d1b9754db69da13c3b940c0358d62a351af15c95422ec8091d"
+    },
+    {
+      "path": "01_概念设计\\20_地理与环境.md",
+      "sourceHash": "aecce4e86baf2a9694ccb3efe0364811d5b0459bc3bfb59fabb4918cd02a8acc",
+      "copyHash": "aecce4e86baf2a9694ccb3efe0364811d5b0459bc3bfb59fabb4918cd02a8acc"
+    },
+    {
+      "path": "01_概念设计\\30_社会与物质文化.md",
+      "sourceHash": "9a9c7b2e71efd151b14fb66de202c8b140430b0784da76ea174ae393c9c50199",
+      "copyHash": "9a9c7b2e71efd151b14fb66de202c8b140430b0784da76ea174ae393c9c50199"
+    },
+    {
+      "path": "01_概念设计\\40_势力设计系统.md",
+      "sourceHash": "db7b4e8ddbfa5d39b1dbd5d9c721f4447372fb20c002db03f865d4b6c789c45a",
+      "copyHash": "db7b4e8ddbfa5d39b1dbd5d9c721f4447372fb20c002db03f865d4b6c789c45a"
+    },
+    {
+      "path": "01_概念设计\\50_历史与遗迹.md",
+      "sourceHash": "ee0edf7683c20403f6a58ed2f3acfd0aa556a65e0f1ba84e872ea616414e5a99",
+      "copyHash": "ee0edf7683c20403f6a58ed2f3acfd0aa556a65e0f1ba84e872ea616414e5a99"
+    },
+    {
+      "path": "10_故事\\主线骨架.md",
+      "sourceHash": "7d5f8391a7b8a6eac22c60e56980f76b3fbc1f055c75a39a09fff70de6b05f95",
+      "copyHash": "7d5f8391a7b8a6eac22c60e56980f76b3fbc1f055c75a39a09fff70de6b05f95"
+    },
+    {
+      "path": "90_笔记\\Claude试稿(非正文).md",
+      "sourceHash": "b180ab2ce8f18e6c38f88afaf12ca92968bc61435b5a63dd8d4a9f3ea7c9b07c",
+      "copyHash": "b180ab2ce8f18e6c38f88afaf12ca92968bc61435b5a63dd8d4a9f3ea7c9b07c"
+    },
+    {
+      "path": "90_笔记\\工作日志.md",
+      "sourceHash": "178fbafad5d3e823316c76fef2d8a62b19fa2f232fca8c19182a6d2d3f592051",
+      "copyHash": "178fbafad5d3e823316c76fef2d8a62b19fa2f232fca8c19182a6d2d3f592051"
+    }
+  ],
+  "allCopiesUnchanged": true,
+  "calls": [
+    {
+      "id": "call_00_ByzHJ1hlyb5AylzMCxcq3755",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\00_设定\\设定档案.md"
+      }
+    },
+    {
+      "id": "call_01_e5lvKa9S7AUnmJCykjyc7584",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\00_设定\\设定总汇.md"
+      }
+    },
+    {
+      "id": "call_02_lQ3ypXY66wTBQEYDGs602761",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\10_故事\\主线骨架.md"
+      }
+    },
+    {
+      "id": "call_03_7UF5iWRxdc9N0ij2jY7v8616",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\90_笔记\\Claude试稿(非正文).md"
+      }
+    },
+    {
+      "id": "call_00_LHL5jDu3BPz6EJCsdoTr9885",
+      "name": "glob",
+      "args": {
+        "pattern": "**/*.md",
+        "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国"
+      }
+    },
+    {
+      "id": "call_01_SJlIK9rimitIrY2v5Lku9423",
+      "name": "grep",
+      "args": {
+        "pattern": "老行伍|介于两代|学院成立前|没去学院",
+        "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国",
+        "include": "*.md"
+      }
+    },
+    {
+      "id": "call_02_2WuOFh1PQh06l3WDijA40987",
+      "name": "grep",
+      "args": {
+        "pattern": "封爵|拒封",
+        "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国",
+        "include": "*.md"
+      }
+    },
+    {
+      "id": "call_03_5fHCthEBncYBsMWojrtt6589",
+      "name": "grep",
+      "args": {
+        "pattern": "格里夫|玛伦|十四个人|七天",
+        "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国",
+        "include": "*.md"
+      }
+    },
+    {
+      "id": "call_00_flIgqE42zQydZ80NyMQ68331",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\90_笔记\\工作日志.md",
+        "offset": 350,
+        "limit": 110
+      }
+    },
+    {
+      "id": "call_01_IXXclOBQGOcMZzbRixKH5889",
+      "name": "read",
+      "args": {
+        "file_path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\01_概念设计\\40_势力设计系统.md",
+        "offset": 1,
+        "limit": 40
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "id": "call_00_ByzHJ1hlyb5AylzMCxcq3755",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\00_设定\\设定档案.md</path>\n<type>file</type>\n<content>\n1: # 世界观设定档案\n2: \n3: > 用途：创作参考与一致性核对。随手增补修正。\n4: > 完整通读版（整理快照）：`00_设定/设定总汇.md`（2026-09-14 整理）。\n5: > 概念设计层：`01_概念设计/`（2026-09-20 起）。第一读物：`01_概念设计/01_世界定调.md`。\n6: > 协作模式：用户执笔正文，助手只发散灵感与结构，不代写。\n7: \n8: ## 时代底色\n9: 架空世界，融合 维多利亚 + 工业革命 + 克苏鲁。\n10: - 维多利亚层：等级森严、贵族头衔、繁文缛节、公开处刑的\"文明表象与公开暴力\"。\n11: - 工业革命层：火器/枪炮（银色大口径弹壳）、马车与正在蔓延"
+    },
+    {
+      "id": "call_01_e5lvKa9S7AUnmJCykjyc7584",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\00_设定\\设定总汇.md</path>\n<type>file</type>\n<content>\n1: # 《赫尔帝国》设定总汇\n2: \n3: > 本文档 = 世界观整理快照（v1，2026-09-14）。汇总全部已锁定设定：世界 / 体系 / 势力 / 人物 / 结构主轴 / 伏笔 / 写作纪律，一份通读。\n4: > 来源：`00_设定/设定档案.md`（源档案）+ `10_故事/主线骨架.md` + `90_笔记/工作日志.md`；随设定更新回写。\n5: > 协作模式：用户执笔正文；助手只做结构与灵感、不代写。\n6: \n7: ---\n8: \n9: ## 一、时代底色\n10: \n11: 架空世界，融合 维多利亚 + 工业革命 + 克苏鲁。\n12: \n13: - **维多利亚层**：等级森严、贵族头衔、繁文缛节、公"
+    },
+    {
+      "id": "call_02_lQ3ypXY66wTBQEYDGs602761",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\10_故事\\主线骨架.md</path>\n<type>file</type>\n<content>\n1: # 主线骨架（v2，含父亲之死结构主轴）\n2: \n3: > 主轴：战争权谋明线 + 因子/克苏鲁暗线（中份量，逐渐浮上）。\n4: > 主视角：维尔斯。执笔者：用户。本文件只做骨架与伏笔登记，不代写正文。\n5: > 详细设定见 `00_设定/设定档案.md`。\n6: \n7: ## 三向运动（人物骨架精髓）\n8: 车厢三人 = 旧帝国三向微缩：\n9: - **凡尔丁** 向下/守旧 —— 爵位托在统领、保皇党、温和的旧时代残阳\n10: - **维尔斯** 横移/撕裂 —— 体制内 vs 心有反火，被做局考验\n11: - **洛宾** 向上/攀升 —— 无爵靠军功，用反抗者的血铺路\n12: \n13: ## 车厢真实权力"
+    },
+    {
+      "id": "call_03_7UF5iWRxdc9N0ij2jY7v8616",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\90_笔记\\Claude试稿(非正文).md</path>\n<type>file</type>\n<content>\n1: # Claude 试稿(非正文)\n2: \n3: > **重要声明:本文件全部内容为 Claude 撰写的试稿/示范稿,不是用户的正文。**\n4: >\n5: > - 用途:供用户参考笔感、节奏、伏笔织法。用户可自由采用、修改、拆用或整体弃用。\n6: > - 归属:凡被用户采纳并修改后进入 `20_正文/` 的段落,以用户版本为准,不再视为本试稿。\n7: > - 分界:用户自己写的正文存于 `20_正文/`;本文件只存 Claude 写的试稿,两者不混淆。\n8: > - 每段标注写作日期、对应衔接位置、以及该段埋设的伏笔清单。\n9: \n10: ---\n11: \n12: ## 试稿一 · 车厢论事(2"
+    },
+    {
+      "id": "call_00_LHL5jDu3BPz6EJCsdoTr9885",
+      "isError": false,
+      "preview": "00_设定\\设定总汇.md\n00_设定\\设定档案.md\n01_概念设计\\00_设计原则.md\n01_概念设计\\01_世界定调.md\n01_概念设计\\05_参考项目.md\n01_概念设计\\10_美术语言.md\n01_概念设计\\20_地理与环境.md\n01_概念设计\\30_社会与物质文化.md\n01_概念设计\\40_势力设计系统.md\n01_概念设计\\50_历史与遗迹.md\n10_故事\\主线骨架.md\n90_笔记\\Claude试稿(非正文).md\n90_笔记\\工作日志.md\ndraft\\novel\\第1章-v1.md\nproject.md"
+    },
+    {
+      "id": "call_01_SJlIK9rimitIrY2v5Lku9423",
+      "isError": false,
+      "preview": "Found 8 matches\n\n00_设定\\设定档案.md\nLine 104: - 洛宾是**学院成立前**的老行伍，介于两代之间——纯靠军功爬至司卫，无爵无科班，自成一种\"老军旅实战派\"。\nLine 154: - **洛宾**：年长，老行伍贵族。**小贵族旁支、无爵袭**；纯靠自己爬到今天的地位的真正军旅人物——帝国军事学院成立前已在军中。车厢内称维尔斯\"男爵阁下\"、态度亲昵，但亲昵里有自己的放松和审视；他仍在用\"愣头青年\"那套逗维尔斯，后阶段才看出维尔斯的\"狠劲\"（同类相认——无爵一样的同类：维尔斯用军衔抗爵位，洛宾一生就是这种抗的活成者）。\nLine 175:   - **轨迹校准（覆盖早期\"学院成立前已老行伍\"）**：洛宾入军正当军改前后，但**没去学院**——靠老式办法作行伍+实战本事爬。是\"老式军旅但赶上了军改\"的混合态，非\"老行伍\"那种老人。18-20 从军、约 10 年密集军功连跳到司卫——这是爬得相当快的，本事吓人，军功改制受益者的最硬实证。\nLine 176:   "
+    },
+    {
+      "id": "call_02_2WuOFh1PQh06l3WDijA40987",
+      "isError": false,
+      "preview": "Found 11 matches\n\n00_设定\\设定总汇.md\nLine 84: - **贵族**：五级制公-侯-伯-子-男仍存，但实权被工业力量稀释。军功改制新开**军功封爵**通道（无爵洛宾理论可封，是否拒封为后话悬念）。\nLine 187: - **待办（仍暂不定）**：洛宾天才却不封爵、还在凡尔丁手下做副官这条\"挂着\"原因**与\"讨厌理想主义者\"分开**——用户标\"另有\"、不关联，待日后拍板。\nLine 325: - [ ] 洛宾\"天才不封爵\"原因（用户标\"另有\"）\n\n90_笔记\\工作日志.md\nLine 240: - **贵族**：五级制公-侯-伯-子-男仍存但实权被工业稀释；军功改制新开\"军功封爵\"通道（无爵洛宾理论可封，是否拒封后话悬念）。\nLine 362: 4. 关键待办：**为何天才却不封爵、还在凡尔丁手下做副官**——暂不定，标待办，日后写洛宾线必解。\nLine 385: - [ ] 洛宾\"天才不封爵、做凡尔丁副官\"的原因（用户标\"另有\"，与讨厌理想主义者不关联——"
+    },
+    {
+      "id": "call_03_5fHCthEBncYBsMWojrtt6589",
+      "isError": false,
+      "preview": "Found 40 matches\n\n00_设定\\设定档案.md\nLine 185: - **格里夫**（郡主事，试稿新增人物，待用户认可）：圆脸中年人，笑起来眼睛眯成缝，敬酒勤、喝酒快。记忆点=整场宴席侧着身子、不朝西边（囚车方向）看。急着办处刑的真正原因是**怕**——囚犯关押郡中半个月怪事不断（牲口惊栏、井水发苦、守军的马死、守兵两班发热说胡话\"听见念唱诗\"），但他不敢明说妖异（妖异归教会管，报上去等于给自己找麻烦），只能推\"早办早安生\"。功能性人物，处刑日前的地方官僚代表。\nLine 226: - [ ] 格里夫身份确认（试稿新增人物，等用户拍板）\n\n00_设定\\设定总汇.md\nLine 209: ### 格里夫（郡主事，试稿新增人物，待用户认可）\nLine 289: - 跟着队伍七天（它等的不是队伍经过，是跟着队伍走）。\nLine 324: - [ ] 格里夫身份确认（试稿新增人物，等用户拍板）\n\n90_笔记\\工作日志.md\nLine 388: - [ ] 格里夫身份确认(试稿新"
+    },
+    {
+      "id": "call_00_flIgqE42zQydZ80NyMQ68331",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\90_笔记\\工作日志.md</path>\n<type>file</type>\n<content>\n350: \n351: ##### 豪森·凡尔丁（车厢老长辈）\n352: 1. 年龄：**60 出头**——将暮色调，带队亲赴前线带\"旧时代最后一程\"。停在统领不是不愿升，是新军改把将官位越让给科班派、他这种爵位老军官升不上去的体面认输。\n353: 2. 世交起源：**同郡望世交**——两家领地相邻/同郡，凡尔丁是威尔德家常客，看过维尔斯从小长大，半个家长。做局者挑他等于挑维尔斯身边最后一位长辈做局。\n354: 3. 家庭：**有妻有子**——非鳏夫的日常选择。孩子走军政路但远不及维尔斯父系显赫；看好世侄里藏对自家孩子隐痛+私心（爱且想塑造、希望走他认可的老派正轨）。\n355: 4. 人格底色：**温和好人/和气生财**"
+    },
+    {
+      "id": "call_01_IXXclOBQGOcMZzbRixKH5889",
+      "isError": false,
+      "preview": "<path>C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-preview\\hel-material-trial-ndaJcc\\library\\赫尔帝国\\01_概念设计\\40_势力设计系统.md</path>\n<type>file</type>\n<content>\n1: # 势力设计系统\n2: \n3: > 分册职责：各阵营的组织形态与视觉/器物身份。**与具体剧情解耦**——不在这里写「谁在第几幕背叛谁」。\n4: > 情节功能、人物忠诚写 `00_设定`；这里写「这个势力作为系统是什么」。\n5: > 美术方向与色盘见 `00_设计原则.md` §一·五/§四；**硬纪律**：徽记与器物必须有制度依据，禁止自创纹章学与数字神秘学堆叠。\n6: \n7: ---\n8: \n9: ## 1. 设计立场\n10: \n11: - 每个势力至少明确：**主张（公开版/内幕版）· 组织形态 · 权力来源 · 视觉身份 · 材质器物 · 弱点/裂缝**\n12: - 公开版与内幕版的信息差本"
+    }
+  ],
+  "memoryCreated": false
+}

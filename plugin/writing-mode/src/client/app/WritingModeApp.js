@@ -90,6 +90,7 @@ export function WritingModeApp() {
   const [templates, setTemplates] = react.useState([])
   const [addRootMode, setAddRootMode] = react.useState(false)
   const [addRootPath, setAddRootPath] = react.useState('')
+  const [addRootKind, setAddRootKind] = react.useState('library')
   const [flash, setFlash] = react.useState('')
   const [prefs, setPrefs] = react.useState(getPrefs)
   react.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), [])
@@ -280,11 +281,11 @@ export function WritingModeApp() {
     const data = await api('roots', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode: 'add', path: p, active: true }),
+      body: JSON.stringify({ mode: 'add', path: p, active: true, kind: addRootKind }),
     })
+    if (!data.ok) { flashMsg('打开文件夹失败：' + (data.error || 'unknown')); return }
     setAddRootMode(false)
     setAddRootPath('')
-    if (!data.ok) flashMsg('添加库失败：' + (data.error || 'unknown'))
     void refreshTree()
   }
 
@@ -598,16 +599,16 @@ export function WritingModeApp() {
             jsx.jsx('button', {
               type: 'button',
               className: 'dshWmBtn is-ghost',
-              onClick: () => setAddRootMode(true),
+              onClick: () => { setAddRootKind('library'); setAddRootMode(true) },
               title: T.addRoot,
               children: '+',
             }),
             jsx.jsx('button', {
               type: 'button',
               className: 'dshWmBtn is-ghost',
-              onClick: () => setAddRootMode(true),
-              children: '…',
-              title: T.addRoot,
+              onClick: () => { setAddRootKind('project'); setAddRootPath(''); setAddRootMode(true) },
+              children: '打开已有',
+              title: '读取原有目录，不搬动资料、不自动确认设定',
             }),
             addRootMode
               ? jsx.jsx(
@@ -615,14 +616,21 @@ export function WritingModeApp() {
                   {
                     className: 'dshWmBarGroup',
                     children: [
+                      jsx.jsx('select', {
+                        'aria-label': '文件夹用途', value: addRootKind,
+                        onChange: e => setAddRootKind(e.target.value),
+                        children: [jsx.jsx('option', { value: 'library', children: '作品库（包含多个项目）' }), jsx.jsx('option', { value: 'project', children: '已有项目（保留原目录）' })],
+                      }),
                       jsx.jsx('input', {
                         className: 'dshWmSearch',
                         style: { width: 180, margin: 0 },
                         value: addRootPath,
-                        placeholder: 'E:\\剧本',
+                        placeholder: addRootKind === 'project' ? '已有作品文件夹完整路径' : 'E:\\剧本',
+                        'aria-label': '文件夹路径',
                         autoFocus: true,
                         onChange: (e) => setAddRootPath(e.target.value),
                         onKeyDown: (e) => {
+                          if (e.nativeEvent?.isComposing || e.keyCode === 229) return
                           if (e.key === 'Enter') void commitAddRoot()
                           if (e.key === 'Escape') setAddRootMode(false)
                         },
@@ -631,7 +639,7 @@ export function WritingModeApp() {
                         type: 'button',
                         className: 'dshWmBtn is-primary',
                         onClick: () => void commitAddRoot(),
-                        children: 'OK',
+                        children: addRootKind === 'project' ? '打开项目' : '添加库',
                       }),
                     ],
                   },
@@ -931,6 +939,7 @@ export function WritingModeApp() {
                                         },
                                         'pt'
                                       ),
+                                      proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
                                       openP
                                         ? groups.map((g) =>
                                             jsx.jsx(
