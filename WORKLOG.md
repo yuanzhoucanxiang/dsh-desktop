@@ -146,3 +146,5 @@ v2 交回复核：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-r
 2026-09-22：CXR01/CXR02 独立正向复验 25 项通过；已有项目接入已整合，D04 两条分支与 V7 延迟/失败/卸载均有真实 Electron 正向测试。最新整合验收见 docs/audits/writing-world-settings/2026-09-22/integration.md，覆盖此前“尚未整合/未补探针”的时点说明；未提交、未发布。— Codex
 
 2026-09-22：用户授权提交并发布 v0.1.42；已有项目接入与审计整改进入本次发布候选。按同一 Release ID 合并 Windows/macOS 资产，最终结果另记。— Codex
+
+2026-09-22：v0.1.42 已公开为 Latest，Release ID 393502728，代码 ac00c15。Windows 安装器/blockmap/latest.yml 与 macOS DMG/latest-mac.yml 五项资产全部 uploaded，size/SHA256 与两份清单 SHA512 一致；macOS CI 35695937072 成功。Windows 真包 9/9，NSIS 实际载荷冷启动 SMOKE_OK。未替换本机正式安装，预览保持运行。证据 docs/audits/release-0.1.42/。— Codex

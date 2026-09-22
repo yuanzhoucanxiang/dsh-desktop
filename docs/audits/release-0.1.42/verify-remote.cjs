@@ -1,0 +1,9 @@
+const fs=require('fs'),path=require('path'),cp=require('child_process'),crypto=require('crypto'),assert=require('assert');
+const repo=path.resolve(__dirname,'../../..'),yaml=require(path.join(repo,'runtime/node_modules/yaml'));
+const dir=process.argv[2];if(!dir)throw Error('Provide downloaded asset directory');
+const releases=JSON.parse(cp.execFileSync('gh',['api','repos/yuanzhoucanxiang/dsh-desktop/releases?per_page=30']));
+const rows=releases.filter(r=>r.tag_name==='v0.1.42');assert.equal(rows.length,1,'One Release only');const r=rows[0];assert.equal(r.id,393502728);
+const expected=['dsh-desktop-0.1.42-setup.exe','dsh-desktop-0.1.42-setup.exe.blockmap','latest.yml','dsh-desktop-0.1.42-mac.dmg','latest-mac.yml'];
+for(const n of expected){const a=r.assets.find(x=>x.name===n);assert(a,n);assert.equal(a.state,'uploaded');const b=fs.readFileSync(path.join(dir,n));assert.equal(b.length,a.size);assert.equal('sha256:'+crypto.createHash('sha256').update(b).digest('hex'),a.digest);}
+for(const n of ['latest.yml','latest-mac.yml']){const m=yaml.parse(fs.readFileSync(path.join(dir,n),'utf8'));assert.equal(m.version,'0.1.42');for(const f of m.files){const b=fs.readFileSync(path.join(dir,decodeURIComponent(f.url)));assert.equal(b.length,f.size);assert.equal(crypto.createHash('sha512').update(b).digest('base64'),f.sha512)}if(m.path){const b=fs.readFileSync(path.join(dir,decodeURIComponent(m.path)));assert.equal(crypto.createHash('sha512').update(b).digest('base64'),m.sha512)}}
+fs.writeFileSync(path.join(__dirname,'remote-verified.json'),JSON.stringify({releaseId:r.id,tag:r.tag_name,draft:r.draft,publishedAt:r.published_at,assets:r.assets.map(({id,name,size,digest,state})=>({id,name,size,digest,state})),verifiedAt:new Date().toISOString()},null,2));console.log('REMOTE_RELEASE_OK',r.id,'draft='+r.draft);

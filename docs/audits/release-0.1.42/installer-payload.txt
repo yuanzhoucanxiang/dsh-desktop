@@ -1,0 +1,21 @@
+写作模式发布一致性（发布集合来源：manifest，共 19 个文件）
+PASS  插件 host 传递依赖全部在发布集合
+      14 个 host 模块闭包完整
+PASS  manifest ↔ 打包 filter 逐文件一致
+      manifest 发布集合 19 个文件，filter 展开后完全一致
+PASS  主进程依赖闭包被 build.files 覆盖
+      11 个本地模块全部会被打进包（含 lib 内部依赖）
+PASS  app.asar 内主进程依赖齐全
+      11 个本地模块都在 app.asar 内
+PASS  app.asar 内主进程模块与仓库逐字节一致
+      11 个模块内容一致
+PASS  包内主进程不依赖源码目录（A02）
+      11 个模块均未发现仓库路径引用
+PASS  extraResources 资源完整（插件 + 运行时 + 内置插件树）
+      写作模式插件、runtime.tar.gz、runtime-marker.json、builtin-plugins 均在
+PASS  manifest ↔ 安装包产物
+      全部 19 个文件一致（C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\installer-extracted\resources\plugin\writing-mode）
+待跑  manifest ↔ profile 已种入副本
+      缺失：无；内容不一致：CONTRACT.md(54ff0e77d212→e6b41169046e), client.js(25c907bf7159→023a213b372e), index.js(a17bc8379703→2aac4ffe2683), lib/coordination.js(374e934239ab→6bf5395dcf25), lib/draft-checkpoints.js(73695c1445e3→e00f9c2230da), lib/file-lock.js(05dd0b8c8c7f→a5b4cd08879b), lib/project-recovery.js(73773df0f604→4764f08b87ea), lib/store.js(73d55f23a4e9→43bcdbf74575)（应用下次启动会自动换成当版）；另有 8 个非发布集合文件（历史遗留/用户添加，保留）：lib/editor-session.js, src/shared/context-builder.js, src/shared/editor-session.js, test/architecture-cde.mjs, test/p1-regression.mjs, test/review-f01-f06.mjs, test/review5-protocol.mjs, test/review7-status.mjs
+
+合计 9 项：8 通过 / 0 失败 / 1 待跑

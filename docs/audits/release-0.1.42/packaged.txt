@@ -1,0 +1,23 @@
+真包：C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\dist\win-unpacked\DeepSeek Harness Desktop.exe
+被测源码：ac00c15d0f28c324397bd48fe08a36f001723fb0 · asar 8bfa460e79b21564…
+PASS  真包冷启动前 profile 不存在
+      C:\Users\DL\AppData\Local\Temp\wm-packaged-2aKSe9\home\profiles\node_modules\@dsh-local\writing-mode
+PASS  真包空环境启动到就绪
+      SMOKE_OK
+PASS  真包自动同步的 profile 与 manifest 逐文件一致
+      19 个文件哈希一致
+PASS  同步集合不含测试/源码
+      19 个发布文件
+PASS  真包正常启动首启种子（内置插件 + stamp）
+      stamp 已写，palis 主题已就位
+PASS  清理只按本轮 PID（不扫同名进程）
+      本轮 PID=29200；实现与隔离测试见 lib/pid-cleanup.js / lib/pid-cleanup.test.js
+PASS  本轮进程树已退出
+      PID=29200
+PASS  真包主题开启（端点 / 内核页属性 / 注入样式表与调色 / 关闭后移除）
+      UI_SMOKE_OK
+PASS  真包主题恢复（不重写设置，二次启动仍是同一皮肤）
+      UI_SMOKE_OK
+
+隔离环境：C:\Users\DL\AppData\Local\Temp\wm-packaged-2aKSe9
+合计 9 项：9 通过 / 0 失败 / 0 待跑

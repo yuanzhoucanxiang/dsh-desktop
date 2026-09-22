@@ -1017,3 +1017,5 @@
 - 2026-09-22：已有项目接入已从独立副本整合，支持自定义 Markdown 文件夹、完整路径分组与统一项目身份；修正列表排序回归。延迟恢复增加重复点击与卸载保护。补充真实目录移动/无关联确认/第五份副本延迟/网络失败重试 UI 探针。24 步最终门禁结果见 integration.md；本轮未提交、未发布。— Codex
 
 2026-09-22：用户授权提交并发布 v0.1.42；已有项目接入与审计整改进入本次发布候选。按同一 Release ID 合并 Windows/macOS 资产，最终结果另记。— Codex
+
+2026-09-22：v0.1.42 已公开为 Latest，Release ID 393502728，代码 ac00c15。Windows 安装器/blockmap/latest.yml 与 macOS DMG/latest-mac.yml 五项资产全部 uploaded，size/SHA256 与两份清单 SHA512 一致；macOS CI 35695937072 成功。Windows 真包 9/9，NSIS 实际载荷冷启动 SMOKE_OK。未替换本机正式安装，预览保持运行。证据 docs/audits/release-0.1.42/。— Codex

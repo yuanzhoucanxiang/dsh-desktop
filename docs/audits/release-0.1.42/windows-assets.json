@@ -1,0 +1,24 @@
+{
+  "releaseId": 393502728,
+  "assets": [
+    {
+      "name": "dsh-desktop-0.1.42-setup.exe",
+      "size": 210516862,
+      "digest": "sha256:508d6fae85f561475bec443c448d7c089322b743b7a252331f19460111c84b12",
+      "state": "uploaded"
+    },
+    {
+      "name": "dsh-desktop-0.1.42-setup.exe.blockmap",
+      "size": 221854,
+      "digest": "sha256:1b3416e51f67fca2f9534b35f4bbcfe0199527c3204a863cd9ec3ac2aed9ffb4",
+      "state": "uploaded"
+    },
+    {
+      "name": "latest.yml",
+      "size": 354,
+      "digest": "sha256:1a7db018a41500be475836e115d37f99558169333e6c34ac4ea1e908befa7d75",
+      "state": "uploaded"
+    }
+  ],
+  "verified": true
+}

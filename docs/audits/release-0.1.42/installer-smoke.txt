@@ -1,0 +1,6 @@
+
+Checking for update
+Generated new staging user ID: 1da8933f-13f4-559e-b75a-fce807627d11
+Update for version 0.1.42 is not available (latest version: 0.1.41, downgrade is disallowed).
+SMOKE_HANDOFF acked=true
+SMOKE_OK url=http://127.0.0.1:6960

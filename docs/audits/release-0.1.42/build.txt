@@ -1,0 +1,47 @@
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=43.4.0 arch=x64 buildFromSource=false workspaceRoot=C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42 projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=43.4.0 appOutDir=dist\win-unpacked
+  • using custom unpacked Electron distribution  electronDist=node_modules\electron\dist
+  • copying unpacked Electron  source=C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\node_modules\electron\dist destination=C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\dist\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\DeepSeek Harness Desktop.exe
+  • executable resource editing and code signing skipped — signAndEditExecutable is false. To skip only code signing while keeping icon and metadata applied, use signExecutable: false instead.  exe=dist\win-unpacked\DeepSeek Harness Desktop.exe
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • building        target=nsis file=dist\dsh-desktop-0.1.42-setup.exe archs=x64 oneClick=false perMachine=false
+  • signing with signtool.exe  path=dist\dsh-desktop-0.1.42-setup.__uninstaller.exe
+  • signing with signtool.exe  path=dist\dsh-desktop-0.1.42-setup.exe
+  • building block map  blockMapFile=dist\dsh-desktop-0.1.42-setup.exe.blockmap
+latest.yml -> C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\dist\latest.yml (210516862 bytes)
+  · package.json build.publish = yuanzhoucanxiang/dsh-desktop
+  · main.js DEFAULT_UPDATE_REPO = yuanzhoucanxiang/dsh-desktop
+  · build.ps1 app-update.yml = (派生自 package.json build.publish)
+  · release.ps1 $owner/$repo = yuanzhoucanxiang/dsh-desktop
+  · install-update.ps1 $REPO = yuanzhoucanxiang/dsh-desktop
+  · 解包产物 resources/app-update.yml = yuanzhoucanxiang/dsh-desktop
+PASS U3 GitHub owner/repo 各处硬编码一致（>=4 处参与比对）  [参与比对 5 处，去重取值 ["yuanzhoucanxiang/dsh-desktop"]]
+PASS U4 latest.yml 的 version 与 package.json 一致  [latest.yml=0.1.42 package.json=0.1.42]
+PASS U4 latest.yml 的 path/url 指向本轮版本的安装包  [path=dsh-desktop-0.1.42-setup.exe url=dsh-desktop-0.1.42-setup.exe 期望=dsh-desktop-0.1.42-setup.exe]
+PASS U4 latest.yml 指向的安装包确实存在  [C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\dist\dsh-desktop-0.1.42-setup.exe]
+PASS U4 latest.yml 的 sha512 与安装包实算一致  [清单=+x6ZomcPrOOs0u0Ikwg3BR/U… 实算=+x6ZomcPrOOs0u0Ikwg3BR/U…]
+PASS U4 latest.yml 的 size 与安装包实际字节一致  [清单=210516862 实际=210516862]
+PASS U4 安装包的 .blockmap 存在（electron-updater 差分/校验要用）  [C:\Users\DL\AppData\Local\Temp\dsh-release-0.1.42\dist\dsh-desktop-0.1.42-setup.exe.blockmap]
+PASS 更新器缓存目录名在三处一致（不一致会漏杀僵尸安装器 / 清错缓存）  [{"build.ps1 app-update.yml":"dsh-desktop-updater","install-update.ps1 Get-UpdaterCacheDir":"dsh-desktop-updater","main.js killStaleUpdaterInstallers":"dsh-desktop-updater"}]
+PASS U1 install-update.ps1 按版本（而非 mtime）挑安装包  [按 mtime=false 按版本=true]
+PASS U1 install-update.ps1 校验安装包完整性（sha512 / latest.yml）  [命中=true]
+PASS U1 install-update.ps1 有降级防护（需显式 -Force 才装旧版）  [命中=true]
+PASS U2 killStaleUpdaterInstallers 不裸拼路径进 PowerShell（转义或改用 $env:）  [裸拼=false 单引号逸出=false 改用 $env:=true]
+PASS U5 build.ps1 不含非 ASCII 字节（PS 5.1 无 BOM 时按 ANSI/GBK 读）  [全 ASCII]
+PASS U5 release.ps1 不含非 ASCII 字节（PS 5.1 无 BOM 时按 ANSI/GBK 读）  [全 ASCII]
+PASS U5 install-update.ps1 不含非 ASCII 字节（PS 5.1 无 BOM 时按 ANSI/GBK 读）  [全 ASCII]
+PASS U5 prepare-runtime.ps1 不含非 ASCII 字节（PS 5.1 无 BOM 时按 ANSI/GBK 读）  [全 ASCII]
+PASS U5 build.ps1 能被 PowerShell 解析器解析（不执行）
+PASS U5 release.ps1 能被 PowerShell 解析器解析（不执行）
+PASS U5 install-update.ps1 能被 PowerShell 解析器解析（不执行）
+PASS U5 prepare-runtime.ps1 能被 PowerShell 解析器解析（不执行）
+
+RELEASE_ARTIFACTS_OK
+RELEASE_BUILD_OK
