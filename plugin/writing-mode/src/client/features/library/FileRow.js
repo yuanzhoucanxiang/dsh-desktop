@@ -29,7 +29,7 @@ export function fileRow({ file: f, maxVer, active, onPick, labels }) {
                 {
                   className: 'dshWmItemTitle',
                   style: { flex: 1, minWidth: 0 },
-                  children: f.name.replace(/-v\d+(\.[^.]+)?$/i, '$1'),
+                  children: (f.displayName || f.name).replace(/-v\d+(\.[^.]+)?$/i, '$1'),
                 },
                 't'
               ),

@@ -419,6 +419,23 @@ export function isSafeTemplateRel(rel) {
   return true
 }
 
+/** Fixed template file creation; never replace an existing manuscript. */
+export function createTemplateFile(project, file, roots) {
+  if (!isSafeTemplateRel(file.rel) || !resolveUnderRoots(project, roots)) throw storeError('template-path-unsafe', 400)
+  const scope = [{ path: project, real: fs.realpathSync(project) }]
+  let parent = project
+  for (const segment of file.rel.split('/').slice(0, -1)) {
+    parent = path.join(parent, segment)
+    if (!resolveUnderRoots(parent, scope)) throw storeError('template-path-unsafe', 400)
+    fs.mkdirSync(parent, { recursive: true })
+    if (!resolveUnderRoots(parent, scope)) throw storeError('template-path-unsafe', 400)
+  }
+  const abs = path.join(project, ...file.rel.split('/'))
+  if (!resolveUnderRoots(abs, scope)) throw storeError('template-path-unsafe', 400)
+  fs.writeFileSync(abs, file.body, { encoding: 'utf8', flag: 'wx' })
+  return abs
+}
+
 export function readTextOrNull(p) {
   try {
     const target = resolveUnderRoots(p, effectiveRoots(readConfig()))

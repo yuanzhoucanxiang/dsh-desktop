@@ -11,7 +11,7 @@ import { newOperationToken } from '../adapters/harness/adapter.js'
 import { createEditorSession } from '../../shared/editor-session.js'
 import { applyBodyAttr, setCloseGuard, commitModeActive, getModeActive, subscribeMode, setModeActive } from '../state/mode-store.js'
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs, versionOf } from '../state/prefs-store.js'
-import { groupFiles, maxVersionInGroup } from '../features/library/grouping.js'
+import { groupFiles, navigationGroups, maxVersionInGroup, resourceChoices } from '../features/library/grouping.js'
 import { fileRow } from '../features/library/FileRow.js'
 import { lineDiff } from '../features/editor/diff.js'
 import { selectionText } from '../features/tools/selection.js'
@@ -74,6 +74,7 @@ export function WritingModeApp() {
   const [focus, setFocus] = react.useState(false)
   const [libOpen, setLibOpen] = react.useState(true)
   const [libQuery, setLibQuery] = react.useState('')
+  const [libraryView, setLibraryView] = react.useState('writing')
   const [collapsed, setCollapsed] = react.useState(() => new Set())
   const [copied, setCopied] = react.useState(false)
   const [diffLines, setDiffLines] = react.useState(null)
@@ -339,7 +340,6 @@ export function WritingModeApp() {
         templateId: projTemplate,
       }),
     })
-    setProjMode(false)
     if (!data.ok) {
       const msg =
         data.error === 'project-exists'
@@ -352,8 +352,23 @@ export function WritingModeApp() {
       flashMsg(msg)
       return
     }
+    setProjMode(false)
     flashMsg(T.created + '：' + (data.project?.name || ''))
-    void refreshTree()
+    await refreshTree()
+    setFilePath(data.project.path.replace(/[\\/]$/, '') + '/project.md')
+  }
+
+  async function addProjectResource(project, resource) {
+    if (!resource) return
+    try {
+      const result = await api('project-resource', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: project.path, resource }),
+      })
+      if (!result.ok) { flashMsg(result.error === 'resource-exists' ? '这份资料已存在，原文未改动' : '添加失败：' + result.error); return }
+      await refreshTree()
+      setFilePath(result.path)
+    } catch (err) { flashMsg('添加失败：' + err.message) }
   }
 
   async function commitNewDoc() {
@@ -785,6 +800,7 @@ export function WritingModeApp() {
                               },
                               'tmpl'
                             ),
+                            jsx.jsx('p', { className: 'dshWmAiHint', children: '只创建作品概览和第一篇正文，其他资料需要时再添加。' }, 'starter-hint'),
                             jsx.jsx(
                               'div',
                               {
@@ -840,6 +856,13 @@ export function WritingModeApp() {
                         'new-doc'
                       )
                     : null,
+                  roots.length > 0 ? jsx.jsx('div', {
+                    style: { padding: '8px', display: 'flex', gap: 6 },
+                    children: [['writing', '作品导航'], ['files', '文件视图']].map(([value, label]) => jsx.jsx('button', {
+                      type: 'button', className: 'dshWmBtn', 'aria-pressed': libraryView === value,
+                      onClick: () => setLibraryView(value), children: label,
+                    }, value)),
+                  }, 'library-view') : null,
                   roots.length > 0
                     ? jsx.jsx(
                         'div',
@@ -907,7 +930,7 @@ export function WritingModeApp() {
                                 children: (activeTree && activeTree.missing ? T.missing + '\n' : '') + T.noProjects,
                               })
                             : projects.map((proj) => {
-                                const groups = groupFiles(proj.files, libQuery)
+                                const groups = libraryView === 'files' ? groupFiles(proj.files, libQuery) : navigationGroups(proj.files, libQuery)
                                 const openP = !collapsed.has(proj.path)
                                 const maxDraft = maxVersionInGroup(
                                   (proj.files || []).filter((f) => String(f.rel).startsWith('draft/'))
@@ -939,17 +962,25 @@ export function WritingModeApp() {
                                         },
                                         'pt'
                                       ),
+                                      openP ? jsx.jsx('select', {
+                                        className: 'dshWmSearch', 'aria-label': '按需添加资料', value: '',
+                                        onChange: e => void addProjectResource(proj, e.target.value),
+                                        children: [jsx.jsx('option', { value: '', children: '＋ 添加人物、设定或规划…' }, 'placeholder'),
+                                          ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
+                                      }, 'add-resource') : null,
                                       proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
                                       openP
                                         ? groups.map((g) =>
                                             jsx.jsx(
-                                              react.Fragment,
+                                              'details',
                                               {
+                                                open: libraryView === 'files' || Boolean(libQuery) || ['正文', '作品概览'].includes(g.key) || g.files.some(f => f.abs === filePath),
                                                 children: [
                                                   jsx.jsx(
-                                                    'div',
+                                                    'summary',
                                                     {
                                                       className: 'dshWmFolder',
+                                                      style: { cursor: 'pointer', textTransform: 'none' },
                                                       children: g.key === '·' ? 'ROOT' : g.key,
                                                     },
                                                     'fh'
@@ -957,7 +988,7 @@ export function WritingModeApp() {
                                                   ...g.files.map((f) =>
                                                     fileRow({
                                                       file: f,
-                                                      maxVer: g.key === 'draft' || String(f.rel).includes('/draft/') ? maxDraft : 0,
+                                                      maxVer: String(f.rel).startsWith('draft/') ? maxDraft : 0,
                                                       active: Boolean(filePath) && f.abs === filePath,
                                                       onPick: setFilePath,
                                                       labels: T,

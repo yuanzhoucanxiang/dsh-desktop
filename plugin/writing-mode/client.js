@@ -3928,6 +3928,36 @@ if (typeof window !== "undefined") {
 }
 
 // plugin/writing-mode/src/client/features/library/grouping.js
+var NAV_FILES = {
+  "project.md": ["作品概览", "创作方向"],
+  "bible/characters.md": ["人物", "人物档案"],
+  "bible/relationships.md": ["人物", "人物关系"],
+  "bible/world.md": ["世界与设定", "世界观资料（手写）"],
+  "bible/timeline.md": ["世界与设定", "时间线"],
+  "bible/世界观整理.md": ["世界与设定", "已确认设定（整理稿）"],
+  "outline/structure.md": ["故事规划", "故事结构"],
+  "outline/units.md": ["故事规划", "章节与场次安排"],
+  "outline/foreshadow.md": ["故事规划", "伏笔与回收"],
+  "state/character-state.md": ["创作跟踪", "人物状态"]
+};
+function navigationGroups(files, q) {
+  const query = String(q || "").trim().toLowerCase();
+  const groups = /* @__PURE__ */ new Map();
+  for (const f of files || []) {
+    const rel = String(f.rel || "").replaceAll("\\", "/");
+    const known = NAV_FILES[rel];
+    const key = known?.[0] || (rel.startsWith("draft/") ? "正文" : rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "其他文档");
+    const label = known?.[1] || (rel.startsWith("draft/") ? f.name.replace(/\.md$/i, "") : f.name);
+    if (query && !`${label} ${key} ${f.name} ${rel}`.toLowerCase().includes(query)) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ ...f, displayName: label });
+  }
+  const order2 = ["正文", "作品概览", "人物", "世界与设定", "故事规划", "创作跟踪"];
+  return [...groups].map(([key, files2]) => ({ key, files: files2 })).sort((a, b) => {
+    const rank = (key) => order2.includes(key) ? order2.indexOf(key) : 99;
+    return rank(a.key) - rank(b.key) || a.key.localeCompare(b.key, "zh");
+  });
+}
 function groupKeyOf(absPath) {
   return String(absPath || "").replace(/-v\d+(\.[^.]+)$/i, "$1").toLowerCase();
 }
@@ -3960,6 +3990,7 @@ function maxVersionInGroup(files) {
   }
   return max;
 }
+var resourceChoices = Object.entries(NAV_FILES).filter(([rel]) => rel !== "project.md" && rel !== "bible/世界观整理.md").map(([rel, [, label]]) => ({ rel, label }));
 
 // plugin/writing-mode/src/client/features/library/FileRow.js
 var jsx = __toESM(require("react/jsx-runtime"), 1);
@@ -3986,7 +4017,7 @@ function fileRow({ file: f, maxVer, active, onPick, labels }) {
                 {
                   className: "dshWmItemTitle",
                   style: { flex: 1, minWidth: 0 },
-                  children: f.name.replace(/-v\d+(\.[^.]+)?$/i, "$1")
+                  children: (f.displayName || f.name).replace(/-v\d+(\.[^.]+)?$/i, "$1")
                 },
                 "t"
               ),
@@ -18832,6 +18863,7 @@ function WritingModeApp() {
   const [focus, setFocus] = react4.useState(false);
   const [libOpen, setLibOpen] = react4.useState(true);
   const [libQuery, setLibQuery] = react4.useState("");
+  const [libraryView, setLibraryView] = react4.useState("writing");
   const [collapsed, setCollapsed] = react4.useState(() => /* @__PURE__ */ new Set());
   const [copied, setCopied] = react4.useState(false);
   const [diffLines, setDiffLines] = react4.useState(null);
@@ -19094,14 +19126,33 @@ function WritingModeApp() {
         templateId: projTemplate
       })
     });
-    setProjMode(false);
     if (!data.ok) {
       const msg = data.error === "project-exists" ? "同名项目已存在" : data.error === "directory-not-empty" ? "目标文件夹已有内容，请换名或先清空" : data.error === "invalid-project-name" ? "项目名不合法" : "创建失败：" + (data.error || "");
       flashMsg(msg);
       return;
     }
+    setProjMode(false);
     flashMsg(T.created + "：" + (data.project?.name || ""));
-    void refreshTree();
+    await refreshTree();
+    setFilePath(data.project.path.replace(/[\\/]$/, "") + "/project.md");
+  }
+  async function addProjectResource(project, resource) {
+    if (!resource) return;
+    try {
+      const result = await api("project-resource", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: project.path, resource })
+      });
+      if (!result.ok) {
+        flashMsg(result.error === "resource-exists" ? "这份资料已存在，原文未改动" : "添加失败：" + result.error);
+        return;
+      }
+      await refreshTree();
+      setFilePath(result.path);
+    } catch (err) {
+      flashMsg("添加失败：" + err.message);
+    }
   }
   async function commitNewDoc() {
     const root4 = roots.find((r) => r.path === activeRoot && !r.missing) || roots.find((r) => !r.missing);
@@ -19504,6 +19555,7 @@ function WritingModeApp() {
                           },
                           "tmpl"
                         ),
+                        jsx10.jsx("p", { className: "dshWmAiHint", children: "只创建作品概览和第一篇正文，其他资料需要时再添加。" }, "starter-hint"),
                         jsx10.jsx(
                           "div",
                           {
@@ -19556,6 +19608,16 @@ function WritingModeApp() {
                     },
                     "new-doc"
                   ) : null,
+                  roots.length > 0 ? jsx10.jsx("div", {
+                    style: { padding: "8px", display: "flex", gap: 6 },
+                    children: [["writing", "作品导航"], ["files", "文件视图"]].map(([value, label]) => jsx10.jsx("button", {
+                      type: "button",
+                      className: "dshWmBtn",
+                      "aria-pressed": libraryView === value,
+                      onClick: () => setLibraryView(value),
+                      children: label
+                    }, value))
+                  }, "library-view") : null,
                   roots.length > 0 ? jsx10.jsx(
                     "div",
                     {
@@ -19616,7 +19678,7 @@ function WritingModeApp() {
                         className: "dshWmEmpty",
                         children: (activeTree && activeTree.missing ? T.missing + "\n" : "") + T.noProjects
                       }) : projects.map((proj) => {
-                        const groups = groupFiles(proj.files, libQuery);
+                        const groups = libraryView === "files" ? groupFiles(proj.files, libQuery) : navigationGroups(proj.files, libQuery);
                         const openP = !collapsed.has(proj.path);
                         const maxDraft = maxVersionInGroup(
                           (proj.files || []).filter((f) => String(f.rel).startsWith("draft/"))
@@ -19647,16 +19709,28 @@ function WritingModeApp() {
                                 },
                                 "pt"
                               ),
+                              openP ? jsx10.jsx("select", {
+                                className: "dshWmSearch",
+                                "aria-label": "按需添加资料",
+                                value: "",
+                                onChange: (e) => void addProjectResource(proj, e.target.value),
+                                children: [
+                                  jsx10.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
+                                  ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx10.jsx("option", { value: item.rel, children: item.label }, item.rel))
+                                ]
+                              }, "add-resource") : null,
                               proj.scanWarning ? jsx10.jsx("p", { role: "status", children: proj.scanWarning }) : null,
                               openP ? groups.map(
                                 (g) => jsx10.jsx(
-                                  react4.Fragment,
+                                  "details",
                                   {
+                                    open: libraryView === "files" || Boolean(libQuery) || ["正文", "作品概览"].includes(g.key) || g.files.some((f) => f.abs === filePath),
                                     children: [
                                       jsx10.jsx(
-                                        "div",
+                                        "summary",
                                         {
                                           className: "dshWmFolder",
+                                          style: { cursor: "pointer", textTransform: "none" },
                                           children: g.key === "·" ? "ROOT" : g.key
                                         },
                                         "fh"
@@ -19664,7 +19738,7 @@ function WritingModeApp() {
                                       ...g.files.map(
                                         (f) => fileRow({
                                           file: f,
-                                          maxVer: g.key === "draft" || String(f.rel).includes("/draft/") ? maxDraft : 0,
+                                          maxVer: String(f.rel).startsWith("draft/") ? maxDraft : 0,
                                           active: Boolean(filePath) && f.abs === filePath,
                                           onPick: setFilePath,
                                           labels: T

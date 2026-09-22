@@ -25,6 +25,7 @@ import {
   ensureCompanionPreset,
   prepareProjectTarget,
   isSafeTemplateRel,
+  createTemplateFile,
 } from './lib/store.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
 import {
@@ -69,7 +70,7 @@ import {
 } from './lib/coordination.js'
 import fs from 'node:fs'
 import { relocationCandidates, recoverRelocation, relocationHistory } from './lib/project-recovery.js'
-import { listTemplates, renderTemplate } from './lib/templates.js'
+import { listTemplates, renderTemplate, renderStarter, PROJECT_RESOURCES } from './lib/templates.js'
 
 /** 记录里的内部判定字段不进响应（结果单独放在 outcome）。 */
 const stripOutcome = ({ _outcome, ...record }) => record
@@ -115,6 +116,7 @@ export const ROUTE_METHODS = {
   gate: ['POST'],
   ledger: ['POST'],
   'create-project': ['POST'],
+  'project-resource': ['POST'],
 }
 
 function isLoopbackRequest(req) {
@@ -572,6 +574,25 @@ export function apply(ctx) {
           return
         }
 
+        if (req.method === 'POST' && route === 'project-resource') {
+          const body = await readJsonBody(req)
+          const roots = effectiveRoots(cfg)
+          const project = body && resolveProjectDir(body.path, roots)
+          if (!project || !PROJECT_RESOURCES.some(([rel]) => rel === body.resource)) {
+            writeJson(res, 400, { ok: false, error: 'invalid-project-resource' }); return
+          }
+          try {
+            const marker = fs.existsSync(path.join(project, 'project.md')) ? readDoc(resolveUnderRoots(path.join(project, 'project.md'), roots)).content : ''
+            const templateId = marker.includes('短剧') ? 'shortdrama' : /电影|剧集/.test(marker) ? 'screenplay' : 'novel'
+            const file = renderTemplate(templateId, path.basename(project), '').files.find(f => f.rel === body.resource)
+            const created = createTemplateFile(project, file, roots)
+            writeJson(res, 200, { ok: true, path: created })
+          } catch (err) {
+            writeJson(res, err.code === 'EEXIST' ? 409 : 400, { ok: false, error: err.code === 'EEXIST' ? 'resource-exists' : String(err.code || err.message) })
+          }
+          return
+        }
+
         if (req.method === 'POST' && route === 'create-project') {
           const parsed = await readJsonBody(req)
           if (parsed === null) {
@@ -580,7 +601,7 @@ export function apply(ctx) {
           }
           const title = String(parsed.title || '').trim() || '未命名项目'
           const premise = String(parsed.premise || '').trim()
-          const tmpl = renderTemplate(parsed.templateId || 'novel', title, premise)
+          const tmpl = (parsed.fullTemplate === true ? renderTemplate : renderStarter)(parsed.templateId || 'novel', title, premise)
           const roots = effectiveRoots(cfg)
           const rootPath =
             (typeof parsed.root === 'string' && parsed.root) ||
@@ -603,19 +624,17 @@ export function apply(ctx) {
           const { dirName, target } = prepared
           const written = []
           try {
-            for (const f of tmpl.files) {
-              if (!f.rel || f.rel.endsWith('.gitkeep')) continue
-              if (!isSafeTemplateRel(f.rel)) {
-                writeJson(res, 500, { ok: false, error: 'template-path-unsafe' })
-                return
-              }
-              const abs = path.join(target.abs, ...f.rel.split('/'))
-              if (resolveUnderRoots(abs, roots) === null) {
-                writeJson(res, 500, { ok: false, error: 'template-path-unsafe' })
-                return
-              }
-              fs.mkdirSync(path.dirname(abs), { recursive: true })
-              fs.writeFileSync(abs, f.body, 'utf8')
+            // Validate the entire template before creating anything. New parents
+            // must then be materialized one level at a time: resolveUnderRoots
+            // deliberately only accepts a missing leaf under an existing parent.
+            const files = tmpl.files.filter(f => f.rel && !f.rel.endsWith('.gitkeep'))
+            if (files.some(f => !isSafeTemplateRel(f.rel))) {
+              writeJson(res, 500, { ok: false, error: 'template-path-unsafe' })
+              return
+            }
+            fs.mkdirSync(target.abs, { recursive: true })
+            for (const f of files) {
+              createTemplateFile(target.abs, f, roots)
               written.push(f.rel)
             }
           } catch (err) {

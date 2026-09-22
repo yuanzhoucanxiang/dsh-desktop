@@ -286,3 +286,20 @@ export function listTemplates() {
     form: t.form,
   }))
 }
+
+export const PROJECT_RESOURCES = [
+  ['bible/characters.md', '人物档案'], ['bible/relationships.md', '人物关系'],
+  ['bible/world.md', '世界观资料（手写）'], ['bible/timeline.md', '时间线'],
+  ['outline/structure.md', '故事结构'], ['outline/units.md', '章节与场次安排'],
+  ['outline/foreshadow.md', '伏笔与回收'], ['state/character-state.md', '人物状态'],
+]
+
+export function renderStarter(templateId, title, premise) {
+  const t = getTemplate(templateId)
+  const name = String(title || '未命名项目').trim()
+  const first = t.form === 'novel' ? 'draft/novel/第1章-v1.md' : 'draft/script/第1场-v1.fountain'
+  return { id: t.id, files: [
+    { rel: 'project.md', body: `# ${name}\n\n形态：${t.name}\n\n## 一句话故事\n\n${String(premise || '').trim()}\n\n## 想写的东西\n\n` },
+    { rel: first, body: t.form === 'novel' ? '# 第1章\n\n' : 'INT. 场景 - 日\n\n' },
+  ] }
+}
