@@ -177,6 +177,18 @@ if (!fs.existsSync(ymlPath)) {
     `按 mtime=${byMtime} 按版本=${byVersion}`)
   check('U1 install-update.ps1 校验安装包完整性（sha512 / latest.yml）', hashCheck, `命中=${hashCheck}`)
   check('U1 install-update.ps1 有降级防护（需显式 -Force 才装旧版）', downgradeGuard, `命中=${downgradeGuard}`)
+
+  // U6（复核裁决 6）：-Download 自动路径必须从**同一个 Release** 取清单并校验。
+  // “自动下载就跳过校验”不算闭环：%TEMP% 里可能早就摆着一份无关的 latest.yml，
+  // 拿陈旧清单去校新包比不校更糟；而缺清单时应该**拒绝自动安装**，
+  // 而不是提示一句“skipping hash verification”就继续装。
+  const sameReleaseManifest = /\$ymlAsset/.test(ps) && /Test-InstallerManifest \$out/.test(ps)
+  const refusesNoManifest = /cannot verify a downloaded installer without its manifest/.test(ps)
+  const perReleaseDir = /dsh-update-/.test(ps)
+  const tagCrossCheck = /does not match installer version/.test(ps)
+  check('U6 -Download 从同一 Release 取 latest.yml 并校验（缺清单即拒绝自动安装）',
+    sameReleaseManifest && refusesNoManifest && perReleaseDir && tagCrossCheck,
+    `同源清单=${sameReleaseManifest} 缺清单拒绝=${refusesNoManifest} 每版本独立下载目录=${perReleaseDir} tag与版本交叉校验=${tagCrossCheck}`)
 }
 
 /* ── 4. main.js 不得把外部字符串裸拼进 PowerShell（U2） ──────────────────── */

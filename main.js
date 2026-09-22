@@ -2207,21 +2207,33 @@ function createTray() {
 /* ─────────────────────────────── IPC（渲染侧） ────────────────────────────── */
 
 function registerIpc() {
-  ipcMain.handle('shell:get-state', () => ({
-    version: app.getVersion(),
-    kernelVersion: kernelVersion(), // 主题角标/状态栏要做"外壳·内核·主题"三方对账，故一并给出
-    theme: themeId(),
-    phase: state.phase,
-    message: state.message,
-    port: state.port,
-    url: state.url,
-    elapsedMs: state.elapsedMs,
-    workspace: kernelCwd(),
-    lastError: state.lastError,
-    logTail: state.logTail.join('\n'),
-    agentBusy: state.agentBusy,
-    notifyCommand: settings.notifyCommand || '',
-  }))
+  // 裁决4（字段最小化）：`shell:get-state` 是无差别暴露给所有窗口的，而主窗口承载内核页面
+  // （第三方插件 client 代码就跑在那里）。notifyCommand 可能带敏感参数（令牌、内网地址、
+  // 个人路径），而它在本仓库**没有任何 get-state 消费者**：设置页读它走的是已按发送方
+  // 授权的 `shell:notify-command` getter；外部主题面板（palis）的 ShellState 只声明
+  // version/kernelVersion/port/workspace/elapsedMs。所以这里按发送方分级：
+  // 只有设置窗口拿到真值，其余一律给空串（保留键，避免形状突变）+ 一个不含内容的布尔位。
+  // 未一并改的：logTail / lastError / workspace 也可能是敏感面，但它们确有消费方
+  // （审阅侧栏与主题面板），改之前需先摸清调用点，不属本轮“影响小”的范围。
+  ipcMain.handle('shell:get-state', (event) => {
+    const privileged = isSettingsSender(event)
+    return {
+      version: app.getVersion(),
+      kernelVersion: kernelVersion(), // 主题角标/状态栏要做"外壳·内核·主题"三方对账，故一并给出
+      theme: themeId(),
+      phase: state.phase,
+      message: state.message,
+      port: state.port,
+      url: state.url,
+      elapsedMs: state.elapsedMs,
+      workspace: kernelCwd(),
+      lastError: state.lastError,
+      logTail: state.logTail.join('\n'),
+      agentBusy: state.agentBusy,
+      notifyCommand: privileged ? (settings.notifyCommand || '') : '',
+      hasNotifyCommand: Boolean(settings.notifyCommand),
+    }
+  })
   ipcMain.handle('shell:changes', () => collectChanges())
   ipcMain.handle('shell:git-init', () => gitInit())
   ipcMain.handle('shell:session-changes', () => readSessionChanges())

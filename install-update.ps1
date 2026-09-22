@@ -23,8 +23,10 @@
 #   powershell -ExecutionPolicy Bypass -File install-update.ps1
 #       Use the newest dsh-desktop-*-setup.exe found in Downloads / script dir / dist.
 #   powershell -ExecutionPolicy Bypass -File install-update.ps1 -Download
-#       Fetch the latest installer from GitHub Releases first.
+#       Fetch the latest installer AND its latest.yml from the SAME GitHub Release,
+#       verify tag/version/filename/size/sha512, and refuse if the manifest is missing.
 #   powershell -ExecutionPolicy Bypass -File install-update.ps1 -Installer "C:\path\to\setup.exe"
+#       Manual route: explicitly UNVERIFIED unless a latest.yml sits next to the file.
 #   Extra switches: -NoLaunch (do not start the app afterwards)
 #                   -Interactive (show the installer UI instead of silent /S)
 #                   -UninstallFirst (skip the in-place upgrade; uninstall then install)
@@ -234,11 +236,49 @@ function Get-LatestFromGitHub {
   $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'dsh-desktop-installer' } -UseBasicParsing
   $asset = $rel.assets | Where-Object { $_.name -like '*-setup.exe' } | Select-Object -First 1
   if (-not $asset) { Fail "release $($rel.tag_name) has no *-setup.exe asset" }
-  $out = Join-Path $env:TEMP $asset.name
+
+  # U6 (reviewer ruling 6): the manifest MUST come from the same selected release as
+  # the installer, otherwise its sha512 proves nothing about this file. A downloaded
+  # installer with no manifest is exactly the case where a swapped payload or a silent
+  # downgrade would go unnoticed, so the automatic path refuses instead of proceeding.
+  # (-Installer <path> stays available as the explicitly unverified manual route.)
+  $ymlAsset = $rel.assets | Where-Object { $_.name -eq 'latest.yml' } | Select-Object -First 1
+  if (-not $ymlAsset) {
+    Note "release $($rel.tag_name) has no latest.yml asset"
+    Fail 'cannot verify a downloaded installer without its manifest; re-run with -Installer <path> for the explicitly unverified manual route'
+  }
+
+  # Cross-check the release tag against the version parsed from the asset name.
+  $dlVer = Get-PackageVersion $asset.name
+  $tagVer = ($rel.tag_name -replace '^v', '')
+  if ($dlVer -and $tagVer -and ($dlVer -ne $tagVer)) {
+    Fail ("release tag " + $rel.tag_name + " does not match installer version " + $dlVer)
+  }
+
+  # Download both into a per-release subdirectory. %TEMP% can already hold an
+  # unrelated latest.yml from something else, and verifying against a stale manifest
+  # is worse than not verifying at all.
+  $safeTag = ($rel.tag_name -replace '[^A-Za-z0-9._-]', '_')
+  $dir = Join-Path $env:TEMP ("dsh-update-" + $safeTag)
+  $out = Join-Path $dir $asset.name
+  $ymlOut = Join-Path $dir 'latest.yml'
   Note "$($rel.tag_name) -> $($asset.name) ($([math]::Round($asset.size/1MB,1)) MB)"
-  if ($DryRun) { Note "DRY RUN: would download to $out"; return $out }
+  if ($DryRun) { Note "DRY RUN: would download installer + latest.yml into $dir"; return $out }
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  # Remove only the two files this script owns (never a recursive delete): a partial
+  # leftover must not be what gets hash-verified if a download fails halfway.
+  foreach ($stale in @($out, $ymlOut)) { if (Test-Path $stale) { Remove-Item $stale -Force -ErrorAction SilentlyContinue } }
+  Invoke-WebRequest -Uri $ymlAsset.browser_download_url -OutFile $ymlOut -UseBasicParsing
+  Note "saved manifest: $ymlOut"
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out -UseBasicParsing
   Note "saved: $out"
+
+  # Verify right here so a failure points at the download, not at the install step.
+  # Test-InstallerManifest checks version + sha512(base64) + size against latest.yml.
+  if (-not (Test-InstallerManifest $out)) {
+    Remove-Item $out -Force -ErrorAction SilentlyContinue
+    Fail 'downloaded installer did not verify against its own release manifest; the download was removed'
+  }
   return $out
 }
 

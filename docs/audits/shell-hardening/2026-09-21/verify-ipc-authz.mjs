@@ -46,6 +46,18 @@ const userData = path.join(temp, 'user-data')
 fs.mkdirSync(home, { recursive: true })
 fs.mkdirSync(userData, { recursive: true })
 
+// 裁决4（字段最小化）的端到端取证：先预置一个**带秘密的** notifyCommand，
+// 再从内核页面（非设置窗口）读 status()，断言秘密一个字也不出现在回包里。
+// 用预置文件而不是走 IPC 写入，因为写入通道本身已被 S1 挡住（那是另一件事）。
+const PROBE_SECRET = 'echo DSH-AUTHZ-PROBE-SECRET-9f3c17'
+fs.writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({
+  autoLaunch: false,
+  closeToTray: true,
+  workspace: '',
+  notifyOnTurnEnd: false, // 不让探针期间真的触发钩子
+  notifyCommand: PROBE_SECRET,
+}, null, 2), 'utf8')
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer()
@@ -164,6 +176,18 @@ try {
   check('S1 settings.json 里的命令一字未变（没有被注入）',
     beforeCmd === afterCmd && !String(afterCmd).includes('INJECTED'),
     `before=${JSON.stringify(beforeCmd)} after=${JSON.stringify(afterCmd)}`)
+
+  // 裁决4：非设置窗口读 status() 不得拿到 notifyCommand 的内容
+  const st = await evaluate(target.webSocketDebuggerUrl, 'window.dshShell.status()')
+  check('裁决4 非设置窗口的 status().notifyCommand 被清空（不含命令内容）',
+    Boolean(st) && st.notifyCommand === '', JSON.stringify(st && st.notifyCommand))
+  check('裁决4 status() 仍告知“是否配了钩子”（不含内容的布尔位，UI 不至于失明）',
+    Boolean(st) && st.hasNotifyCommand === true, JSON.stringify(st && st.hasNotifyCommand))
+  check('裁决4 秘密串在整个 status() 回包里一字不出现',
+    !JSON.stringify(st || {}).includes('DSH-AUTHZ-PROBE-SECRET'))
+  check('裁决4 其余状态字段未被这次收紧误伤（version/port/workspace 仍在）',
+    Boolean(st && st.version && st.port && typeof st.workspace === 'string'),
+    JSON.stringify(st && { version: st.version, port: st.port }))
 
   // 同类通道对照：破坏性操作仍按既有分寸走原生确认（这里只验它没被我的改动弄坏）
   const restoreRes = await evaluate(target.webSocketDebuggerUrl, 'window.dshShell.pluginsRestore()')
