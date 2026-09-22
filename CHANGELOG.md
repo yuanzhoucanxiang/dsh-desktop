@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+以下为复核裁决中**影响面小的两条**（裁决 4 / 裁决 6）。本轮刻意避开正在进行的“项目模板创建 + 库分组导航”那一轮的文件，也未跑 `build:writing`（会覆写对方在改的 `client.js`）。— ox-alpha
+
+- **加固（复核裁决 4）：`shell:get-state` 不再向所有窗口无差别返回通知钩子命令。** 该通道无条件暴露给所有窗口，而主窗口承载内核页面（第三方插件 client 代码就跑在那里）；钩子命令可能带敏感参数（令牌、内网地址、个人路径）。动手前先查清消费面：本仓库唯一消费者 `renderer/settings.js` 走的是**已按发送方授权**的专用 getter、不读 get-state；外部主题面板（palis）的 `ShellState` 只声明 `version/kernelVersion/port/workspace/elapsedMs`——所以这个字段在 get-state 里无任何消费者，可安全收紧。现改为 sender-aware：只有设置窗口拿真值，其余给空串（**保留键**，避免形状突变）并额外给一个不含内容的 `hasNotifyCommand` 布尔位，UI 仍能显示“已配置钩子”。**未一并改的**：`logTail` / `lastError` / `workspace` 同样是敏感面，但确有消费方（审阅侧栏与主题面板），不属本轮“影响小”的范围。— ox-alpha
+
+- **修复（复核裁决 6）：`install-update.ps1 -Download` 不再零校验就静默安装。** 原实现从 `/releases/latest` 挑第一个 `*-setup.exe` 下到 `%TEMP%` 就直接 `/S` 安装。现改为：从**同一个 Release** 取 `latest.yml`，缺清单直接拒绝自动安装（并指路 `-Installer` 是明确未验证的手工路径）；交叉校验 release tag 与从包名解析出的版本；两者下到**按 tag 命名的独立子目录**（`%TEMP%` 里可能早摆着一份无关的 `latest.yml`，拿陈旧清单校新包比不校更糟）；下完立即校 version + sha512(base64) + size，不符则删掉下载物并失败。删除只针对本脚本自己拥有的那两个文件，不做递归删除；文件仍严格 ASCII-only。— ox-alpha
+
+- 验收：`shell-hardening-test` 39 → **42 项**；`verify:release-artifacts` 新增 U6 断言（同源清单 / 缺清单拒绝 / 独立下载目录 / tag 交叉校验）→ `RELEASE_ARTIFACTS_OK`；`verify-ipc-authz` 扩成 **11 项**（预置带秘密的钩子命令后从真实内核页面读 `status()`，断言命令为空、`hasNotifyCommand=true`、秘密串一字不出现、其余字段未被误伤），**dev 态与装机版各跑一次均 `IPC_AUTHZ_OK`**；外壳侧 Electron 4 项全绿；`main.js` 变动导致 asar 变化，已重打真包重验（asar `d74ca818…` → **`d2c94c55…`**，字节核对 8通过/0失败/1待跑、冷启动 12/12、真包验收 9/9）。writing-mode 那几套门禁**本轮未跑**（属在飞那一轮的文件，且 `verify:writing-build` 会因对方 src/client 与 client.js 未同步而报 stale）。未提交、未发布。— ox-alpha
+
 - 审查：v0.1.41后续数据可靠性检查复现D01–D04（窗口草稿、候选标记、坏checkpoint、目录移动关联），尚未修复；既有投影/冲突保护回归通过。见 docs/audits/writing-world-settings/2026-09-21/review.md。— Codex
 
 以下为独立复核（Codex，2026-09-22）复现的 CXR01/CXR02 整改，含复核裁决 3 的第三条。报告：`docs/audits/writing-world-settings/2026-09-22/`。
@@ -1019,3 +1027,9 @@
 2026-09-22：用户授权提交并发布 v0.1.42；已有项目接入与审计整改进入本次发布候选。按同一 Release ID 合并 Windows/macOS 资产，最终结果另记。— Codex
 
 2026-09-22：v0.1.42 已公开为 Latest，Release ID 393502728，代码 ac00c15。Windows 安装器/blockmap/latest.yml 与 macOS DMG/latest-mac.yml 五项资产全部 uploaded，size/SHA256 与两份清单 SHA512 一致；macOS CI 35695937072 成功。Windows 真包 9/9，NSIS 实际载荷冷启动 SMOKE_OK。未替换本机正式安装，预览保持运行。证据 docs/audits/release-0.1.42/。— Codex
+
+2026-09-22 新建项目热修复：复现真实 POST create-project 返回 template-path-unsafe，因模板路径检查发生在父目录建立前。调整为预检模板相对路径、逐级创建并核验目录、wx 排他写入；失败保留创建表单。新增 create-project-http.mjs 覆盖三模板完整文件、重复与已有内容拒绝，并接入 test:writing-world；21 项 host 和 Electron UI 回归通过。本机 resources 插件 index/client 已备份后修补，需应用重启自动同步 profile。版本号仍 0.1.42，本地补丁未发布。— Codex
+
+2026-09-22 作品导航：模板文件使用中文显示名；正文/作品概览优先，人物、世界与设定、故事规划、创作跟踪折叠；文件视图保留原路径命名，自定义目录不改名；搜索匹配中文并展开结果。仅改变展示，不迁移或删改现有文件。新增 verify-writing-navigation.cjs，真实 Electron 验证标签/折叠/搜索/切换及原编辑回归通过。按需创建模板尚待下一步。本轮未发布。— Codex
+
+2026-09-22 轻量新项目：create-project 默认只创建作品概览和首篇正文，小说为 Markdown、剧本为 Fountain；旧完整模板可由 fullTemplate:true 显式请求。每个项目提供按需添加资料选项，固定白名单、逐级实路径校验、排他写入，拒绝已有文件和越界 junction。创建成功打开概览；新增实际 HTTP 与 Electron 新建→添加一份资料的端到端断言通过。既有作品不删减，不改原始资料。本轮未发布。— Codex
