@@ -40,13 +40,16 @@ function timeOf(iso) {
 /* ─────────────────────────────── 页签 ─────────────────────────────────── */
 
 function switchTab(tab) {
-  const target = ['plugins', 'update', 'notify'].includes(tab) ? tab : 'plugins'
+  const target = ['plugins', 'update', 'notify', 'appear'].includes(tab) ? tab : 'plugins'
   for (const btn of document.querySelectorAll('.tab')) {
     btn.classList.toggle('active', btn.dataset.tab === target)
   }
-  $('page-plugins').classList.toggle('hidden', target !== 'plugins')
-  $('page-update').classList.toggle('hidden', target !== 'update')
-  $('page-notify').classList.toggle('hidden', target !== 'notify')
+  // 页面清单与白名单同源：新增页签时只改这一处数组，漏了就会出现“点不动”的页签
+  const pages = ['plugins', 'update', 'notify', 'appear']
+  for (const p of pages) {
+    const el = document.getElementById('page-' + p)
+    if (el) el.classList.toggle('hidden', p !== target)
+  }
 }
 for (const btn of document.querySelectorAll('.tab')) {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab))

@@ -1065,7 +1065,7 @@ function isSettingsSender(event) {
 
 /** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
 function openSettingsPanel(tab) {
-  const target = ['update', 'notify', 'plugins'].includes(tab) ? tab : 'plugins'
+  const target = ['update', 'notify', 'plugins', 'appear'].includes(tab) ? tab : 'plugins'
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.show()
     settingsWin.focus()
