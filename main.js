@@ -2925,9 +2925,9 @@ async function runUiSmoke(win) {
 
   await wait(6000) // 页面 + React + 侧边栏注入
 
-  check('sidebar root', await js(`document.getElementById('dsh-review-root') !== null`))
-  check('rail present', await js(`document.getElementById('dsh-review-rail') !== null`))
-  check('toggle present', await js(`document.getElementById('dsh-review-toggle') !== null`))
+  // 0) 全界面主题联动断言保留（见下方主题块）
+  // 审阅侧栏已于 0.1.44 移除（改用 dsh-better-sidebar）：正向断言它确实不再注入
+  check('review sidebar not injected (removed in 0.1.44)', await js(`document.getElementById('dsh-review-root') === null`))
 
   // 0) 全界面主题联动：palis-theme 插件应已随补丁注入内核
   //    断言口径（2026-09-14 修正）：旧断言查 `getComputedStyle(documentElement).getPropertyValue('--dsw-alias-bg-base')`
@@ -2965,88 +2965,6 @@ async function runUiSmoke(win) {
   check('kernel theme clears cleanly', await js(`!document.documentElement.hasAttribute('data-palis-theme')`))
   const cssOff = await palisCss()
   check('palis stylesheet removed on disable', cssOff.length === 0 || cssOff !== cssOn, `${cssOn.length} → ${cssOff.length} 字符`)
-
-  // 1) 点开关 → 面板展开
-  await js(`document.getElementById('dsh-review-toggle').click()`)
-  await wait(400)
-  check('panel opens on toggle click', await js(`!document.getElementById('dsh-review-panel').classList.contains('dsh-hidden')`))
-  // 共存模式（内核侧装有 better-sidebar 等右侧栏插件时）不挤压页面、隐藏自己的 rail ——
-  // 这是设计行为：按实际模式断言，而不是固定期待 360px 挤压
-  const coexist = await js(`document.getElementById('dsh-review-root').classList.contains('dsh-coexist')`)
-  if (coexist) {
-    check('coexist mode: page is not squeezed', await js(`document.body.style.marginRight === ''`))
-    check('coexist mode: own rail hidden', await js(`getComputedStyle(document.getElementById('dsh-review-rail')).display === 'none'`))
-  } else {
-    check('split margin applied', await js(`document.body.style.marginRight === '360px'`))
-  }
-
-  // 2) 拖拽竖条 → 面板左缘跟随鼠标加宽 + 持久化（共存模式下跳过：拖拽把手让位了）
-  const before = await js(`document.body.style.marginRight`)
-  if (coexist) {
-    check('drag test skipped (coexist mode)', true)
-    check('width persistence skipped (coexist mode)', true)
-  } else {
-    await js(`(function(){
-      const h = document.getElementById('dsh-review-rail')
-      const r = h.getBoundingClientRect()
-      const cx = r.left + 3, cy = r.top + 300
-      const ev = (t, x) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: cy, pointerId: 1 })
-      h.dispatchEvent(ev('pointerdown', cx))
-      h.dispatchEvent(ev('pointermove', cx - 120))
-      h.dispatchEvent(ev('pointerup', cx - 120))
-    })()`)
-    await wait(500)
-    const after = await js(`document.body.style.marginRight`)
-    check(`drag widens panel (${before} -> ${after})`, before !== after)
-    let savedW = null
-    for (let i = 0; i < 10 && savedW === null; i++) {
-      if (settings.panelWidth !== 360) savedW = settings.panelWidth
-      else await wait(300)
-    }
-    check('width persisted to settings', savedW !== null && savedW > 360)
-  }
-
-  // 3) 双击竖条 → 恢复默认 360px（共存模式下拖拽把手已让位，跳过）
-  if (coexist) {
-    check('dblclick test skipped (coexist mode)', true)
-  } else {
-    await js(`(function(){
-      const h = document.getElementById('dsh-review-rail')
-      const r = h.getBoundingClientRect()
-      h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: r.left + 3, clientY: r.top + 300 }))
-    })()`)
-    await wait(500)
-    check('dblclick resets to 360px', await js(`document.body.style.marginRight === '360px'`))
-  }
-
-  // 3) Git 视图 + 面板内文件查看器（临时仓库有 1 个改动文件）
-  await js(`[...document.querySelectorAll('#dsh-review-mode button')].find(b => b.textContent === 'Git 工作区').click()`)
-  let hasRow = false
-  for (let i = 0; i < 10 && !hasRow; i++) {
-    hasRow = await js(`document.querySelectorAll('#dsh-review-item').length > 0`)
-    if (!hasRow) await wait(500)
-  }
-  check('git view shows changed file', hasRow)
-  if (hasRow) {
-    await js(`(function(){
-      const b = [...document.querySelectorAll('#dsh-review-item-row button')].find(x => x.textContent === '查看')
-      if (b) b.click()
-    })()`)
-    let viewOpen = false
-    for (let i = 0; i < 10 && !viewOpen; i++) {
-      viewOpen = await js(`document.getElementById('dsh-review-view') !== null`)
-      if (!viewOpen) await wait(400)
-    }
-    check('viewer opens', viewOpen)
-    check('markdown h1 rendered', await js(`document.querySelector('#dsh-review-vbody h1') !== null`))
-    check('markdown strong rendered', await js(`document.querySelector('#dsh-review-vbody strong') !== null`))
-    await js(`(function(){
-      const b = [...document.querySelectorAll('#dsh-review-vhead button')].find(x => x.textContent.indexOf('返回') >= 0)
-      if (b) b.click()
-    })()`)
-    await wait(400)
-    check('viewer back to list', await js(`document.getElementById('dsh-review-view') === null`))
-  }
   return results
 }
 

@@ -18,8 +18,6 @@
     "splash-check": "electron splash-check.js",
     "splash-shot": "electron splash-shot.js",
     "splash-preview": "electron splash-preview.js",
-    "sidebar-skin-check": "electron sidebar-skin-check.js",
-    "review-ui-check": "electron review-ui-check.js",
     "git-review-test": "node lib/git-review.test.js",
     "profile-inspect-test": "node lib/profile-inspect.test.js",
     "atomic-file-test": "node lib/atomic-file.test.js",
