@@ -41,6 +41,7 @@ V1–V9 / G1–G4 hunt 与逐一修复完成：**13 项缺陷全部实锤复现�
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
+| 2026-09-25 | [`logs/2026-09-25.md`](logs/2026-09-25.md) | ox-alpha：修复 Windows 包丢失应用图标（signExecutable 收口，v0.1.42 Windows 资产替换）；设置新增「外观」页：应用图标自定义（默认鲸鱼/看板娘预设 + 自定义 PNG/ICO，窗口即时生效、快捷方式同步改写、启动重申）；v0.1.43 发布 | ox-alpha |
 | 2026-09-22 | [`logs/2026-09-22.md`](logs/2026-09-22.md) | Codex：定向复核交回，新增确定性探针复现 CXR01（锁清扫移走活锁）/ CXR02（同名稿件误判作品关联），旧桶兼容怀疑已排除，并对七项取舍给出裁决；“已有项目接入”在独立副本完成 6 组协议 + 5 组界面测试，未合并。ox-alpha：CXR01/CXR02 整改 + 裁决 3 第三条（`lock-owner-unknown` 可重试快失败），hardening 77→92、新增 `fix-verification.mjs` 25 项，全量门禁与真包重验全绿 | Codex / ox-alpha |
 | 2026-09-21 | [`logs/2026-09-21.md`](logs/2026-09-21.md) | ox-alpha：三轮 hunt 与逐一修复共 **24 项**——插件 V1–V9（含 P0：大体积中文正文逐 chunk 解码静默产生 U+FFFD）、Git 审阅层 G1–G4、外壳本体 S1–S6（含 P1：内核页插件 JS 零确认拿到本机命令执行）、发布/更新链 U1–U5；自引入的 W23 回归被门禁抓到并修复。新增三套永久门禁（hardening / shell-hardening / verify-release-artifacts）与装机版 IPC 授权探针；真包字节核对/冷启动/真包验收全过；交接文档 `docs/audits/review-handoff-ox-alpha.md` | ox-alpha |
 | 2026-09-20 | [`logs/2026-09-20.md`](logs/2026-09-20.md) | Codex：Markdown 阅读、v0.1.40 发布、世界观方案 v1/策划案 v0.8。ox-alpha：H3/H4 hunt 加固；**世界观 P0–P5 工程实现**（schema2/投影/上下文/客户端整理流）；隔离真包与可见预览；交回 `docs/audits/writing-world-settings/2026-09-20/`（总体 PARTIAL） | Codex / ox-alpha |
