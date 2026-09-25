@@ -29,7 +29,10 @@ try {
     config: {
       directories: { output: out },
       electronDist,
-      win: { signAndEditExecutable: false },
+      // signExecutable:false 只跳过签名；图标与版本信息照常写入 exe。
+      // 千万不能用 signAndEditExecutable:false —— 它连图标/版本信息一起跳过，
+      // 装出来的应用就是默认 Electron 图标（v0.1.39–v0.1.42 的 Windows 包栽在这里）。
+      win: { signExecutable: false },
     },
   })
   fs.writeFileSync(path.join(process.env.TEMP, 'wm-v2-review-package-path.txt'), out)
