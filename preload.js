@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('dshShell', {
   // 全局热键：状态经 status() 的 hotkey / hotkeyPresets 字段下发，改键走这个专用通道
   // （主进程会再校一次发送方是否为设置窗口，并过 accelerator 白名单校验）。
   setGlobalHotkey: (acc) => ipcRenderer.invoke('shell:set-global-hotkey', acc),
+  // 应用图标：预设/状态经 status() 的 appIcon / appIconPresets 下发（仅设置窗口）；
+  // 选择文件与生效走这两个专用通道（主进程校验发送方并负责复制/生成/改写快捷方式）。
+  pickAppIcon: () => ipcRenderer.invoke('shell:pick-app-icon'),
+  setAppIcon: (key, customPath) => ipcRenderer.invoke('shell:set-app-icon', key, customPath),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),
   getPanelWidth: () => ipcRenderer.invoke('shell:get-panel-width'),

@@ -511,3 +511,69 @@ if (window.dshShell && window.dshShell.setGlobalHotkey) {
   if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') setHotkey(input.value) })
 }
 loadHotkey()
+
+/* ─────────────────────────── 应用图标（设置 → 外观） ─────────────────────────── */
+
+function renderAppIcons(state) {
+  const grid = $('appicon-grid')
+  if (!grid) return
+  grid.textContent = ''
+  const presets = Array.isArray(state && state.appIconPresets) ? state.appIconPresets : []
+  const current = (state && state.appIcon) || 'default'
+  for (const p of presets) {
+    const card = document.createElement('button')
+    card.type = 'button'
+    card.className = 'appicon-card' + (p.key === current ? ' is-on' : '')
+    // key 来自主进程白名单（PRESETS / 'custom'），仍只用它做类名匹配，不进 innerHTML
+    card.dataset.key = p.key
+    const img = document.createElement('img')
+    img.alt = p.label
+    if (p.thumb) img.src = p.thumb // 主进程生成的缩略图 dataURL（CSP 放行 img-src data:）
+    const label = document.createElement('span')
+    label.textContent = p.label // textContent：label 可能来自自定义文件名
+    card.appendChild(img)
+    card.appendChild(label)
+    card.addEventListener('click', () => setAppIcon(p.key))
+    grid.appendChild(card)
+  }
+}
+
+async function setAppIcon(key, customPath) {
+  const hint = $('appicon-hint')
+  const say = (t) => { if (hint) hint.textContent = t }
+  if (!window.dshShell || !window.dshShell.setAppIcon) { say('此外壳版本不支持更换图标'); return }
+  try {
+    const r = await window.dshShell.setAppIcon(key, customPath)
+    if (r && r.ok) {
+      say(key === 'default' ? '已恢复默认图标' : '图标已更新（窗口立即生效，快捷方式已同步改写）')
+      await loadAppIcons() // 重新拉状态：刷新选中态与自定义缩略图
+    } else {
+      say('设置失败：' + ((r && r.error) || '未知原因'))
+    }
+  } catch (err) { say('设置失败：' + err.message) }
+}
+
+async function loadAppIcons() {
+  if (!window.dshShell || !window.dshShell.status) return
+  try {
+    const s = await window.dshShell.status()
+    renderAppIcons(s)
+  } catch {}
+}
+
+if (window.dshShell && window.dshShell.setAppIcon) {
+  const btnCustom = $('btn-appicon-custom')
+  if (btnCustom) btnCustom.addEventListener('click', async () => {
+    if (!window.dshShell.pickAppIcon) return
+    try {
+      const r = await window.dshShell.pickAppIcon()
+      if (r && r.ok && r.path) await setAppIcon('custom', r.path)
+    } catch (err) {
+      const hint = $('appicon-hint')
+      if (hint) hint.textContent = '选择失败：' + err.message
+    }
+  })
+  const btnReset = $('btn-appicon-reset')
+  if (btnReset) btnReset.addEventListener('click', () => setAppIcon('default'))
+  loadAppIcons()
+}

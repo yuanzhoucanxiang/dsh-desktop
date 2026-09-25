@@ -32,6 +32,7 @@ const os = require('node:os')
 const { pathToFileURL, fileURLToPath } = require('node:url')
 const { createGitReview } = require('./lib/git-review')
 const { normalizeAccelerator, explainAcceleratorError, PRESETS: HOTKEY_PRESETS } = require('./lib/hotkey')
+const appIconLib = require('./lib/app-icon')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
@@ -119,6 +120,7 @@ const DEFAULT_SETTINGS = {
   notifyOnTurnEnd: true,  // 回合完成时发系统通知（仅在主窗口失焦时）
   notifyCommand: '',      // 回合完成时执行的外部命令（空=不执行）；支持 {files} {cwd} 占位
   globalHotkey: 'Control+Alt+D', // 全局唤起热键（空字符串 = 关闭）
+  appIcon: 'default',     // 应用图标：default（鲸鱼）/ 内置预设 key / custom（userData 里的副本）
 }
 
 /**
@@ -1077,7 +1079,7 @@ function openSettingsPanel(tab) {
     minHeight: 460,
     title: '设置',
     backgroundColor: THEMES[themeId()].bg,
-    icon: ICON_PATH,
+    icon: appIconImage(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1512,7 +1514,7 @@ function openSplashPreview(withError) {
     minHeight: 440,
     title: `预览启动画面 · ${THEMES[themeId()].label}`,
     backgroundColor: THEMES[themeId()].bg,
-    icon: ICON_PATH,
+    icon: appIconImage(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1561,7 +1563,7 @@ function openExtraWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: THEMES[themeId()].bg,
-    icon: ICON_PATH,
+    icon: appIconImage(),
     title: APP_NAME,
     autoHideMenuBar: true,
     webPreferences: {
@@ -1875,7 +1877,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 640,
     backgroundColor: THEMES[themeId()].bg, // 与启动画面同色，避免任何白闪
-    icon: ICON_PATH,
+    icon: appIconImage(),
     title: APP_NAME,
     autoHideMenuBar: true,
     show: false,
@@ -2290,6 +2292,174 @@ function refreshTray() {
   tray.setToolTip(APP_NAME + busy + ws)
 }
 
+/* ───────────────────────── 应用图标自定义（设置 → 外观） ────────────────────────
+ *
+ * 能改的：窗口/任务栏图标（win.setIcon，即时生效）、桌面/开始菜单/任务栏固定快捷方式
+ * 的 .lnk IconLocation（指到 userData 里生成的 .ico）。改不了的：exe 内嵌图标（打包期
+ * 资源编辑）——选「默认」时快捷方式指回 exe，用的就是打包进去的鲸鱼。
+ * 托盘是独立的「主题色鲸鱼」状态指示，不随此设置变化。
+ * 纯逻辑（ICO 容器/预设表/PS 脚本）在 lib/app-icon.js，可单测；这里只做 Electron 胶水。
+ */
+const appIconDir = () => path.join(app.getPath('userData'), 'app-icons')
+const APP_ICON_THUMB_SIZE = 96
+const appIconThumbCache = new Map()
+
+/** 解析当前设置 → { key, pngPath, icoPath }。png 给窗口；ico 给快捷方式（default 用打包好的）。 */
+function resolveAppIcon() {
+  const root = __dirname
+  const setting = appIconLib.isValidSetting(settings.appIcon) ? settings.appIcon : 'default'
+  if (setting === 'custom') {
+    const dir = appIconDir()
+    return { key: 'custom', pngPath: path.join(dir, 'custom.png'), icoPath: path.join(dir, 'custom.ico') }
+  }
+  const preset = appIconLib.PRESETS.find((p) => p.key === setting) || appIconLib.PRESETS[0]
+  const paths = appIconLib.presetPaths(preset, root)
+  if (preset.key !== 'default') {
+    // 非默认预设的 ico 在选择时生成到 userData（仓库/安装目录只读的假设要守住）
+    paths.ico = path.join(appIconDir(), `${preset.key}.ico`)
+  }
+  return { key: preset.key, label: preset.label, pngPath: paths.png, icoPath: paths.ico }
+}
+
+/** 当前设置对应的窗口图（创建窗口参数与 win.setIcon 共用）。 */
+function appIconImage() {
+  try {
+    const img = nativeImage.createFromPath(resolveAppIcon().pngPath)
+    return img.isEmpty() ? nativeImage.createFromPath(ICON_PATH) : img
+  } catch {
+    return nativeImage.createFromPath(ICON_PATH)
+  }
+}
+
+/** 把当前设置应用到所有现存窗口（任务栏图标随之更新）。 */
+function applyAppIconToWindows() {
+  const img = appIconImage()
+  for (const w of BrowserWindow.getAllWindows()) {
+    try {
+      w.setIcon(img)
+    } catch (err) {
+      log(`set-icon failed: ${err.message}`)
+    }
+  }
+}
+
+/** 由 png 生成多尺寸 ICO（PNG 帧）到目标路径；返回 ico 路径或 null。 */
+function writeAppIconIco(pngPath, icoPath) {
+  try {
+    const src = nativeImage.createFromPath(pngPath)
+    if (src.isEmpty()) return null
+    const frames = appIconLib.ICO_SIZES.map((size) => ({ size, png: src.resize({ width: size }).toPNG() }))
+    fs.mkdirSync(path.dirname(icoPath), { recursive: true })
+    fs.writeFileSync(icoPath, appIconLib.icoFromPngFrames(frames))
+    return icoPath
+  } catch (err) {
+    log(`app-icon ico 生成失败: ${err.message}`)
+    return null
+  }
+}
+
+/**
+ * 改写指向本应用 exe 的快捷方式图标（桌面/开始菜单/任务栏固定区）。
+ * 异步执行不阻塞 UI；结果只进日志。'-reset' 表示指回 exe 自身图标。
+ */
+function updateAppIconShortcuts(icoPath) {
+  if (process.platform !== 'win32') return
+  const exe = process.execPath
+  const ps = appIconLib.buildUpdateShortcutsScript(exe, icoPath || '-reset')
+  const encoded = Buffer.from(ps, 'utf16le').toString('base64')
+  spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).on('close', (code, ...rest) => {
+    // 结果通过 stdout 回传；这里仅记录，失败不打扰用户（快捷方式图标不影响功能）
+  }).stdout.on('data', (d) => {
+    const m = String(d).match(/CHANGED=(\d+)/)
+    if (m) log(`app-icon: 快捷方式图标已更新 ${m[1]} 个`)
+  })
+}
+
+/** 选择/重置应用图标（IPC 落点）：持久化 → 应用到窗口 → 改写快捷方式。 */
+function setAppIconSetting(nextKey, customSource) {
+  if (!appIconLib.isValidSetting(nextKey)) {
+    return { ok: false, error: 'invalid-key' }
+  }
+  const dir = appIconDir()
+  if (nextKey === 'custom') {
+    if (!customSource || !fs.existsSync(customSource)) return { ok: false, error: 'custom-file-missing' }
+    if (!appIconLib.CUSTOM_EXTS.has(path.extname(customSource).toLowerCase())) {
+      return { ok: false, error: 'unsupported-type' }
+    }
+    fs.mkdirSync(dir, { recursive: true })
+    const pngDest = path.join(dir, 'custom.png')
+    const icoDest = path.join(dir, 'custom.ico')
+    try {
+      if (path.extname(customSource).toLowerCase() === '.png') {
+        fs.copyFileSync(customSource, pngDest)
+        if (!writeAppIconIco(pngDest, icoDest)) return { ok: false, error: 'ico-generate-failed' }
+      } else {
+        // 直接选了 .ico：快捷方式用原件；窗口图仍走 png 副本（nativeImage 可读 ico，缩放后转存）
+        fs.copyFileSync(customSource, icoDest)
+        const img = nativeImage.createFromPath(icoDest)
+        if (img.isEmpty()) return { ok: false, error: 'ico-unreadable' }
+        fs.writeFileSync(pngDest, img.resize({ width: 256 }).toPNG())
+      }
+    } catch (err) {
+      return { ok: false, error: 'copy-failed:' + err.message }
+    }
+  } else if (nextKey !== 'default') {
+    // 预设：确保它的 ico 已生成（放到 userData，避免写安装目录）
+    const preset = appIconLib.PRESETS.find((p) => p.key === nextKey)
+    const { png } = appIconLib.presetPaths(preset, __dirname)
+    if (!writeAppIconIco(png, path.join(dir, `${nextKey}.ico`))) {
+      return { ok: false, error: 'ico-generate-failed' }
+    }
+  }
+  settings.appIcon = nextKey
+  saveSettings()
+  applyAppIconToWindows()
+  updateAppIconShortcuts(nextKey === 'default' ? null : resolveAppIcon().icoPath)
+  log(`app-icon → ${nextKey}`)
+  return { ok: true, appIcon: settings.appIcon }
+}
+
+/** 启动重申：非默认图标时，把（安装器/更新可能重建过的）快捷方式重新指回用户选择。 */
+function reassertAppIconShortcuts() {
+  const key = appIconLib.isValidSetting(settings.appIcon) ? settings.appIcon : 'default'
+  if (key === 'default') return
+  const ico = resolveAppIcon().icoPath
+  if (fs.existsSync(ico)) updateAppIconShortcuts(ico)
+}
+
+/** 设置页用的缩略图（dataURL；CSP 里为 img-src 放开 data:）。 */
+function appIconThumb(key) {
+  if (appIconThumbCache.has(key)) return appIconThumbCache.get(key)
+  let dataUrl = ''
+  try {
+    let img = null
+    if (key === 'custom') {
+      const p = path.join(appIconDir(), 'custom.png')
+      if (fs.existsSync(p)) img = nativeImage.createFromPath(p)
+    } else {
+      const preset = appIconLib.PRESETS.find((x) => x.key === key)
+      if (preset) img = nativeImage.createFromPath(appIconLib.presetPaths(preset, __dirname).png)
+    }
+    if (img && !img.isEmpty()) {
+      dataUrl = 'data:image/png;base64,' + img.resize({ width: APP_ICON_THUMB_SIZE, height: APP_ICON_THUMB_SIZE }).toPNG().toString('base64')
+    }
+  } catch {}
+  appIconThumbCache.set(key, dataUrl)
+  return dataUrl
+}
+
+function appIconPresetsForSettings() {
+  const list = appIconLib.PRESETS.map((p) => ({ key: p.key, label: p.label, thumb: appIconThumb(p.key) }))
+  const customPng = path.join(appIconDir(), 'custom.png')
+  if (fs.existsSync(customPng)) {
+    list.push({ key: 'custom', label: '自定义图片', thumb: appIconThumb('custom') })
+  }
+  return list
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(trayIconPath())
   tray = new Tray(icon)
@@ -2328,6 +2498,9 @@ function registerIpc() {
       logTail: state.logTail.join('\n'),
       agentBusy: state.agentBusy,
       notifyCommand: privileged ? (settings.notifyCommand || '') : '',
+      // 应用图标设置：预设缩略图只给设置窗口（主窗口用不到，控制 get-state 体积）
+      appIcon: privileged ? (appIconLib.isValidSetting(settings.appIcon) ? settings.appIcon : 'default') : undefined,
+      appIconPresets: privileged ? appIconPresetsForSettings() : undefined,
       hasNotifyCommand: Boolean(settings.notifyCommand),
       // 热键注册结果与候选（不含敏感信息，所有窗口可读）：
       // 设置面板靠它把“被占用/无效/重试中”说清楚，而不是让用户对着没反应的键盘猜。
@@ -2393,6 +2566,29 @@ function registerIpc() {
   // 用户就没有自救出口（只能手改 settings.json）。同样**只允许设置窗口**调用：
   // 全局热键是系统级的，让内核页面里的插件 JS 能改它等于给它一个键盘劫持面；
   // 而且写入前一律过 normalizeAccelerator（裸键 / Control+字母 一律拒）。
+  // 应用图标自定义：只有设置窗口能改（与热键/钩子同一收口策略）。
+  // pickAppIcon 只返回用户选择的路径，不落盘；真正的复制/生成在 setAppIcon 里做。
+  ipcMain.handle('shell:pick-app-icon', async (event) => {
+    if (!isSettingsSender(event)) return { ok: false, error: 'only-settings-window' }
+    const r = await dialog.showOpenDialog(settingsWin, {
+      title: '选择图标图片',
+      properties: ['openFile'],
+      filters: [{ name: '图片（PNG / ICO）', extensions: ['png', 'ico'] }],
+    })
+    if (r.canceled || !r.filePaths?.length) return { ok: false, error: 'canceled' }
+    return { ok: true, path: r.filePaths[0] }
+  })
+  ipcMain.handle('shell:set-app-icon', (event, key, customPath) => {
+    if (!isSettingsSender(event)) {
+      log('set-app-icon: rejected（发送方不是设置窗口）')
+      return { ok: false, error: 'only-settings-window' }
+    }
+    if (key === 'custom') {
+      // custom 的 customPath 来自 pickAppIcon 的返回（本机路径），再验一次存在性由 setAppIconSetting 负责
+      return setAppIconSetting('custom', typeof customPath === 'string' ? customPath : '')
+    }
+    return setAppIconSetting(String(key || 'default'))
+  })
   ipcMain.handle('shell:set-global-hotkey', (event, raw) => {
     if (!isSettingsSender(event)) {
       log('set-global-hotkey: rejected（发送方不是设置窗口）')
@@ -2692,6 +2888,8 @@ async function bootKernel() {
   // 首启内置插件种子：等整个启动流程（含 splash 交接）收尾再触发，避免它与
   // restartKernel 并发打架（在 waitReady 里触发实测产生一次 ERR_ABORTED）。
   seedBuiltinsIfNeeded()
+  // 应用图标非默认时，把（安装器/更新可能重建过的）快捷方式重新指回用户选择
+  reassertAppIconShortcuts()
 }
 
 /* ─────────────────────────────── UI 冒烟（真实窗口回归测试） ───────────────── */

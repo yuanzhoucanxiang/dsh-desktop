@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
 <title>设置</title>
 <link rel="stylesheet" href="settings.css">
 </head>
@@ -15,6 +15,7 @@
     <button type="button" data-tab="plugins" class="tab">插件</button>
     <button type="button" data-tab="update" class="tab">软件更新 <span id="update-dot" class="tab-dot hidden"></span></button>
     <button type="button" data-tab="notify" class="tab">通知</button>
+    <button type="button" data-tab="appear" class="tab">外观</button>
   </nav>
 </header>
 
@@ -129,6 +130,24 @@
   <footer class="page-foot">
     系统通知开关在托盘菜单「回合完成时通知」。钩子与系统通知相互独立：可只开钩子、只开通知，或两者都开。
   </footer>
+</main>
+
+<main id="page-appear" class="page hidden">
+  <div class="page-head">
+    <p class="sub">窗口、任务栏与快捷方式的图标。立即生效，重启后保持。</p>
+  </div>
+  <section class="card neutral-card">
+    <div class="card-title">应用图标</div>
+    <div id="appicon-grid" class="appicon-grid"></div>
+    <div class="card-actions" style="margin-top:10px">
+      <button id="btn-appicon-custom" type="button">选择自定义图片（PNG / ICO）…</button>
+      <button id="btn-appicon-reset" type="button">恢复默认</button>
+    </div>
+    <p class="hint" id="appicon-hint" style="margin-bottom:0"></p>
+    <p class="hint" style="margin-bottom:0">说明：exe 内嵌图标由安装包决定，选「默认」即恢复鲸鱼图标；
+    任务栏里<strong>已固定</strong>的图标由系统缓存，可能需要在固定图标上右键取消固定后重新固定才会刷新；
+    托盘里的是独立的主题色状态指示，不随此设置变化。</p>
+  </section>
 </main>
 
 <script src="settings.js"></script>

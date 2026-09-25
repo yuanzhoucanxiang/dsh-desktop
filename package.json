@@ -65,7 +65,8 @@
     "verify:writing-world-ui": "electron scripts/verify-writing-world-ui.cjs && electron docs/audits/writing-world-settings/2026-09-22/repair-integrated-ui.cjs",
     "test:writing-existing": "node plugin/writing-mode/test/existing-project.mjs",
     "verify:writing-existing-ui": "electron scripts/verify-existing-project-ui.cjs",
-    "verify:writing-navigation": "electron scripts/verify-writing-navigation.cjs"
+    "verify:writing-navigation": "electron scripts/verify-writing-navigation.cjs",
+    "app-icon-test": "node lib/app-icon.test.js"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -88,6 +89,7 @@
       "preload.js",
       "renderer/**/*",
       "build/*.png",
+      "build/icons/*",
       "build/icon.ico",
       "build/whale-source.svg",
       "package.json",
