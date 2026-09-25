@@ -1364,7 +1364,7 @@ async function seedBuiltinsIfNeeded() {
     const seedDir = path.join(process.resourcesPath, 'builtin-plugins')
     const profileDir = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'profiles', 'web')
     const stampPath = path.join(app.getPath('userData'), 'builtin-plugins-seeded.json')
-    if (!builtinNeedsSeed({ seedDir, profileDir, stampPath })) return
+    if (!builtinNeedsSeed({ seedDir, profileDir, stampPath, quarantineNames: readQuarantine() })) return
     const r = builtinRunSeed({ seedDir, profileDir, stampPath })
     if (!r.ok) {
       log(`builtin seed failed: ${r.error}`)
