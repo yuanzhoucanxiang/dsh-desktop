@@ -3,7 +3,7 @@
     {
       "name": "dsh-better-sidebar",
       "source": "npm",
-      "spec": "0.15.2"
+      "spec": "0.21.1"
     },
     {
       "name": "dsh-pet",
@@ -14,9 +14,9 @@
       "name": "@dsh-local/palis-theme-panel",
       "source": "gh-release",
       "repo": "yuanzhoucanxiang/dsh-palis-theme-panel",
-      "ref": "v0.5.13",
-      "asset": "dsh-palis-theme-panel-0.5.13.tgz",
-      "version": "0.5.13"
+      "ref": "v0.5.14",
+      "asset": "dsh-palis-theme-panel-0.5.14.tgz",
+      "version": "0.5.14"
     }
   ]
 }

@@ -280,3 +280,71 @@
 ---
 
 — 调研与撰写：Qoder（ox-alpha 会话外的第三方视角）／证据基线 2026-09-25
+
+---
+
+## 10. 补测（ZCode 会话，2026-09-25 晚）：内核 0.1.7-rc.2 实测
+
+把 §7.1「实机前必须实测」里**能离线判定**的先判掉，并额外测了任何前进路线都绕不开的那道门：
+**内核跳版**（官方桌面与内核 lockstep ⇒ 采纳官方壳等于强制吃下 0.1.7-rc.2）。
+
+### 10.1 读代码即可判定（已验证／读代码，尚未实机）
+
+| 项 | 结论 | 证据 |
+|---|---|---|
+| §7.1「转发后回环鉴权是否成立」 | **原风险点不成立**：转发器在转发前显式删掉 `host`/`origin`/`cookie`/`sec-fetch-site` 四个头，再塞回 Host 自己的认证 cookie | `apps/desktop/src/web-document.ts:84-88`。到达 Host 时：Host 头由 Node fetch 按 URL 填成 `127.0.0.1:<port>` → 主机白名单过；无 `origin`、无 `sec-fetch-site` → `trustedRequest()` 两条判据走"缺失即放行"→ 过；`remoteAddress` 来自同机 Electron 主进程 → 回环。（读代码结论，实机仍应复验） |
+| §2.2「未声明槽位会抛错」 | **对我们不适用**：四个挂载键在 0.1.7-rc.2 官方槽位树里**全部已声明** | `docs/subsystems/slots.zh.md:119,130,159,186`；注册姿势与 `packages/client/ui-slots/README.zh.md:44-46` 的规范写法一致 |
+| 与本机共存 | **互不触碰**：官方独占 `$DSH_HOME/profiles/desktop`，我们是 `profiles/web` | `apps/desktop/src/paths.ts:19-20` |
+| 官方更新链是否强制 | **机制存在，激活与否取决于部署配置**；与 lockstep 叠加 ⇒ 官方壳的**内核版本不可钉** | `mandatory-update-policy.ts`（按已安装版本身份问服务端 `blocking`）+ `mandatory-update-window.ts` + `main.ts:1260` 接线；部署配置来自构建期 `scripts/desktop-policy-environment.mjs` |
+
+### 10.2 实测（隔离；未动任何现有安装与进程）
+
+按 `docs/kernel-upgrade-checklist.md` 的既定流程，候选内核落 `%TEMP%\dsh-candidate-0.1.7-rc.2`（518 包、node v26.1.0）：
+
+- **契约验收**（独立 DSH_HOME）：18 条探针 → `pass=12 skip=3 fail=0`，**`KERNEL_CONTRACT_OK`**。含
+  `shell.cli-and-patch-boot`（`--patch` + `file://` 插件行仍被接受）、`shell.plugin-route`、13 项设计令牌、
+  模块加载器、12 项 DOM 锚点。→ 外壳的全部硬契约在新内核上没有变。
+- **插件实测**（按迁移路径原型）：给 `writing-mode` / `dialog-optimize` 各补一个 `cordis.patch.yml` +
+  `dsh.bundle.patch`（= 作为 profile bundle 挂载的最小打包差分）后实测：宿主半边**零加载报错**，
+  客户端**真挂上**（精确选择器：`#dsh-writing-mode-float` 存在、`data-plugin=@dsh-local/writing-mode`、
+  页面侧栏出现「写作模式」入口；`dialog-optimize` 同理）。
+- `@deepseek-ai/dsh-client-runtime` 在 0.1.7-rc.2 **已不存在**，但内核容忍"声明了却缺席"的注入项
+  （`dsh-client-modules/lib/client.js:656` 取不到即跳过），且 `writing-mode` 的客户端 bundle
+  **零 `@deepseek-ai` import**（仅 `react`/`react/jsx-runtime` 外部化）→ 该包名漂移对它无害。
+- 工具口径需更新：新内核客户端模块路由是**合并式** `plugins/??<a>/client.js,<b>/client.js`；
+  `verify-plugin-compat.mjs` 里 `/plugins/<name>/client.js` 那几条猜测已过时，它给出的两条 client WARN
+  是**探针口径旧**，不是失败。
+
+### 10.3 对 §8 的修正：第一步应该换
+
+§7.1 的实机实验（装官方 288MB 壳）**不是**任何路线的前置条件；真正的门是内核跳版，而**它现在是绿的**。含义：
+
+1. 「弃壳保插件」的**技术风险下降**（插件在官方壳会强制使用的那个内核上实测可跑），但**新增一个运营风险**：
+   lockstep + 服务端强更 ⇒ 写作模式会被拖上不能钉版本的内核；而 `writing-mode` 对内核磁盘布局有私有依赖
+   （写 `~/.dsh/.agent-presets/*`，见 §4.2），这类依赖一旦撞上**无法用"先不升级"化解**。
+2. 「保壳升内核」由"备选项"升为**当前最可控的一步**：候选 → 契约 → 插件实测 → 采纳/回滚这套流程今天已跑通
+   一遍（候选树留在 `%TEMP%\dsh-candidate-0.1.7-rc.2` 可复用）。升完之后，壳的定位从"产品"降为
+   **"内核版本控制器 + 交付通道"**——不再往壳层投差异化能力，但保留"想不升就不升"的权力。
+3. 官方壳该不该当日常，回到**产品判断**（好不好用、能否替代），而非技术阻塞；那一步仍需用户亲自试用，
+   且必须隔离安装（本会话未安装）。
+
+— 补测：ZCode 会话（只读核实 + 隔离实测；未安装官方桌面端、未改源码、未动运行中进程）
+
+---
+
+## 11. 落地：§10.3 建议的第一步已完成（2026-09-25 晚）
+
+按 §10.3「先做架构对齐」的建议，外壳已改成**渲染进程只认 `dsh-app://`**（`main.js` 单文件改动，
+`DSH_DESKTOP_SCHEME=0` 可整条回退）：
+
+- 首页仍取内核产出（boot 注入归内核），`/assets/**` 由外壳从自带的
+  `runtime/node_modules/@deepseek-ai/dsh-web-frontend/dist` **本地直出**（零新增依赖，
+  该前端随内核运行时一起分发、版本同锁），其余请求代持内核 cookie 转发——
+  与官方 `web-document.ts` 同构（转发前删 `host/origin/cookie/sec-fetch-*`，响应删连接级头与 `set-cookie`）。
+- 实测：渲染进程 **零 `http://127.0.0.1` 请求**、URL 无 token、`/assets/*` 命中本地直出、
+  插件 API 与客户端产物经转发正常（`/api/writing-mode?route=config` → 200，写作模式 UI 挂载正常）；
+  `verify:ui-smoke` PASS。
+- 含义：报告 §3.3/§4.2 里那三条 critical 契约（`shell.launch-line` / `shell.http-api-auth` /
+  `shell.http-root`）对应的**脆弱面被摘掉**，而插件侧无需任何改动（相对路径 fetch 在两种架构下都成立）。
+  若将来切官方壳，插件与加载假设已经对齐。
+- 细节与未覆盖项见 `logs/2026-09-25.md`〔应用协议落地〕。

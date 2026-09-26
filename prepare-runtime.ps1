@@ -19,9 +19,11 @@ $env:NPM_CONFIG_CACHE = Join-Path $proj '.npm-cache'
 Write-Host "installing dsh (hoisted) into runtime..."
 Remove-Item $runtime -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
-Set-Content -Path (Join-Path $runtime 'package.json') -Value '{ "dependencies": { "@deepseek-ai/dsh": "0.1.1-rc.1" } }'
+Set-Content -Path (Join-Path $runtime 'package.json') -Value '{ "dependencies": { "@deepseek-ai/dsh": "0.1.7-rc.2" } }'
 Push-Location $runtime
-npm install --no-audit --no-fund --registry=https://registry.npmmirror.com
+# Official registry: the mirror lags/misses @deepseek-ai subpackages after a kernel bump
+# (docs/kernel-upgrade-checklist.md section 1), and a half-installed kernel tree is fatal.
+npm install --no-audit --no-fund --registry=https://registry.npmjs.org
 Pop-Location
 
 Write-Host "pruning dev artifacts (.d.ts/.map/.ts)..."

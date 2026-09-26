@@ -14,12 +14,13 @@
  *   DSH_LAUNCHER     内核入口 bin.js 的完整路径（默认自动从 npm root -g 解析）
  *   DSH_DESKTOP_HOME 桌面实例专属 DSH_HOME（默认与 CLI 共享 ~/.dsh）
  *   DSH_DESKTOP_CWD  内核工作目录（优先于设置里的"工作目录"）
+ *   DSH_DESKTOP_SCHEME=0  关闭应用协议（退回"窗口直连内核端口 + token"的旧方式，见 APP_SCHEME）
  */
 
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, shell,
   nativeImage, nativeTheme, clipboard, dialog, screen,
-  globalShortcut, Notification,
+  globalShortcut, Notification, protocol, session,
 } = require('electron')
 // 注意：autoUpdater 来自 electron-updater 包（支持 {provider:'github'|'generic'}），
 // 不是 Electron 内置的 autoUpdater（内置只接受 {url}，二者 API 不兼容）。
@@ -36,6 +37,7 @@ const appIconLib = require('./lib/app-icon')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
+const { migrateProfileKernelLinks } = require('./lib/profile-kernel-links')
 const { createSettingsStore } = require('./lib/settings-store')
 const { expandNotifyCommand } = require('./lib/shell-quote')
 const { readNdjsonTail } = require('./lib/ndjson-tail')
@@ -62,6 +64,30 @@ const READY_TIMEOUT_MS = 120000
 const MIN_SPLASH_MS = 1250 // 最短展示时长：内核秒起时也不把开场动画剪断
 const READY_HOLD_MS = 420  // 就绪后停顿：让进度光环可见地合上再走
 const SPLASH_EXIT_MS = 520 // 淡出等待上限：渲染侧 ack 会提前返回
+
+/**
+ * 应用层协议（对齐官方桌面端的 dsh-app:// 架构）：渲染进程只认这一个源。
+ *
+ * 原先窗口直接加载 `http://127.0.0.1:<随机端口>/?token=…`，代价是三处：
+ *   · 导航闸门只能拿「origin 等于本端口 origin」当判据，端口一换判据跟着变；
+ *   · 一次性 launch token 出现在渲染进程的 location 里；
+ *   · 静态资源每次都要经内核 HTTP 回环。
+ * 现在：首页仍取内核产出（boot 注入是内核的事，一个字节不改外壳都不碰），
+ * 前端构建产物由外壳本地直出，其余请求由外壳代持内核 cookie 转发——
+ * 与官方「本地直出 + 其余转发」同构，且 source-of-truth 仍在内核。
+ *
+ * DSH_DESKTOP_SCHEME=0 整条退回旧的直连方式（A/B 对照与应急用）。
+ */
+const APP_SCHEME = 'dsh-app'
+const APP_ORIGIN = `${APP_SCHEME}://app`
+const SCHEME_ENABLED = process.env.DSH_DESKTOP_SCHEME !== '0'
+if (SCHEME_ENABLED) {
+  // 必须早于 app ready；standard + secure 才有同源语义（相对 URL 解析、fetch、crypto 可用）
+  protocol.registerSchemesAsPrivileged([{
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true },
+  }])
+}
 
 /** @type {BrowserWindow | null} */
 let win = null
@@ -518,7 +544,8 @@ function writeKernelPatch(mode) {
 /**
  * S6：会话改动流只读**尾部**（纯函数在 lib/ndjson-tail.js，有单测）。
  * 回退功能不依赖这份流（bridge 用自己内存里的 session events 按 callId 查），
- * 所以尾部截断是安全的；截断时回 truncated，由侧栏如实告知。
+ * 所以尾部截断是安全的；截断时回 truncated。
+ * （原消费方审阅侧栏已于 0.1.44 移除，此通道目前为休眠 API，保留备用。）
  */
 function readSessionChanges() {
   if (!state.reviewStreamPath) return { ok: false, entries: [], error: 'no stream' }
@@ -760,6 +787,10 @@ function detectBrokenBundles(text) {
     if (n && !n.includes(':') && !CORE_BUNDLES.has(n)) names.add(n)
   }
   for (const m of text.matchAll(/(?:failed to import|failed to apply) loader entry [^(]*?\(([^)]+)\)/g)) push(m[1])
+  // 0.1.7 起 loader 换了文案：`<entryId> (<package>): failed to import`（0.1.1 的
+  // "failed to import loader entry <…>(<pkg>)" 不再出现）。两种都认，否则运行期
+  // 安全网对新内核等于失灵——坏插件既不被隔离也不通知，只是功能悄悄缺失。
+  for (const m of text.matchAll(/^\s*\S+ \(([^)]+)\): failed to (?:import|apply)\b/gm)) push(m[1])
   for (const m of text.matchAll(/profile bundle "([^"]+)" declares/g)) push(m[1])
   for (const m of text.matchAll(/cannot resolve profile bundle "([^"]+)"/g)) push(m[1])
   return [...names]
@@ -1015,7 +1046,10 @@ async function checkPluginUpdates() {
  */
 function isKernelPageUrl(url) {
   try {
-    return state.ready && new URL(url).origin === new URL(state.url).origin
+    const u = new URL(url)
+    // 应用协议下内核页恒为本应用源；旧直连方式按内核端口的 origin 判
+    if (SCHEME_ENABLED && u.origin === APP_ORIGIN) return true
+    return state.ready && u.origin === new URL(state.url).origin
   } catch {
     return false
   }
@@ -1198,10 +1232,27 @@ async function startKernelUntilReady({ degradePatch = false } = {}) {
 
 async function startKernel() {
   await ensureExternalRuntime() // 打包后：保证内核从外部副本启动（见 ensureExternalRuntime 注释）
+  // profile 内核包条目对齐到本轮运行时（内核升级的配套迁移，幂等；见 lib/profile-kernel-links.js）。
+  // 不做这步：profile 里指向旧运行时的 @deepseek-ai 链接会把旧代码喂给新内核，
+  // 启动即 "2 required plugins did not activate"（2026-09-26 实测）。
+  try {
+    const r = migrateProfileKernelLinks({
+      levels: [path.join(dshHome(), 'profiles', 'node_modules'), path.join(dshHome(), 'profiles', 'web', 'node_modules')],
+      runtimeNodeModules: path.join(runtimeRoot(), 'node_modules'),
+    })
+    if (r.repointed.length || r.removed.length || r.renamed.length) {
+      log(`profile kernel links: repointed=${r.repointed.length} removed=${r.removed.length} renamed=${r.renamed.length}` +
+        (r.repointed.length ? ` (${r.repointed.slice(0, 3).join(', ')}${r.repointed.length > 3 ? ' …' : ''})` : ''))
+    }
+    for (const e of r.errors) log(`profile kernel links: ${e}`)
+  } catch (err) {
+    log(`profile kernel links migrate failed: ${err.message}`)
+  }
   state.port = await freePort()
   state.url = `http://127.0.0.1:${state.port}`
   state.webUrl = '' // token 随每次启动轮换，等本轮 stdout 的 dsh web 行刷新
   state.webCookie = ''
+  indexHtmlCache = null // 首页含本轮 boot 注入，随内核启动失效
   const bin = resolveDshBin()
   const isJsLauncher = bin.endsWith('.js')
   const launcher = isJsLauncher ? resolveNodeExe() : bin
@@ -1301,9 +1352,10 @@ function captureWebUrl(text) {
   if (u.startsWith(state.url)) state.webUrl = u
 }
 
-/** 内核页面加载地址：优先带 token 的完整 URL（0.1.2+），老内核回退裸 origin。 */
+/** 内核页面加载地址：见 APP_SCHEME 注释；DSH_DESKTOP_SCHEME=0 时回退旧直连方式。 */
 function kernelPageUrl() {
-  return state.webUrl || state.url
+  if (SCHEME_ENABLED) return `${APP_ORIGIN}/`
+  return state.webUrl || state.url // 带 token 的完整 URL（0.1.2+），老内核回退裸 origin
 }
 
 /**
@@ -1317,11 +1369,172 @@ async function kernelApiFetch(path, init = {}) {
       const r = await fetch(state.webUrl, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
       const sc = r.headers.get('set-cookie') || ''
       state.webCookie = sc.split(';')[0]
+      // 同一份 cookie 也放进渲染会话（仅内核源）：插件在页面里直连内核的 WebSocket
+      // 要带鉴权（终端 / 文件监听等），而自定义 scheme 下这些连接经 WS 兜底指向内核端口。
+      // 旧架构里这个 cookie 本来就落在渲染会话（页面带 token 加载时由内核种下），此处等价。
+      if (state.webCookie && state.url) {
+        try {
+          const [name, ...rest] = state.webCookie.split('=')
+          await session.defaultSession.cookies.set({
+            url: `${state.url}/`,
+            name,
+            value: rest.join('='),
+            httpOnly: false,
+            sameSite: 'no_restriction',
+          })
+        } catch (err) { log(`mirror kernel cookie failed: ${err.message}`) }
+      }
     } catch { /* 换 cookie 失败不挡路——请求照样发，由状态码说话 */ }
   }
   const headers = { ...(init.headers || {}) }
   if (state.webCookie) headers.cookie = state.webCookie
   return fetch(`${state.url}${path}`, { ...init, headers })
+}
+
+/* ───────────── 应用协议：本地直出前端 + 其余转发内核（见 APP_SCHEME 注释） ───────────── */
+
+/** 前端构建产物目录：随内核运行时一起分发，版本与内核同锁（不额外下载）。 */
+function frontendDistDir() {
+  return path.join(runtimeRoot(), 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist')
+}
+
+const STATIC_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
+}
+
+/** 首页缓存：内核产出的 HTML（含 boot 注入）。内核每次启动轮换 token/端口，故随启动失效。 */
+let indexHtmlCache = null
+
+/**
+ * WebSocket 兜底：自定义 scheme 下 `new WebSocket('/x')` 会解析成 `ws://app/…`
+ * （host 是 app、连不通；浏览器不接受 dsh-app: 直接构造）。第三方插件普遍这么写
+ * （better-sidebar 的终端 / 文件监听就是 `new URL('/sidebar/ws/…', location.origin)`），
+ * 官方壳没有这层兜底，所以那类功能在官方壳上本就是坏的。
+ * 做法：把 host 为 app 的 WS 目标改写回内核真实地址——只动目标，不动插件代码。
+ */
+function makeWebSocketShim(kernelWsOrigin) {
+  return `<script>(function(){try{
+var BASE=${JSON.stringify(kernelWsOrigin)};var Native=window.WebSocket;
+function Shim(url,protocols){
+  var target=url;
+  try{var u=new URL(String(url),location.href);
+    if(u.protocol==='dsh-app:'||(u.host==='app'&&(u.protocol==='ws:'||u.protocol==='wss:'))){target=BASE+u.pathname+u.search}
+  }catch(e){}
+  return protocols===undefined?new Native(target):new Native(target,protocols);
+}
+Shim.prototype=Native.prototype;
+['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){Shim[k]=Native[k]});
+window.WebSocket=Shim;
+}catch(e){}})()</script>`
+}
+
+/** 把 WS 兜底插在最前面（必须早于应用脚本）。找不到 <head> 就贴到文档开头。 */
+function injectWebSocketShim(html, kernelWsOrigin) {
+  const tag = makeWebSocketShim(kernelWsOrigin)
+  const m = /<head[^>]*>/i.exec(html)
+  if (m) return html.slice(0, m.index + m[0].length) + tag + html.slice(m.index + m[0].length)
+  return tag + html
+}
+
+/** 本地直出命中：dist 内真实存在的文件才本地返回；越界或未命中一律交回转发。 */
+function localDistFile(pathname) {
+  try {
+    const root = path.resolve(frontendDistDir())
+    const rel = decodeURIComponent(pathname).replace(/^\/+/, '')
+    if (!rel) return null
+    const fp = path.resolve(root, rel)
+    if (fp !== root && !fp.startsWith(root + path.sep)) return null // 目录穿越闸
+    return fs.statSync(fp).isFile() ? fp : null
+  } catch {
+    return null
+  }
+}
+
+// 转发前剥掉的请求头：内核侧只认外壳代持的 cookie；插件的回环鉴权按"缺失即放行"设计，
+// 带上浏览器的 origin/sec-fetch-* 反而会撞它的跨站判据（对齐官方 web-document.ts 的做法）。
+const FORWARD_STRIP_REQUEST = ['host', 'origin', 'cookie', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest']
+// 转发后剥掉的响应头：连接级 + set-cookie（cookie 由外壳持有，不下发渲染进程）
+const FORWARD_STRIP_RESPONSE = [
+  'set-cookie', 'content-encoding', 'content-length', 'transfer-encoding',
+  'connection', 'keep-alive', 'te', 'trailer', 'upgrade', 'proxy-authenticate', 'proxy-authorization',
+]
+
+async function forwardToKernel(req, url) {
+  const target = new URL(state.url)
+  target.pathname = url.pathname
+  target.search = url.search
+  const headers = new Headers(req.headers)
+  for (const name of FORWARD_STRIP_REQUEST) headers.delete(name)
+  if (state.webCookie) headers.set('cookie', state.webCookie)
+  const init = { method: req.method, headers, redirect: 'manual' }
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+    init.body = req.body
+    init.duplex = 'half' // 流式请求体（Node fetch 要求显式声明）
+  }
+  const res = await fetch(target, init)
+  const outgoing = new Headers(res.headers)
+  for (const name of FORWARD_STRIP_RESPONSE) outgoing.delete(name)
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: outgoing })
+}
+
+async function handleAppRequest(req) {
+  const url = new URL(req.url)
+  if (!state.ready || !state.url) return new Response('内核尚未就绪', { status: 503 })
+  // 1) 首页：内核产出（boot 注入由内核负责），外壳只代取一次
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    try {
+      if (indexHtmlCache === null) {
+        const res = await kernelApiFetch('/', { redirect: 'manual' })
+        if (!res.ok) throw new Error(`内核对 / 返回 ${res.status}`)
+        indexHtmlCache = injectWebSocketShim(await res.text(), state.url.replace(/^http:/, 'ws:'))
+      }
+      return new Response(indexHtmlCache, {
+        status: 200,
+        headers: { 'content-type': STATIC_TYPES['.html'], 'cache-control': 'no-store' },
+      })
+    } catch (err) {
+      log(`app scheme: index fetch failed: ${err.message}`)
+      return new Response(`内核页面取回失败：${err.message}`, { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+    }
+  }
+  // 2) 静态资源：本地直出（dist 里没有的落到转发，例如内核自带的插件产物）
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const fp = localDistFile(url.pathname)
+    if (fp) {
+      try {
+        const body = await fs.promises.readFile(fp)
+        const type = STATIC_TYPES[path.extname(fp).toLowerCase()] || 'application/octet-stream'
+        // 构建产物是内容哈希命名，可长缓存；未哈希的（favicon/manifest 之类）不发缓存头
+        const hashed = /-[A-Za-z0-9_-]{8,}\.(js|mjs|css|woff2?|ttf|png|jpe?g|svg)$/i.test(url.pathname)
+        return new Response(body, {
+          status: 200,
+          headers: hashed ? { 'content-type': type, 'cache-control': 'public, max-age=31536000, immutable' } : { 'content-type': type },
+        })
+      } catch (err) {
+        log(`app scheme: local asset failed (${url.pathname}): ${err.message}`)
+      }
+    }
+  }
+  // 3) 其余（/api、/plugins/<id>/client.js、流式响应…）：代持 cookie 转发内核
+  try {
+    return await forwardToKernel(req, url)
+  } catch (err) {
+    log(`app scheme: forward failed (${url.pathname}): ${err.message}`)
+    return new Response(`内核转发失败：${err.message}`, { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
 }
 
 async function probeReady() {
@@ -1393,7 +1606,7 @@ async function restartKernel() {
       win.webContents.send('shell:kernel-status', { alive: true })
       // 内核重启换了端口与 token（0.1.2 起每次启动轮换），旧地址已死——
       // 必须 loadURL 新地址，不能 reload()（reload 只会重新请求旧端口）。
-      if (win.webContents.getURL().startsWith('http')) win.loadURL(kernelPageUrl())
+      if (isKernelPageUrl(win.webContents.getURL())) win.loadURL(kernelPageUrl())
       else {
         // 错误态重启成功：同样走"合环 → 淡出 → 交接"，不硬切
         await sleep(READY_HOLD_MS)
@@ -1549,7 +1762,7 @@ const extraWins = new Set()
 /** 把命令发给当前聚焦的窗口（没有就发主窗口）。 */
 function sendToFocused(channel, payload) {
   const target = BrowserWindow.getFocusedWindow() || win
-  if (target && !target.isDestroyed() && target.webContents.getURL().startsWith('http')) {
+  if (target && !target.isDestroyed() && isKernelPageUrl(target.webContents.getURL())) {
     target.webContents.send(channel, payload)
   }
 }
@@ -3005,6 +3218,14 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
+    // 应用协议处理器：窗口只加载 dsh-app://app（见 APP_SCHEME 注释）。必须在建窗之前挂上。
+    if (SCHEME_ENABLED) {
+      try {
+        protocol.handle(APP_SCHEME, handleAppRequest)
+      } catch (err) {
+        log(`app scheme handler failed: ${err.message}`)
+      }
+    }
     // 命令走原生菜单（菜单栏默认隐藏，accelerator 始终有效）；冒烟下不挂菜单
     refreshMenus()
     if (UI_SMOKE) {
