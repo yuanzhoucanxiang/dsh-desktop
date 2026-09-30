@@ -46,7 +46,7 @@
     "test:writing-coordination": "node plugin/writing-mode/test/coordination.mjs",
     "test:writing-adapter": "node plugin/writing-mode/test/adapter-coordination.mjs",
     "test:writing-p3": "node plugin/writing-mode/test/p3-memory-context.mjs",
-    "verify:writing-adapter": "node plugin/writing-mode/test/coordination.mjs && node plugin/writing-mode/test/adapter-coordination.mjs",
+    "verify:writing-adapter": "node plugin/writing-mode/test/coordination.mjs && node plugin/writing-mode/test/adapter-coordination.mjs && node plugin/writing-mode/test/companion-preset.mjs",
     "verify:writing-memory-ui": "node plugin/writing-mode/test/p3-memory-context.mjs --group=M",
     "verify:writing-context": "node plugin/writing-mode/test/p3-memory-context.mjs --group=C && node plugin/writing-mode/test/p3-memory-context.mjs --group=D",
     "verify:writing-packaged": "node scripts/verify-writing-packaged.mjs",
@@ -176,7 +176,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DeepSeek Harness"
+      "shortcutName": "DeepSeek Harness Desktop"
     }
   }
 }
