@@ -258,3 +258,8 @@ POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:tr
 
 - prefs 新增 `hemingway` / `typewriter`（布尔，默认关）：海明威模式在稿面 keydown 拦 Backspace/Delete/Ctrl+X（`isComposing` 时不拦，保住拼音输入法）；打字机滚动用隐藏镜像层按 textarea 同款排版测光标行高，输入/点选/方向键后把光标行保持在一屏中部。两开关在顶栏，随 prefs 路由持久化。
 - 选区改稿 diff 回路：文字工具「替换选区」不再一步覆写——先在稿面下方出「改稿预览」（`data-wm-rewrite`，复用行级 diff：`- 原文行 / + 建议行`），作者「采纳改稿」才落稿（预览期间继续打字的错位用「原偏移校验 → 附近窗口重定位」两级兜底），「丢弃」原稿不动。动作名（润色/扩写…）进预览头。产出仍然只是建议稿，不碰版本协议。
+
+## 伙伴引用跳回与 mention 可见化（2026-10-02 第三批）
+
+- 伙伴人设新增 `[[文稿名]]` 标注约定（companion.cordis.yml 单一事实源 → companion-preset.js 生成物 + 漂移门禁）。v0.1.40 的「模型输出不能导航编辑器」改为**点击制**：[[名]] 在助手消息里渲染为 chip，作者点击才跳，目标只在作者自己的库内文件清单里解析（`features/companion/jump.js`：文件名全等 → 抹 -vN 题名（多版本取最新）→ 无扩展名前缀；解析不到原地提示，模型编造名不开任何东西）。
+- 参考预览行新增「正文提及」徽标（`worldSettingMentioned`，与注入排序同一规范化口径 NFKC+lowercase 标题/标签包含匹配；turnText 与 send 完全同口径 = 作者本轮消息草稿）。只做展示，不改 `selectMemory` 选择语义。

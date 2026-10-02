@@ -346,6 +346,13 @@ export const CSS = [
   /* 改稿预览（选区改稿 diff 回路）：与版本 diff 同骨架，加一条建议色左边线区分 */
   '.dshWmRewrite{border-left:3px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);}',
   '.dshWmRewrite .dshWmBtn{flex:none;}',
+
+  /* 伙伴回复里的 [[文稿名]] 跳转 chip */
+  '.dshWmJumpRef{display:inline-block;margin:0 2px;padding:0 8px;height:22px;line-height:20px;font-size:12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer;}',
+  '.dshWmJumpRef:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);}',
+
+  /* 参考预览行的「正文提及」徽标 */
+  '.dshWmMention{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);}',
   '.dshWmDiff{',
   '  flex:none;max-height:36%;overflow:auto;',
   '  border-top:1px solid var(--dsw-alias-border-l2);',

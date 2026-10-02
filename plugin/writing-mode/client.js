@@ -2412,6 +2412,17 @@ function parseOrganizeResult(raw) {
     ignoredAuthority: Boolean(data.confirmed || data.targetPath || data.actor)
   };
 }
+function worldSettingMentioned(item, turnText) {
+  if (!isWorldSettingItem(item) || item.status !== "confirmed") return false;
+  const hay = normalizeMatch(turnText);
+  if (!hay) return false;
+  const title = normalizeMatch(item.setting?.title);
+  if (title && hay.includes(title)) return true;
+  return (item.setting?.tags || []).some((t) => {
+    const n = normalizeMatch(t);
+    return n && hay.includes(n);
+  });
+}
 
 // plugin/writing-mode/src/shared/context-builder.js
 var DEFAULT_MEMORY_BUDGET = 6e3;
@@ -3126,6 +3137,11 @@ var CSS = [
   /* 改稿预览（选区改稿 diff 回路）：与版本 diff 同骨架，加一条建议色左边线区分 */
   ".dshWmRewrite{border-left:3px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);}",
   ".dshWmRewrite .dshWmBtn{flex:none;}",
+  /* 伙伴回复里的 [[文稿名]] 跳转 chip */
+  ".dshWmJumpRef{display:inline-block;margin:0 2px;padding:0 8px;height:22px;line-height:20px;font-size:12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer;}",
+  ".dshWmJumpRef:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);}",
+  /* 参考预览行的「正文提及」徽标 */
+  ".dshWmMention{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);}",
   ".dshWmDiff{",
   "  flex:none;max-height:36%;overflow:auto;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
@@ -18329,6 +18345,51 @@ function remarkGfm(options) {
   toMarkdownExtensions.push(gfmToMarkdown(settings));
 }
 
+// plugin/writing-mode/src/client/features/companion/jump.js
+var JUMP_PROTOCOL = "dsh-wm-jump:";
+function rewriteJumpLinks(text7) {
+  return String(text7 ?? "").replace(/\[\[([^\[\]\n]{1,80})\]\]/g, (m, name3) => {
+    const clean = String(name3).trim();
+    if (!clean) return m;
+    return `[${clean}](${JUMP_PROTOCOL}${encodeURIComponent(clean)})`;
+  });
+}
+function parseJumpHref(href) {
+  const raw = String(href ?? "");
+  if (!raw.startsWith(JUMP_PROTOCOL)) return null;
+  try {
+    const name3 = decodeURIComponent(raw.slice(JUMP_PROTOCOL.length));
+    return name3.trim() || null;
+  } catch {
+    return null;
+  }
+}
+var normKey = (s) => String(s ?? "").toLowerCase();
+var stemOf = (s) => String(s ?? "").replace(/-v\d+(\.[^.]+)$/i, "$1");
+var versionOf2 = (s) => {
+  const m = String(s ?? "").match(/-v(\d+)(\.[^.]+)$/i);
+  return m ? Number(m[1]) : 0;
+};
+var baseOf = (s) => String(s ?? "").split(/[\\/]/).pop();
+function resolveFileByName(files, name3) {
+  const list4 = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (!list4.length || !name3) return null;
+  const latest = (arr) => arr.sort((a, b) => versionOf2(b.name) - versionOf2(a.name))[0];
+  const want = normKey(baseOf(name3).trim());
+  if (!want) return null;
+  const byExact = list4.filter((f) => normKey(baseOf(f.name)) === want);
+  if (byExact.length) return latest(byExact);
+  const wantStem = normKey(stemOf(want));
+  const byStem = list4.filter((f) => normKey(stemOf(baseOf(f.name))) === wantStem);
+  if (byStem.length) return latest(byStem);
+  const hasExt = /\.[^.]+$/.test(want);
+  if (!hasExt) {
+    const byPrefix = list4.filter((f) => normKey(baseOf(f.name)).startsWith(want));
+    if (byPrefix.length) return latest(byPrefix);
+  }
+  return null;
+}
+
 // plugin/writing-mode/src/client/features/companion/CompanionMessage.js
 function webLink(url) {
   try {
@@ -18338,13 +18399,31 @@ function webLink(url) {
     return "";
   }
 }
-function MessageLink({ href, children }) {
+function urlPolicy(url) {
+  if (webLink(url)) return webLink(url);
+  if (parseJumpHref(String(url ?? ""))) return String(url);
+  return "";
+}
+function MessageLink({ href, children, onJumpToFile }) {
+  const jumpName = parseJumpHref(href);
+  if (jumpName) {
+    return jsx6.jsx("button", {
+      type: "button",
+      className: "dshWmJumpRef",
+      "data-wm-jump-ref": jumpName,
+      title: "跳到这篇文稿",
+      onClick: () => {
+        if (onJumpToFile) onJumpToFile(jumpName);
+      },
+      children
+    });
+  }
   const safe = webLink(href);
   return safe ? jsx6.jsx("a", { href: safe, target: "_blank", rel: "noopener noreferrer", children }) : jsx6.jsx("span", { children });
 }
 var plugins = [remarkGfm];
-var components = {
-  a: MessageLink,
+var components = (onJumpToFile) => ({
+  a: (props) => jsx6.jsx(MessageLink, { ...props, onJumpToFile }),
   // Do not turn a streamed image URL into an automatic network request. The
   // author can open it explicitly, just like other source links.
   img: ({ src, alt }) => jsx6.jsx(MessageLink, { href: src, children: alt || "查看图片" }),
@@ -18355,12 +18434,18 @@ var components = {
     "aria-label": "表格，可横向滚动",
     children: jsx6.jsx("table", { children })
   })
-};
-var CompanionMessage = (0, import_react2.memo)(function CompanionMessage2({ text: text7, kind }) {
+});
+var CompanionMessage = (0, import_react2.memo)(function CompanionMessage2({ text: text7, kind, onJumpToFile }) {
   if (kind !== "assistant") return jsx6.jsx("div", { className: "dshWmMessageText", children: text7 });
   return jsx6.jsx("div", {
     className: "dshWmMessageText dshWmMarkdown",
-    children: jsx6.jsx(Markdown, { remarkPlugins: plugins, components, skipHtml: true, urlTransform: webLink, children: text7 || "" })
+    children: jsx6.jsx(Markdown, {
+      remarkPlugins: plugins,
+      components: components(onJumpToFile),
+      skipHtml: true,
+      urlTransform: urlPolicy,
+      children: rewriteJumpLinks(text7 || "")
+    })
   });
 });
 
@@ -18524,7 +18609,7 @@ function useCompanionStore(store) {
 function companionRows(snapshot) {
   return Array.isArray(snapshot?.messages) ? snapshot.messages : [];
 }
-function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect }) {
+function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect, onJumpToFile }) {
   const rows = companionRows(snapshot);
   const scroll = react4.useRef(null);
   const follow = react4.useRef(true);
@@ -18545,7 +18630,7 @@ function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, 
       jsx10.jsx("pre", { children: JSON.stringify(row.detail, null, 2) })
     ] }, row.key) : jsx10.jsxs("article", { className: "dshWmMessage is-" + row.kind + (worldSelectedIds?.includes(row.key) ? " is-world-selected" : ""), children: [
       jsx10.jsx("span", { className: "dshWmMessageWho", children: row.kind === "user" ? "你" : "写作伙伴" }),
-      jsx10.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
+      jsx10.jsx(CompanionMessage, { text: row.text, kind: row.kind, onJumpToFile }),
       row.reference ? jsx10.jsxs("details", { className: "dshWmActivity", children: [jsx10.jsx("summary", { children: "引用的稿件" }), jsx10.jsx("pre", { children: row.reference })] }) : null,
       row.kind === "assistant" && onCandidate ? jsx10.jsx("button", {
         className: "dshWmQuiet dshWmMessageAction",
@@ -18567,7 +18652,7 @@ function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, 
     snapshot.running ? jsx10.jsx("div", { className: "dshWmThinking", role: "status", children: "正在回应…" }) : null
   ] });
 }
-function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit }) {
+function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit, onJumpToFile }) {
   const adapter = harnessAdapter();
   const capability = companionCapability(adapter.capabilities());
   const capabilityText = capability.reasons.length ? capability.headline + "：" + capability.reasons.join("；") : capability.headline;
@@ -18885,20 +18970,24 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   const statusNote = !handle2 || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
   const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
   const injectables = memoryItems.filter(isPinnable);
+  const turnHay = localDraft || "";
   const memoryPreview = react4.useMemo(
-    () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
-    [memoryItems, pinned, excluded]
+    () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded, turnHay),
+    [memoryItems, pinned, excluded, turnHay]
   );
   const budgetOmitted = memoryPreview.omissions.filter((o) => o.reason === "budget").length;
+  const mentionCount = injectables.filter((it) => worldSettingMentioned(it, turnHay)).length;
   const previewRows = injectables.map((it) => {
     const taken = memoryPreview.selected.find((x) => String(x.id) === String(it.id));
     const omitted = memoryPreview.omissions.find((x) => String(x.id) === String(it.id));
+    const mentioned = worldSettingMentioned(it, turnHay);
     return {
+      mentioned,
       id: it.id,
       kind: it.kind,
       text: it.text,
       source: it.source?.kind === "assistant" ? "助手建议" : it.source?.kind === "host" ? "内核" : "作者",
-      state: taken ? taken.pinned ? "固定带入" : "自动带入" : omitted?.reason === "excluded-by-author" ? "你已排除" : omitted?.reason === "budget" ? "超出预算省略" : omitted?.reason === "not-injectable" ? "状态不适用" : "未采用"
+      state: taken ? taken.pinned ? "固定带入" : mentioned ? "正文提及" : "自动带入" : omitted?.reason === "excluded-by-author" ? "你已排除" : omitted?.reason === "budget" ? "超出预算省略" : omitted?.reason === "not-injectable" ? "状态不适用" : "未采用"
     };
   });
   let refStatus = "empty";
@@ -18978,6 +19067,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       snapshot,
       onFull: () => void fullConversation(),
       onCandidate: startCandidate,
+      onJumpToFile,
       worldSelectedIds: worldSelection.map((m) => m.id),
       onToggleWorldSelect: snapshot.running ? null : (msg) => {
         setWorldSelection((list4) => {
@@ -19158,7 +19248,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         ] }),
         contextOpen ? jsx10.jsxs("div", { className: "dshWmContextPanel", children: [
           memoryMeta.ok ? null : jsx10.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
-          jsx10.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）` : "本轮不参考项目备忘（开关已关）" }),
+          jsx10.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${mentionCount ? `，正文提及 ${mentionCount} 条` : ""}${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）` : "本轮不参考项目备忘（开关已关）" }),
           previewRows.length ? previewRows.map((row) => jsx10.jsxs("div", { className: "dshWmContextItem", "data-wm-memory-row": row.id, children: [
             jsx10.jsx("input", {
               type: "checkbox",
@@ -19183,7 +19273,8 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
               onClick: () => setPinned((prev) => prev.includes(row.id) ? prev.filter((x) => x !== row.id) : [...prev, row.id]),
               children: pinned.includes(row.id) ? "优先 ✓" : "优先"
             }),
-            jsx10.jsx("span", { className: "dshWmContextState", "data-wm-memory-state": row.state, children: `${row.state} · 来源：${row.source}` })
+            jsx10.jsx("span", { className: "dshWmContextState", "data-wm-memory-state": row.state, children: `${row.state} · 来源：${row.source}` }),
+            row.mentioned && row.state === "正文提及" ? jsx10.jsx("span", { className: "dshWmMention", "data-wm-memory-mention": "1", title: "作者这一轮的消息里提到了这条的标题/标签", children: "正文提及" }) : null
           ] }, row.id)) : jsx10.jsx("div", { className: "dshWmMemoryNote", children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
           memoryPreview.omissions.some((o) => o.reason === "not-injectable") ? jsx10.jsx("div", { className: "dshWmMemoryNote", children: "有条目处于候选/已撤回/已解决状态，本轮不会自动带入。" }) : null,
           jsx10.jsx("div", { className: "dshWmMemoryNote", children: "自动部分有 " + String(DEFAULT_MEMORY_BUDGET) + " 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。" })
@@ -19201,7 +19292,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     ] })
   ] });
 }
-function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject }) {
+function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile }) {
   const [result, setResult] = react4.useState(null);
   const [retry, setRetry] = react4.useState(0);
   react4.useEffect(() => {
@@ -19222,7 +19313,7 @@ function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx10.jsx(SessionListSection, { currentPath: path2 || null, onOpenProject: onOpenProject || null }, "wsl");
   if (!path2 || result?.path !== path2) return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsx("div", { className: "dshWmCompanionEmpty", children: path2 ? "正在打开对话…" : "打开一份稿件，从这里聊起。" }, "empty")] });
   if (!result.ok) return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [result.error, jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })] }, "err")] });
-  return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit }, result.project)] });
+  return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit, onJumpToFile }, result.project)] });
 }
 
 // plugin/writing-mode/src/client/features/export-book/index.js
@@ -19994,6 +20085,18 @@ function WritingModeApp() {
     const id = window.requestAnimationFrame(() => typewriterScroll());
     return () => window.cancelAnimationFrame(id);
   }, [content3, prefs.typewriter, typewriterScroll]);
+  const jumpToFile = react7.useCallback((name3) => {
+    const all2 = [];
+    for (const r of tree) for (const p of r.projects || []) for (const f of p.files || []) all2.push(f);
+    const hit = resolveFileByName(all2, name3);
+    if (!hit) {
+      flashMsg(`作品里没有「${name3}」这篇文稿`);
+      return;
+    }
+    setFilePath(hit.abs || hit.path);
+    setAiOpen(true);
+    flashMsg("已跳到 " + hit.name);
+  }, [tree]);
   react7.useEffect(() => {
     if (!active) return;
     let reading = false;
@@ -21271,7 +21374,9 @@ function WritingModeApp() {
                       setFilePath(String(project).replace(/[\\/]+$/, "") + "/project.md");
                       setAiOpen(true);
                       setAiTab("companion");
-                    }
+                    },
+                    // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
+                    onJumpToFile: jumpToFile
                   }, "companion") : null,
                   aiTab === "tools" ? jsx16.jsx(
                     "div",

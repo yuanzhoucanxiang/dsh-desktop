@@ -14,6 +14,7 @@ import { harnessSessions } from '../../adapters/harness/runtime.js'
 import { harnessAdapter } from '../../adapters/harness/runtime.js'
 import { newOperationToken } from '../../adapters/harness/adapter.js'
 import { buildPreparedTurn } from '../../../shared/context-builder.js'
+import { worldSettingMentioned } from '../../../shared/world-setting.js'
 import { CompanionMessage } from './CompanionMessage.js'
 import { SessionListSection } from './SessionListSection.js'
 import { companionCapability } from './capability-notice.js'
@@ -35,7 +36,7 @@ export function companionRows(snapshot) {
 }
 
 
-export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect }) {
+export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect, onJumpToFile }) {
   const rows = companionRows(snapshot)
   const scroll = react.useRef(null)
   const follow = react.useRef(true)
@@ -52,7 +53,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
       jsx.jsx('summary', { children: row.text }), jsx.jsx('pre', { children: JSON.stringify(row.detail, null, 2) }),
     ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind + (worldSelectedIds?.includes(row.key) ? ' is-world-selected' : ''), children: [
       jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
-      jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
+      jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind, onJumpToFile }),
       row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
       row.kind === 'assistant' && onCandidate
         ? jsx.jsx('button', {
@@ -78,7 +79,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
     snapshot.running ? jsx.jsx('div', { className: 'dshWmThinking', role: 'status', children: '正在回应…' }) : null,
   ] })
 }
-export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }) {
+export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit, onJumpToFile }) {
   const adapter = harnessAdapter()
   // 能力缺口要能说话：只有灰按钮而不解释原因，作者无法区分「内核没挂上」和「这个作品没会话」。
   const capability = companionCapability(adapter.capabilities())
@@ -408,20 +409,26 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     const recoverable = snapshot.status === 'missing' || snapshot.status === 'uncertain' || snapshot.status === 'waiting'
     // C02：面板显示**实际会采用什么**——用与发送完全相同的选择函数算一遍，作者能逐条核对来源与省略原因
     const injectables = memoryItems.filter(isPinnable)
+    // mention 感知可见化：与 send 完全同口径（turnText=作者这一轮的消息草稿），
+    // 正文里提到标题/标签的 world 设定在预览行上标「正文提及」。
+    const turnHay = localDraft || ''
     const memoryPreview = react.useMemo(
-      () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
-      [memoryItems, pinned, excluded]
+      () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded, turnHay),
+      [memoryItems, pinned, excluded, turnHay]
     )
     const budgetOmitted = memoryPreview.omissions.filter((o) => o.reason === 'budget').length
+    const mentionCount = injectables.filter((it) => worldSettingMentioned(it, turnHay)).length
     const previewRows = injectables.map((it) => {
       const taken = memoryPreview.selected.find((x) => String(x.id) === String(it.id))
       const omitted = memoryPreview.omissions.find((x) => String(x.id) === String(it.id))
+      const mentioned = worldSettingMentioned(it, turnHay)
       return {
+        mentioned,
         id: it.id,
         kind: it.kind,
         text: it.text,
         source: it.source?.kind === 'assistant' ? '助手建议' : it.source?.kind === 'host' ? '内核' : '作者',
-        state: taken ? (taken.pinned ? '固定带入' : '自动带入') : omitted?.reason === 'excluded-by-author' ? '你已排除' : omitted?.reason === 'budget' ? '超出预算省略' : omitted?.reason === 'not-injectable' ? '状态不适用' : '未采用',
+        state: taken ? (taken.pinned ? '固定带入' : mentioned ? '正文提及' : '自动带入') : omitted?.reason === 'excluded-by-author' ? '你已排除' : omitted?.reason === 'budget' ? '超出预算省略' : omitted?.reason === 'not-injectable' ? '状态不适用' : '未采用',
       }
     })
     // 引用是否来自旧快照：只在"源稿当前状态可知且路径一致"时判断，其余一律 unknown
@@ -499,6 +506,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
       snapshot,
       onFull: () => void fullConversation(),
       onCandidate: startCandidate,
+      onJumpToFile,
       worldSelectedIds: worldSelection.map((m) => m.id),
       onToggleWorldSelect: snapshot.running ? null : (msg) => {
         setWorldSelection((list) => {
@@ -702,7 +710,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           ? jsx.jsxs('div', { className: 'dshWmContextPanel', children: [
               memoryMeta.ok ? null : jsx.jsx('div', { className: 'dshWmMemoryNote', children: '备忘读取失败（' + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
               jsx.jsx('div', { className: 'dshWmMemoryNote', 'data-wm-context-summary': '1', children: includeMemory
-                ? `本轮实际带入 ${memoryPreview.selected.length} 条${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ''}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）`
+                ? `本轮实际带入 ${memoryPreview.selected.length} 条${mentionCount ? `，正文提及 ${mentionCount} 条` : ''}${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ''}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）`
                 : '本轮不参考项目备忘（开关已关）' }),
               previewRows.length
                 ? previewRows.map((row) => jsx.jsxs('div', { className: 'dshWmContextItem', 'data-wm-memory-row': row.id, children: [
@@ -732,6 +740,9 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
                           children: pinned.includes(row.id) ? '优先 ✓' : '优先',
                         }),
                     jsx.jsx('span', { className: 'dshWmContextState', 'data-wm-memory-state': row.state, children: `${row.state} · 来源：${row.source}` }),
+                    row.mentioned && row.state === '正文提及'
+                      ? jsx.jsx('span', { className: 'dshWmMention', 'data-wm-memory-mention': '1', title: '作者这一轮的消息里提到了这条的标题/标签', children: '正文提及' })
+                      : null,
                   ] }, row.id))
                 : jsx.jsx('div', { className: 'dshWmMemoryNote', children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
               memoryPreview.omissions.some((o) => o.reason === 'not-injectable')
@@ -750,7 +761,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     ] }),
   ] })
 }
-export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject }) {
+export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile }) {
   const [result, setResult] = react.useState(null)
   const [retry, setRetry] = react.useState(0)
   react.useEffect(() => {
@@ -767,5 +778,5 @@ export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx.jsx(SessionListSection, { currentPath: path || null, onOpenProject: onOpenProject || null }, 'wsl')
   if (!path || result?.path !== path) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' }, 'empty')] })
   if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] }, 'err')] })
-  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit }, result.project)] })
+  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit, onJumpToFile }, result.project)] })
 }

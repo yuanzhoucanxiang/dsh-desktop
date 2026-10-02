@@ -18,6 +18,7 @@ import { selectionText } from '../features/tools/selection.js'
 import { assistantPrompt, reviewPrompt } from '../features/tools/prompts.js'
 import { makeReference, referenceStatus } from '../../shared/reference.js'
 import { WritingCompanion } from '../features/companion/index.js'
+import { resolveFileByName } from '../features/companion/jump.js'
 import { ExportBookPanel } from '../features/export-book/index.js'
 import { InspectionPanel } from '../features/inspection/index.js'
 
@@ -323,6 +324,17 @@ export function WritingModeApp() {
     const id = window.requestAnimationFrame(() => typewriterScroll())
     return () => window.cancelAnimationFrame(id)
   }, [content, prefs.typewriter, typewriterScroll])
+
+  /** 伙伴回复 [[文稿名]] 的点击跳回：只在作者自己的库内文件清单里解析（解析不到停在原地提示）。 */
+  const jumpToFile = react.useCallback((name) => {
+    const all = []
+    for (const r of tree) for (const p of (r.projects || [])) for (const f of (p.files || [])) all.push(f)
+    const hit = resolveFileByName(all, name)
+    if (!hit) { flashMsg(`作品里没有「${name}」这篇文稿`); return }
+    setFilePath(hit.abs || hit.path)
+    setAiOpen(true)
+    flashMsg('已跳到 ' + hit.name)
+  }, [tree])
 
   react.useEffect(() => {
     if (!active) return
@@ -1684,6 +1696,8 @@ export function WritingModeApp() {
                           setAiOpen(true)
                           setAiTab('companion')
                         },
+                        // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
+                        onJumpToFile: jumpToFile,
                       }, 'companion') : null,
                       aiTab === 'tools' ? jsx.jsx(
                         'div',

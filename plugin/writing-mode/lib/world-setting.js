@@ -202,3 +202,19 @@ export function parseOrganizeResult(raw) {
     ignoredAuthority: Boolean(data.confirmed || data.targetPath || data.actor),
   }
 }
+
+/**
+ * 正文提及判定（与 rankWorldSettingIds 同一规范化口径）：标题或任一标签出现在当轮文字里。
+ * 供伙伴参考预览标注「正文提及」用——只做展示，不改变注入选择函数的语义。
+ */
+export function worldSettingMentioned(item, turnText) {
+  if (!isWorldSettingItem(item) || item.status !== 'confirmed') return false
+  const hay = normalizeMatch(turnText)
+  if (!hay) return false
+  const title = normalizeMatch(item.setting?.title)
+  if (title && hay.includes(title)) return true
+  return (item.setting?.tags || []).some((t) => {
+    const n = normalizeMatch(t)
+    return n && hay.includes(n)
+  })
+}
