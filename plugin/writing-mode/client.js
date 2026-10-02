@@ -3276,8 +3276,8 @@ var CSS = [
   ".dshWmWikiStats{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dsw-alias-label-secondary);}",
   ".dshWmWikiStats b{font-size:15px;font-weight:650;color:var(--dsw-alias-label-primary);}",
   ".dshWmWikiBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmWikiBar{flex:1;min-width:5px;max-width:22px;border-radius:3px 3px 0 0;background:var(--dsw-alias-brand-primary);opacity:.5;}",
-  ".dshWmWikiBar.is-hit{opacity:1;}",
+  ".dshWmWikiDayBar{flex:1;min-width:5px;max-width:22px;border-radius:3px 3px 0 0;background:var(--dsw-alias-brand-primary);opacity:.5;}",
+  ".dshWmWikiDayBar.is-hit{opacity:1;}",
   ".dshWmWikiChapters{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:3px;font-size:12.5px;}",
   ".dshWmWikiChapters li{display:flex;align-items:baseline;gap:8px;min-width:0;}",
   ".dshWmWikiChapterName{border:0;background:none;padding:0;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
@@ -19979,7 +19979,7 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
               empty: jsx16.jsx("div", { className: "dshWmAiHint", children: "draft/ 下还没有正文。" })
             }),
             progress.phase === "ready" ? jsx16.jsxs("div", { className: "dshWmWikiStats", "data-wm-wiki-stats": "1", children: [
-              jsx16.jsxs("span", { "data-wm-wiki-today": String(today), children: [jsx16.jsx("b", { children: String(today) }), " 字 · 今天"] }, "today"),
+              jsx16.jsxs("span", { children: [jsx16.jsx("b", { "data-wm-wiki-today": String(today), children: String(today) }), " 字 · 今天"] }, "today"),
               jsx16.jsxs("span", { children: [jsx16.jsx("b", { children: String(progress.stats?.streak || 0) }), " 天连更"] }, "streak"),
               goal ? jsx16.jsxs("span", { children: ["日目标 ", jsx16.jsx("b", { children: String(goal) })] }, "goal") : null,
               progress.stats?.corrupt ? jsx16.jsx("span", { className: "dshWmWikiSectionError", children: "统计文件损坏，数字可能不准" }, "corrupt") : null
@@ -19989,7 +19989,7 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
               "data-wm-wiki-bars": String(days.length),
               title: "近 14 天每日净增字数",
               children: days.map((d) => jsx16.jsx("span", {
-                className: "dshWmWikiBar" + (goal > 0 && (Number(d.total) || 0) >= goal ? " is-hit" : ""),
+                className: "dshWmWikiDayBar" + (goal > 0 && (Number(d.total) || 0) >= goal ? " is-hit" : ""),
                 style: { height: Math.max(3, Math.round((Number(d.total) || 0) / maxDay * 100)) + "%" },
                 title: d.day + "：" + (d.total || 0) + " 字"
               }, d.day))

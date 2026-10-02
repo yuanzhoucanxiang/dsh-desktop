@@ -149,7 +149,9 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('[data-wm-wiki-chapters] li').length===2`)
   const chapters = await evaluate(`Array.from(document.querySelectorAll('[data-wm-wiki-chapters] .dshWmWikiChapterName')).map(e=>e.textContent).join('|')`)
   assert.equal(chapters, '第1章|第2章', '同一章只列当前版（v1 不进档案）')
-  assert.equal(await evaluate(`document.querySelectorAll('[data-wm-wiki-bars] .dshWmWikiBar').length`), 14)
+  assert.equal(await evaluate(`document.querySelectorAll('[data-wm-wiki-bars] .dshWmWikiDayBar').length`), 14)
+  // 类名撞车会让顶栏标题被日柱样式压成竖排（本轮实测踩过）：标题必须横向铺开
+  assert.ok(Number(await evaluate(`document.querySelector('.dshWmWikiTitle').getBoundingClientRect().width`)) > 60, '档案标题被压窄：CSS 类名冲突')
   assert.ok((await evaluate(`document.querySelector('[data-wm-wiki-stats]').textContent`)).includes('日目标 500'), '日更目标进档案')
   console.log('PASS 进度区：当前版章节、14 天柱、日目标')
 

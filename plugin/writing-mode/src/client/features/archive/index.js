@@ -296,7 +296,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) 
             }),
             progress.phase === 'ready'
               ? jsx.jsxs('div', { className: 'dshWmWikiStats', 'data-wm-wiki-stats': '1', children: [
-                  jsx.jsxs('span', { 'data-wm-wiki-today': String(today), children: [jsx.jsx('b', { children: String(today) }), ' 字 · 今天'] }, 'today'),
+                  jsx.jsxs('span', { children: [jsx.jsx('b', { 'data-wm-wiki-today': String(today), children: String(today) }), ' 字 · 今天'] }, 'today'),
                   jsx.jsxs('span', { children: [jsx.jsx('b', { children: String(progress.stats?.streak || 0) }), ' 天连更'] }, 'streak'),
                   goal ? jsx.jsxs('span', { children: ['日目标 ', jsx.jsx('b', { children: String(goal) })] }, 'goal') : null,
                   progress.stats?.corrupt ? jsx.jsx('span', { className: 'dshWmWikiSectionError', children: '统计文件损坏，数字可能不准' }, 'corrupt') : null,
@@ -308,7 +308,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) 
                   'data-wm-wiki-bars': String(days.length),
                   title: '近 14 天每日净增字数',
                   children: days.map((d) => jsx.jsx('span', {
-                    className: 'dshWmWikiBar' + (goal > 0 && (Number(d.total) || 0) >= goal ? ' is-hit' : ''),
+                    className: 'dshWmWikiDayBar' + (goal > 0 && (Number(d.total) || 0) >= goal ? ' is-hit' : ''),
                     style: { height: Math.max(3, Math.round(((Number(d.total) || 0) / maxDay) * 100)) + '%' },
                     title: d.day + '：' + (d.total || 0) + ' 字',
                   }, d.day)),
