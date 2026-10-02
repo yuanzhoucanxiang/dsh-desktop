@@ -26,7 +26,10 @@ app.whenReady().then(async () => {
   store.writeConfig({ roots: [{ path: root, default: true }], activeRoot: root, prefs: { ...store.DEFAULT_PREFS, autoSaveMs: 5000 } })
   let handler
   host.apply({ effect: f => f(), webServer: { register: route => { handler = route.handler; return () => {} } } })
-  const modules = path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules')
+  // React 来源：优先仓库 node_modules（devDependencies 已显式声明 react-dom）；
+  // 旧内核运行时（0.1.1 时代 react 内嵌于 dsh-client-ui-trajectory）作回退。
+  const runtimeModules = path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules')
+  const modules = fs.existsSync(path.join(repo, 'node_modules/react-dom/package.json')) ? path.join(repo, 'node_modules') : runtimeModules
   const html = `<!doctype html><meta charset="utf-8"><style>
     :root{--dsw-alias-bg-base:#f7f5ef;--dsw-alias-bg-layer-1:#efede7;--dsw-alias-bg-layer-2:#e6e4dd;--dsw-alias-bg-layer-3:#fff;--dsw-alias-label-primary:#292a26;--dsw-alias-label-secondary:#52554b;--dsw-alias-label-tertiary:#777b6c;--dsw-alias-border-l2:#cfcec4;--dsw-alias-brand-primary:#526d51;--dsw-alias-state-error-primary:#b34636;--dsw-alias-state-success-primary:#426545}
     body{margin:0;font:14px system-ui}#host{padding:20px}
@@ -66,6 +69,32 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
   await clickFile('第1章-v1.md')
   await waitFor(`document.querySelector('.dshWmEditor')?.value==='第一章原文'`)
+  // 顶栏 v+1 已归拢进版本条（唯一「存新版」入口）
+  assert.ok(!(await evaluate(`Array.from(document.querySelectorAll('button')).some(e=>e.textContent==='v+1')`)), '顶栏不应再有 v+1 按钮')
+  // 版本条：单版本文档也渲染，条尾有「另存为新版」
+  await waitFor(`document.querySelector('.dshWmVerBar')!==null`)
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('.dshWmVerBar button')).some(e=>e.textContent==='另存为新版')`), '版本条缺「另存为新版」')
+  // 右栏三区：写作伙伴 / 文字工具 / 检查
+  await waitFor(`Array.from(document.querySelectorAll('.dshWmTab')).map(e=>e.textContent).join('|')==='写作伙伴|文字工具|检查'`)
+  await button('检查')
+  await waitFor(`Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('门禁'))&&Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('台账速览'))`)
+  console.log('PASS UI 右栏三区：检查 tab 承载门禁与台账，版本入口归拢')
+  await button('文字工具')
+  await waitFor(`!Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('门禁'))`)
+  console.log('PASS UI 工具 tab 不再混入检查区块')
+  // 能力缺口必须说话：本 fixture 没注入内核 sessions，伙伴面板要讲清「缺什么、还能不能写、会不会丢」，
+  // 而不是让作者对着一只灰掉的按钮猜（0.1.7 适配遗留的 UX 空档）。
+  await button('写作伙伴')
+  await waitFor(`document.querySelector('[data-wm-capability="blocked"]')!==null`)
+  const capabilityText = await evaluate(`document.querySelector('[data-wm-capability="blocked"]').textContent`)
+  assert.match(capabilityText, /内核会话服务未挂载/, '能力条应说明缺的是会话服务')
+  assert.match(capabilityText, /本地草稿/, '能力条应说明想法不会丢')
+  assert.ok(!/sessions\.binding|remote\.session|provideInfo/.test(capabilityText), '不该把内核能力名直接甩给作者')
+  assert.equal(await evaluate(`document.querySelector('.dshWmChatInput').disabled`), false, '连不上内核时仍应能记下想法')
+  assert.equal(await evaluate(`document.querySelector('.dshWmSend').disabled`), true, '发不出去时发送键必须禁用')
+  assert.match(await evaluate(`document.querySelector('.dshWmSend').title`), /连不上内核/, '禁用原因要能在按钮上看到')
+  assert.ok(await evaluate(`document.querySelector('[data-wm-session-list="unavailable"]')!==null`), '会话列表不可用时要留一行原因')
+  console.log('PASS UI 内核能力缺口可见：原因、出路、输入仍可用')
   await input('.dshWmEditor', '第一章修改后')
   await waitFor(`document.querySelector('.dshWmStatus').innerText.includes('未保存')`)
   await clickFile('第2章-v1.md')
@@ -73,7 +102,7 @@ app.whenReady().then(async () => {
   assert.equal(fs.readFileSync(a, 'utf8'), '第一章修改后')
   assert.equal(fs.readFileSync(b, 'utf8'), '第二章原文')
   console.log('PASS UI 文件切换先保存原文，不串稿')
-  await button('v+1')
+  await button('另存为新版')
   await waitFor(`document.querySelector('.dshWmDocName')?.textContent.includes('v2')`)
   assert.equal(fs.readFileSync(path.join(project, 'draft/novel/第2章-v2.md'), 'utf8'), '第二章原文')
   await clickFile('第2章-v1.md')
@@ -93,10 +122,30 @@ app.whenReady().then(async () => {
   await button('保存')
   await waitFor(`document.querySelector('[role="alert"]')?.textContent.includes('别处修改')`)
   assert.equal(fs.readFileSync(a, 'utf8'), '外部稿不可覆盖')
-  await button('v+1')
+  // 保存失败必须常驻可见并给出路：状态条不再是含糊的「未保存」，失败行带着重试与另存
+  await waitFor(`document.querySelector('[data-wm-doc-alert]')?.textContent.includes('别处修改')`)
+  assert.equal(await evaluate(`document.querySelector('[data-wm-save-label]').textContent`), '保存失败')
+  assert.equal(await evaluate(`document.querySelector('[data-wm-save-dot]').getAttribute('data-wm-save-dot')`), 'error')
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-wm-doc-alert] button')).some(e=>e.textContent==='重试保存')`), '失败行缺「重试保存」')
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('.dshWmBar button')).some(e=>e.textContent==='重试保存')`), '顶栏保存键应转为「重试保存」')
+  await button('重试保存')
+  await sleep(400)
+  assert.equal(fs.readFileSync(a, 'utf8'), '外部稿不可覆盖', '重试不得覆盖外部稿')
+  assert.equal(await evaluate(`document.querySelector('.dshWmEditor').value`), '发生冲突的编辑器稿', '重试失败仍要留着作者的字')
+  assert.equal(await evaluate(`document.querySelector('[data-wm-save-label]').textContent`), '保存失败')
+  await button('另存为新版')
   await waitFor(`document.querySelector('.dshWmDocName')?.textContent.includes('v2')`)
   assert.equal(fs.readFileSync(path.join(project, 'draft/novel/第1章-v2.md'), 'utf8'), '发生冲突的编辑器稿')
   console.log('PASS UI 冲突提示、保全外部稿、另存恢复')
+  // 专注模式把右栏整体收起，此时「AI」按钮不能是按了没反应的死键：点它应退出专注并唤回右栏
+  await button('专注')
+  await waitFor(`document.body.getAttribute('data-writing-focus')==='1'`)
+  await waitFor(`getComputedStyle(document.querySelector('.dshWmSide.is-ai')).display==='none'`)
+  await button('AI')
+  await waitFor(`document.body.getAttribute('data-writing-focus')===null`)
+  await waitFor(`getComputedStyle(document.querySelector('.dshWmSide.is-ai')).display!=='none'`)
+  await waitFor(`document.querySelector('[data-wm-capability="blocked"]')!==null`, '退出专注后伙伴面板应回来')
+  console.log('PASS UI 专注模式下 AI 按钮退出专注并唤回右栏')
   await sleep(250)
   fs.writeFileSync(path.join(temp, 'writing-ui.png'), (await win.webContents.capturePage()).toPNG())
   assert.equal(errors.length, 0, errors.join('\n'))

@@ -26,7 +26,10 @@ app.whenReady().then(async () => {
   store.writeConfig({ roots: [{ path: root, default: true }], activeRoot: root, companions: { [project.toLowerCase()]: 'fixture' }, prefs: { ...store.DEFAULT_PREFS, autoSaveMs: 5000 } })
   let handler
   host.apply({ effect: f => f(), webServer: { register: route => { handler = route.handler; return () => {} } } })
-  const modules = path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules')
+  // React 来源：优先仓库 node_modules（devDependencies 已显式声明 react-dom）；
+  // 旧内核运行时（0.1.1 时代 react 内嵌于 dsh-client-ui-trajectory）作回退。
+  const runtimeModules = path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules')
+  const modules = fs.existsSync(path.join(repo, 'node_modules/react-dom/package.json')) ? path.join(repo, 'node_modules') : runtimeModules
   const html = `<!doctype html><meta charset="utf-8"><style>
     :root{--dsw-alias-bg-base:#f7f5ef;--dsw-alias-bg-layer-1:#efede7;--dsw-alias-bg-layer-2:#e6e4dd;--dsw-alias-bg-layer-3:#fff;--dsw-alias-label-primary:#292a26;--dsw-alias-label-secondary:#52554b;--dsw-alias-label-tertiary:#777b6c;--dsw-alias-border-l2:#cfcec4;--dsw-alias-brand-primary:#526d51;--dsw-alias-state-error-primary:#b34636;--dsw-alias-state-success-primary:#426545}
     body{margin:0;font:14px system-ui}#host{padding:20px}

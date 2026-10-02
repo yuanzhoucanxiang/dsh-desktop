@@ -259,7 +259,7 @@ plugin/writing-mode/
 
 ### 仍开放
 
-1. 导出 Compile（Fountain/MD → 拼接或 PDF）\
+1. ~~导出 Compile（Fountain/MD → 拼接或 PDF）~~ **已交付第一刀（2026-09-26，未发布）**：导出成书 —— 勾选/默认最新版按树序拼整本、独占命名 `书名-vN` 永不覆盖原稿、MD 书头 + fountain 题页分页；`POST /compile` + 项目头「成书」面板；PDF/EPUB 排版仍属 M4 不开放\
 2. 台账口径漂移扫描（对照 v5 报告 D 类问题）\
 3. 已有本地知识与联网资料入口；来源边界、引用准确性和匹配质量仍需专项验收\
 4. better-sidebar 可选 Tab\

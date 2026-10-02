@@ -20,6 +20,9 @@ import { httpCoordination } from './coordination-client.js'
 /** 等待对方窗口完成绑定的轮询参数（只用于发现，不授权抢占，见方案 §3.2 末段）。 */
 export const PEER_WAIT = { attempts: 40, intervalMs: 250 }
 
+/** uiWorkspace.replaceMain 需要的 signal：聚焦从不取消，给一个永不 abort 的。 */
+const FOCUS_SIGNAL = new AbortController().signal
+
 export function adapterError(code, message, extra = {}) {
   const err = new Error(message || code)
   err.code = code
@@ -39,6 +42,9 @@ export function createHarnessAdapter(deps = {}) {
     sessions = null,
     workspaces = null,
     connection = null,
+    remoteSession = () => null,
+    uiWorkspace = () => null,
+    conversation = () => null,
     api = null,
     coordination = api ? httpCoordination(api) : null,
     now = () => Date.now(),
@@ -50,33 +56,97 @@ export function createHarnessAdapter(deps = {}) {
   const inflight = new Map()
 
   function capabilities() {
+    const remote = typeof remoteSession === 'function' ? remoteSession() : null
+    const conv = typeof conversation === 'function' ? conversation() : null
+    const modernCreate = has(remote, 'create') && has(workspaces, 'create')
+    const legacyCreate = has(sessions, 'create') && has(workspaces, 'create') && has(connection?.agentPresets, 'select')
     const flags = {
       sessions: Boolean(sessions),
       'sessions.refresh': has(sessions, 'refresh'),
       'sessions.create': has(sessions, 'create'),
       'sessions.open': has(sessions, 'open'),
+      'sessions.retain': has(sessions, 'retain'),
       'sessions.binding': has(sessions, 'binding'),
       'sessions.provideInfo': has(sessions, 'provideInfo'),
+      'sessions.noteAgentPreset': has(sessions, 'noteAgentPreset'),
       'workspaces.create': has(workspaces, 'create'),
       'agentPresets.select': has(connection?.agentPresets, 'select'),
+      'remote.session.create': modernCreate,
+      'conversation.input.shell': has(conv?.input, 'shell'),
       coordination: Boolean(coordination && coordination.claim),
       api: typeof api === 'function',
     }
-    // 硬门槛只列**创建会话**真正需要的能力；读写草稿/打开会话所需的是软缺口（degraded），
+    // 双栈创建：0.1.7 起 workspaces.create（按规范路径幂等）拿到作品目录的工作区，
+    // 再 remote.session.create({workspaceId, agentPreset}) 一把建并绑 preset——必须走 workspaceId，
+    // 用 cwd 建的会话不挂任何工作区，主视图 hero 的输入框会停在 inert（"选择工作区"，0.1.7-rc.2 实测）；
+    // 旧内核走 workspaces.create + sessions.create + agentPresets.select 三步。任一路通即可创建。
+    const createMode = modernCreate ? 'modern' : legacyCreate ? 'legacy' : null
+    // 硬门槛只列**创建会话**真正需要的基础能力；读写草稿/打开会话所需的是软缺口（degraded），
     // 不该阻断"已有会话"的正常使用（2026-09-14 实测：把 sessions.binding 当硬门槛会让
     // 只有 provideInfo 的内核连"采用已有会话"都做不了）。
-    const required = ['sessions', 'sessions.refresh', 'sessions.create', 'workspaces.create', 'agentPresets.select', 'coordination', 'api']
-    const soft = ['sessions.binding', 'sessions.provideInfo', 'sessions.open', 'sessions.noteAgentPreset']
+    const required = ['sessions', 'sessions.refresh', 'coordination', 'api']
     const missing = required.filter((k) => !flags[k])
+    if (!createMode) {
+      // 两条栈的缺口合成一条说清，报错才不会只提旧栈而误导（0.1.7 曾误报 agentPresets.select）
+      missing.push('create:remote.session.create+workspaces.create|sessions.create+workspaces.create+agentPresets.select')
+    }
+    // 输入面（读写草稿/订阅输入态）在 0.1.7 是 conversation.input.shell，旧内核是 sessions.provideInfo；
+    // 任一存在即可，两个都没才报软缺口。
+    const soft = ['sessions.binding', 'sessions.noteAgentPreset']
     const degraded = soft.filter((k) => !flags[k])
+    if (!flags['sessions.provideInfo'] && !flags['conversation.input.shell']) degraded.push('input:sessions.provideInfo|conversation.input.shell')
+    if (!flags['sessions.open'] && !flags['sessions.retain']) degraded.push('sessions.open|retain')
     return {
       flags,
       missing,
       degraded,
+      createMode,
       canCreate: missing.length === 0,
       // 已有会话时能干活的条件（不需要创建能力）：能拿到 store 与输入面
       canSend: Boolean(flags.sessions && flags['sessions.binding'] && flags.api),
     }
+  }
+
+  /**
+   * 聚焦会话（0.1.7 删了 sessions.open）。优先级：
+   *   1. uiWorkspace.openSession —— 公开入口（= replaceMain(id, 内部 signal, 'reveal')）：
+   *      释放旧 mainReference（publishMain 有粘性规则，直接 retain 抢不过它）、
+   *      清掉覆盖主区域的全局面板（'选择工作区' hero）。侧栏点击会话走的就是它；
+   *   2. uiWorkspace.replaceMain(id, signal, 'reveal') —— 旧版没有 openSession 时的等价物。
+   *      注意必须传 'reveal'：'preserve' 不会 layout.selectPanel(null)，全局面板会盖住会话
+   *      （0.1.7 实测主视图停在"选择工作区" hero）；
+   *   3. sessions.retain(id, {source:'mainView'}) —— 没有 uiWorkspace 时的尽力而为，
+   *      由 holder 持有，切换/dispose 时释放（有旧 mainView 持有者时切不动视图，仅保证 scope 活着）；
+   *   4. 旧内核 sessions.open。
+   */
+  function focusSession(id, holder) {
+    if (!id) return false
+    const uiw = typeof uiWorkspace === 'function' ? uiWorkspace() : null
+    if (has(uiw, 'openSession')) {
+      try {
+        uiw.openSession(id)
+        return true
+      } catch { /* 落到 replaceMain/retain/open */ }
+    }
+    if (has(uiw, 'replaceMain')) {
+      try {
+        uiw.replaceMain(id, FOCUS_SIGNAL, 'reveal')
+        return true
+      } catch { /* 落到 retain/open */ }
+    }
+    if (has(sessions, 'retain')) {
+      const ref = sessions.retain(id, { source: 'mainView' })
+      if (holder) {
+        holder.ref?.release?.()
+        holder.ref = ref
+      }
+      return true
+    }
+    if (has(sessions, 'open')) {
+      sessions.open(id)
+      return true
+    }
+    return false
   }
 
   function sessionStoreOf(id) {
@@ -181,6 +251,34 @@ export function createHarnessAdapter(deps = {}) {
     try {
       const prepared = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, prepare: true }) })
       if (!prepared?.ok) throw adapterError(prepared?.error || 'preset-unavailable', '写作伙伴预设不可用：' + (prepared?.error || 'unknown'))
+      if (caps.createMode === 'modern') {
+        // 0.1.7：workspaces.create 按规范路径幂等（同路径复用已有工作区，不改标题），
+        // remote.session.create({workspaceId, agentPreset}) 创建即绑 preset（免 select、
+        // 免 agent-preset/locked 竞态），host 同时把 cwd 定在工作区路径并 attach。
+        const workspace = await workspaces.create({ path: binding.project })
+        workspaceId = workspace?.workspaceId || null
+        if (!workspaceId) throw adapterError('workspace-create-empty', '工作区创建未返回标识')
+        const remote = remoteSession()
+        const created = await remote.create({ workspaceId, agentPreset: prepared.preset })
+        if (!created?.ok) {
+          // 信封式明确拒绝（如 agent-preset/not-found）：会话确定没建成——不像抛错那样
+          // "结果未知"，不进 uncertain；走确定失败（外层释放协调，作者可重试）。
+          throw adapterError(created?.error?.code || 'session-create-refused', created?.error?.message || '内核拒绝创建会话', { definiteRefusal: true })
+        }
+        sessionId = created.value?.sessionId || null
+        if (!sessionId) throw adapterError('session-create-empty', '会话创建未返回标识')
+        const saved = await api('companion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, sessionId }) })
+        if (!saved?.ok) throw adapterError(saved?.error || 'binding-save-failed', '会话已创建，但作品关联未保存：' + (saved?.error || 'unknown'))
+        if (has(sessions, 'refresh')) await sessions.refresh()
+        const confirmed = await coordination.confirm({ path, operationToken: operationId, sessionId, workspaceId })
+        if (confirmed.outcome !== 'bound') {
+          // 会话确实建好了，只有协调记录没写上：进 uncertain（可继续关联），**不重建**
+          return { status: 'uncertain', sessionId, workspaceId, record: confirmed.record, wrongness: 'confirm-' + confirmed.outcome, outcome: 'created-unconfirmed' }
+        }
+        const focusHolder = { ref: null }
+        focusSession(sessionId, focusHolder)
+        return { status: 'ready', sessionId, workspaceId, record: confirmed.record, outcome: 'created', focusRef: focusHolder.ref }
+      }
       const workspace = await workspaces.create({ path: binding.project })
       workspaceId = workspace?.workspaceId || null
       if (!workspaceId) throw adapterError('workspace-create-empty', '工作区创建未返回标识')
@@ -205,7 +303,7 @@ export function createHarnessAdapter(deps = {}) {
         await coordination.uncertain({ path, operationToken: operationId, sessionId, workspaceId, reason: code })
         return { status: 'uncertain', sessionId, workspaceId, record: await readRecord(path), wrongness: code, error: err.message, outcome: 'created-partially' }
       }
-      if (workspaceId) {
+      if (workspaceId && !err?.definiteRefusal) {
         // workspace 已建、session 结果不明（H04）：部分绑定 + uncertain，不假装 bound
         await coordination.confirm({ path, operationToken: operationId, workspaceId })
         await coordination.uncertain({ path, operationToken: operationId, workspaceId, reason: code })
@@ -258,7 +356,10 @@ export function createHarnessAdapter(deps = {}) {
     const listeners = new Set()
     const nativeUnsubs = []
     let attachedSessionId = null
+    let attachedInputId = null
     let disposed = false
+    // retain 退路下持有的 mainView 留存（uiWorkspace 路径由 UI 自己持有，不在此列）
+    const focusHolder = { ref: bound.focusRef || null }
 
     const currentSession = () => sessionStoreOf(state.sessionId)
     const currentInfo = () => {
@@ -268,6 +369,34 @@ export function createHarnessAdapter(deps = {}) {
       } catch {
         return null
       }
+    }
+    /**
+     * 0.1.7 输入面：conversation.input.shell(sessionId)。shell(id) 要求该会话已有 retained
+     * binding（没有会抛 "resolved no binding"），所以先查 sessions.binding；
+     * binding 出现前（创建后尚未聚焦）返回 null，调用方按"输入面未就绪"处理。
+     */
+    const inputShell = () => {
+      if (!state.sessionId || !has(sessions, 'binding')) return null
+      const conv = typeof conversation === 'function' ? conversation() : null
+      if (!has(conv?.input, 'shell')) return null
+      try {
+        if (!sessions.binding(state.sessionId)) return null
+        return conv.input.shell(state.sessionId) || null
+      } catch {
+        return null
+      }
+    }
+    /**
+     * 统一的输入态快照：0.1.7 走 input shell（draft/claim/attachmentIds），
+     * 旧内核走 provideInfo 的 hooks.input（draft/claim/imageIds）。缺通道时返回 null。
+     */
+    const currentInputSnap = () => {
+      const shell = inputShell()
+      if (shell) {
+        const snap = shell.state?.getSnapshot?.() || null
+        return snap ? { draft: snap.draft ?? '', claim: snap.claim ?? null, imageIds: snap.attachmentIds || [] } : null
+      }
+      return currentInfo()?.hooks?.input?.getSnapshot?.() || null
     }
 
     function notify() {
@@ -288,11 +417,21 @@ export function createHarnessAdapter(deps = {}) {
     }
 
     function ensureAttached() {
-      if (attachedSessionId === state.sessionId) return
-      attachedSessionId = state.sessionId
+      if (attachedSessionId !== state.sessionId) {
+        attachedSessionId = state.sessionId
+        attachedInputId = null
+        if (state.sessionId) attach(currentSession())
+      }
       if (!state.sessionId) return
-      attach(currentSession())
-      attach(currentInfo()?.hooks?.input)
+      // 输入面可能晚于会话 store 出现（shell 以 retained binding 为前提，binding 要聚焦后才建立），
+      // 所以每次 getSnapshot/subscribe 都补挂一次，而不是只在换会话那一刻挂。
+      if (attachedInputId !== state.sessionId) {
+        const inputStore = inputShell()?.state || currentInfo()?.hooks?.input || null
+        if (inputStore) {
+          attach(inputStore)
+          attachedInputId = state.sessionId
+        }
+      }
     }
 
     function refreshStatus() {
@@ -310,9 +449,8 @@ export function createHarnessAdapter(deps = {}) {
       ensureAttached()
       refreshStatus()
       const session = currentSession()
-      const info = currentInfo()
       const chatSnap = session?.getSnapshot?.() || null
-      const inputSnap = info?.hooks?.input?.getSnapshot?.() || null
+      const inputSnap = currentInputSnap()
       const caps = capabilities()
       const statusKey = `${state.status}|${state.record?.phase || ''}|${state.record?.version ?? ''}|${state.sessionId || ''}|${state.error || ''}`
       // 指纹用**稳定对象身份**（chat 图）+ 关键标量 + 结构性签名：
@@ -368,10 +506,15 @@ export function createHarnessAdapter(deps = {}) {
     }
 
     function getDraft() {
-      return currentInfo()?.hooks?.input?.getSnapshot?.().draft ?? ''
+      return currentInputSnap()?.draft ?? ''
     }
 
     function setDraft(text) {
+      const shell = inputShell()
+      if (shell && has(shell.actions, 'setDraft')) {
+        shell.actions.setDraft(String(text ?? ''))
+        return true
+      }
       const info = currentInfo()
       const actions = info?.props?.inputActions
       if (!actions?.setDraft) throw adapterError('input-not-ready', '原生输入框尚未就绪')
@@ -463,14 +606,15 @@ export function createHarnessAdapter(deps = {}) {
 
     /** 打开完整会话：只切焦点，不创建、不改绑定。 */
     function openFullSession() {
-      if (!state.sessionId || !has(sessions, 'open')) throw adapterError('open-unavailable', '没有可打开的会话')
-      sessions.open(state.sessionId)
+      if (!state.sessionId || !focusSession(state.sessionId, focusHolder)) throw adapterError('open-unavailable', '没有可打开的会话')
       return { ok: true, sessionId: state.sessionId }
     }
 
     /** 释放订阅（不取消模型任务、不删会话、不动协调记录）。 */
     function dispose() {
       disposed = true
+      focusHolder.ref?.release?.()
+      focusHolder.ref = null
       for (const off of nativeUnsubs.splice(0)) {
         try {
           off()

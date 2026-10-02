@@ -2093,8 +2093,8 @@ __export(entry_exports, {
   subscribeDraftStatus: () => subscribeDraftStatus
 });
 module.exports = __toCommonJS(entry_exports);
-var react7 = __toESM(require("react"), 1);
-var jsx16 = __toESM(require("react/jsx-runtime"), 1);
+var react9 = __toESM(require("react"), 1);
+var jsx22 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/shared/editor-session.js
 function createEditorSession(io, recovered) {
@@ -2831,6 +2831,11 @@ var CSS = [
   ".dshWmActivity{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:12px;line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}",
   ".dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-size:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:12px;color:var(--dsw-alias-label-secondary);padding:10px 0;}",
   ".dshWmCompanionError{padding:10px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;max-height:120px;overflow:auto;}",
+  /* 内核能力缺口：连不上=警示底色常驻条，受限=一行 Quiet 灰字，都不该是「按钮自己灰掉」 */
+  ".dshWmCapability{flex:none;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.6;overflow-wrap:anywhere;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmCapability.is-blocked{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,var(--dsw-alias-border-l2));}",
+  ".dshWmCapability strong{font-weight:600;}",
+  ".dshWmCapabilityNote{opacity:.8;}",
   ".dshWmMemory{border-bottom:1px solid var(--dsw-alias-border-l2);max-height:220px;display:flex;flex-direction:column;}",
   ".dshWmMemoryList{overflow:auto;flex:1;padding:0 10px 8px;}",
   ".dshWmMemoryItem{padding:6px 8px;margin-bottom:6px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);font-size:12px;}",
@@ -2935,7 +2940,7 @@ var CSS = [
   "  color:var(--dsw-alias-brand-primary);",
   "}",
   ".dshWmVer.is-hist{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmMain{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}",
+  ".dshWmMain{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;}",
   ".dshWmDocChrome{flex:none;padding:24px 32px 0;max-width:820px;margin:0 auto;width:100%;box-sizing:border-box;}",
   ".dshWmPathRow{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;}",
   ".dshWmPathText{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
@@ -2980,6 +2985,12 @@ var CSS = [
   ".dshWmStatus .dot.is-dirty{background:var(--dsw-alias-state-warning-primary,#c9a227);}",
   ".dshWmStatus .dot.is-saved{background:var(--dsw-alias-state-success-primary);}",
   ".dshWmStatusSep{opacity:.35;}",
+  ".dshWmStatus .dot.is-error{background:var(--dsw-alias-state-error-primary);}",
+  ".dshWmStatusError{color:var(--dsw-alias-state-error-primary);font-weight:600;}",
+  /* 保存/读取失败的常驻行：压在状态条上方，带得出路的按钮（重试、另存新版） */
+  ".dshWmDocAlert{flex:none;display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);border-top:1px solid var(--dsw-alias-border-l2);overflow-wrap:anywhere;}",
+  ".dshWmDocAlert>span:first-child{min-width:0;}",
+  ".dshWmDocAlert .dshWmBtn{flex:none;}",
   ".dshWmAiBody{",
   "  flex:1;display:flex;flex-direction:column;min-height:0;",
   "  padding:8px 12px 20px;gap:8px;overflow:auto;",
@@ -3062,7 +3073,49 @@ var CSS = [
   "  line-height:calc(var(--dsh-wm-line-height,1.95) + 0.1);max-width:720px;",
   "}",
   'body[data-writing-focus="1"] .dshWmDocChrome{max-width:720px;}',
-  'html[data-writing-mode] body[data-writing-lib="0"] .dshWmSide:not(.is-ai){display:none;}'
+  'html[data-writing-mode] body[data-writing-lib="0"] .dshWmSide:not(.is-ai){display:none;}',
+  /* 导出成书面板：覆盖中央编辑区（编辑器不卸载），项目操作行 */
+  ".dshWmProjOps{display:flex;align-items:center;gap:6px;margin:0 0 8px;}",
+  ".dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;}",
+  ".dshWmProjOps .dshWmBtn{flex:none;}",
+  ".dshWmExport{",
+  "  position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;min-height:0;",
+  "  background:var(--dsw-alias-bg-base);",
+  "}",
+  ".dshWmExportScroll{flex:1;overflow:auto;padding:24px 32px 40px;}",
+  ".dshWmExportInner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}",
+  ".dshWmExportHead{display:flex;align-items:center;gap:10px;}",
+  ".dshWmExportTitle{font-size:18px;font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmExportField{display:flex;align-items:center;gap:10px;}",
+  ".dshWmExportField .dshWmSearch{flex:1;}",
+  ".dshWmExportLabel{flex:none;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportCheck{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary);cursor:pointer;}",
+  ".dshWmExportCheck input{flex:none;align-self:center;}",
+  ".dshWmExportList{",
+  "  display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto;",
+  "  padding:6px;border-radius:10px;",
+  "  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);",
+  "}",
+  ".dshWmExportRow{",
+  "  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;",
+  "  font-size:12.5px;color:var(--dsw-alias-label-primary);",
+  "}",
+  ".dshWmExportRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
+  ".dshWmExportRow.is-off .dshWmExportRowName{color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportRowName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmExportRowMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  /* 会话列表区（伙伴 tab 顶部折叠区） */
+  ".dshWmCompanionWrap{display:flex;flex-direction:column;flex:1;min-height:0;}",
+  ".dshWmSessList{flex:none;padding:10px 16px 0;display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmSessRows{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px;}",
+  ".dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;border:0;background:none;font:inherit;font-size:12.5px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
+  ".dshWmSessRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
+  ".dshWmSessRow.is-on{background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmSessDot{flex:none;width:14px;text-align:center;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmSessDot.is-live{color:var(--dsw-alias-brand-primary);}",
+  ".dshWmSessName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmSessMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}"
 ].join("\n");
 var TAG = "dsh-writing-mode-css";
 function ensureWritingCss() {
@@ -3089,8 +3142,8 @@ async function api(route, opts, query) {
 }
 
 // plugin/writing-mode/src/client/app/WritingModeApp.js
-var react4 = __toESM(require("react"), 1);
-var jsx10 = __toESM(require("react/jsx-runtime"), 1);
+var react6 = __toESM(require("react"), 1);
+var jsx16 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/adapters/harness/identity.js
 function canonicalProjectKey(input) {
@@ -3161,15 +3214,15 @@ function turnBaseline(session) {
 function turnEvidence(session, body, baseline = null, message = null) {
   const snap = session && typeof session.getSnapshot === "function" ? session.getSnapshot() : null;
   if (!snap) return { accepted: false, queued: false, evidence: "no-session-snapshot" };
-  const norm = (t) => normalizeForMatch(String(t || "").split(REFERENCE_SEPARATOR)[0]);
+  const norm2 = (t) => normalizeForMatch(String(t || "").split(REFERENCE_SEPARATOR)[0]);
   const targets = [];
-  const msg = norm(message);
+  const msg = norm2(message);
   if (msg) targets.push(msg);
-  const whole = norm(body);
+  const whole = norm2(body);
   if (whole && whole !== msg) targets.push(whole);
   if (!targets.length) return { accepted: false, queued: false, evidence: "empty-body" };
   const matches = (text7) => {
-    const t = norm(text7);
+    const t = norm2(text7);
     if (!t) return false;
     return targets.some((want) => t === want || t.startsWith(want) || t.includes(want));
   };
@@ -3242,6 +3295,7 @@ function httpCoordination(api2 = api) {
 
 // plugin/writing-mode/src/client/adapters/harness/adapter.js
 var PEER_WAIT = { attempts: 40, intervalMs: 250 };
+var FOCUS_SIGNAL = new AbortController().signal;
 function adapterError(code4, message, extra = {}) {
   const err = new Error(message || code4);
   err.code = code4;
@@ -3258,6 +3312,9 @@ function createHarnessAdapter(deps = {}) {
     sessions = null,
     workspaces = null,
     connection = null,
+    remoteSession = () => null,
+    uiWorkspace = () => null,
+    conversation = () => null,
     api: api2 = null,
     coordination = api2 ? httpCoordination(api2) : null,
     now = () => Date.now(),
@@ -3267,30 +3324,76 @@ function createHarnessAdapter(deps = {}) {
   } = deps;
   const inflight = /* @__PURE__ */ new Map();
   function capabilities() {
+    const remote = typeof remoteSession === "function" ? remoteSession() : null;
+    const conv = typeof conversation === "function" ? conversation() : null;
+    const modernCreate = has(remote, "create") && has(workspaces, "create");
+    const legacyCreate = has(sessions, "create") && has(workspaces, "create") && has(connection?.agentPresets, "select");
     const flags = {
       sessions: Boolean(sessions),
       "sessions.refresh": has(sessions, "refresh"),
       "sessions.create": has(sessions, "create"),
       "sessions.open": has(sessions, "open"),
+      "sessions.retain": has(sessions, "retain"),
       "sessions.binding": has(sessions, "binding"),
       "sessions.provideInfo": has(sessions, "provideInfo"),
+      "sessions.noteAgentPreset": has(sessions, "noteAgentPreset"),
       "workspaces.create": has(workspaces, "create"),
       "agentPresets.select": has(connection?.agentPresets, "select"),
+      "remote.session.create": modernCreate,
+      "conversation.input.shell": has(conv?.input, "shell"),
       coordination: Boolean(coordination && coordination.claim),
       api: typeof api2 === "function"
     };
-    const required = ["sessions", "sessions.refresh", "sessions.create", "workspaces.create", "agentPresets.select", "coordination", "api"];
-    const soft = ["sessions.binding", "sessions.provideInfo", "sessions.open", "sessions.noteAgentPreset"];
+    const createMode = modernCreate ? "modern" : legacyCreate ? "legacy" : null;
+    const required = ["sessions", "sessions.refresh", "coordination", "api"];
     const missing = required.filter((k) => !flags[k]);
+    if (!createMode) {
+      missing.push("create:remote.session.create+workspaces.create|sessions.create+workspaces.create+agentPresets.select");
+    }
+    const soft = ["sessions.binding", "sessions.noteAgentPreset"];
     const degraded = soft.filter((k) => !flags[k]);
+    if (!flags["sessions.provideInfo"] && !flags["conversation.input.shell"]) degraded.push("input:sessions.provideInfo|conversation.input.shell");
+    if (!flags["sessions.open"] && !flags["sessions.retain"]) degraded.push("sessions.open|retain");
     return {
       flags,
       missing,
       degraded,
+      createMode,
       canCreate: missing.length === 0,
       // 已有会话时能干活的条件（不需要创建能力）：能拿到 store 与输入面
       canSend: Boolean(flags.sessions && flags["sessions.binding"] && flags.api)
     };
+  }
+  function focusSession(id, holder) {
+    if (!id) return false;
+    const uiw = typeof uiWorkspace === "function" ? uiWorkspace() : null;
+    if (has(uiw, "openSession")) {
+      try {
+        uiw.openSession(id);
+        return true;
+      } catch {
+      }
+    }
+    if (has(uiw, "replaceMain")) {
+      try {
+        uiw.replaceMain(id, FOCUS_SIGNAL, "reveal");
+        return true;
+      } catch {
+      }
+    }
+    if (has(sessions, "retain")) {
+      const ref = sessions.retain(id, { source: "mainView" });
+      if (holder) {
+        holder.ref?.release?.();
+        holder.ref = ref;
+      }
+      return true;
+    }
+    if (has(sessions, "open")) {
+      sessions.open(id);
+      return true;
+    }
+    return false;
   }
   function sessionStoreOf(id) {
     if (!id || !has(sessions, "binding")) return null;
@@ -3378,6 +3481,28 @@ function createHarnessAdapter(deps = {}) {
     try {
       const prepared = await api2("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, prepare: true }) });
       if (!prepared?.ok) throw adapterError(prepared?.error || "preset-unavailable", "写作伙伴预设不可用：" + (prepared?.error || "unknown"));
+      if (caps.createMode === "modern") {
+        const workspace2 = await workspaces.create({ path: binding.project });
+        workspaceId = workspace2?.workspaceId || null;
+        if (!workspaceId) throw adapterError("workspace-create-empty", "工作区创建未返回标识");
+        const remote = remoteSession();
+        const created = await remote.create({ workspaceId, agentPreset: prepared.preset });
+        if (!created?.ok) {
+          throw adapterError(created?.error?.code || "session-create-refused", created?.error?.message || "内核拒绝创建会话", { definiteRefusal: true });
+        }
+        sessionId = created.value?.sessionId || null;
+        if (!sessionId) throw adapterError("session-create-empty", "会话创建未返回标识");
+        const saved2 = await api2("companion", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: path2, sessionId }) });
+        if (!saved2?.ok) throw adapterError(saved2?.error || "binding-save-failed", "会话已创建，但作品关联未保存：" + (saved2?.error || "unknown"));
+        if (has(sessions, "refresh")) await sessions.refresh();
+        const confirmed2 = await coordination.confirm({ path: path2, operationToken: operationId, sessionId, workspaceId });
+        if (confirmed2.outcome !== "bound") {
+          return { status: "uncertain", sessionId, workspaceId, record: confirmed2.record, wrongness: "confirm-" + confirmed2.outcome, outcome: "created-unconfirmed" };
+        }
+        const focusHolder = { ref: null };
+        focusSession(sessionId, focusHolder);
+        return { status: "ready", sessionId, workspaceId, record: confirmed2.record, outcome: "created", focusRef: focusHolder.ref };
+      }
       const workspace = await workspaces.create({ path: binding.project });
       workspaceId = workspace?.workspaceId || null;
       if (!workspaceId) throw adapterError("workspace-create-empty", "工作区创建未返回标识");
@@ -3401,7 +3526,7 @@ function createHarnessAdapter(deps = {}) {
         await coordination.uncertain({ path: path2, operationToken: operationId, sessionId, workspaceId, reason: code4 });
         return { status: "uncertain", sessionId, workspaceId, record: await readRecord(path2), wrongness: code4, error: err.message, outcome: "created-partially" };
       }
-      if (workspaceId) {
+      if (workspaceId && !err?.definiteRefusal) {
         await coordination.confirm({ path: path2, operationToken: operationId, workspaceId });
         await coordination.uncertain({ path: path2, operationToken: operationId, workspaceId, reason: code4 });
         return { status: "uncertain", sessionId: null, workspaceId, record: await readRecord(path2), wrongness: code4, error: err.message, outcome: "workspace-only" };
@@ -3445,7 +3570,9 @@ function createHarnessAdapter(deps = {}) {
     const listeners = /* @__PURE__ */ new Set();
     const nativeUnsubs = [];
     let attachedSessionId = null;
+    let attachedInputId = null;
     let disposed = false;
+    const focusHolder = { ref: bound.focusRef || null };
     const currentSession = () => sessionStoreOf(state.sessionId);
     const currentInfo = () => {
       if (!state.sessionId || !has(sessions, "provideInfo")) return null;
@@ -3454,6 +3581,25 @@ function createHarnessAdapter(deps = {}) {
       } catch {
         return null;
       }
+    };
+    const inputShell = () => {
+      if (!state.sessionId || !has(sessions, "binding")) return null;
+      const conv = typeof conversation === "function" ? conversation() : null;
+      if (!has(conv?.input, "shell")) return null;
+      try {
+        if (!sessions.binding(state.sessionId)) return null;
+        return conv.input.shell(state.sessionId) || null;
+      } catch {
+        return null;
+      }
+    };
+    const currentInputSnap = () => {
+      const shell = inputShell();
+      if (shell) {
+        const snap = shell.state?.getSnapshot?.() || null;
+        return snap ? { draft: snap.draft ?? "", claim: snap.claim ?? null, imageIds: snap.attachmentIds || [] } : null;
+      }
+      return currentInfo()?.hooks?.input?.getSnapshot?.() || null;
     };
     function notify() {
       if (disposed) return;
@@ -3471,11 +3617,19 @@ function createHarnessAdapter(deps = {}) {
       if (typeof off === "function") nativeUnsubs.push(off);
     }
     function ensureAttached() {
-      if (attachedSessionId === state.sessionId) return;
-      attachedSessionId = state.sessionId;
+      if (attachedSessionId !== state.sessionId) {
+        attachedSessionId = state.sessionId;
+        attachedInputId = null;
+        if (state.sessionId) attach2(currentSession());
+      }
       if (!state.sessionId) return;
-      attach2(currentSession());
-      attach2(currentInfo()?.hooks?.input);
+      if (attachedInputId !== state.sessionId) {
+        const inputStore = inputShell()?.state || currentInfo()?.hooks?.input || null;
+        if (inputStore) {
+          attach2(inputStore);
+          attachedInputId = state.sessionId;
+        }
+      }
     }
     function refreshStatus() {
       if (state.status === "ready") return;
@@ -3488,9 +3642,8 @@ function createHarnessAdapter(deps = {}) {
       ensureAttached();
       refreshStatus();
       const session = currentSession();
-      const info = currentInfo();
       const chatSnap = session?.getSnapshot?.() || null;
-      const inputSnap = info?.hooks?.input?.getSnapshot?.() || null;
+      const inputSnap = currentInputSnap();
       const caps = capabilities();
       const statusKey = `${state.status}|${state.record?.phase || ""}|${state.record?.version ?? ""}|${state.sessionId || ""}|${state.error || ""}`;
       const queueSig = (chatSnap?.queue || []).map((row) => row?.id ?? "").join("|");
@@ -3540,9 +3693,14 @@ function createHarnessAdapter(deps = {}) {
       return () => listeners.delete(fn);
     }
     function getDraft() {
-      return currentInfo()?.hooks?.input?.getSnapshot?.().draft ?? "";
+      return currentInputSnap()?.draft ?? "";
     }
     function setDraft(text7) {
+      const shell = inputShell();
+      if (shell && has(shell.actions, "setDraft")) {
+        shell.actions.setDraft(String(text7 ?? ""));
+        return true;
+      }
       const info = currentInfo();
       const actions = info?.props?.inputActions;
       if (!actions?.setDraft) throw adapterError("input-not-ready", "原生输入框尚未就绪");
@@ -3607,12 +3765,13 @@ function createHarnessAdapter(deps = {}) {
       return { ok: true, sessionId: state.sessionId };
     }
     function openFullSession() {
-      if (!state.sessionId || !has(sessions, "open")) throw adapterError("open-unavailable", "没有可打开的会话");
-      sessions.open(state.sessionId);
+      if (!state.sessionId || !focusSession(state.sessionId, focusHolder)) throw adapterError("open-unavailable", "没有可打开的会话");
       return { ok: true, sessionId: state.sessionId };
     }
     function dispose() {
       disposed = true;
+      focusHolder.ref?.release?.();
+      focusHolder.ref = null;
       for (const off of nativeUnsubs.splice(0)) {
         try {
           off();
@@ -3779,15 +3938,30 @@ function createHarnessAdapter(deps = {}) {
 var sessionsRef = null;
 var connectionRef = null;
 var workspacesRef = null;
+var ctxRef = null;
 var adapterRef = null;
 function bindHarness(ctx) {
   sessionsRef = ctx.sessions || null;
   connectionRef = ctx.connection?.api || null;
   workspacesRef = ctx.workspaces || null;
+  ctxRef = ctx || null;
   adapterRef = null;
 }
 function harnessSessions() {
   return sessionsRef;
+}
+function tryService(name3) {
+  try {
+    return typeof ctxRef?.get === "function" ? ctxRef.get(name3) || null : null;
+  } catch {
+    return null;
+  }
+}
+function harnessRemoteSession() {
+  return tryService("remote.session");
+}
+function harnessConversation() {
+  return tryService("conversation");
 }
 function harnessAdapter() {
   if (!adapterRef) {
@@ -3795,6 +3969,9 @@ function harnessAdapter() {
       sessions: sessionsRef,
       workspaces: workspacesRef,
       connection: connectionRef ? { agentPresets: connectionRef.agentPresets } : null,
+      remoteSession: harnessRemoteSession,
+      uiWorkspace: () => tryService("uiWorkspace"),
+      conversation: harnessConversation,
       api
     });
   }
@@ -5358,8 +5535,8 @@ ${c.detail}
 }
 
 // plugin/writing-mode/src/client/features/companion/index.js
-var react3 = __toESM(require("react"), 1);
-var jsx8 = __toESM(require("react/jsx-runtime"), 1);
+var react4 = __toESM(require("react"), 1);
+var jsx10 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/features/companion/CompanionMessage.js
 var import_react2 = require("react");
@@ -7000,11 +7177,11 @@ function addChildren(props, children) {
     }
   }
 }
-function productionCreate(_, jsx17, jsxs5) {
+function productionCreate(_, jsx23, jsxs8) {
   return create2;
   function create2(_2, type, props, key) {
     const isStaticChildren = Array.isArray(props.children);
-    const fn = isStaticChildren ? jsxs5 : jsx17;
+    const fn = isStaticChildren ? jsxs8 : jsx23;
     return key ? fn(type, props, key) : fn(type, props);
   }
 }
@@ -13822,10 +13999,10 @@ var VFile = class {
    * @returns {undefined}
    *   Nothing.
    */
-  set basename(basename2) {
-    assertNonEmpty(basename2, "basename");
-    assertPart(basename2, "basename");
-    this.path = minpath.join(this.dirname || "", basename2);
+  set basename(basename3) {
+    assertNonEmpty(basename3, "basename");
+    assertPart(basename3, "basename");
+    this.path = minpath.join(this.dirname || "", basename3);
   }
   /**
    * Get the parent path (example: `'~'`).
@@ -18097,103 +18274,251 @@ var CompanionMessage = (0, import_react2.memo)(function CompanionMessage2({ text
   });
 });
 
+// plugin/writing-mode/src/client/features/companion/SessionListSection.js
+var react3 = __toESM(require("react"), 1);
+var jsx8 = __toESM(require("react/jsx-runtime"), 1);
+var basename2 = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || String(p || "");
+var norm = (p) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+function SessionListSection({ currentPath, onOpenProject }) {
+  const sessions = harnessSessions();
+  const [companions, setCompanions] = react3.useState(null);
+  const [loadError, setLoadError] = react3.useState("");
+  const [retry, setRetry] = react3.useState(0);
+  const [open, setOpen] = react3.useState(false);
+  react3.useEffect(() => {
+    let live = true;
+    setLoadError("");
+    api("config").then((res) => {
+      if (!live) return;
+      if (res?.ok) setCompanions(res.config?.companions || {});
+      else setLoadError(String(res?.error || "unknown"));
+    }).catch((err) => {
+      if (live) setLoadError(err.message || String(err));
+    });
+    return () => {
+      live = false;
+    };
+  }, [retry]);
+  const subscribe = react3.useCallback(
+    (fn) => sessions?.list?.subscribe?.(fn) || (() => {
+    }),
+    [sessions]
+  );
+  const getSnap = react3.useCallback(() => sessions?.list?.getSnapshot?.() || null, [sessions]);
+  const listSnap = react3.useSyncExternalStore(subscribe, getSnap);
+  if (!sessions) {
+    return jsx8.jsx("div", {
+      className: "dshWmAiHint",
+      role: "status",
+      "data-wm-session-list": "unavailable",
+      children: "写作会话列表暂不可用：内核会话服务未挂载。作品与稿件不受影响。"
+    });
+  }
+  if (loadError) {
+    return jsx8.jsxs("div", {
+      className: "dshWmAiHint",
+      role: "status",
+      "data-wm-session-list": "error",
+      children: [
+        "写作会话列表读取失败：" + loadError,
+        jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })
+      ]
+    });
+  }
+  if (!companions) return null;
+  const cur = norm(currentPath);
+  const rows = Object.entries(companions).map(([project, sessionId]) => {
+    const live = listSnap?.byId?.[sessionId] || null;
+    return {
+      project,
+      sessionId,
+      live: Boolean(live),
+      running: Boolean(live?.running),
+      title: live?.title || live?.name || basename2(project),
+      isCurrent: Boolean(cur) && (cur === norm(project) || cur.startsWith(norm(project) + "/"))
+    };
+  }).sort((a, b) => a.project < b.project ? -1 : 1);
+  return jsx8.jsxs("div", {
+    className: "dshWmSessList",
+    "data-wm-session-list": "1",
+    children: [
+      jsx8.jsxs("button", {
+        type: "button",
+        className: "dshWmSecToggle",
+        onClick: () => setOpen((v) => !v),
+        children: [
+          jsx8.jsx("span", { children: (open ? "▾ " : "▸ ") + "写作会话" }, "t"),
+          jsx8.jsx("span", { className: "dshWmSecBadge", children: String(rows.length) }, "b")
+        ]
+      }),
+      open ? jsx8.jsx("div", {
+        className: "dshWmSessRows",
+        children: rows.length ? rows.map(
+          (row) => jsx8.jsxs("button", {
+            type: "button",
+            className: "dshWmSessRow" + (row.isCurrent ? " is-on" : ""),
+            "data-wm-session-row": row.sessionId,
+            title: row.project,
+            onClick: () => onOpenProject?.(row.project),
+            children: [
+              jsx8.jsx("span", {
+                className: "dshWmSessDot" + (row.live ? " is-live" : ""),
+                children: row.running ? "●" : row.live ? "•" : "○"
+              }),
+              jsx8.jsx("span", { className: "dshWmSessName", children: row.title }),
+              jsx8.jsx("span", {
+                className: "dshWmSessMeta",
+                children: row.live ? row.running ? "进行中" : "在线" : "已关闭"
+              })
+            ]
+          }, row.sessionId)
+        ) : jsx8.jsx("div", { className: "dshWmAiHint", children: "还没有作品绑定过写作伙伴。" })
+      }, "rows") : null
+    ]
+  });
+}
+
+// plugin/writing-mode/src/client/features/companion/capability-notice.js
+var HARD_REASON = {
+  sessions: "内核会话服务未挂载",
+  "sessions.refresh": "读不到内核的会话列表",
+  coordination: "写作模式的本机服务没有响应",
+  api: "写作模式的本机服务没有响应"
+};
+var CREATE_REASON = "当前内核没有创建写作伙伴会话的通道，已有会话仍可继续";
+var SOFT_REASON = {
+  "sessions.binding": "读不到原生会话的输入面",
+  "input:sessions.provideInfo|conversation.input.shell": "原生输入框的读写通道不可用，草稿只存在写作台本地",
+  "sessions.open|retain": "无法把主视图切到完整会话"
+};
+var push2 = (list4, text7) => {
+  if (text7 && !list4.includes(text7)) list4.push(text7);
+};
+function companionCapability(caps) {
+  const flags = caps && caps.flags || {};
+  const missing = caps && caps.missing || [];
+  const degraded = caps && caps.degraded || [];
+  const canSend = Boolean(caps && caps.canSend);
+  const blocked = [];
+  if (!flags.sessions) push2(blocked, HARD_REASON.sessions);
+  else if (!flags["sessions.binding"]) push2(blocked, SOFT_REASON["sessions.binding"]);
+  if (!flags.api) push2(blocked, HARD_REASON.api);
+  if (!flags.coordination) push2(blocked, HARD_REASON.coordination);
+  const limited = [];
+  for (const key of missing) {
+    if (String(key).startsWith("create:")) push2(limited, CREATE_REASON);
+    else push2(limited, HARD_REASON[key]);
+  }
+  for (const key of degraded) push2(limited, SOFT_REASON[key]);
+  const level = !canSend ? "blocked" : limited.length ? "limited" : "ok";
+  return {
+    level,
+    canSend,
+    reasons: level === "blocked" ? blocked : level === "limited" ? limited : [],
+    headline: level === "blocked" ? "写作伙伴暂时连不上内核" : level === "limited" ? "可以继续聊，部分能力受限" : "",
+    // 只有连不上的时候才需要安抚「写下来的东西不会丢」——草稿确实另有本地存档。
+    note: level === "blocked" ? "这里写下的想法会存进本地草稿，伙伴恢复后可以直接发送。" : ""
+  };
+}
+
 // plugin/writing-mode/src/client/features/companion/index.js
 var emptyCompanionSnapshot = Object.freeze({});
 var noSubscribe = () => () => {
 };
 var emptySnapshot = () => emptyCompanionSnapshot;
 function useCompanionStore(store) {
-  const subscribe = react3.useCallback((fn) => store ? store.subscribe(fn) : noSubscribe(), [store]);
-  const snapshot = react3.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store]);
-  return react3.useSyncExternalStore(subscribe, snapshot);
+  const subscribe = react4.useCallback((fn) => store ? store.subscribe(fn) : noSubscribe(), [store]);
+  const snapshot = react4.useCallback(() => store ? store.getSnapshot() : emptySnapshot(), [store]);
+  return react4.useSyncExternalStore(subscribe, snapshot);
 }
 function companionRows(snapshot) {
   return Array.isArray(snapshot?.messages) ? snapshot.messages : [];
 }
 function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect }) {
   const rows = companionRows(snapshot);
-  const scroll = react3.useRef(null);
-  const follow = react3.useRef(true);
-  react3.useLayoutEffect(() => {
+  const scroll = react4.useRef(null);
+  const follow = react4.useRef(true);
+  react4.useLayoutEffect(() => {
     if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [snapshot]);
-  return jsx8.jsxs("div", { className: "dshWmConversation", ref: scroll, onScroll: (e) => {
+  return jsx10.jsxs("div", { className: "dshWmConversation", ref: scroll, onScroll: (e) => {
     const el = e.currentTarget;
     follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 70;
   }, children: [
-    snapshot.hasMore ? jsx8.jsx("button", { className: "dshWmQuiet", onClick: onFull, children: "查看更早的对话 ↗" }) : null,
-    !rows.length ? jsx8.jsxs("div", { className: "dshWmCompanionEmpty", children: [
-      jsx8.jsx("span", { className: "dshWmCompanionMark", children: "✦" }),
-      jsx8.jsx("h3", { children: "故事，慢慢聊。" }),
-      jsx8.jsx("p", { children: "一个人物、一段卡住的情节，\n或一个还没成形的念头。" })
-    ] }) : rows.map((row) => row.kind === "detail" ? jsx8.jsxs("details", { className: "dshWmActivity", children: [
-      jsx8.jsx("summary", { children: row.text }),
-      jsx8.jsx("pre", { children: JSON.stringify(row.detail, null, 2) })
-    ] }, row.key) : jsx8.jsxs("article", { className: "dshWmMessage is-" + row.kind + (worldSelectedIds?.includes(row.key) ? " is-world-selected" : ""), children: [
-      jsx8.jsx("span", { className: "dshWmMessageWho", children: row.kind === "user" ? "你" : "写作伙伴" }),
-      jsx8.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
-      row.reference ? jsx8.jsxs("details", { className: "dshWmActivity", children: [jsx8.jsx("summary", { children: "引用的稿件" }), jsx8.jsx("pre", { children: row.reference })] }) : null,
-      row.kind === "assistant" && onCandidate ? jsx8.jsx("button", {
+    snapshot.hasMore ? jsx10.jsx("button", { className: "dshWmQuiet", onClick: onFull, children: "查看更早的对话 ↗" }) : null,
+    !rows.length ? jsx10.jsxs("div", { className: "dshWmCompanionEmpty", children: [
+      jsx10.jsx("span", { className: "dshWmCompanionMark", children: "✦" }),
+      jsx10.jsx("h3", { children: "故事，慢慢聊。" }),
+      jsx10.jsx("p", { children: "一个人物、一段卡住的情节，\n或一个还没成形的念头。" })
+    ] }) : rows.map((row) => row.kind === "detail" ? jsx10.jsxs("details", { className: "dshWmActivity", children: [
+      jsx10.jsx("summary", { children: row.text }),
+      jsx10.jsx("pre", { children: JSON.stringify(row.detail, null, 2) })
+    ] }, row.key) : jsx10.jsxs("article", { className: "dshWmMessage is-" + row.kind + (worldSelectedIds?.includes(row.key) ? " is-world-selected" : ""), children: [
+      jsx10.jsx("span", { className: "dshWmMessageWho", children: row.kind === "user" ? "你" : "写作伙伴" }),
+      jsx10.jsx(CompanionMessage, { text: row.text, kind: row.kind }),
+      row.reference ? jsx10.jsxs("details", { className: "dshWmActivity", children: [jsx10.jsx("summary", { children: "引用的稿件" }), jsx10.jsx("pre", { children: row.reference })] }) : null,
+      row.kind === "assistant" && onCandidate ? jsx10.jsx("button", {
         className: "dshWmQuiet dshWmMessageAction",
         "data-wm-candidate": row.key,
         onClick: () => onCandidate({ text: row.text, messageId: row.key }),
         children: "记为候选"
       }) : null,
-      onToggleWorldSelect ? jsx8.jsx("button", {
+      onToggleWorldSelect ? jsx10.jsx("button", {
         className: "dshWmQuiet dshWmMessageAction" + (worldSelectedIds?.includes(row.key) ? " is-on" : ""),
         onClick: () => onToggleWorldSelect({ id: row.key, role: row.kind === "user" ? "author" : "assistant", text: row.text }),
         children: worldSelectedIds?.includes(row.key) ? "✓ 整理范围" : "选入整理"
       }) : null
     ] }, row.key)),
-    (snapshot.queue || []).map((row) => jsx8.jsx("div", { className: "dshWmActivity", children: "等待回复后发送 · " + (row.text || row.preview || "消息") }, row.id)),
-    (snapshot.pending || []).map((wait) => jsx8.jsxs("div", { className: "dshWmRequest", children: [
-      jsx8.jsx("strong", { children: wait.kind === "approval" ? "有一项操作需要你授权" : "写作伙伴有个问题想确认" }),
-      jsx8.jsx("button", { className: "dshWmQuiet", onClick: onFull, children: "查看并处理 ↗" })
+    (snapshot.queue || []).map((row) => jsx10.jsx("div", { className: "dshWmActivity", children: "等待回复后发送 · " + (row.text || row.preview || "消息") }, row.id)),
+    (snapshot.pending || []).map((wait) => jsx10.jsxs("div", { className: "dshWmRequest", children: [
+      jsx10.jsx("strong", { children: wait.kind === "approval" ? "有一项操作需要你授权" : "写作伙伴有个问题想确认" }),
+      jsx10.jsx("button", { className: "dshWmQuiet", onClick: onFull, children: "查看并处理 ↗" })
     ] }, wait.key)),
-    snapshot.running ? jsx8.jsx("div", { className: "dshWmThinking", role: "status", children: "正在回应…" }) : null
+    snapshot.running ? jsx10.jsx("div", { className: "dshWmThinking", role: "status", children: "正在回应…" }) : null
   ] });
 }
 function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit }) {
-  const sessions = harnessSessions();
   const adapter = harnessAdapter();
-  const [binding, setBinding] = react3.useState(initialBinding);
+  const capability = companionCapability(adapter.capabilities());
+  const capabilityText = capability.reasons.length ? capability.headline + "：" + capability.reasons.join("；") : capability.headline;
+  const [binding, setBinding] = react4.useState(initialBinding);
   const project = binding.project;
   const cached = companionDrafts.get(project) || { text: "", reference: null };
-  const [localDraft, setLocalDraft] = react3.useState(cached.text);
-  const [reference, setReference] = react3.useState(cached.reference);
-  const [busy, setBusy] = react3.useState(false);
-  const [error, setError] = react3.useState("");
-  const [memOpen, setMemOpen] = react3.useState(false);
-  const [candidate, setCandidate] = react3.useState(null);
-  const [draftCandidates, setDraftCandidates] = react3.useState([]);
-  const [previewCandidate, setPreviewCandidate] = react3.useState(null);
-  const [contextOpen, setContextOpen] = react3.useState(false);
-  const [includeMemory, setIncludeMemory] = react3.useState(true);
-  const [pinned, setPinned] = react3.useState([]);
-  const [excluded, setExcluded] = react3.useState([]);
-  const [memoryItems, setMemoryItems] = react3.useState([]);
-  const [memoryMeta, setMemoryMeta] = react3.useState({ revision: null, etag: null, ok: true, error: "" });
-  const [memoryBlock, setMemoryBlock] = react3.useState(null);
-  const [notice, setNotice] = react3.useState("");
-  const [worldSelection, setWorldSelection] = react3.useState([]);
-  const [worldStatus, setWorldStatus] = react3.useState(null);
-  const alive = react3.useRef(true);
-  const sending = react3.useRef(false);
+  const [localDraft, setLocalDraft] = react4.useState(cached.text);
+  const [reference, setReference] = react4.useState(cached.reference);
+  const [busy, setBusy] = react4.useState(false);
+  const [error, setError] = react4.useState("");
+  const [memOpen, setMemOpen] = react4.useState(false);
+  const [candidate, setCandidate] = react4.useState(null);
+  const [draftCandidates, setDraftCandidates] = react4.useState([]);
+  const [previewCandidate, setPreviewCandidate] = react4.useState(null);
+  const [contextOpen, setContextOpen] = react4.useState(false);
+  const [includeMemory, setIncludeMemory] = react4.useState(true);
+  const [pinned, setPinned] = react4.useState([]);
+  const [excluded, setExcluded] = react4.useState([]);
+  const [memoryItems, setMemoryItems] = react4.useState([]);
+  const [memoryMeta, setMemoryMeta] = react4.useState({ revision: null, etag: null, ok: true, error: "" });
+  const [memoryBlock, setMemoryBlock] = react4.useState(null);
+  const [notice, setNotice] = react4.useState("");
+  const [worldSelection, setWorldSelection] = react4.useState([]);
+  const [worldStatus, setWorldStatus] = react4.useState(null);
+  const alive = react4.useRef(true);
+  const sending = react4.useRef(false);
   const id = binding.sessionId;
-  const [handle2, setHandle] = react3.useState(() => id ? adapter.attach(project, id, { binding }) : null);
-  const opRef = react3.useRef(null);
-  const operationIdRef = react3.useRef(null);
+  const [handle2, setHandle] = react4.useState(() => id ? adapter.attach(project, id, { binding }) : null);
+  const opRef = react4.useRef(null);
+  const operationIdRef = react4.useRef(null);
   const snapshot = useCompanionStore(handle2);
   const draft = handle2 ? snapshot.draft || "" : localDraft;
   const needsFullComposer = Boolean(snapshot.imageIds && snapshot.imageIds.length || snapshot.claim || draft.trimStart().startsWith("/"));
   const recovery = handle2 && snapshot.status !== "ready" ? snapshot.status : null;
-  const setNativeDraft = react3.useCallback((text7) => {
+  const setNativeDraft = react4.useCallback((text7) => {
     try {
       handle2?.setDraft(text7);
     } catch {
     }
   }, [handle2]);
-  const ensureHandle = react3.useCallback(async () => {
+  const ensureHandle = react4.useCallback(async () => {
     if (handle2 && handle2.status() !== "missing" && handle2.status() !== "waiting") return handle2;
     if (!opRef.current) opRef.current = newOperationToken();
     const next = await adapter.connect(path2, opRef.current);
@@ -18203,7 +18528,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     }
     return next;
   }, [adapter, handle2, path2]);
-  const reloadMemory = react3.useCallback(async () => {
+  const reloadMemory = react4.useCallback(async () => {
     const data = await loadProjectMemory(project);
     setMemoryItems(data.ok ? data.memory?.items || [] : []);
     setMemoryMeta({
@@ -18214,27 +18539,27 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     });
     return data;
   }, [project]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     void reloadMemory();
   }, [reloadMemory]);
-  const reloadCandidates = react3.useCallback(async () => {
+  const reloadCandidates = react4.useCallback(async () => {
     const list4 = await listDraftCandidates(project);
     setDraftCandidates(list4);
   }, [project]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     void reloadCandidates();
   }, [reloadCandidates]);
-  const startCandidate = react3.useCallback((msg) => {
+  const startCandidate = react4.useCallback((msg) => {
     setCandidate({ text: msg.text, source: { kind: "assistant", sessionId: snapshot.sessionId || null, messageId: msg.messageId || null } });
     setMemOpen(true);
   }, [snapshot.sessionId]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!id) return;
     const started = id ? adapter.attach(project, id, { binding }) : null;
     setHandle(started);
@@ -18243,24 +18568,24 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     } catch {
     }
   }, [adapter, id, project]);
-  react3.useEffect(() => () => {
+  react4.useEffect(() => () => {
     handle2?.dispose();
   }, [handle2]);
-  const handleRef = react3.useRef(null);
-  const setNativeDraftRef = react3.useRef(null);
-  react3.useEffect(() => {
+  const handleRef = react4.useRef(null);
+  const setNativeDraftRef = react4.useRef(null);
+  react4.useEffect(() => {
     handleRef.current = handle2 ?? null;
   }, [handle2]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     setNativeDraftRef.current = setNativeDraft;
   }, [setNativeDraft]);
-  const recoveryGen = react3.useRef(0);
-  const [draftUi, setDraftUi] = react3.useState(() => ({
+  const recoveryGen = react4.useRef(0);
+  const [draftUi, setDraftUi] = react4.useState(() => ({
     conflict: null,
     dirty: false,
     status: { phase: "idle", error: "", code: "" }
   }));
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     const read = () => setDraftUi({
       conflict: companionDraftConflict.get(project) || null,
       dirty: Boolean(companionDraftDirty.get(project)),
@@ -18269,7 +18594,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     read();
     return subscribeDraftStatus(read);
   }, [project]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     let cancelled = false;
     const started = recoveryGen.current;
     companionRecoveryState.set(project, "pending");
@@ -18318,8 +18643,8 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       cancelled = true;
     };
   }, [project]);
-  const editGen = react3.useRef(0);
-  const adopting = react3.useRef(false);
+  const editGen = react4.useRef(0);
+  const adopting = react4.useRef(false);
   const bumpEdit = () => {
     editGen.current++;
   };
@@ -18359,6 +18684,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     try {
       const target = handle2 || await ensureHandle();
       if (!target || !alive.current) return;
+      target.openFullSession();
       if (!id && draft) {
         const already = target.getDraft();
         try {
@@ -18366,7 +18692,6 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         } catch {
         }
       }
-      target.openFullSession();
       onExit();
     } catch (err) {
       if (alive.current) setError(err.message);
@@ -18458,7 +18783,9 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         persistCompanionDraft(project);
       }
     } catch (err) {
-      if (alive.current) setError(err.message || String(err));
+      if (alive.current) {
+        setError(err && err.code === "capabilities-missing" ? capability.headline + "：" + capability.reasons.join("；") : err && err.message || String(err));
+      }
     } finally {
       sending.current = false;
       if (alive.current) setBusy(false);
@@ -18468,7 +18795,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   const statusNote = !handle2 || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
   const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
   const injectables = memoryItems.filter(isPinnable);
-  const memoryPreview = react3.useMemo(
+  const memoryPreview = react4.useMemo(
     () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded),
     [memoryItems, pinned, excluded]
   );
@@ -18490,20 +18817,30 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   } catch {
     refStatus = "unknown";
   }
-  return jsx8.jsxs("div", { className: "dshWmCompanion", children: [
-    jsx8.jsxs("div", { className: "dshWmConversationHead", children: [
-      jsx8.jsx("span", { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
-      jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setMemOpen((v) => !v), children: memOpen ? "收起备忘" : "项目备忘" }),
-      jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), disabled: busy || !sessions, title: "打开完整会话，调整模型、工具或处理请求", children: "会话设置 ↗" })
+  return jsx10.jsxs("div", { className: "dshWmCompanion", children: [
+    jsx10.jsxs("div", { className: "dshWmConversationHead", children: [
+      jsx10.jsx("span", { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
+      jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => setMemOpen((v) => !v), children: memOpen ? "收起备忘" : "项目备忘" }),
+      jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), disabled: busy || !capability.canSend, title: capability.canSend ? "打开完整会话，调整模型、工具或处理请求" : capabilityText, children: "会话设置 ↗" })
     ] }),
-    memOpen ? jsx8.jsxs("div", { className: "dshWmMemoryWorkspace", children: [
-      jsx8.jsx(CompanionMemoryPanel, {
+    capability.level === "ok" ? null : jsx10.jsxs("div", {
+      className: "dshWmCapability is-" + capability.level,
+      role: "status",
+      "data-wm-capability": capability.level,
+      children: [
+        jsx10.jsx("strong", { children: capability.headline }),
+        capability.reasons.length ? jsx10.jsx("span", { children: capability.reasons.join("；") }) : null,
+        capability.note ? jsx10.jsx("span", { className: "dshWmCapabilityNote", children: capability.note }) : null
+      ]
+    }, "capability"),
+    memOpen ? jsx10.jsxs("div", { className: "dshWmMemoryWorkspace", children: [
+      jsx10.jsx(CompanionMemoryPanel, {
         path: project,
         candidate,
         onCandidateConsumed: () => setCandidate(null),
         onChanged: () => void reloadMemory()
       }),
-      jsx8.jsx(WorldSettingsPanel, {
+      jsx10.jsx(WorldSettingsPanel, {
         path: project,
         onReadHistory: (oldPath, sessionId) => {
           const old = adapter.attach(oldPath, sessionId);
@@ -18527,15 +18864,15 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         }
       })
     ] }) : null,
-    statusNote ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-status": snapshot.status, children: [
+    statusNote ? jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-status": snapshot.status, children: [
       statusNote,
-      jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => void handle2?.refresh(), children: "重查状态" }),
-      recoverable ? jsx8.jsx("button", {
+      jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => void handle2?.refresh(), children: "重查状态" }),
+      recoverable ? jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => void handle2?.recover().catch((err) => setError(err.message || String(err))),
         children: "继续关联"
       }) : null,
-      jsx8.jsx("button", {
+      jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => {
           try {
@@ -18547,7 +18884,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         children: "查看完整会话"
       })
     ] }) : null,
-    jsx8.jsx(CompanionTranscript, {
+    jsx10.jsx(CompanionTranscript, {
       snapshot,
       onFull: () => void fullConversation(),
       onCandidate: startCandidate,
@@ -18560,9 +18897,9 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         setMemOpen(true);
       }
     }),
-    draftUi.conflict ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
+    draftUi.conflict ? jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
       draftUi.conflict.remoteStatus === "valid" ? "草稿与另一处写入冲突，自动保存已暂停。" : draftUi.conflict.remoteStatus === "failed" ? "冲突后无法读取远端草稿。" : "冲突处理中，正在读取远端草稿…",
-      jsx8.jsx("button", {
+      jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => void resolveDraftConflict(project, "keep-local", {
           setLocalDraft,
@@ -18571,7 +18908,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         }),
         children: "保留本地并覆盖"
       }),
-      draftUi.conflict.remoteStatus === "valid" ? jsx8.jsx("button", {
+      draftUi.conflict.remoteStatus === "valid" ? jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => {
           void resolveDraftConflict(project, "keep-remote", {
@@ -18582,15 +18919,15 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         },
         children: "采用远端"
       }) : null,
-      draftUi.conflict.remoteStatus === "failed" ? jsx8.jsx("button", {
+      draftUi.conflict.remoteStatus === "failed" ? jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => void retryDraftConflictRemote(project),
         children: "重试读取远端"
       }) : null
     ] }) : null,
-    draftUi.status.phase === "error" && !draftUi.conflict ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
+    draftUi.status.phase === "error" && !draftUi.conflict ? jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [
       draftUi.status.error,
-      draftUi.status.code === "corrupt-draft" ? jsx8.jsx("button", { onClick: async () => {
+      draftUi.status.code === "corrupt-draft" ? jsx10.jsx("button", { onClick: async () => {
         if (!window.confirm("保留损坏文件副本，并把当前编辑内容保存为新草稿？")) return;
         try {
           const r = await recoverDamagedDraft(project);
@@ -18599,20 +18936,20 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
           setNotice("恢复失败：" + err.message);
         }
       }, children: "保留损坏副本并保存当前草稿" }) : null,
-      jsx8.jsx("button", {
+      jsx10.jsx("button", {
         className: "dshWmQuiet",
         onClick: () => void persistCompanionDraft(project),
         children: "重试保存"
       })
     ] }) : null,
-    draftUi.status.phase === "saving" ? jsx8.jsx("div", { className: "dshWmAiHint", role: "status", children: "正在保存草稿…" }) : null,
-    notice ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "status", "data-wm-notice": "1", children: [
+    draftUi.status.phase === "saving" ? jsx10.jsx("div", { className: "dshWmAiHint", role: "status", children: "正在保存草稿…" }) : null,
+    notice ? jsx10.jsxs("div", { className: "dshWmCompanionError", role: "status", "data-wm-notice": "1", children: [
       notice,
-      jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setNotice(""), children: "知道了" })
+      jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => setNotice(""), children: "知道了" })
     ] }) : null,
-    memoryBlock ? jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-memory-block": "1", children: [
+    memoryBlock ? jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", "data-wm-memory-block": "1", children: [
       `项目备忘读取失败（${memoryBlock.error}）：本轮还没有发出，正文与引用都保留着。请选择：`,
-      jsx8.jsx("button", {
+      jsx10.jsx("button", {
         className: "dshWmQuiet",
         "data-wm-memory-retry": "1",
         onClick: () => {
@@ -18621,7 +18958,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         },
         children: "重试读取"
       }),
-      jsx8.jsx("button", {
+      jsx10.jsx("button", {
         className: "dshWmQuiet",
         "data-wm-memory-bypass": "1",
         onClick: () => {
@@ -18631,15 +18968,15 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         children: "不参考备忘发送"
       })
     ] }) : null,
-    failure ? jsx8.jsx("div", { className: "dshWmCompanionError", role: "alert", children: failure }) : null,
-    needsFullComposer ? jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), children: "在完整会话中发送附件或使用指令 ↗" }) : null,
-    jsx8.jsxs("div", { className: "dshWmCompose", children: [
-      draftCandidates.length ? jsx8.jsxs("div", { className: "dshWmDraftCandidates", "data-wm-draft-candidates": String(draftCandidates.length), children: [
-        jsx8.jsx("span", { className: "dshWmMemoryNote", children: "其他窗口还有未合并的草稿（不会自动覆盖你正在写的）：" }),
-        ...draftCandidates.map((c) => jsx8.jsxs("div", { className: "dshWmDraftCandidate", children: [
-          jsx8.jsx("span", { className: "dshWmMemoryKind", children: "窗口 " + String(c.windowId).slice(0, 6) + (c.updatedAt ? " · " + String(c.updatedAt).replace("T", " ").slice(5, 16) : "") }),
-          jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setPreviewCandidate(previewCandidate && previewCandidate.windowId === c.windowId ? null : c), children: "预览" }),
-          jsx8.jsx("button", {
+    failure ? jsx10.jsx("div", { className: "dshWmCompanionError", role: "alert", children: failure }) : null,
+    needsFullComposer ? jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => void fullConversation(), children: "在完整会话中发送附件或使用指令 ↗" }) : null,
+    jsx10.jsxs("div", { className: "dshWmCompose", children: [
+      draftCandidates.length ? jsx10.jsxs("div", { className: "dshWmDraftCandidates", "data-wm-draft-candidates": String(draftCandidates.length), children: [
+        jsx10.jsx("span", { className: "dshWmMemoryNote", children: "其他窗口还有未合并的草稿（不会自动覆盖你正在写的）：" }),
+        ...draftCandidates.map((c) => jsx10.jsxs("div", { className: "dshWmDraftCandidate", children: [
+          jsx10.jsx("span", { className: "dshWmMemoryKind", children: "窗口 " + String(c.windowId).slice(0, 6) + (c.updatedAt ? " · " + String(c.updatedAt).replace("T", " ").slice(5, 16) : "") }),
+          jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => setPreviewCandidate(previewCandidate && previewCandidate.windowId === c.windowId ? null : c), children: "预览" }),
+          jsx10.jsx("button", {
             className: "dshWmQuiet",
             "data-wm-draft-adopt": c.windowId,
             onClick: () => {
@@ -18679,23 +19016,23 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
             children: "采用这一份"
           })
         ] }, c.windowId)),
-        previewCandidate ? jsx8.jsxs("div", { className: "dshWmDraftPreview", children: [
-          jsx8.jsx("pre", { children: previewCandidate.text }),
-          jsx8.jsx("span", { className: "dshWmMemoryNote", children: "采用前会先把当前草稿另存为一份可恢复副本（随后出现在上面的候选列表里，可随时切回）；引用按这一份一起替换" })
+        previewCandidate ? jsx10.jsxs("div", { className: "dshWmDraftPreview", children: [
+          jsx10.jsx("pre", { children: previewCandidate.text }),
+          jsx10.jsx("span", { className: "dshWmMemoryNote", children: "采用前会先把当前草稿另存为一份可恢复副本（随后出现在上面的候选列表里，可随时切回）；引用按这一份一起替换" })
         ] }) : null
       ] }) : null,
-      reference ? jsx8.jsxs("div", { className: "dshWmReference", "data-wm-reference-status": refStatus, children: [
-        jsx8.jsxs("details", { children: [
-          jsx8.jsx("summary", { children: reference.label }),
-          jsx8.jsxs("div", { className: "dshWmMemoryNote", children: [
+      reference ? jsx10.jsxs("div", { className: "dshWmReference", "data-wm-reference-status": refStatus, children: [
+        jsx10.jsxs("details", { children: [
+          jsx10.jsx("summary", { children: reference.label }),
+          jsx10.jsxs("div", { className: "dshWmMemoryNote", children: [
             reference.path ? "来源：" + reference.path : "来源：未记录（旧引用）",
             reference.revision != null ? " · 版本 " + String(reference.revision).slice(0, 10) : "",
             reference.selection ? " · 选区 " + reference.selection.start + "-" + reference.selection.end : "",
             refStatus === "unsaved" ? " · 取自未保存的编辑器内容" : ""
           ] }),
-          jsx8.jsx("pre", { children: reference.text })
+          jsx10.jsx("pre", { children: reference.text })
         ] }),
-        refStatus === "stale" ? jsx8.jsx("button", {
+        refStatus === "stale" ? jsx10.jsx("button", {
           className: "dshWmQuiet",
           "data-wm-reference-restale": "1",
           title: "源稿已经改过，重新取当前内容作为引用",
@@ -18705,24 +19042,23 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
           },
           children: "引用来自旧快照 · 重新引用"
         }) : null,
-        jsx8.jsx("button", { className: "dshWmQuiet", "aria-label": "移除稿件引用", onClick: () => updateReference(null), children: "×" })
+        jsx10.jsx("button", { className: "dshWmQuiet", "aria-label": "移除稿件引用", onClick: () => updateReference(null), children: "×" })
       ] }) : null,
-      jsx8.jsx("textarea", { className: "dshWmChatInput", "aria-label": "和写作伙伴聊聊", placeholder: "说说你正在想的…", value: draft, disabled: !sessions, onChange: (e) => updateDraft(e.target.value), onKeyDown: (e) => {
+      jsx10.jsx("textarea", { className: "dshWmChatInput", "aria-label": "和写作伙伴聊聊", placeholder: capability.canSend ? "说说你正在想的…" : "先记下来，伙伴恢复后再发…", value: draft, onChange: (e) => updateDraft(e.target.value), onKeyDown: (e) => {
         if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
           e.preventDefault();
           void send();
         }
       } }),
-      jsx8.jsxs("div", { className: "dshWmContext", children: [
-        jsx8.jsx("button", {
+      jsx10.jsxs("div", { className: "dshWmContext", children: [
+        jsx10.jsx("button", {
           className: "dshWmQuiet",
           "data-wm-context-toggle": "1",
-          disabled: !sessions,
           onClick: () => setContextOpen((v) => !v),
           children: includeMemory ? memoryHint(memoryItems) || "本次没有可参考的已确认条目" : "本次不参考项目备忘"
         }),
-        jsx8.jsxs("label", { className: "dshWmContextSwitch", title: "这一轮是否参考项目备忘", children: [
-          jsx8.jsx("input", {
+        jsx10.jsxs("label", { className: "dshWmContextSwitch", title: "这一轮是否参考项目备忘", children: [
+          jsx10.jsx("input", {
             type: "checkbox",
             "data-wm-context-enabled": "1",
             checked: includeMemory,
@@ -18730,11 +19066,11 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
           }),
           "参考"
         ] }),
-        contextOpen ? jsx8.jsxs("div", { className: "dshWmContextPanel", children: [
-          memoryMeta.ok ? null : jsx8.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
-          jsx8.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）` : "本轮不参考项目备忘（开关已关）" }),
-          previewRows.length ? previewRows.map((row) => jsx8.jsxs("div", { className: "dshWmContextItem", "data-wm-memory-row": row.id, children: [
-            jsx8.jsx("input", {
+        contextOpen ? jsx10.jsxs("div", { className: "dshWmContextPanel", children: [
+          memoryMeta.ok ? null : jsx10.jsx("div", { className: "dshWmMemoryNote", children: "备忘读取失败（" + memoryMeta.error + '）：这一轮不会自动发出；发送时可以在"重试/不参考发送"之间选。' }),
+          jsx10.jsx("div", { className: "dshWmMemoryNote", "data-wm-context-summary": "1", children: includeMemory ? `本轮实际带入 ${memoryPreview.selected.length} 条${budgetOmitted ? `，另有 ${budgetOmitted} 条超出 ${DEFAULT_MEMORY_BUDGET} 字预算省略` : ""}（勾选=本轮参考，取消勾选=不带；待定问题要勾选才会带入；"优先"只是把它们排在最前面）` : "本轮不参考项目备忘（开关已关）" }),
+          previewRows.length ? previewRows.map((row) => jsx10.jsxs("div", { className: "dshWmContextItem", "data-wm-memory-row": row.id, children: [
+            jsx10.jsx("input", {
               type: "checkbox",
               "data-wm-memory-pin": row.id,
               // 待定问题默认不带入（C02）：勾选 = 明确选择这一条；其他条目默认带入，取消 = 明确排除。
@@ -18748,37 +19084,37 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
                 setExcluded((prev) => e.target.checked ? prev.filter((x) => x !== row.id) : [...prev, row.id]);
               }
             }),
-            jsx8.jsx("span", { className: "dshWmMemoryKind", children: row.kind === "preference" ? "偏好" : row.kind === "open-question" ? "待定" : "设定" }),
-            jsx8.jsx("span", { className: "dshWmContextText", children: row.text }),
-            row.kind === "open-question" ? null : jsx8.jsx("button", {
+            jsx10.jsx("span", { className: "dshWmMemoryKind", children: row.kind === "preference" ? "偏好" : row.kind === "open-question" ? "待定" : "设定" }),
+            jsx10.jsx("span", { className: "dshWmContextText", children: row.text }),
+            row.kind === "open-question" ? null : jsx10.jsx("button", {
               className: "dshWmQuiet",
               "data-wm-memory-fix": row.id,
               title: "固定优先：本轮先于其他条目带入（不改变是否带入）",
               onClick: () => setPinned((prev) => prev.includes(row.id) ? prev.filter((x) => x !== row.id) : [...prev, row.id]),
               children: pinned.includes(row.id) ? "优先 ✓" : "优先"
             }),
-            jsx8.jsx("span", { className: "dshWmContextState", "data-wm-memory-state": row.state, children: `${row.state} · 来源：${row.source}` })
-          ] }, row.id)) : jsx8.jsx("div", { className: "dshWmMemoryNote", children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
-          memoryPreview.omissions.some((o) => o.reason === "not-injectable") ? jsx8.jsx("div", { className: "dshWmMemoryNote", children: "有条目处于候选/已撤回/已解决状态，本轮不会自动带入。" }) : null,
-          jsx8.jsx("div", { className: "dshWmMemoryNote", children: "自动部分有 " + String(DEFAULT_MEMORY_BUDGET) + " 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。" })
+            jsx10.jsx("span", { className: "dshWmContextState", "data-wm-memory-state": row.state, children: `${row.state} · 来源：${row.source}` })
+          ] }, row.id)) : jsx10.jsx("div", { className: "dshWmMemoryNote", children: '还没有已确认的设定/偏好。在"项目备忘"里确认后才会出现在这里。' }),
+          memoryPreview.omissions.some((o) => o.reason === "not-injectable") ? jsx10.jsx("div", { className: "dshWmMemoryNote", children: "有条目处于候选/已撤回/已解决状态，本轮不会自动带入。" }) : null,
+          jsx10.jsx("div", { className: "dshWmMemoryNote", children: "自动部分有 " + String(DEFAULT_MEMORY_BUDGET) + " 字上限（Unicode 字符数，不是 token）。你的正文与显式引用的稿件不受这个上限影响。" })
         ] }) : null
       ] }),
-      jsx8.jsxs("div", { className: "dshWmComposeFoot", children: [
-        jsx8.jsx("button", { className: "dshWmQuiet", disabled: !sessions, onClick: () => {
+      jsx10.jsxs("div", { className: "dshWmComposeFoot", children: [
+        jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => {
           const value = contextText();
           if (value?.text) updateReference(value);
         }, children: "＋ 引用稿件 / 选区" }),
-        jsx8.jsx("span", { className: "dshWmInputHint", children: "Shift + Enter 换行" }),
-        snapshot.running ? jsx8.jsx("button", { className: "dshWmQuiet", "aria-label": "停止回复", onClick: () => void (handle2 ? handle2.cancel().catch((err) => setError(err.message)) : setError("会话尚未就绪")), children: "停止" }) : null,
-        jsx8.jsx("button", { className: "dshWmSend", disabled: !sessions || busy || !draft.trim(), onClick: () => void send(), "aria-label": snapshot.running ? "排队发送" : "发送", title: snapshot.running ? "在本次回复后发送" : "发送", children: busy ? "…" : "↑" })
+        jsx10.jsx("span", { className: "dshWmInputHint", children: "Shift + Enter 换行" }),
+        snapshot.running ? jsx10.jsx("button", { className: "dshWmQuiet", "aria-label": "停止回复", onClick: () => void (handle2 ? handle2.cancel().catch((err) => setError(err.message)) : setError("会话尚未就绪")), children: "停止" }) : null,
+        jsx10.jsx("button", { className: "dshWmSend", disabled: !capability.canSend || busy || !draft.trim(), onClick: () => void send(), "aria-label": snapshot.running ? "排队发送" : "发送", title: capability.canSend ? snapshot.running ? "在本次回复后发送" : "发送" : capabilityText, children: busy ? "…" : "↑" })
       ] })
     ] })
   ] });
 }
-function WritingCompanion({ path: path2, contextText, sourceInfo, onExit }) {
-  const [result, setResult] = react3.useState(null);
-  const [retry, setRetry] = react3.useState(0);
-  react3.useEffect(() => {
+function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject }) {
+  const [result, setResult] = react4.useState(null);
+  const [retry, setRetry] = react4.useState(0);
+  react4.useEffect(() => {
     let active = true;
     if (path2) void api("companion", void 0, { path: path2 }).then(async (data) => {
       if (data.ok && data.sessionId && harnessSessions()) {
@@ -18793,22 +19129,411 @@ function WritingCompanion({ path: path2, contextText, sourceInfo, onExit }) {
       active = false;
     };
   }, [path2, retry]);
-  if (!path2 || result?.path !== path2) return jsx8.jsx("div", { className: "dshWmCompanionEmpty", children: path2 ? "正在打开对话…" : "打开一份稿件，从这里聊起。" });
-  if (!result.ok) return jsx8.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [result.error, jsx8.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })] });
-  return jsx8.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit }, result.project);
+  const sessionSection = jsx10.jsx(SessionListSection, { currentPath: path2 || null, onOpenProject: onOpenProject || null }, "wsl");
+  if (!path2 || result?.path !== path2) return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsx("div", { className: "dshWmCompanionEmpty", children: path2 ? "正在打开对话…" : "打开一份稿件，从这里聊起。" }, "empty")] });
+  if (!result.ok) return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [result.error, jsx10.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })] }, "err")] });
+  return jsx10.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx10.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit }, result.project)] });
+}
+
+// plugin/writing-mode/src/client/features/export-book/index.js
+var react5 = __toESM(require("react"), 1);
+var jsx12 = __toESM(require("react/jsx-runtime"), 1);
+var ERR_TEXT = {
+  "no-drafts": "这个项目还没有 draft/ 正文可导出",
+  "empty-include": "请先勾选要纳入的文稿",
+  "bad-include": "清单里有不安全的路径",
+  "unknown-include": "清单里有文稿已不在项目中（可能被移动或删除），请刷新后重试",
+  "mixed-formats": "所选文稿格式不一致（.md 与 .fountain 不能混排成一本）",
+  "invalid-title": "书名含有非法字符或为空",
+  "path-outside-roots": "项目路径不在文库根内",
+  "no-project": "没能识别这个项目",
+  "source-changed": "导出期间有文稿被改动，已放弃，请重试"
+};
+function chapterTitle(name3) {
+  return String(name3 || "").replace(/\.[^.]+$/, "").replace(/-v\d+$/i, "");
+}
+function ExportBookPanel({ proj, onClose, onDone }) {
+  const candidates = react5.useMemo(() => {
+    const files = proj.files || [];
+    const max = maxVersionInGroup(files);
+    return files.filter((f) => {
+      const v = versionOf(f.name);
+      return v === null || v === max.get(groupKeyOf(f.abs));
+    }).sort((a, b) => String(a.rel).localeCompare(String(b.rel), "zh", { numeric: true }));
+  }, [proj]);
+  const skippedCount = (proj.files || []).length - candidates.length;
+  const [checked, setChecked] = react5.useState(
+    () => new Set(candidates.filter((f) => String(f.rel).startsWith("draft/")).map((f) => f.abs))
+  );
+  const [title, setTitle] = react5.useState(String(proj.name || ""));
+  const [withTitles, setWithTitles] = react5.useState(true);
+  const [busy, setBusy] = react5.useState(false);
+  const [err, setErr] = react5.useState("");
+  const selected = candidates.filter((f) => checked.has(f.abs));
+  const exts = [...new Set(selected.map((f) => String(f.ext).toLowerCase()))];
+  const mixed = exts.length > 1;
+  const totalChars = selected.reduce((n, f) => n + (f.chars || 0), 0);
+  const canExport = !busy && selected.length > 0 && !mixed && title.trim() !== "";
+  function toggle(abs) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(abs)) next.delete(abs);
+      else next.add(abs);
+      return next;
+    });
+  }
+  async function doExport() {
+    setBusy(true);
+    setErr("");
+    try {
+      const data = await api("compile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          path: proj.path,
+          include: selected.map((f) => f.rel),
+          title: title.trim(),
+          titles: withTitles
+        })
+      });
+      if (!data.ok) {
+        setErr(ERR_TEXT[data.error] || `导出失败（${data.error || "未知错误"}）`);
+        return;
+      }
+      onDone(data);
+    } catch (e) {
+      setErr("导出失败：" + (e && e.message ? e.message : String(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return jsx12.jsx("div", {
+    className: "dshWmExport",
+    role: "dialog",
+    "aria-label": "导出成书",
+    children: jsx12.jsx("div", {
+      className: "dshWmExportScroll",
+      children: jsx12.jsxs("div", {
+        className: "dshWmExportInner",
+        children: [
+          jsx12.jsxs(
+            "div",
+            {
+              className: "dshWmExportHead",
+              children: [
+                jsx12.jsx("span", { className: "dshWmExportTitle", children: `导出成书 · ${proj.name}` }, "t"),
+                jsx12.jsx("span", { style: { flex: 1 } }, "sp"),
+                jsx12.jsx(
+                  "button",
+                  { type: "button", className: "dshWmBtn is-ghost", onClick: onClose, children: "返回写作（Esc）" },
+                  "x"
+                )
+              ]
+            },
+            "head"
+          ),
+          jsx12.jsx(
+            "div",
+            {
+              className: "dshWmAiHint",
+              children: "把勾选的文稿按下面的顺序拼成一份完整书稿，作为新文件写进项目根目录（书名-vN），原稿一个字不动。"
+            },
+            "hint"
+          ),
+          jsx12.jsxs(
+            "div",
+            {
+              className: "dshWmExportField",
+              children: [
+                jsx12.jsx("label", { className: "dshWmExportLabel", htmlFor: "dshWmExportName", children: "书名" }, "l"),
+                jsx12.jsx("input", {
+                  id: "dshWmExportName",
+                  className: "dshWmSearch",
+                  style: { margin: 0 },
+                  value: title,
+                  onChange: (e) => setTitle(e.target.value)
+                }, "i")
+              ]
+            },
+            "f-title"
+          ),
+          jsx12.jsxs(
+            "label",
+            {
+              className: "dshWmExportCheck",
+              children: [
+                jsx12.jsx("input", {
+                  type: "checkbox",
+                  checked: withTitles,
+                  onChange: (e) => setWithTitles(e.target.checked)
+                }, "c"),
+                jsx12.jsx("span", { children: "每章前补一个标题（正文自带标题的章节不重复加；.fountain 稿用分页符，不加标题）" }, "t")
+              ]
+            },
+            "f-titles"
+          ),
+          jsx12.jsx(
+            "div",
+            {
+              className: "dshWmExportLabel",
+              children: `纳入的文稿（${selected.length}/${candidates.length}）` + (skippedCount > 0 ? ` · 已略过 ${skippedCount} 个历史版本，每章只取最新版` : "")
+            },
+            "l-list"
+          ),
+          jsx12.jsx("div", {
+            className: "dshWmExportList",
+            children: candidates.map(
+              (f) => jsx12.jsxs(
+                "label",
+                {
+                  className: "dshWmExportRow" + (checked.has(f.abs) ? "" : " is-off"),
+                  children: [
+                    jsx12.jsx("input", { type: "checkbox", checked: checked.has(f.abs), onChange: () => toggle(f.abs) }, "c"),
+                    jsx12.jsx("span", { className: "dshWmExportRowName", title: f.rel, children: chapterTitle(f.name) }, "n"),
+                    jsx12.jsx("span", {
+                      className: "dshWmExportRowMeta",
+                      children: (versionOf(f.name) != null ? "v" + versionOf(f.name) + " · " : "") + (f.chars || 0) + " 字"
+                    }, "m")
+                  ]
+                },
+                f.abs
+              )
+            )
+          }, "list"),
+          mixed ? jsx12.jsx("div", {
+            className: "dshWmAiHint",
+            role: "alert",
+            children: `勾选的文稿格式不一致（${exts.join(" / ")}），请分开导出。`
+          }, "mixed") : null,
+          err ? jsx12.jsx("div", { className: "dshWmAiHint", role: "alert", children: err }, "err") : null,
+          jsx12.jsxs(
+            "div",
+            {
+              className: "dshWmExportFoot",
+              children: [
+                jsx12.jsx("span", { children: `共 ${totalChars} 字` }, "n"),
+                jsx12.jsx("span", { style: { flex: 1 } }, "sp"),
+                jsx12.jsx("button", { type: "button", className: "dshWmBtn", onClick: onClose, disabled: busy, children: "取消" }, "cancel"),
+                jsx12.jsx("button", {
+                  type: "button",
+                  className: "dshWmBtn is-primary",
+                  disabled: !canExport,
+                  onClick: () => void doExport(),
+                  children: busy ? "导出中…" : "导出成书"
+                }, "go")
+              ]
+            },
+            "foot"
+          )
+        ]
+      })
+    }, "scroll")
+  });
+}
+
+// plugin/writing-mode/src/client/features/inspection/index.js
+var jsx14 = __toESM(require("react/jsx-runtime"), 1);
+function InspectionPanel({
+  T: T2,
+  filePath,
+  gate,
+  gateErr,
+  gateBusy,
+  gateOpen,
+  onToggleGate,
+  onRunGate,
+  ledger,
+  ledgerOpen,
+  onToggleLedger
+}) {
+  return jsx14.jsxs("div", {
+    className: "dshWmAiBody",
+    children: [
+      /* ── 门禁：默认收起，只露一行摘要 ── */
+      jsx14.jsxs(
+        "div",
+        {
+          className: "dshWmSec",
+          children: [
+            jsx14.jsxs(
+              "button",
+              {
+                type: "button",
+                className: "dshWmSecToggle",
+                onClick: onToggleGate,
+                children: [
+                  jsx14.jsx("span", {
+                    children: (gateOpen ? "▾ " : "▸ ") + T2.gates
+                  }, "t"),
+                  jsx14.jsx("span", {
+                    className: "dshWmSecBadge" + (gate ? gate.pass ? " is-pass" : " is-fail" : ""),
+                    children: gateBusy ? T2.applying : gate ? gate.pass ? T2.gatesPass : T2.gatesFail.replace("{n}", String(gate.fail)) : "—"
+                  }, "b")
+                ]
+              },
+              "gt"
+            ),
+            gateOpen ? jsx14.jsxs(
+              "div",
+              {
+                className: "dshWmSec",
+                children: [
+                  jsx14.jsx(
+                    "div",
+                    {
+                      className: "dshWmAiActions",
+                      children: [
+                        jsx14.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn",
+                          disabled: gateBusy || !filePath,
+                          onClick: () => void onRunGate(),
+                          children: gateBusy ? T2.applying : T2.runGates
+                        })
+                      ]
+                    },
+                    "gb"
+                  ),
+                  gateErr ? jsx14.jsx("div", { className: "dshWmAiHint", children: gateErr }, "ge") : null,
+                  !gate && !gateErr ? jsx14.jsx("div", { className: "dshWmAiHint", children: T2.gatesIdle }, "gi") : null,
+                  gate && gate.rows ? jsx14.jsx(
+                    "div",
+                    {
+                      className: "dshWmGateList",
+                      children: gate.rows.map(
+                        (r, i) => jsx14.jsxs(
+                          "div",
+                          {
+                            className: "dshWmGateRow",
+                            children: [
+                              jsx14.jsx("span", {
+                                className: r.ok ? "ok" : "bad",
+                                children: r.ok ? "PASS" : "FAIL"
+                              }),
+                              jsx14.jsx("span", { className: "dshWmGateLabel", children: r.label }),
+                              jsx14.jsx("span", { className: "dshWmGateDetail", children: r.detail })
+                            ]
+                          },
+                          "r" + i
+                        )
+                      )
+                    },
+                    "gl"
+                  ) : null
+                ]
+              },
+              "gb2"
+            ) : null
+          ]
+        },
+        "gh"
+      ),
+      /* ── 台账：默认收起 ── */
+      jsx14.jsxs(
+        "div",
+        {
+          className: "dshWmSec",
+          children: [
+            jsx14.jsxs(
+              "button",
+              {
+                type: "button",
+                className: "dshWmSecToggle",
+                onClick: onToggleLedger,
+                children: [
+                  jsx14.jsx("span", {
+                    children: (ledgerOpen ? "▾ " : "▸ ") + T2.ledger
+                  }, "t"),
+                  jsx14.jsx("span", {
+                    className: "dshWmSecBadge",
+                    children: ledger ? (ledger.foreshadowOpen != null ? ledger.foreshadowOpen + " · " : "") + (ledger.latestReview || "—").slice(0, 18) : "—"
+                  }, "b")
+                ]
+              },
+              "lt"
+            ),
+            ledgerOpen ? ledger ? jsx14.jsxs(
+              "div",
+              {
+                className: "dshWmLedger",
+                children: [
+                  jsx14.jsxs(
+                    "div",
+                    {
+                      className: "dshWmLedgerRow",
+                      children: [
+                        jsx14.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerHook }),
+                        jsx14.jsx("span", { className: "dshWmLedgerV", children: ledger.hook || "—" })
+                      ]
+                    },
+                    "lh"
+                  ),
+                  jsx14.jsxs(
+                    "div",
+                    {
+                      className: "dshWmLedgerRow",
+                      children: [
+                        jsx14.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerFores }),
+                        jsx14.jsx("span", {
+                          className: "dshWmLedgerV",
+                          children: ledger.foreshadowOpen == null ? "—" : String(ledger.foreshadowOpen)
+                        })
+                      ]
+                    },
+                    "lf"
+                  ),
+                  jsx14.jsxs(
+                    "div",
+                    {
+                      className: "dshWmLedgerRow",
+                      children: [
+                        jsx14.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerReview }),
+                        jsx14.jsx("span", {
+                          className: "dshWmLedgerV",
+                          children: ledger.latestReview || "—"
+                        })
+                      ]
+                    },
+                    "lr"
+                  ),
+                  ledger.timeline && ledger.timeline.length ? jsx14.jsxs(
+                    "div",
+                    {
+                      className: "dshWmLedgerRow",
+                      children: [
+                        jsx14.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerTimeline }),
+                        jsx14.jsx("span", {
+                          className: "dshWmLedgerV",
+                          children: ledger.timeline[ledger.timeline.length - 1]
+                        })
+                      ]
+                    },
+                    "lts"
+                  ) : null
+                ]
+              },
+              "lb"
+            ) : jsx14.jsx("div", { className: "dshWmAiHint", children: T2.ledgerNone }, "ln") : null
+          ]
+        },
+        "lsec"
+      )
+    ]
+  });
 }
 
 // plugin/writing-mode/src/client/app/WritingModeApp.js
 var LS_FILE = "dsh-writing-mode-file";
+var KEY_HINT = "Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台";
 function WritingModeApp() {
-  const [active, setActive] = react4.useState(getModeActive);
-  react4.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
+  const [active, setActive] = react6.useState(getModeActive);
+  react6.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
   const open = () => setModeActive(true);
   const close = () => setModeActive(false);
-  const [roots, setRoots] = react4.useState([]);
-  const [tree, setTree] = react4.useState([]);
-  const [activeRoot, setActiveRoot] = react4.useState(null);
-  const editorRef = react4.useRef(null);
+  const [roots, setRoots] = react6.useState([]);
+  const [tree, setTree] = react6.useState([]);
+  const [activeRoot, setActiveRoot] = react6.useState(null);
+  const editorRef = react6.useRef(null);
   if (!editorRef.current) {
     let recovered = null;
     let recoveryKey = "dsh-writing-recovery";
@@ -18845,54 +19570,55 @@ function WritingModeApp() {
     }, recovered);
   }
   const editor = editorRef.current;
-  const [documentState, setDocumentState] = react4.useState(editor.get);
-  react4.useEffect(() => editor.subscribe(setDocumentState), [editor]);
+  const [documentState, setDocumentState] = react6.useState(editor.get);
+  react6.useEffect(() => editor.subscribe(setDocumentState), [editor]);
   const { path: filePath, content: content3, dirty, status: saveState } = documentState;
   const setContent = (value) => editor.change(value);
   const setFilePath = (path2) => {
     void editor.open(path2);
   };
-  const [aiOpen, setAiOpen] = react4.useState(true);
-  const [aiTab, setAiTab] = react4.useState("companion");
-  const [aiOut, setAiOut] = react4.useState("");
-  const [aiBusy, setAiBusy] = react4.useState(false);
-  const [aiErr, setAiErr] = react4.useState("");
-  const [gate, setGate] = react4.useState(null);
-  const [gateBusy, setGateBusy] = react4.useState(false);
-  const [gateErr, setGateErr] = react4.useState("");
-  const [focus, setFocus] = react4.useState(false);
-  const [libOpen, setLibOpen] = react4.useState(true);
-  const [libQuery, setLibQuery] = react4.useState("");
-  const [libraryView, setLibraryView] = react4.useState("writing");
-  const [collapsed, setCollapsed] = react4.useState(() => /* @__PURE__ */ new Set());
-  const [copied, setCopied] = react4.useState(false);
-  const [diffLines, setDiffLines] = react4.useState(null);
-  const [diffLabel, setDiffLabel] = react4.useState("");
-  const [ledger, setLedger] = react4.useState(null);
-  const [gateOpen, setGateOpen] = react4.useState(false);
-  const [ledgerOpen, setLedgerOpen] = react4.useState(false);
-  const [newDocMode, setNewDocMode] = react4.useState(false);
-  const [newDocName, setNewDocName] = react4.useState("");
-  const [projMode, setProjMode] = react4.useState(false);
-  const [projTitle, setProjTitle] = react4.useState("");
-  const [projPremise, setProjPremise] = react4.useState("");
-  const [projTemplate, setProjTemplate] = react4.useState("novel");
-  const [templates, setTemplates] = react4.useState([]);
-  const [addRootMode, setAddRootMode] = react4.useState(false);
-  const [addRootPath, setAddRootPath] = react4.useState("");
-  const [addRootKind, setAddRootKind] = react4.useState("library");
-  const [flash, setFlash] = react4.useState("");
-  const [prefs, setPrefs] = react4.useState(getPrefs);
-  react4.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
-  react4.useEffect(() => {
+  const [aiOpen, setAiOpen] = react6.useState(true);
+  const [aiTab, setAiTab] = react6.useState("companion");
+  const [aiOut, setAiOut] = react6.useState("");
+  const [aiBusy, setAiBusy] = react6.useState(false);
+  const [aiErr, setAiErr] = react6.useState("");
+  const [gate, setGate] = react6.useState(null);
+  const [gateBusy, setGateBusy] = react6.useState(false);
+  const [gateErr, setGateErr] = react6.useState("");
+  const [focus, setFocus] = react6.useState(false);
+  const [libOpen, setLibOpen] = react6.useState(true);
+  const [libQuery, setLibQuery] = react6.useState("");
+  const [libraryView, setLibraryView] = react6.useState("writing");
+  const [collapsed, setCollapsed] = react6.useState(() => /* @__PURE__ */ new Set());
+  const [copied, setCopied] = react6.useState(false);
+  const [diffLines, setDiffLines] = react6.useState(null);
+  const [diffLabel, setDiffLabel] = react6.useState("");
+  const [ledger, setLedger] = react6.useState(null);
+  const [gateOpen, setGateOpen] = react6.useState(false);
+  const [ledgerOpen, setLedgerOpen] = react6.useState(false);
+  const [newDocMode, setNewDocMode] = react6.useState(false);
+  const [newDocName, setNewDocName] = react6.useState("");
+  const [projMode, setProjMode] = react6.useState(false);
+  const [projTitle, setProjTitle] = react6.useState("");
+  const [projPremise, setProjPremise] = react6.useState("");
+  const [projTemplate, setProjTemplate] = react6.useState("novel");
+  const [templates, setTemplates] = react6.useState([]);
+  const [addRootMode, setAddRootMode] = react6.useState(false);
+  const [addRootPath, setAddRootPath] = react6.useState("");
+  const [addRootKind, setAddRootKind] = react6.useState("library");
+  const [exportProj, setExportProj] = react6.useState(null);
+  const [flash, setFlash] = react6.useState("");
+  const [prefs, setPrefs] = react6.useState(getPrefs);
+  react6.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
+  react6.useEffect(() => {
     void loadPrefs();
   }, [active]);
-  const taRef = react4.useRef(null);
-  const fillOpRef = react4.useRef(null);
-  const aiTarget = react4.useRef(null);
-  const saveTimer = react4.useRef(0);
-  const fileInputRef = react4.useRef(null);
-  const runGateRef = react4.useRef(() => {
+  const taRef = react6.useRef(null);
+  const fillOpRef = react6.useRef(null);
+  const aiTarget = react6.useRef(null);
+  const saveTimer = react6.useRef(0);
+  const fileInputRef = react6.useRef(null);
+  const runGateRef = react6.useRef(() => {
   });
   const docBasename = filePath ? String(filePath).split(/[\\/]/).filter(Boolean).pop() : "";
   const docFolder = filePath ? (() => {
@@ -18900,7 +19626,7 @@ function WritingModeApp() {
     if (parts.length < 2) return "";
     return parts[parts.length - 2];
   })() : "";
-  const versionSeries = react4.useMemo(() => {
+  const versionSeries = react6.useMemo(() => {
     if (!filePath) return [];
     const curVer = versionOf(docBasename);
     if (curVer == null) return [];
@@ -18925,23 +19651,23 @@ function WritingModeApp() {
   const curVerNum = versionOf(docBasename);
   const latestVer = versionSeries.length > 0 ? versionSeries[versionSeries.length - 1] : null;
   const isHistoryDoc = curVerNum != null && latestVer != null && curVerNum < latestVer.v;
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     applyBodyAttr(active);
   }, [active]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     try {
       if (focus) document.body.setAttribute("data-writing-focus", "1");
       else document.body.removeAttribute("data-writing-focus");
     } catch {
     }
   }, [focus]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     try {
       document.body.setAttribute("data-writing-lib", libOpen ? "1" : "0");
     } catch {
     }
   }, [libOpen]);
-  const refreshTree = react4.useCallback(async () => {
+  const refreshTree = react6.useCallback(async () => {
     const data = await api("config");
     if (!data.ok) return;
     setRoots(data.roots || []);
@@ -18949,11 +19675,11 @@ function WritingModeApp() {
     const active2 = data.config && data.config.activeRoot || (data.roots || []).find((r) => r.default && !r.missing)?.path || (data.roots || [])[0]?.path || null;
     setActiveRoot(active2);
   }, []);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active) return;
     void refreshTree();
   }, [active, refreshTree]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active || !harnessSessions()) return;
     let running = /* @__PURE__ */ new Set();
     const update = () => {
@@ -18969,9 +19695,9 @@ function WritingModeApp() {
     update();
     return harnessSessions().list.subscribe(update);
   }, [active, editor, refreshTree]);
-  const persist = react4.useCallback(() => editor.flush(), [editor]);
+  const persist = react6.useCallback(() => editor.flush(), [editor]);
   const saveAsNewVersion = () => editor.version();
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active) return;
     let reading = false;
     const refresh = async () => {
@@ -18990,7 +19716,7 @@ function WritingModeApp() {
       window.removeEventListener("focus", refresh);
     };
   }, [active, editor]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active || editor.get().path) return;
     try {
       const p = localStorage.getItem(LS_FILE);
@@ -18998,7 +19724,7 @@ function WritingModeApp() {
     } catch {
     }
   }, [active, editor]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     setCloseGuard(async () => {
       if (await editor.close()) commitModeActive(false);
     });
@@ -19013,7 +19739,7 @@ function WritingModeApp() {
       window.removeEventListener("beforeunload", protect);
     };
   }, [editor]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!filePath) return;
     let cancelled = false;
     setGate(null);
@@ -19037,18 +19763,22 @@ function WritingModeApp() {
       cancelled = true;
     };
   }, [filePath, documentState.revision, refreshTree]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active || !dirty || !filePath || documentState.loading || documentState.status === "error") return;
     saveTimer.current = window.setTimeout(() => {
       void persist();
     }, prefs.autoSaveMs || 800);
     return () => window.clearTimeout(saveTimer.current);
   }, [active, dirty, filePath, content3, documentState.loading, documentState.status, persist, prefs.autoSaveMs]);
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active) return;
     const onKey = (e) => {
       if (e.key === "Escape") {
         if (newDocMode || addRootMode) return;
+        if (exportProj) {
+          setExportProj(null);
+          return;
+        }
         close();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -19059,7 +19789,7 @@ function WritingModeApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, newDocMode, addRootMode, editor, persist]);
+  }, [active, newDocMode, addRootMode, exportProj, editor, persist]);
   function flashMsg(msg) {
     setFlash(String(msg || ""));
     window.setTimeout(() => setFlash(""), 3200);
@@ -19214,7 +19944,7 @@ function WritingModeApp() {
       setAiBusy(false);
     }
   }
-  const runGate = react4.useCallback(async () => {
+  const runGate = react6.useCallback(async () => {
     setGateBusy(true);
     setGateErr("");
     try {
@@ -19236,7 +19966,7 @@ function WritingModeApp() {
     }
   }, [filePath, content3]);
   runGateRef.current = runGate;
-  react4.useEffect(() => {
+  react6.useEffect(() => {
     if (!active || !filePath || !prefs.autoGate) return;
     const ext = String(filePath).toLowerCase().split(".").pop();
     if (ext !== "md" && ext !== "markdown" && ext !== "fountain") return;
@@ -19302,6 +20032,8 @@ function WritingModeApp() {
     setDiffLabel(`v${prev.v} → v${curVerNum}`);
   }
   const isReviewFile = /(^|[\\/])reviews[\\/]/i.test(String(filePath || ""));
+  const notice = flash;
+  const saveLabel = documentState.loading ? "打开中…" : saveState === "saving" ? T.saving : saveState === "error" ? dirty ? "保存失败" : "读取失败" : dirty ? T.unsaved : filePath ? T.saved : "—";
   async function fillComposer(prompt) {
     const source = editor.get().path;
     try {
@@ -19331,20 +20063,19 @@ function WritingModeApp() {
     const prompt = reviewPrompt({ reportContent: content3, reportPath: filePath });
     await fillComposer(prompt);
   }
-  const notice = documentState.error || flash;
-  return jsx10.jsx("div", {
+  return jsx16.jsx("div", {
     className: "dshWmRoot",
     role: "dialog",
     "aria-label": T.toggle,
     children: [
-      notice ? jsx10.jsx("div", { className: "dshWmFlash", role: "alert", children: notice }, "flash") : null,
-      jsx10.jsx(
+      notice ? jsx16.jsx("div", { className: "dshWmFlash", role: "alert", children: notice }, "flash") : null,
+      jsx16.jsx(
         "div",
         {
           className: "dshWmBar",
           children: [
-            jsx10.jsx("span", { className: "dshWmBrand", children: "写作台" }),
-            roots.length > 0 ? jsx10.jsx(
+            jsx16.jsx("span", { className: "dshWmBrand", children: "写作台" }),
+            roots.length > 0 ? jsx16.jsx(
               "select",
               {
                 className: "dshWmSelect",
@@ -19352,7 +20083,7 @@ function WritingModeApp() {
                 onChange: (e) => void activateRoot(e.target.value),
                 title: T.switchRoot,
                 children: roots.map(
-                  (r) => jsx10.jsx(
+                  (r) => jsx16.jsx(
                     "option",
                     {
                       value: r.path,
@@ -19364,7 +20095,7 @@ function WritingModeApp() {
               },
               "roots"
             ) : null,
-            jsx10.jsx("button", {
+            jsx16.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
               onClick: () => {
@@ -19374,7 +20105,7 @@ function WritingModeApp() {
               title: T.addRoot,
               children: "+"
             }),
-            jsx10.jsx("button", {
+            jsx16.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
               onClick: () => {
@@ -19385,18 +20116,18 @@ function WritingModeApp() {
               children: "打开已有",
               title: "读取原有目录，不搬动资料、不自动确认设定"
             }),
-            addRootMode ? jsx10.jsx(
+            addRootMode ? jsx16.jsx(
               "span",
               {
                 className: "dshWmBarGroup",
                 children: [
-                  jsx10.jsx("select", {
+                  jsx16.jsx("select", {
                     "aria-label": "文件夹用途",
                     value: addRootKind,
                     onChange: (e) => setAddRootKind(e.target.value),
-                    children: [jsx10.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx10.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
+                    children: [jsx16.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx16.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
                   }),
-                  jsx10.jsx("input", {
+                  jsx16.jsx("input", {
                     className: "dshWmSearch",
                     style: { width: 180, margin: 0 },
                     value: addRootPath,
@@ -19410,7 +20141,7 @@ function WritingModeApp() {
                       if (e.key === "Escape") setAddRootMode(false);
                     }
                   }),
-                  jsx10.jsx("button", {
+                  jsx16.jsx("button", {
                     type: "button",
                     className: "dshWmBtn is-primary",
                     onClick: () => void commitAddRoot(),
@@ -19420,53 +20151,56 @@ function WritingModeApp() {
               },
               "add-root"
             ) : null,
-            jsx10.jsx("span", { className: "dshWmBarSpacer" }),
-            jsx10.jsx(
+            jsx16.jsx("span", { className: "dshWmBarSpacer" }),
+            jsx16.jsx(
               "div",
               {
                 className: "dshWmBarGroup",
                 children: [
-                  jsx10.jsx("button", {
+                  jsx16.jsx("button", {
                     type: "button",
                     className: "dshWmBtn is-ghost",
                     onClick: () => setLibOpen((v) => !v),
                     title: libOpen ? T.hideLib : T.showLib,
                     children: libOpen ? "⟨" : "⟩"
                   }),
-                  jsx10.jsx("button", {
+                  jsx16.jsx("button", {
                     type: "button",
                     className: "dshWmBtn" + (focus ? " is-on" : ""),
                     onClick: () => setFocus((v) => !v),
+                    "aria-pressed": focus,
+                    title: "专注：只留稿纸，收起文档库与右栏",
                     children: T.focus
                   }),
-                  jsx10.jsx("button", {
+                  jsx16.jsx("button", {
                     type: "button",
-                    className: "dshWmBtn" + (aiOpen ? " is-on" : ""),
-                    onClick: () => setAiOpen((v) => !v),
-                    children: aiOpen ? T.closeAi : T.openAi
+                    className: "dshWmBtn" + (aiOpen && !focus ? " is-on" : ""),
+                    // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
+                    // 否则就是一只按了没反应的按钮（专注中的用户最不需要这个）。
+                    onClick: () => {
+                      if (focus) {
+                        setFocus(false);
+                        setAiOpen(true);
+                      } else setAiOpen((v) => !v);
+                    },
+                    "aria-pressed": focus ? false : aiOpen,
+                    children: aiOpen && !focus ? T.closeAi : T.openAi
                   })
                 ]
               },
               "views"
             ),
-            jsx10.jsx("span", { className: "dshWmBarGroup", children: [
-              jsx10.jsx("button", {
+            jsx16.jsx("span", { className: "dshWmBarGroup", children: [
+              jsx16.jsx("button", {
                 type: "button",
                 className: "dshWmBtn",
                 disabled: !filePath,
+                title: saveState === "error" ? documentState.error : void 0,
                 onClick: () => void persist(),
-                children: saveState === "saving" ? T.saving : saveState === "saved" ? T.saved : T.save
-              }),
-              jsx10.jsx("button", {
-                type: "button",
-                className: "dshWmBtn",
-                disabled: !filePath,
-                title: T.bumpHint || T.saveAsNew,
-                onClick: () => void saveAsNewVersion(),
-                children: "v+1"
+                children: saveState === "saving" ? T.saving : saveState === "error" ? "重试保存" : saveState === "saved" && !dirty ? T.saved : T.save
               })
             ] }, "file-ops"),
-            jsx10.jsx("button", {
+            jsx16.jsx("button", {
               type: "button",
               className: "dshWmBtn is-primary",
               onClick: close,
@@ -19476,30 +20210,30 @@ function WritingModeApp() {
         },
         "bar"
       ),
-      jsx10.jsx(
+      jsx16.jsx(
         "div",
         {
           className: "dshWmBody",
           children: [
-            jsx10.jsx(
+            jsx16.jsx(
               "aside",
               {
                 className: "dshWmSide",
                 children: [
-                  jsx10.jsx(
+                  jsx16.jsx(
                     "div",
                     {
                       className: "dshWmSideHead",
                       children: [
-                        jsx10.jsx("span", { children: T.docs }),
-                        jsx10.jsx("span", { style: { flex: 1 } }),
-                        jsx10.jsx("button", {
+                        jsx16.jsx("span", { children: T.docs }),
+                        jsx16.jsx("span", { style: { flex: 1 } }),
+                        jsx16.jsx("button", {
                           type: "button",
                           className: "dshWmBtn",
                           onClick: openProjectMode,
                           children: T.newProject
                         }),
-                        jsx10.jsx("button", {
+                        jsx16.jsx("button", {
                           type: "button",
                           className: "dshWmBtn",
                           onClick: createDocInRoot,
@@ -19509,7 +20243,7 @@ function WritingModeApp() {
                     },
                     "dh"
                   ),
-                  projMode ? jsx10.jsx(
+                  projMode ? jsx16.jsx(
                     "div",
                     {
                       style: {
@@ -19519,7 +20253,7 @@ function WritingModeApp() {
                         padding: "0 10px 10px"
                       },
                       children: [
-                        jsx10.jsx("input", {
+                        jsx16.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0 },
                           value: projTitle,
@@ -19527,14 +20261,14 @@ function WritingModeApp() {
                           placeholder: T.projTitle,
                           onChange: (e) => setProjTitle(e.target.value)
                         }),
-                        jsx10.jsx("input", {
+                        jsx16.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0 },
                           value: projPremise,
                           placeholder: T.projPremise,
                           onChange: (e) => setProjPremise(e.target.value)
                         }),
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "select",
                           {
                             className: "dshWmSearch",
@@ -19546,7 +20280,7 @@ function WritingModeApp() {
                               { id: "shortdrama", name: "短剧 · 竖屏" },
                               { id: "screenplay", name: "电影 / 剧集" }
                             ]).map(
-                              (t) => jsx10.jsx(
+                              (t) => jsx16.jsx(
                                 "option",
                                 { value: t.id, children: t.name },
                                 t.id
@@ -19555,19 +20289,19 @@ function WritingModeApp() {
                           },
                           "tmpl"
                         ),
-                        jsx10.jsx("p", { className: "dshWmAiHint", children: "只创建作品概览和第一篇正文，其他资料需要时再添加。" }, "starter-hint"),
-                        jsx10.jsx(
+                        jsx16.jsx("p", { className: "dshWmAiHint", children: "只创建作品概览和第一篇正文，其他资料需要时再添加。" }, "starter-hint"),
+                        jsx16.jsx(
                           "div",
                           {
                             style: { display: "flex", gap: 6 },
                             children: [
-                              jsx10.jsx("button", {
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-primary",
                                 onClick: () => void commitProject(),
                                 children: T.create
                               }),
-                              jsx10.jsx("button", {
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: () => setProjMode(false),
@@ -19581,12 +20315,12 @@ function WritingModeApp() {
                     },
                     "proj"
                   ) : null,
-                  newDocMode ? jsx10.jsx(
+                  newDocMode ? jsx16.jsx(
                     "div",
                     {
                       style: { display: "flex", gap: 6, padding: "0 10px 8px" },
                       children: [
-                        jsx10.jsx("input", {
+                        jsx16.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0, flex: 1 },
                           value: newDocName,
@@ -19598,7 +20332,7 @@ function WritingModeApp() {
                             if (e.key === "Escape") setNewDocMode(false);
                           }
                         }),
-                        jsx10.jsx("button", {
+                        jsx16.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-primary",
                           onClick: commitNewDoc,
@@ -19608,9 +20342,9 @@ function WritingModeApp() {
                     },
                     "new-doc"
                   ) : null,
-                  roots.length > 0 ? jsx10.jsx("div", {
+                  roots.length > 0 ? jsx16.jsx("div", {
                     style: { padding: "8px", display: "flex", gap: 6 },
-                    children: [["writing", "作品导航"], ["files", "文件视图"]].map(([value, label]) => jsx10.jsx("button", {
+                    children: [["writing", "作品导航"], ["files", "文件视图"]].map(([value, label]) => jsx16.jsx("button", {
                       type: "button",
                       className: "dshWmBtn",
                       "aria-pressed": libraryView === value,
@@ -19618,11 +20352,11 @@ function WritingModeApp() {
                       children: label
                     }, value))
                   }, "library-view") : null,
-                  roots.length > 0 ? jsx10.jsx(
+                  roots.length > 0 ? jsx16.jsx(
                     "div",
                     {
                       style: { padding: "8px 8px 0" },
-                      children: jsx10.jsx("input", {
+                      children: jsx16.jsx("input", {
                         className: "dshWmSearch",
                         value: libQuery,
                         placeholder: T.search,
@@ -19631,26 +20365,26 @@ function WritingModeApp() {
                     },
                     "sq"
                   ) : null,
-                  jsx10.jsx(
+                  jsx16.jsx(
                     "div",
                     {
                       className: "dshWmList",
-                      children: roots.length === 0 ? jsx10.jsx(
+                      children: roots.length === 0 ? jsx16.jsx(
                         "div",
                         {
                           className: "dshWmWelcome",
                           children: [
-                            jsx10.jsx(
+                            jsx16.jsx(
                               "div",
                               { className: "dshWmWelcomeTitle", children: T.toggle },
                               "wt"
                             ),
-                            jsx10.jsx(
+                            jsx16.jsx(
                               "div",
                               { className: "dshWmWelcomeBody", children: T.empty },
                               "wb"
                             ),
-                            jsx10.jsx(
+                            jsx16.jsx(
                               "button",
                               {
                                 type: "button",
@@ -19663,18 +20397,18 @@ function WritingModeApp() {
                               },
                               "wc"
                             ),
-                            jsx10.jsx(
+                            jsx16.jsx(
                               "div",
                               {
                                 className: "dshWmAiHint",
-                                children: "Esc · Ctrl+S · Ctrl+Shift+S"
+                                children: KEY_HINT
                               },
                               "wk"
                             )
                           ]
                         },
                         "wel"
-                      ) : projects.length === 0 ? jsx10.jsx("div", {
+                      ) : projects.length === 0 ? jsx16.jsx("div", {
                         className: "dshWmEmpty",
                         children: (activeTree && activeTree.missing ? T.missing + "\n" : "") + T.noProjects
                       }) : projects.map((proj) => {
@@ -19684,19 +20418,19 @@ function WritingModeApp() {
                           (proj.files || []).filter((f) => String(f.rel).startsWith("draft/"))
                         );
                         if (libQuery && groups.length === 0) return null;
-                        return jsx10.jsx(
+                        return jsx16.jsx(
                           "div",
                           {
                             className: "dshWmProj",
                             children: [
-                              jsx10.jsx(
+                              jsx16.jsx(
                                 "button",
                                 {
                                   type: "button",
                                   className: "dshWmProjToggle",
                                   onClick: () => toggleProj(proj.path),
                                   children: [
-                                    jsx10.jsx(
+                                    jsx16.jsx(
                                       "span",
                                       {
                                         className: "dshWmProjChev" + (openP ? " is-open" : ""),
@@ -19704,29 +20438,41 @@ function WritingModeApp() {
                                       },
                                       "c"
                                     ),
-                                    jsx10.jsx("span", { children: proj.name }, "n")
+                                    jsx16.jsx("span", { children: proj.name }, "n")
                                   ]
                                 },
                                 "pt"
                               ),
-                              openP ? jsx10.jsx("select", {
-                                className: "dshWmSearch",
-                                "aria-label": "按需添加资料",
-                                value: "",
-                                onChange: (e) => void addProjectResource(proj, e.target.value),
+                              openP ? jsx16.jsxs("div", {
+                                className: "dshWmProjOps",
                                 children: [
-                                  jsx10.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
-                                  ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx10.jsx("option", { value: item.rel, children: item.label }, item.rel))
+                                  jsx16.jsx("button", {
+                                    type: "button",
+                                    className: "dshWmBtn is-ghost",
+                                    title: "导出成书：把各章最新版按顺序拼成一份完整书稿（原稿不动）",
+                                    onClick: () => setExportProj(proj),
+                                    children: "成书"
+                                  }, "export"),
+                                  jsx16.jsx("select", {
+                                    className: "dshWmSearch",
+                                    "aria-label": "按需添加资料",
+                                    value: "",
+                                    onChange: (e) => void addProjectResource(proj, e.target.value),
+                                    children: [
+                                      jsx16.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
+                                      ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx16.jsx("option", { value: item.rel, children: item.label }, item.rel))
+                                    ]
+                                  }, "add-resource")
                                 ]
-                              }, "add-resource") : null,
-                              proj.scanWarning ? jsx10.jsx("p", { role: "status", children: proj.scanWarning }) : null,
+                              }, "proj-ops") : null,
+                              proj.scanWarning ? jsx16.jsx("p", { role: "status", children: proj.scanWarning }) : null,
                               openP ? groups.map(
-                                (g) => jsx10.jsx(
+                                (g) => jsx16.jsx(
                                   "details",
                                   {
                                     open: libraryView === "files" || Boolean(libQuery) || ["正文", "作品概览"].includes(g.key) || g.files.some((f) => f.abs === filePath),
                                     children: [
-                                      jsx10.jsx(
+                                      jsx16.jsx(
                                         "summary",
                                         {
                                           className: "dshWmFolder",
@@ -19761,32 +20507,32 @@ function WritingModeApp() {
               },
               "docs"
             ),
-            jsx10.jsx(
+            jsx16.jsx(
               "main",
               {
                 className: "dshWmMain",
                 children: [
-                  jsx10.jsx(
+                  jsx16.jsx(
                     "div",
                     {
                       className: "dshWmDocChrome",
                       children: [
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
                           {
                             className: "dshWmPathRow",
                             children: [
-                              jsx10.jsx("span", {
+                              jsx16.jsx("span", {
                                 className: "dshWmPathText",
                                 children: filePath ? (docFolder ? docFolder + " / " : "") + docBasename : "—"
                               }),
-                              filePath ? jsx10.jsx("button", {
+                              filePath ? jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-ghost",
                                 onClick: () => void copyPath(),
                                 children: copied ? T.copied : T.copyPath
                               }) : null,
-                              isReviewFile ? jsx10.jsx("button", {
+                              isReviewFile ? jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: sendReviewToChat,
@@ -19796,7 +20542,7 @@ function WritingModeApp() {
                           },
                           "pr"
                         ),
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
                           {
                             className: "dshWmDocName",
@@ -19804,16 +20550,16 @@ function WritingModeApp() {
                           },
                           "dn"
                         ),
-                        isHistoryDoc && latestVer ? jsx10.jsx(
+                        isHistoryDoc && latestVer ? jsx16.jsx(
                           "div",
                           {
                             className: "dshWmHistBanner",
                             children: [
-                              jsx10.jsx("span", {
+                              jsx16.jsx("span", {
                                 children: T.isHistory + " · " + T.isLatest + " v" + latestVer.v
                               }, "h"),
-                              jsx10.jsx("span", { style: { flex: 1 } }),
-                              jsx10.jsx("button", {
+                              jsx16.jsx("span", { style: { flex: 1 } }),
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: () => setFilePath(latestVer.abs),
@@ -19823,18 +20569,18 @@ function WritingModeApp() {
                           },
                           "hb"
                         ) : null,
-                        versionSeries.length > 1 ? jsx10.jsx(
+                        filePath ? jsx16.jsx(
                           "div",
                           {
                             className: "dshWmVerBar",
                             children: [
-                              jsx10.jsx(
+                              jsx16.jsx(
                                 "span",
                                 { className: "dshWmVerBarLabel", children: T.versions },
                                 "vl"
                               ),
                               ...versionSeries.map(
-                                (s) => jsx10.jsx(
+                                (s) => jsx16.jsx(
                                   "button",
                                   {
                                     type: "button",
@@ -19845,7 +20591,7 @@ function WritingModeApp() {
                                   "v" + s.v
                                 )
                               ),
-                              jsx10.jsx(
+                              jsx16.jsx(
                                 "button",
                                 {
                                   type: "button",
@@ -19855,21 +20601,33 @@ function WritingModeApp() {
                                   children: T.comparePrev
                                 },
                                 "cmp"
+                              ),
+                              jsx16.jsx(
+                                "button",
+                                {
+                                  type: "button",
+                                  className: "dshWmBtn is-ghost",
+                                  disabled: !filePath,
+                                  title: T.bumpHint || T.saveAsNew,
+                                  onClick: () => void saveAsNewVersion(),
+                                  children: T.saveAsNew
+                                },
+                                "bump"
                               )
                             ]
                           },
                           "vb"
                         ) : null,
-                        jsx10.jsx("div", { className: "dshWmDocRule" }, "dr")
+                        jsx16.jsx("div", { className: "dshWmDocRule" }, "dr")
                       ]
                     },
                     "chrome"
                   ),
-                  jsx10.jsx(
+                  jsx16.jsx(
                     "div",
                     {
                       className: "dshWmEditorWrap",
-                      children: jsx10.jsx("textarea", {
+                      children: jsx16.jsx("textarea", {
                         ref: taRef,
                         className: "dshWmEditor",
                         value: content3,
@@ -19883,21 +20641,21 @@ function WritingModeApp() {
                     },
                     "ew"
                   ),
-                  diffLines ? jsx10.jsx(
+                  diffLines ? jsx16.jsx(
                     "div",
                     {
                       className: "dshWmDiff",
                       children: [
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
                           {
                             className: "dshWmDiffHead",
                             children: [
-                              jsx10.jsx("span", {
+                              jsx16.jsx("span", {
                                 children: T.diffTitle + " " + diffLabel
                               }),
-                              jsx10.jsx("span", { style: { flex: 1 } }),
-                              jsx10.jsx("button", {
+                              jsx16.jsx("span", { style: { flex: 1 } }),
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-ghost",
                                 onClick: () => setDiffLines(null),
@@ -19908,7 +20666,7 @@ function WritingModeApp() {
                           "dh"
                         ),
                         ...diffLines.map(
-                          (d, i) => jsx10.jsx(
+                          (d, i) => jsx16.jsx(
                             "div",
                             {
                               className: "dshWmDiffLine " + d.t,
@@ -19921,33 +20679,58 @@ function WritingModeApp() {
                     },
                     "diff"
                   ) : null,
-                  jsx10.jsx(
+                  documentState.error ? jsx16.jsxs("div", {
+                    className: "dshWmDocAlert",
+                    role: "alert",
+                    "data-wm-doc-alert": saveState,
+                    children: [
+                      jsx16.jsx("span", { children: documentState.error }, "m"),
+                      jsx16.jsx("span", { style: { flex: 1 } }, "s"),
+                      dirty && filePath ? jsx16.jsx("button", {
+                        type: "button",
+                        className: "dshWmBtn",
+                        onClick: () => void persist(),
+                        children: "重试保存"
+                      }, "retry") : null,
+                      filePath ? jsx16.jsx("button", {
+                        type: "button",
+                        className: "dshWmBtn is-ghost",
+                        title: T.bumpHint,
+                        onClick: () => void editor.version(),
+                        children: "另存新版"
+                      }, "bump") : null
+                    ]
+                  }, "doc-alert") : null,
+                  jsx16.jsx(
                     "div",
                     {
                       className: "dshWmStatus",
                       children: [
-                        jsx10.jsx("span", {
-                          className: "dot " + (dirty ? "is-dirty" : saveState === "saved" ? "is-saved" : "")
+                        jsx16.jsx("span", {
+                          className: "dot " + (saveState === "error" ? "is-error" : dirty ? "is-dirty" : saveState === "saved" ? "is-saved" : ""),
+                          "data-wm-save-dot": saveState
                         }),
-                        jsx10.jsx("span", {
-                          children: dirty ? T.unsaved : saveState === "saved" ? T.saved : "—"
+                        jsx16.jsx("span", {
+                          className: saveState === "error" ? "dshWmStatusError" : "",
+                          "data-wm-save-label": "1",
+                          children: saveLabel
                         }),
-                        jsx10.jsx("span", { className: "dshWmStatusSep", children: "·" }),
-                        jsx10.jsx("span", {
+                        jsx16.jsx("span", { className: "dshWmStatusSep", children: "·" }),
+                        jsx16.jsx("span", {
                           children: `${content3.replace(/\s+/g, "").length} ${T.chars}`
                         }),
-                        jsx10.jsx("span", {
+                        jsx16.jsx("span", {
                           className: "dshWmStatusSep",
                           children: "·"
                         }),
-                        jsx10.jsx("span", {
+                        jsx16.jsx("span", {
                           children: (filePath || "").toLowerCase().endsWith(".fountain") ? "Fountain" : "Markdown"
                         }),
-                        gate ? jsx10.jsx("span", {
+                        gate ? jsx16.jsx("span", {
                           className: "dshWmStatusSep",
                           children: "·"
                         }) : null,
-                        gate ? jsx10.jsx("span", {
+                        gate ? jsx16.jsx("span", {
                           style: {
                             color: gate.pass ? "var(--dsw-alias-state-success-primary)" : "var(--dsw-alias-state-error-primary)",
                             fontWeight: 600
@@ -19957,21 +20740,35 @@ function WritingModeApp() {
                       ]
                     },
                     "st"
-                  )
+                  ),
+                  exportProj ? jsx16.jsx(ExportBookPanel, {
+                    proj: exportProj,
+                    onClose: () => setExportProj(null),
+                    onDone: (data) => {
+                      setExportProj(null);
+                      const name3 = String(data?.doc?.path || "").split(/[\\/]/).pop();
+                      flashMsg(`已导出 ${data?.stats?.files ?? 0} 篇 → ${name3}`);
+                      void refreshTree();
+                      if (data?.doc?.path) setFilePath(data.doc.path);
+                    }
+                  }, "export-book") : null
                 ]
               },
               "main"
             ),
-            aiOpen ? jsx10.jsx(
+            aiOpen ? jsx16.jsx(
               "aside",
               {
                 className: "dshWmSide is-ai",
                 children: [
-                  jsx10.jsxs("div", { className: "dshWmSideHead", children: [
-                    jsx10.jsx("button", { className: "dshWmTab" + (aiTab === "companion" ? " is-on" : ""), onClick: () => setAiTab("companion"), children: T.ai }),
-                    jsx10.jsx("button", { className: "dshWmTab" + (aiTab === "tools" ? " is-on" : ""), onClick: () => setAiTab("tools"), children: "文字工具" })
+                  jsx16.jsxs("div", { className: "dshWmSideHead", children: [
+                    jsx16.jsx("button", { className: "dshWmTab" + (aiTab === "companion" ? " is-on" : ""), onClick: () => setAiTab("companion"), children: T.ai }),
+                    jsx16.jsx("button", { className: "dshWmTab" + (aiTab === "tools" ? " is-on" : ""), onClick: () => setAiTab("tools"), children: "文字工具" }),
+                    jsx16.jsx("button", { className: "dshWmTab" + (aiTab === "check" ? " is-on" : ""), onClick: () => setAiTab("check"), children: "检查" })
                   ] }, "ah"),
-                  aiTab === "companion" && !focus ? jsx10.jsx(WritingCompanion, {
+                  // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
+                  // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
+                  aiTab === "companion" ? jsx16.jsx(WritingCompanion, {
                     path: filePath || activeRoot,
                     sourceInfo: () => {
                       const snap = editor.get();
@@ -19994,23 +20791,29 @@ function WritingModeApp() {
                         note: "请以我随后补充的想法为准。"
                       });
                     },
-                    onExit: close
+                    onExit: close,
+                    // 会话列表点击 = 开该作品概览文档，伙伴会话随 path 解析自然切换
+                    onOpenProject: (project) => {
+                      setFilePath(String(project).replace(/[\\/]+$/, "") + "/project.md");
+                      setAiOpen(true);
+                      setAiTab("companion");
+                    }
                   }, "companion") : null,
-                  aiTab === "tools" ? jsx10.jsx(
+                  aiTab === "tools" ? jsx16.jsx(
                     "div",
                     {
                       className: "dshWmAiBody",
                       children: [
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
                           { className: "dshWmAiSection", children: [
-                            jsx10.jsx("div", { className: "dshWmAiSectionTitle", children: "AI" }, "at"),
-                            jsx10.jsx(
+                            jsx16.jsx("div", { className: "dshWmAiSectionTitle", children: "AI" }, "at"),
+                            jsx16.jsx(
                               "div",
                               {
                                 className: "dshWmAiActions",
                                 children: ["polish", "continue", "outline", "compress", "expand", "research", "spark"].map(
-                                  (a) => jsx10.jsx(
+                                  (a) => jsx16.jsx(
                                     "button",
                                     {
                                       type: "button",
@@ -20028,35 +20831,35 @@ function WritingModeApp() {
                           ] },
                           "sec-ai"
                         ),
-                        aiBusy ? jsx10.jsx("div", { className: "dshWmAiHint", children: T.applying }) : null,
-                        aiErr ? jsx10.jsx("div", { className: "dshWmAiHint", children: aiErr }) : null,
-                        jsx10.jsx(
+                        aiBusy ? jsx16.jsx("div", { className: "dshWmAiHint", children: T.applying }) : null,
+                        aiErr ? jsx16.jsx("div", { className: "dshWmAiHint", children: aiErr }) : null,
+                        jsx16.jsx(
                           "div",
                           { className: "dshWmAiMain", children: [
-                            jsx10.jsx("div", { className: "dshWmAiOut", children: aiOut || " " }, "out")
+                            jsx16.jsx("div", { className: "dshWmAiOut", children: aiOut || " " }, "out")
                           ] },
                           "aim"
                         ),
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
                           {
                             className: "dshWmAiActions",
                             children: [
-                              jsx10.jsx("button", {
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 disabled: !aiOut,
                                 onClick: applyInsert,
                                 children: T.insert
                               }),
-                              jsx10.jsx("button", {
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 disabled: !aiOut,
                                 onClick: applyReplace,
                                 children: T.replaceSel
                               }),
-                              jsx10.jsx("button", {
+                              jsx16.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-primary",
                                 onClick: sendToChat,
@@ -20066,218 +20869,28 @@ function WritingModeApp() {
                           },
                           "apply"
                         ),
-                        /* ── 门禁：默认收起，只露一行摘要 ── */
-                        jsx10.jsx(
+                        jsx16.jsx(
                           "div",
-                          {
-                            className: "dshWmSec",
-                            children: [
-                              jsx10.jsx(
-                                "button",
-                                {
-                                  type: "button",
-                                  className: "dshWmSecToggle",
-                                  onClick: () => setGateOpen((v) => !v),
-                                  children: [
-                                    jsx10.jsx("span", {
-                                      children: (gateOpen ? "▾ " : "▸ ") + T.gates
-                                    }, "t"),
-                                    jsx10.jsx("span", {
-                                      className: "dshWmSecBadge" + (gate ? gate.pass ? " is-pass" : " is-fail" : ""),
-                                      children: gateBusy ? T.applying : gate ? gate.pass ? T.gatesPass : T.gatesFail.replace("{n}", String(gate.fail)) : "—"
-                                    }, "b")
-                                  ]
-                                },
-                                "gt"
-                              ),
-                              gateOpen ? jsx10.jsx(
-                                "div",
-                                {
-                                  className: "dshWmSec",
-                                  children: [
-                                    jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmAiActions",
-                                        children: [
-                                          jsx10.jsx("button", {
-                                            type: "button",
-                                            className: "dshWmBtn",
-                                            disabled: gateBusy || !filePath,
-                                            onClick: () => void runGate(),
-                                            children: gateBusy ? T.applying : T.runGates
-                                          })
-                                        ]
-                                      },
-                                      "gb"
-                                    ),
-                                    gateErr ? jsx10.jsx("div", {
-                                      className: "dshWmAiHint",
-                                      children: gateErr
-                                    }, "ge") : null,
-                                    !gate && !gateErr ? jsx10.jsx("div", {
-                                      className: "dshWmAiHint",
-                                      children: T.gatesIdle
-                                    }, "gi") : null,
-                                    gate && gate.rows ? jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmGateList",
-                                        children: gate.rows.map(
-                                          (r, i) => jsx10.jsx(
-                                            "div",
-                                            {
-                                              className: "dshWmGateRow",
-                                              children: [
-                                                jsx10.jsx("span", {
-                                                  className: r.ok ? "ok" : "bad",
-                                                  children: r.ok ? "PASS" : "FAIL"
-                                                }),
-                                                jsx10.jsx("span", {
-                                                  className: "dshWmGateLabel",
-                                                  children: r.label
-                                                }),
-                                                jsx10.jsx("span", {
-                                                  className: "dshWmGateDetail",
-                                                  children: r.detail
-                                                })
-                                              ]
-                                            },
-                                            "r" + i
-                                          )
-                                        )
-                                      },
-                                      "gl"
-                                    ) : null
-                                  ]
-                                },
-                                "gb2"
-                              ) : null
-                            ]
-                          },
-                          "gh"
-                        ),
-                        /* ── 台账：默认收起 ── */
-                        jsx10.jsx(
-                          "div",
-                          {
-                            className: "dshWmSec",
-                            children: [
-                              jsx10.jsx(
-                                "button",
-                                {
-                                  type: "button",
-                                  className: "dshWmSecToggle",
-                                  onClick: () => setLedgerOpen((v) => !v),
-                                  children: [
-                                    jsx10.jsx("span", {
-                                      children: (ledgerOpen ? "▾ " : "▸ ") + T.ledger
-                                    }, "t"),
-                                    jsx10.jsx("span", {
-                                      className: "dshWmSecBadge",
-                                      children: ledger ? (ledger.foreshadowOpen != null ? ledger.foreshadowOpen + " · " : "") + (ledger.latestReview || "—").slice(0, 18) : "—"
-                                    }, "b")
-                                  ]
-                                },
-                                "lt"
-                              ),
-                              ledgerOpen ? ledger ? jsx10.jsx(
-                                "div",
-                                {
-                                  className: "dshWmLedger",
-                                  children: [
-                                    jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmLedgerRow",
-                                        children: [
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerK",
-                                            children: T.ledgerHook
-                                          }),
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerV",
-                                            children: ledger.hook || "—"
-                                          })
-                                        ]
-                                      },
-                                      "lh"
-                                    ),
-                                    jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmLedgerRow",
-                                        children: [
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerK",
-                                            children: T.ledgerFores
-                                          }),
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerV",
-                                            children: ledger.foreshadowOpen == null ? "—" : String(ledger.foreshadowOpen)
-                                          })
-                                        ]
-                                      },
-                                      "lf"
-                                    ),
-                                    jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmLedgerRow",
-                                        children: [
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerK",
-                                            children: T.ledgerReview
-                                          }),
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerV",
-                                            children: ledger.latestReview || "—"
-                                          })
-                                        ]
-                                      },
-                                      "lr"
-                                    ),
-                                    ledger.timeline && ledger.timeline.length ? jsx10.jsx(
-                                      "div",
-                                      {
-                                        className: "dshWmLedgerRow",
-                                        children: [
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerK",
-                                            children: T.ledgerTimeline
-                                          }),
-                                          jsx10.jsx("span", {
-                                            className: "dshWmLedgerV",
-                                            children: ledger.timeline[ledger.timeline.length - 1]
-                                          })
-                                        ]
-                                      },
-                                      "lts"
-                                    ) : null
-                                  ]
-                                },
-                                "lb"
-                              ) : jsx10.jsx(
-                                "div",
-                                {
-                                  className: "dshWmAiHint",
-                                  children: T.ledgerNone
-                                },
-                                "ln"
-                              ) : null
-                            ]
-                          },
-                          "lsec"
-                        ),
-                        jsx10.jsx(
-                          "div",
-                          { className: "dshWmAiHint", children: "Esc · Ctrl+S · Ctrl+Shift+W" },
+                          { className: "dshWmAiHint", children: KEY_HINT },
                           "kbd"
                         )
                       ]
                     },
                     "ab"
-                  ) : null
+                  ) : null,
+                  aiTab === "check" ? jsx16.jsx(InspectionPanel, {
+                    T,
+                    filePath,
+                    gate,
+                    gateErr,
+                    gateBusy,
+                    gateOpen,
+                    onToggleGate: () => setGateOpen((v) => !v),
+                    onRunGate: runGate,
+                    ledger,
+                    ledgerOpen,
+                    onToggleLedger: () => setLedgerOpen((v) => !v)
+                  }, "inspection") : null
                 ]
               },
               "ai"
@@ -20334,14 +20947,14 @@ function ensureDomFloat() {
 }
 
 // plugin/writing-mode/src/client/features/settings/WritingModeSettings.js
-var react5 = __toESM(require("react"), 1);
-var jsx12 = __toESM(require("react/jsx-runtime"), 1);
+var react7 = __toESM(require("react"), 1);
+var jsx18 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeSettings() {
-  const [prefs, setPrefsLocal] = react5.useState(getPrefs);
-  const [roots, setRoots] = react5.useState([]);
-  const [pathDraft, setPathDraft] = react5.useState("");
-  react5.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
-  react5.useEffect(() => {
+  const [prefs, setPrefsLocal] = react7.useState(getPrefs);
+  const [roots, setRoots] = react7.useState([]);
+  const [pathDraft, setPathDraft] = react7.useState("");
+  react7.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
+  react7.useEffect(() => {
     void loadPrefs();
     void api("config").then((d) => {
       if (d.ok) setRoots(d.roots || []);
@@ -20352,7 +20965,7 @@ function WritingModeSettings() {
   const label = { width: 120, flex: "none", color: "var(--dsw-alias-label-secondary)", fontSize: 13 };
   const hint = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.5 };
   function numInput(key, min, max, step) {
-    return jsx12.jsx("input", {
+    return jsx18.jsx("input", {
       type: "number",
       min: String(min),
       max: String(max),
@@ -20393,7 +21006,7 @@ function WritingModeSettings() {
     const d = await api("config");
     if (d.ok) setRoots(d.roots || []);
   }
-  return jsx12.jsx(
+  return jsx18.jsx(
     "div",
     {
       style: {
@@ -20405,7 +21018,7 @@ function WritingModeSettings() {
         color: "var(--dsw-alias-label-primary)"
       },
       children: [
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: { fontSize: 13, color: "var(--dsw-alias-label-tertiary)", marginBottom: 8 },
@@ -20413,19 +21026,19 @@ function WritingModeSettings() {
           },
           "intro"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "库根目录" }),
-              jsx12.jsx(
+              jsx18.jsx("span", { style: label, children: "库根目录" }),
+              jsx18.jsx(
                 "div",
                 {
                   style: { flex: 1, display: "flex", flexDirection: "column", gap: 6 },
                   children: [
                     ...(roots || []).map(
-                      (r) => jsx12.jsx(
+                      (r) => jsx18.jsx(
                         "div",
                         {
                           style: {
@@ -20435,7 +21048,7 @@ function WritingModeSettings() {
                             fontSize: 13
                           },
                           children: [
-                            jsx12.jsx("span", {
+                            jsx18.jsx("span", {
                               style: {
                                 flex: 1,
                                 overflow: "hidden",
@@ -20444,7 +21057,7 @@ function WritingModeSettings() {
                               },
                               children: (r.missing ? "⚠ " : "") + r.path
                             }),
-                            jsx12.jsx("button", {
+                            jsx18.jsx("button", {
                               type: "button",
                               className: "dshWmBtn",
                               onClick: () => void removeRoot(r.path),
@@ -20455,12 +21068,12 @@ function WritingModeSettings() {
                         r.path
                       )
                     ),
-                    jsx12.jsx(
+                    jsx18.jsx(
                       "div",
                       {
                         style: { display: "flex", gap: 8 },
                         children: [
-                          jsx12.jsx("input", {
+                          jsx18.jsx("input", {
                             style: {
                               flex: 1,
                               padding: "6px 10px",
@@ -20478,7 +21091,7 @@ function WritingModeSettings() {
                               if (e.key === "Enter") void addRoot();
                             }
                           }),
-                          jsx12.jsx("button", {
+                          jsx18.jsx("button", {
                             type: "button",
                             className: "dshWmBtn is-primary",
                             onClick: () => void addRoot(),
@@ -20495,58 +21108,58 @@ function WritingModeSettings() {
           },
           "roots"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "正文字号" }),
+              jsx18.jsx("span", { style: label, children: "正文字号" }),
               numInput("fontSize", 12, 28, 1),
-              jsx12.jsx("span", { style: hint, children: "px" })
+              jsx18.jsx("span", { style: hint, children: "px" })
             ]
           },
           "fs"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "行距" }),
+              jsx18.jsx("span", { style: label, children: "行距" }),
               numInput("lineHeight", 1.4, 2.6, 0.05)
             ]
           },
           "lh"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "自动保存" }),
+              jsx18.jsx("span", { style: label, children: "自动保存" }),
               numInput("autoSaveMs", 200, 5e3, 100),
-              jsx12.jsx("span", { style: hint, children: "ms（防抖）" })
+              jsx18.jsx("span", { style: hint, children: "ms（防抖）" })
             ]
           },
           "as"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "保存后门禁" }),
-              jsx12.jsx("input", {
+              jsx18.jsx("span", { style: label, children: "保存后门禁" }),
+              jsx18.jsx("input", {
                 type: "checkbox",
                 checked: Boolean(prefs.autoGate),
                 onChange: (e) => void savePrefs({ autoGate: e.target.checked })
               }),
-              jsx12.jsx("span", { style: hint, children: "md / fountain 存盘后自动跑一次" })
+              jsx18.jsx("span", { style: hint, children: "md / fountain 存盘后自动跑一次" })
             ]
           },
           "ag"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: {
@@ -20562,13 +21175,13 @@ function WritingModeSettings() {
           },
           "ai-head"
         ),
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "来源" }),
-              jsx12.jsx(
+              jsx18.jsx("span", { style: label, children: "来源" }),
+              jsx18.jsx(
                 "select",
                 {
                   value: prefs.aiMode === "custom" ? "custom" : "harness",
@@ -20583,12 +21196,12 @@ function WritingModeSettings() {
                   },
                   onChange: (e) => void savePrefs({ aiMode: e.target.value === "custom" ? "custom" : "harness" }),
                   children: [
-                    jsx12.jsx("option", { value: "harness", children: "Harness 全局默认（文字工具）" }, "h"),
-                    jsx12.jsx("option", { value: "custom", children: "自定义 Provider / Model" }, "c")
+                    jsx18.jsx("option", { value: "harness", children: "Harness 全局默认（文字工具）" }, "h"),
+                    jsx18.jsx("option", { value: "custom", children: "自定义 Provider / Model" }, "c")
                   ]
                 }
               ),
-              jsx12.jsx("span", {
+              jsx18.jsx("span", {
                 style: hint,
                 children: prefs.aiMode === "custom" ? "润色/续写/找资料走下面配置的模型" : "文字工具使用 Harness 全局默认模型；写作伙伴使用其原生会话模型"
               })
@@ -20596,13 +21209,13 @@ function WritingModeSettings() {
           },
           "ai-mode"
         ),
-        prefs.aiMode === "custom" ? jsx12.jsx(
+        prefs.aiMode === "custom" ? jsx18.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx12.jsx("span", { style: label, children: "Provider" }),
-              jsx12.jsx("input", {
+              jsx18.jsx("span", { style: label, children: "Provider" }),
+              jsx18.jsx("input", {
                 style: {
                   flex: 1,
                   padding: "6px 10px",
@@ -20621,13 +21234,13 @@ function WritingModeSettings() {
           },
           "ai-prov"
         ) : null,
-        prefs.aiMode === "custom" ? jsx12.jsx(
+        prefs.aiMode === "custom" ? jsx18.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx12.jsx("span", { style: label, children: "Model" }),
-              jsx12.jsx("input", {
+              jsx18.jsx("span", { style: label, children: "Model" }),
+              jsx18.jsx("input", {
                 style: {
                   flex: 1,
                   padding: "6px 10px",
@@ -20646,13 +21259,13 @@ function WritingModeSettings() {
           },
           "ai-model"
         ) : null,
-        prefs.aiMode === "custom" ? jsx12.jsx(
+        prefs.aiMode === "custom" ? jsx18.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx12.jsx("span", { style: label, children: "API Key" }),
-              jsx12.jsx("input", {
+              jsx18.jsx("span", { style: label, children: "API Key" }),
+              jsx18.jsx("input", {
                 type: "password",
                 style: {
                   flex: 1,
@@ -20672,19 +21285,19 @@ function WritingModeSettings() {
           },
           "ai-key"
         ) : null,
-        jsx12.jsx(
+        jsx18.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx12.jsx("span", { style: label, children: "进入工作台" }),
-              jsx12.jsx("button", {
+              jsx18.jsx("span", { style: label, children: "进入工作台" }),
+              jsx18.jsx("button", {
                 type: "button",
                 className: "dshWmBtn is-primary",
                 onClick: () => setModeActive(true),
                 children: "打开写作模式"
               }),
-              jsx12.jsx("span", { style: hint, children: "快捷键 Ctrl+Shift+W" })
+              jsx18.jsx("span", { style: hint, children: "快捷键 Ctrl+Shift+W" })
             ]
           },
           "open"
@@ -20695,12 +21308,12 @@ function WritingModeSettings() {
 }
 
 // plugin/writing-mode/src/client/features/settings/entries.js
-var react6 = __toESM(require("react"), 1);
-var jsx14 = __toESM(require("react/jsx-runtime"), 1);
+var react8 = __toESM(require("react"), 1);
+var jsx20 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeFooterEntry() {
-  const [on, setOn] = react6.useState(getModeActive);
-  react6.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
-  return jsx14.jsx("button", {
+  const [on, setOn] = react8.useState(getModeActive);
+  react8.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  return jsx20.jsx("button", {
     type: "button",
     className: on ? "dshWmBtn is-primary" : "dshWmBtn",
     title: on ? T.exit : T.toggle,
@@ -20710,9 +21323,9 @@ function WritingModeFooterEntry() {
   });
 }
 function WritingModeHeaderEntry() {
-  const [on, setOn] = react6.useState(getModeActive);
-  react6.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
-  return jsx14.jsx("button", {
+  const [on, setOn] = react8.useState(getModeActive);
+  react8.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  return jsx20.jsx("button", {
     type: "button",
     className: "dshWmBtn",
     title: on ? T.exit : T.toggle,

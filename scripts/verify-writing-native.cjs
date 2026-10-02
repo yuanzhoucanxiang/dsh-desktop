@@ -33,13 +33,29 @@ app.whenReady().then(async () => {
   kernel = spawn(path.join(repo, 'runtime/node.exe'), [path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js'), '--profile', 'web', '--patch', patch, '--port', String(port), '--no-open'], { cwd: project, env: { ...process.env, DSH_HOME: home }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   kernel.stdout.on('data', d => { kernelOutput += d })
   kernel.stderr.on('data', d => { kernelOutput += d })
+  // 0.1.2 起内核 Web 启用 token 鉴权：裸访 / 返回 401，stdout 报带一次性 token 的完整 URL。
+  // 就绪判定 = 内核开始应答 HTTP（任意状态码）；页面加载走 token URL（303 + set-cookie 把会话
+  // cookie 种进渲染会话，等价旧架构的窗口直连）。老内核裸 / 直接 200，无需 token。
+  const tokenUrl = () => (kernelOutput.match(/dsh web: (http:\/\/\S+)/) || [])[1]
   const deadline = Date.now() + 90000
-  let ready = false
+  let ready = false, needsAuth = false
   while (Date.now() < deadline && kernel.exitCode === null) {
-    try { if ((await fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1000) })).ok) { ready = true; break } } catch {}
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1000) })
+      ready = true
+      // 0.1.7 内核起动的头一秒会先答 404 再转 401（kernel-upgrade-checklist 实测）。
+      // 404 也算 needsAuth：若在这里把它当"无需鉴权"，loadURL 会裸加载 / 而得到 401 纯文本页，
+      // 浮钮永远等不到（2026-09-26 竞态实测：同环境时好时坏）。
+      needsAuth = r.status !== 200; break
+    } catch {}
     await sleep(150)
   }
   assert.ok(ready, kernelOutput)
+  if (needsAuth) {
+    const tokenDeadline = Date.now() + 30000
+    while (!tokenUrl() && Date.now() < tokenDeadline && kernel.exitCode === null) await sleep(100)
+    assert.ok(tokenUrl(), '内核要求鉴权但未报 token URL：' + kernelOutput)
+  }
   win = new BrowserWindow({ width: 1500, height: 1000, show: false, webPreferences: { backgroundThrottling: false } })
   win.webContents.on('console-message', (event, level, message) => {
     const d = event.message ? event : { level, message }
@@ -49,10 +65,13 @@ app.whenReady().then(async () => {
   async function waitFor(code) {
     const until = Date.now() + 15000
     while (Date.now() < until) { if (await evaluate(code)) return; await sleep(60) }
-    throw new Error('Timed out: ' + code + '\n' + await evaluate('document.body.innerText'))
+    // 诊断：主视图当前会话（null=没切过去）、composer 是否存在、正文
+    const session = await evaluate(`document.querySelector('[data-conversation-content]')?.getAttribute('data-conversation-session') ?? 'none'`)
+    const composer = await evaluate(`document.querySelector('[data-composer-seat] [data-lexical-editor]')?.textContent ?? 'no-lexical'`)
+    throw new Error('Timed out: ' + code + '\nmainSession=' + session + '\ncomposerText=' + JSON.stringify(composer) + '\n' + await evaluate('document.body.innerText'))
   }
   const button = text => evaluate(`(Array.from(document.querySelectorAll('.dshWmRoot button')).find(e=>e.textContent===${JSON.stringify(text)}) || Array.from(document.querySelectorAll('button')).find(e=>e.textContent===${JSON.stringify(text)}))?.click()`)
-  await win.loadURL(`http://127.0.0.1:${port}`)
+  await win.loadURL(needsAuth ? tokenUrl() : `http://127.0.0.1:${port}`)
   await waitFor(`!!document.getElementById('dsh-writing-mode-float')`)
   await waitFor(`Array.from(document.querySelectorAll('button')).some(e=>e.textContent==='继续'&&!e.disabled)`)
   await button('继续')
@@ -74,7 +93,8 @@ app.whenReady().then(async () => {
   await button('稍后配置')
   const config = JSON.parse(fs.readFileSync(path.join(home, 'writing-mode.json'), 'utf8'))
   const sessionId = Object.values(config.companions)[0]
-  await waitFor(`document.querySelector('[data-composer-seat] textarea')?.value==='想听听你对她为什么不拆信的看法。'`)
+  // 0.1.7 的 composer 是 Lexical contenteditable（不再有 textarea）；草稿以编辑器文本为准
+  await waitFor(`document.querySelector('[data-composer-seat] [data-lexical-editor]')?.textContent==='想听听你对她为什么不拆信的看法。'`)
   await evaluate(`document.getElementById('dsh-writing-mode-float').click()`)
   await waitFor(`document.querySelector('.dshWmChatInput')?.value==='想听听你对她为什么不拆信的看法。'`)
   results.push('独立写作 UI / 原生项目会话 / 完整会话共享输入')
@@ -99,11 +119,12 @@ app.whenReady().then(async () => {
   assert.equal(Object.values(restored.companions)[0], sessionId)
   const rects = await evaluate(`(()=>{const a=document.querySelector('.dshWmSide.is-ai').getBoundingClientRect(),b=document.querySelector('.dshWmCompose').getBoundingClientRect();return {inside:b.left>=a.left&&b.right<=a.right&&b.bottom<=a.bottom,width:b.width}})()`)
   assert.ok(rects.inside && rects.width > 250, JSON.stringify(rects))
-  const cacheFile = path.join(home, 'storages/session_projcache.json')
+  // 0.1.7 起 projection cache 换成 per-record 布局：storages/session_projcache/sessions/<id>.json
+  const cacheFile = path.join(home, 'storages/session_projcache/sessions', sessionId + '.json')
   const cacheDeadline = Date.now() + 10000
   while (!fs.existsSync(cacheFile) && Date.now() < cacheDeadline) await sleep(100)
   const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
-  assert.equal(cache.tables.sessions[sessionId].rows.sessionStats.val.turns, 0)
+  assert.equal(cache.record.rows.sessionStats.val.turns, 0)
   assert.deepEqual(failures, [])
   results.push('独立输入区在侧栏内；未产生模型回合；无控制台错误')
   console.log('PASS', results.at(-1))

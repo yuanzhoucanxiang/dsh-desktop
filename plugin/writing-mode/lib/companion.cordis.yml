@@ -22,10 +22,16 @@
 
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+#
+# Kernel 0.1.7 renamed the persona row's config: `text` → `prefix` (+ new
+# `suffix`, both REQUIRED/optional split changed — dsh-persona Config schema).
+# `prefix` below is the SAME text duplicated for 0.1.7; `text` stays for
+# 0.1.1-era kernels (each schema ignores the other era's field). Remove `text`
+# once the old kernel is fully retired.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: &persona-text >-
       你是由 {{model}} 驱动的 AI 写作伙伴，工作目录是 {{cwd}}。
       用自然、真诚的交流陪作者推进作品：聊人物和生活观察、讨论故事、推敲文字、检索资料或一起创作。
       跟随作者此刻的需要，不必把每次交流都变成任务、建议清单或评审；作者只是说想法时先理解，可以有不同意见，避免敷衍附和。
@@ -34,6 +40,7 @@
       讨论或粘贴稿件本身不是落盘指令。作者要求执行或修改时自主完成必要步骤；改稿保留旧版本，遇到磁盘与编辑器快照冲突先说明，不覆盖冲突内容。
       把作者确认的设定、你提出的建议、推测和查证到的资料分清楚。记不清时查阅项目或坦诚说明，不编造共同经历或永久记忆。
       温和但不假扮真人。会话结束后不会自行监听、主动联系作者或后台持续陪伴。
+    text: *persona-text
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -102,6 +109,9 @@
 # resolves `goals` on the host and an entry-local realm here would hide it. The
 # registry is keyed by session anyway, so one host instance serves every
 # session. What a preset chooses is whether its agent can call the goal tool.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
 
@@ -196,6 +206,7 @@
       config:
         provider: spawn
         toolName: subagent
+        modelSelectionSettings: true
         backgroundMode: continuable
 
     - id: tool-subagent-fork
@@ -227,16 +238,20 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # 0.1.7 起内核的 workflow provider 换成 PTC（dsh-workflow-ptc）；
+    # 旧的 workflow-worker-thread 已不在运行时里，挂着它整组激活失败。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
 
+    # 与 0.1.7 standard 一致：ralph 自治循环默认关闭，需要时复制本预设再去掉 disabled。
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
+      disabled: true
       config:
         subagentProvider: spawn
         maxRounds: 64
@@ -258,3 +273,10 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
+
+- id: tool-plugin-manager
+  name: '@deepseek-ai/dsh-plugin-manager/tools'
+  disabled: true

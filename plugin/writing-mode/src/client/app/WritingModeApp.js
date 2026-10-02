@@ -18,8 +18,12 @@ import { selectionText } from '../features/tools/selection.js'
 import { assistantPrompt, reviewPrompt } from '../features/tools/prompts.js'
 import { makeReference, referenceStatus } from '../../shared/reference.js'
 import { WritingCompanion } from '../features/companion/index.js'
+import { ExportBookPanel } from '../features/export-book/index.js'
+import { InspectionPanel } from '../features/inspection/index.js'
 
 const LS_FILE = 'dsh-writing-mode-file'
+// 两处快捷键提示此前一处写 Ctrl+Shift+S、另一处写 Ctrl+Shift+W，作者照着按发现都不对。
+const KEY_HINT = 'Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台'
 
 export function WritingModeApp() {
   const [active, setActive] = react.useState(getModeActive)
@@ -92,6 +96,7 @@ export function WritingModeApp() {
   const [addRootMode, setAddRootMode] = react.useState(false)
   const [addRootPath, setAddRootPath] = react.useState('')
   const [addRootKind, setAddRootKind] = react.useState('library')
+  const [exportProj, setExportProj] = react.useState(null)
   const [flash, setFlash] = react.useState('')
   const [prefs, setPrefs] = react.useState(getPrefs)
   react.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), [])
@@ -253,6 +258,7 @@ export function WritingModeApp() {
     const onKey = e => {
       if (e.key === 'Escape') {
         if (newDocMode || addRootMode) return
+        if (exportProj) { setExportProj(null); return }
         close()
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -263,7 +269,7 @@ export function WritingModeApp() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, newDocMode, addRootMode, editor, persist])
+  }, [active, newDocMode, addRootMode, exportProj, editor, persist])
 
   function flashMsg(msg) {
     setFlash(String(msg || ''))
@@ -547,6 +553,21 @@ export function WritingModeApp() {
 
   const isReviewFile = /(^|[\\/])reviews[\\/]/i.test(String(filePath || ''))
 
+  // 浮层只承载瞬时提示；保存/读取失败改成正压在状态条上方的常驻行——
+  // 浮层会挡住稿面、无处重试，作者只能凭状态条上一个「未保存」猜。
+  const notice = flash
+  const saveLabel = documentState.loading
+    ? '打开中…'
+    : saveState === 'saving'
+      ? T.saving
+      : saveState === 'error'
+        ? dirty ? '保存失败' : '读取失败'
+        : dirty
+          ? T.unsaved
+          : filePath
+            ? T.saved
+            : '—'
+
   async function fillComposer(prompt) {
     const source = editor.get().path
     try {
@@ -574,7 +595,6 @@ export function WritingModeApp() {
     await fillComposer(prompt)
   }
 
-  const notice = documentState.error || flash
   return jsx.jsx('div', {
     className: 'dshWmRoot',
     role: 'dialog',
@@ -678,13 +698,21 @@ export function WritingModeApp() {
                     type: 'button',
                     className: 'dshWmBtn' + (focus ? ' is-on' : ''),
                     onClick: () => setFocus((v) => !v),
+                    'aria-pressed': focus,
+                    title: '专注：只留稿纸，收起文档库与右栏',
                     children: T.focus,
                   }),
                   jsx.jsx('button', {
                     type: 'button',
-                    className: 'dshWmBtn' + (aiOpen ? ' is-on' : ''),
-                    onClick: () => setAiOpen((v) => !v),
-                    children: aiOpen ? T.closeAi : T.openAi,
+                    className: 'dshWmBtn' + (aiOpen && !focus ? ' is-on' : ''),
+                    // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
+                    // 否则就是一只按了没反应的按钮（专注中的用户最不需要这个）。
+                    onClick: () => {
+                      if (focus) { setFocus(false); setAiOpen(true) }
+                      else setAiOpen((v) => !v)
+                    },
+                    'aria-pressed': focus ? false : aiOpen,
+                    children: aiOpen && !focus ? T.closeAi : T.openAi,
                   }),
                 ],
               },
@@ -695,16 +723,15 @@ export function WritingModeApp() {
                 type: 'button',
                 className: 'dshWmBtn',
                 disabled: !filePath,
+                title: saveState === 'error' ? documentState.error : undefined,
                 onClick: () => void persist(),
-                children: saveState === 'saving' ? T.saving : saveState === 'saved' ? T.saved : T.save,
-              }),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn',
-                disabled: !filePath,
-                title: T.bumpHint || T.saveAsNew,
-                onClick: () => void saveAsNewVersion(),
-                children: 'v+1',
+                children: saveState === 'saving'
+                  ? T.saving
+                  : saveState === 'error'
+                    ? '重试保存'
+                    : saveState === 'saved' && !dirty
+                      ? T.saved
+                      : T.save,
               }),
             ]}, 'file-ops'),
             jsx.jsx('button', {
@@ -916,7 +943,7 @@ export function WritingModeApp() {
                                     'div',
                                     {
                                       className: 'dshWmAiHint',
-                                      children: 'Esc · Ctrl+S · Ctrl+Shift+S',
+                                      children: KEY_HINT,
                                     },
                                     'wk'
                                   ),
@@ -962,12 +989,24 @@ export function WritingModeApp() {
                                         },
                                         'pt'
                                       ),
-                                      openP ? jsx.jsx('select', {
-                                        className: 'dshWmSearch', 'aria-label': '按需添加资料', value: '',
-                                        onChange: e => void addProjectResource(proj, e.target.value),
-                                        children: [jsx.jsx('option', { value: '', children: '＋ 添加人物、设定或规划…' }, 'placeholder'),
-                                          ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
-                                      }, 'add-resource') : null,
+                                      openP ? jsx.jsxs('div', {
+                                        className: 'dshWmProjOps',
+                                        children: [
+                                          jsx.jsx('button', {
+                                            type: 'button',
+                                            className: 'dshWmBtn is-ghost',
+                                            title: '导出成书：把各章最新版按顺序拼成一份完整书稿（原稿不动）',
+                                            onClick: () => setExportProj(proj),
+                                            children: '成书',
+                                          }, 'export'),
+                                          jsx.jsx('select', {
+                                            className: 'dshWmSearch', 'aria-label': '按需添加资料', value: '',
+                                            onChange: e => void addProjectResource(proj, e.target.value),
+                                            children: [jsx.jsx('option', { value: '', children: '＋ 添加人物、设定或规划…' }, 'placeholder'),
+                                              ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
+                                          }, 'add-resource'),
+                                        ],
+                                      }, 'proj-ops') : null,
                                       proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
                                       openP
                                         ? groups.map((g) =>
@@ -1082,7 +1121,7 @@ export function WritingModeApp() {
                               'hb'
                             )
                           : null,
-                        versionSeries.length > 1
+                        filePath
                           ? jsx.jsx(
                               'div',
                               {
@@ -1117,6 +1156,18 @@ export function WritingModeApp() {
                                       children: T.comparePrev,
                                     },
                                     'cmp'
+                                  ),
+                                  jsx.jsx(
+                                    'button',
+                                    {
+                                      type: 'button',
+                                      className: 'dshWmBtn is-ghost',
+                                      disabled: !filePath,
+                                      title: T.bumpHint || T.saveAsNew,
+                                      onClick: () => void saveAsNewVersion(),
+                                      children: T.saveAsNew,
+                                    },
+                                    'bump'
                                   ),
                                 ],
                               },
@@ -1186,17 +1237,47 @@ export function WritingModeApp() {
                         'diff'
                       )
                     : null,
+                  documentState.error
+                    ? jsx.jsxs('div', {
+                        className: 'dshWmDocAlert',
+                        role: 'alert',
+                        'data-wm-doc-alert': saveState,
+                        children: [
+                          jsx.jsx('span', { children: documentState.error }, 'm'),
+                          jsx.jsx('span', { style: { flex: 1 } }, 's'),
+                          dirty && filePath
+                            ? jsx.jsx('button', {
+                                type: 'button',
+                                className: 'dshWmBtn',
+                                onClick: () => void persist(),
+                                children: '重试保存',
+                              }, 'retry')
+                            : null,
+                          filePath
+                            ? jsx.jsx('button', {
+                                type: 'button',
+                                className: 'dshWmBtn is-ghost',
+                                title: T.bumpHint,
+                                onClick: () => void editor.version(),
+                                children: '另存新版',
+                              }, 'bump')
+                            : null,
+                        ],
+                      }, 'doc-alert')
+                    : null,
                   jsx.jsx(
                     'div',
                     {
                       className: 'dshWmStatus',
                       children: [
                         jsx.jsx('span', {
-                          className:
-                            'dot ' + (dirty ? 'is-dirty' : saveState === 'saved' ? 'is-saved' : ''),
+                          className: 'dot ' + (saveState === 'error' ? 'is-error' : dirty ? 'is-dirty' : saveState === 'saved' ? 'is-saved' : ''),
+                          'data-wm-save-dot': saveState,
                         }),
                         jsx.jsx('span', {
-                          children: dirty ? T.unsaved : saveState === 'saved' ? T.saved : '—',
+                          className: saveState === 'error' ? 'dshWmStatusError' : '',
+                          'data-wm-save-label': '1',
+                          children: saveLabel,
                         }),
                         jsx.jsx('span', { className: 'dshWmStatusSep', children: '·' }),
                         jsx.jsx('span', {
@@ -1234,6 +1315,19 @@ export function WritingModeApp() {
                     },
                     'st'
                   ),
+                  exportProj
+                    ? jsx.jsx(ExportBookPanel, {
+                        proj: exportProj,
+                        onClose: () => setExportProj(null),
+                        onDone: (data) => {
+                          setExportProj(null)
+                          const name = String(data?.doc?.path || '').split(/[\\/]/).pop()
+                          flashMsg(`已导出 ${data?.stats?.files ?? 0} 篇 → ${name}`)
+                          void refreshTree()
+                          if (data?.doc?.path) setFilePath(data.doc.path)
+                        },
+                      }, 'export-book')
+                    : null,
                 ],
               },
               'main'
@@ -1247,8 +1341,11 @@ export function WritingModeApp() {
                       jsx.jsxs('div', { className: 'dshWmSideHead', children: [
                         jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'companion' ? ' is-on' : ''), onClick: () => setAiTab('companion'), children: T.ai }),
                         jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'tools' ? ' is-on' : ''), onClick: () => setAiTab('tools'), children: '文字工具' }),
+                        jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'check' ? ' is-on' : ''), onClick: () => setAiTab('check'), children: '检查' }),
                       ] }, 'ah'),
-                      aiTab === 'companion' && !focus ? jsx.jsx(WritingCompanion, {
+                      // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
+                      // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
+                      aiTab === 'companion' ? jsx.jsx(WritingCompanion, {
                         path: filePath || activeRoot,
                         sourceInfo: () => {
                           const snap = editor.get()
@@ -1272,6 +1369,12 @@ export function WritingModeApp() {
                           })
                         },
                         onExit: close,
+                        // 会话列表点击 = 开该作品概览文档，伙伴会话随 path 解析自然切换
+                        onOpenProject: (project) => {
+                          setFilePath(String(project).replace(/[\\/]+$/, '') + '/project.md')
+                          setAiOpen(true)
+                          setAiTab('companion')
+                        },
                       }, 'companion') : null,
                       aiTab === 'tools' ? jsx.jsx(
                         'div',
@@ -1349,254 +1452,24 @@ export function WritingModeApp() {
                               },
                               'apply'
                             ),
-                            /* ── 门禁：默认收起，只露一行摘要 ── */
                             jsx.jsx(
                               'div',
-                              {
-                                className: 'dshWmSec',
-                                children: [
-                                  jsx.jsx(
-                                    'button',
-                                    {
-                                      type: 'button',
-                                      className: 'dshWmSecToggle',
-                                      onClick: () => setGateOpen((v) => !v),
-                                      children: [
-                                        jsx.jsx('span', {
-                                          children: (gateOpen ? '▾ ' : '▸ ') + T.gates,
-                                        }, 't'),
-                                        jsx.jsx('span', {
-                                          className:
-                                            'dshWmSecBadge' +
-                                            (gate
-                                              ? gate.pass
-                                                ? ' is-pass'
-                                                : ' is-fail'
-                                              : ''),
-                                          children: gateBusy
-                                            ? T.applying
-                                            : gate
-                                              ? gate.pass
-                                                ? T.gatesPass
-                                                : T.gatesFail.replace('{n}', String(gate.fail))
-                                              : '—',
-                                        }, 'b'),
-                                      ],
-                                    },
-                                    'gt'
-                                  ),
-                                  gateOpen
-                                    ? jsx.jsx(
-                                        'div',
-                                        {
-                                          className: 'dshWmSec',
-                                          children: [
-                                            jsx.jsx(
-                                              'div',
-                                              {
-                                                className: 'dshWmAiActions',
-                                                children: [
-                                                  jsx.jsx('button', {
-                                                    type: 'button',
-                                                    className: 'dshWmBtn',
-                                                    disabled: gateBusy || !filePath,
-                                                    onClick: () => void runGate(),
-                                                    children: gateBusy ? T.applying : T.runGates,
-                                                  }),
-                                                ],
-                                              },
-                                              'gb'
-                                            ),
-                                            gateErr
-                                              ? jsx.jsx('div', {
-                                                  className: 'dshWmAiHint',
-                                                  children: gateErr,
-                                                }, 'ge')
-                                              : null,
-                                            !gate && !gateErr
-                                              ? jsx.jsx('div', {
-                                                  className: 'dshWmAiHint',
-                                                  children: T.gatesIdle,
-                                                }, 'gi')
-                                              : null,
-                                            gate && gate.rows
-                                              ? jsx.jsx(
-                                                  'div',
-                                                  {
-                                                    className: 'dshWmGateList',
-                                                    children: gate.rows.map((r, i) =>
-                                                      jsx.jsx(
-                                                        'div',
-                                                        {
-                                                          className: 'dshWmGateRow',
-                                                          children: [
-                                                            jsx.jsx('span', {
-                                                              className: r.ok ? 'ok' : 'bad',
-                                                              children: r.ok ? 'PASS' : 'FAIL',
-                                                            }),
-                                                            jsx.jsx('span', {
-                                                              className: 'dshWmGateLabel',
-                                                              children: r.label,
-                                                            }),
-                                                            jsx.jsx('span', {
-                                                              className: 'dshWmGateDetail',
-                                                              children: r.detail,
-                                                            }),
-                                                          ],
-                                                        },
-                                                        'r' + i
-                                                      )
-                                                    ),
-                                                  },
-                                                  'gl'
-                                                )
-                                              : null,
-                                          ],
-                                        },
-                                        'gb2'
-                                      )
-                                    : null,
-                                ],
-                              },
-                              'gh'
-                            ),
-                            /* ── 台账：默认收起 ── */
-                            jsx.jsx(
-                              'div',
-                              {
-                                className: 'dshWmSec',
-                                children: [
-                                  jsx.jsx(
-                                    'button',
-                                    {
-                                      type: 'button',
-                                      className: 'dshWmSecToggle',
-                                      onClick: () => setLedgerOpen((v) => !v),
-                                      children: [
-                                        jsx.jsx('span', {
-                                          children: (ledgerOpen ? '▾ ' : '▸ ') + T.ledger,
-                                        }, 't'),
-                                        jsx.jsx('span', {
-                                          className: 'dshWmSecBadge',
-                                          children: ledger
-                                            ? (ledger.foreshadowOpen != null
-                                                ? ledger.foreshadowOpen + ' · '
-                                                : '') + (ledger.latestReview || '—').slice(0, 18)
-                                            : '—',
-                                        }, 'b'),
-                                      ],
-                                    },
-                                    'lt'
-                                  ),
-                                  ledgerOpen
-                                    ? ledger
-                                      ? jsx.jsx(
-                                          'div',
-                                          {
-                                            className: 'dshWmLedger',
-                                            children: [
-                                              jsx.jsx(
-                                                'div',
-                                                {
-                                                  className: 'dshWmLedgerRow',
-                                                  children: [
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerK',
-                                                      children: T.ledgerHook,
-                                                    }),
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerV',
-                                                      children: ledger.hook || '—',
-                                                    }),
-                                                  ],
-                                                },
-                                                'lh'
-                                              ),
-                                              jsx.jsx(
-                                                'div',
-                                                {
-                                                  className: 'dshWmLedgerRow',
-                                                  children: [
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerK',
-                                                      children: T.ledgerFores,
-                                                    }),
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerV',
-                                                      children:
-                                                        ledger.foreshadowOpen == null
-                                                          ? '—'
-                                                          : String(ledger.foreshadowOpen),
-                                                    }),
-                                                  ],
-                                                },
-                                                'lf'
-                                              ),
-                                              jsx.jsx(
-                                                'div',
-                                                {
-                                                  className: 'dshWmLedgerRow',
-                                                  children: [
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerK',
-                                                      children: T.ledgerReview,
-                                                    }),
-                                                    jsx.jsx('span', {
-                                                      className: 'dshWmLedgerV',
-                                                      children: ledger.latestReview || '—',
-                                                    }),
-                                                  ],
-                                                },
-                                                'lr'
-                                              ),
-                                              ledger.timeline && ledger.timeline.length
-                                                ? jsx.jsx(
-                                                    'div',
-                                                    {
-                                                      className: 'dshWmLedgerRow',
-                                                      children: [
-                                                        jsx.jsx('span', {
-                                                          className: 'dshWmLedgerK',
-                                                          children: T.ledgerTimeline,
-                                                        }),
-                                                        jsx.jsx('span', {
-                                                          className: 'dshWmLedgerV',
-                                                          children:
-                                                            ledger.timeline[
-                                                              ledger.timeline.length - 1
-                                                            ],
-                                                        }),
-                                                      ],
-                                                    },
-                                                    'lts'
-                                                  )
-                                                : null,
-                                            ],
-                                          },
-                                          'lb'
-                                        )
-                                      : jsx.jsx(
-                                          'div',
-                                          {
-                                            className: 'dshWmAiHint',
-                                            children: T.ledgerNone,
-                                          },
-                                          'ln'
-                                        )
-                                    : null,
-                                ],
-                              },
-                              'lsec'
-                            ),
-                            jsx.jsx(
-                              'div',
-                              { className: 'dshWmAiHint', children: 'Esc · Ctrl+S · Ctrl+Shift+W' },
+                              { className: 'dshWmAiHint', children: KEY_HINT },
                               'kbd'
                             ),
                           ],
                         },
                         'ab'
                       ) : null,
+                      aiTab === 'check' ? jsx.jsx(InspectionPanel, {
+                        T,
+                        filePath,
+                        gate, gateErr, gateBusy, gateOpen,
+                        onToggleGate: () => setGateOpen((v) => !v),
+                        onRunGate: runGate,
+                        ledger, ledgerOpen,
+                        onToggleLedger: () => setLedgerOpen((v) => !v),
+                      }, 'inspection') : null,
                     ],
                   },
                   'ai'

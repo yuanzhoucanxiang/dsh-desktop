@@ -60,10 +60,11 @@
 | `ledger` | POST | path | ledger 摘要 |
 | `assist` | POST | action,text,path | result / 501 llm-unavailable |
 | `companion` | GET | path | project,sessionId；按最近 project.md 归属，否则按当前目录 |
-| `companion` | POST | path,prepare:true | 安装缺失的本地预设，返回 preset；保留已有自定义 |
+| `companion` | POST | path,prepare:true | 安装缺失的本地预设并向内核 registry 自举注册（0.1.7 起内核不扫 ~/.dsh/.agent-presets），返回 preset 与 registered；保留已有自定义 |
 | `companion` | POST | path,sessionId | 持久化项目与原生会话关联 |
 | `templates` | GET | — | 可用项目模板 |
 | `create-project` | POST | root,title,templateId,premise | 项目骨架；非法名/非空目录拒绝（见 store.prepareProjectTarget） |
+| `compile` | POST | path,include?,title?,titles? | 导出成书：各章当前版按文档树自然序拼成项目根 `<书名>-vN.<ext>`（独占创建、原稿只读；详见末节） |
 | `memory` | GET | path | memory, etag, injectable, **schemaVersion**, **capabilities**, **projection** |
 | `memory` | POST | path,op,baseRevision,baseEtag,… | 见下表 op |
 | `memory-operation` | GET | path,operationId | {found, receipt}；不触发重写 |
@@ -169,14 +170,15 @@
 
 ## 写作伙伴与 Harness
 
-- 默认展示专用写作对话，文字工具单独切换。首次发送或进入会话设置时创建项目工作区，再创建原生会话并选择 `writing-companion`。已有会话保持其角色与模型，不修改全局默认。
-- 预设首次按需安装到 `$DSH_HOME/.agent-presets/writing-companion/agent.cordis.yml`，以当前锁定内核 standard 的工具组成为基础；人格偏自然交流，不规定每轮任务、评分、固定字数、阶段或三轮放行。已存在的本地预设不覆盖。
-- 不自动发送消息。稿件或选区先成为可移除的快照引用，点击发送时附在作者消息后；文字工具仍追加到项目会话草稿。已连接输入使用 `provideInfo(id).hooks.input` 订阅与 `inputActions.setDraft`；`Session.prompt(content, "queue")` 发送，`Session.cancel()` 停止。发送失败保留草稿，发送成功也不得擦除请求期间的新输入。
+- 默认展示专用写作对话，文字工具单独切换。首次发送或进入会话设置时建会话——双栈：0.1.7 起先 `workspaces.create({path})`（按规范路径幂等，同路径复用）再用 `remote.session.create({workspaceId, agentPreset})` 一把建并绑 preset（免 select、免 `agent-preset/locked` 竞态）——必须走 workspaceId，用 cwd 建的会话不挂任何工作区，主视图 hero 的输入框会停在 inert（「选择工作区」，0.1.7-rc.2 实测）；旧内核走「创建工作区 → 建会话 → 选择 `writing-companion`」三步。聚焦会话：优先 `uiWorkspace.openSession(id)`（公开入口 = `replaceMain(id, signal, 'reveal')`：释放旧 mainReference + 清掉盖住主区域的全局面板；publishMain 有粘性规则，绕过 uiWorkspace 直接 retain 切不动视图），退路 `replaceMain` 必须传 `'reveal'`（`'preserve'` 会让「选择工作区」hero 盖住会话），再退 `sessions.retain(id, {source:'mainView'})` 由 handle 持有、切换/dispose 时释放，最后旧 `sessions.open`。已有会话保持其角色与模型，不修改全局默认。
+- 右栏三区：伙伴（交流；顶部折叠「写作会话」列表 = config.companions × sessions 列表快照，点击行打开该作品 project.md 随之切换会话）/ 文字工具（生成动作）/ 检查（门禁 + 台账，默认收起）。「另存为新版」归拢到文档名旁的版本条（单版本文档也显示版本条），顶栏不再放 v+1。
+- 预设首次按需安装到 `$DSH_HOME/.agent-presets/writing-companion/agent.cordis.yml`，以当前锁定内核 standard 的工具组成为基础；人格偏自然交流，不规定每轮任务、评分、固定字数、阶段或三轮放行。已存在的本地预设不覆盖。0.1.7 起该目录仅供旧内核读取；新内核由 host 向 `agentPresets` registry 自举注册，行表来自 `lib/companion-preset.js`（`scripts/sync-companion-preset.mjs` 从 companion.cordis.yml 生成；`test/companion-preset.mjs` 逐字节漂移门禁，改 yml 必须重跑生成器；重复注册 = 幂等成功）。
+- 不自动发送消息。稿件或选区先成为可移除的快照引用，点击发送时附在作者消息后；文字工具仍追加到项目会话草稿。已连接输入双通道：0.1.7 走 `conversation.input.shell(id)`——`state.getSnapshot().draft` 读、`actions.setDraft` 写、`state.subscribe` 订阅，前提是该会话已有 retained binding（否则 shell 抛 `resolved no binding`，所以先聚焦再写草稿，binding 缺失时不创建 shell、按输入面未就绪处理）；旧内核走 `provideInfo(id).hooks.input` + `inputActions.setDraft`。两条都缺才报软缺口 `input:sessions.provideInfo|conversation.input.shell`，不影响发送。`Session.prompt(content, "queue")` 发送，`Session.cancel()` 停止。发送失败保留草稿，发送成功也不得擦除请求期间的新输入。
 - 右栏为独立 React 视图，不移动或嵌入原生中心栏。通过 `Session.getSnapshot/subscribe` 读取 `chat.order/nodes`，渲染历史和流式文字；工具和其他活动折叠，`turn-tail` 不重复正文。会话设置、较早历史、授权/提问卡片、附件或斜杠指令进入同一完整会话处理，不自行批准。升级需验证这些会话 API 与节点 schema。未发送引用和初始草稿仅在当前页面生命周期按项目保存，不承诺刷新页面后恢复引用。
 - 原生工具沿用 Harness 自己的权限；文档库根校验仅约束 writing-mode HTTP API，**不是**原生工具的沙箱。保留旧版本、讨论不自动落盘是预设行为指引，不宣称强制拦截所有工具写入。
 - 每 2 秒和窗口重获焦点检查打开文件：无未保存内容时刷新外部修改，有未保存内容时保留输入并提示冲突。新建版本可在文档树刷新后查看。
 - 文字工具使用 `agentDefaultModel.currentSelection()` 或显式自定义路由；伙伴使用原生会话模型。写作模式的自定义文字工具 Key 不会自动配置原生会话。
-- **唯一 native 接触面（v2）**：客户端不再直接调用 sessions/workspaces/connection，一律经 `adapters/harness/adapter.js`。`capabilities()` 区分硬缺口（创建会话所需）与软缺口（读草稿/打开会话）；`connect(projectIdentity, operationToken)` 建关联、`attach(projectIdentity, sessionId)` 采用已有会话（不创建、不写协调记录）；handle 暴露 `getSnapshot/subscribe/getDraft/setDraft/send/cancel/openFullSession/dispose/recover/refresh`。
+- **唯一 native 接触面（v2）**：客户端不再直接调用 sessions/workspaces/connection，一律经 `adapters/harness/adapter.js`。`capabilities()` 区分硬缺口（创建会话所需）与软缺口（读草稿/打开会话）；`connect(projectIdentity, operationToken)` 建关联、`attach(projectIdentity, sessionId)` 采用已有会话（不创建、不写协调记录）；handle 暴露 `getSnapshot/subscribe/getDraft/setDraft/send/cancel/openFullSession/dispose/recover/refresh`。创建能力双栈判定：modern=`remote.session.create`+`workspaces.create` 齐备，legacy=三步齐备；两端都缺时 missing 并列双栈缺口，不再只报 `agentPresets.select`。
 - **send 三态**：`accepted`（原生已受理，含"有原生证据"的情形）· `rejected`（明确未受理，改完可再发）· `uncertain`（交出去过但无法核对）——uncertain 必须保留正文、先核对原生回合/队列，**不自动重发**。
 - **创建协调**：进程内按 host 规范作品身份共用创建 Promise；跨进程由 `lib/coordination.js` 的持久记录仲裁（`reserved → creating → bound / uncertain`，按作品身份分桶，受验证跨进程锁）。会话被删 → `missing` + 恢复入口（重查/继续关联/查看完整会话），**不静默新建**；外部创建结果无法确认 → `uncertain` 并保留已知标识。不承诺 exactly-once。
 - **当轮上下文**：`buildPreparedTurn` 产出全嵌套冻结的 preparedTurn。只自动参考**已确认**的设定/偏好；world 设定注入文本 = **结论+边界**（host 派生 text），**说明不注入**；待定问题仅在作者勾选时带入并标注；作者固定优先；自动部分默认 6000 **Unicode 字符**预算；每次发送重新读备忘。
@@ -192,6 +194,7 @@
 | 模块 | 职责 | 禁止 |
 |---|---|---|
 | `lib/store.js` | 配置、库根、扫描、读写、路径安全 | llm、业务门禁语义 |
+| `lib/compile.js` | 成书候选/版本归并/排序/拼接（纯函数） | IO、HTTP |
 | `lib/domain.js` | 门禁、台账、版本、AI 路由与补全 | HTTP、cordis |
 | `index.js` | cordis 注入 + HTTP 分发 | 业务算法 |
 | `lib/file-lock.js` | 跨进程锁（owner token，不抢活锁不盲删） | 业务语义 |
@@ -228,3 +231,12 @@
 ## 轻量项目创建（开发中，2026-09-22）
 
 POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:true 保留完整模板模式。POST project-resource 接收 path 与 resource，仅接受固定资料路径白名单，按项目类型生成一份资料；存在时 409 resource-exists，禁止覆盖。正文文件继续通过原编辑接口保存。导航中文标签仅为显示，不改磁盘路径。
+
+## 导出成书（compile，2026-09-26）
+
+- `POST compile`：`{ path, include?, title?, titles? }`。`path` 是项目内任意路径（经 `resolveProjectDir` 定位项目根）；`title` 默认取项目目录名；`titles`（默认 true）只为 **Markdown** 稿在「正文不带标题行」的章前补 `# 文件名标题`，fountain 稿一律用题页 + `===` 分页、不插标题。
+- 候选：`include`（rel 数组）给定时**顺序即章节顺序**且原样尊重（历史版也可显式收）；省略时默认收 `draft/` 下文本文件，按 `-vN` 系列只取最大 N 的当前版，被略过的历史版列入 `stats.skipped`。
+- 排序：默认候选按 rel 中文 + 数字自然序（与文档树一致，第2章 < 第10章）。
+- 输出：项目根 `<书名>-v<N>.<ext>`，从 v1 起第一个空位，`writeDoc(revision=null)` 独占创建——已有成片永不覆盖，原稿一律只读。成片自身不在 `draft/` 下，不进后续默认候选。
+- 错误码：`no-project`（识别不出项目）、`no-drafts`（默认候选为空）、`empty-include` / `bad-include`（越界或不安全段）/ `unknown-include`（不在项目扫描内）、`mixed-formats`（扩展名不一致）、`invalid-title`、`source-changed`（扫描到读取之间文件变动，409 可重试）。
+- 字数口径与状态栏一致（去空白计字）；成片统一 LF（原稿字节不动）。

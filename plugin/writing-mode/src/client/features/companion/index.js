@@ -15,6 +15,8 @@ import { harnessAdapter } from '../../adapters/harness/runtime.js'
 import { newOperationToken } from '../../adapters/harness/adapter.js'
 import { buildPreparedTurn } from '../../../shared/context-builder.js'
 import { CompanionMessage } from './CompanionMessage.js'
+import { SessionListSection } from './SessionListSection.js'
+import { companionCapability } from './capability-notice.js'
 
 export const emptyCompanionSnapshot = Object.freeze({})
 export const noSubscribe = () => () => {}
@@ -77,8 +79,12 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
   ] })
 }
 export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit }) {
-  const sessions = harnessSessions()
   const adapter = harnessAdapter()
+  // 能力缺口要能说话：只有灰按钮而不解释原因，作者无法区分「内核没挂上」和「这个作品没会话」。
+  const capability = companionCapability(adapter.capabilities())
+  const capabilityText = capability.reasons.length
+    ? capability.headline + '：' + capability.reasons.join('；')
+    : capability.headline
   const [binding, setBinding] = react.useState(initialBinding)
   const project = binding.project
   const cached = companionDrafts.get(project) || { text: '', reference: null }
@@ -277,6 +283,9 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     try {
       const target = handle || (await ensureHandle())
       if (!target || !alive.current) return
+      // 先聚焦：0.1.7 的输入面（conversation.input.shell）以 retained binding 为前提，
+      // 聚焦（openSession → retain mainView）之前 setDraft 必然落空。
+      target.openFullSession()
       // 只有"本次才建立会话"时把草稿带进原生输入框；已有会话时原生输入框本来就是同一份草稿，
       // 再追加会变成两份（native E2E 断言过这条：切到完整会话后输入框内容必须与草稿一字不差）。
       if (!id && draft) {
@@ -285,7 +294,6 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           target.setDraft(already ? already + '\n\n' + draft : draft)
         } catch {}
       }
-      target.openFullSession()
       onExit()
     } catch (err) { if (alive.current) setError(err.message) }
     finally { sending.current = false; if (alive.current) setBusy(false) }
@@ -373,7 +381,14 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
         // X01: clear failures surface via companionDraftStatus only
         persistCompanionDraft(project)
       }
-    } catch (err) { if (alive.current) setError(err.message || String(err)) }
+    } catch (err) {
+      if (alive.current) {
+        // 内核缺能力时 adapter 抛的是能力名清单（排查有用），作者要看的是「能不能用、为什么、会不会丢」
+        setError(err && err.code === 'capabilities-missing'
+          ? capability.headline + '：' + capability.reasons.join('；')
+          : (err && err.message) || String(err))
+      }
+    }
     finally { sending.current = false; if (alive.current) setBusy(false) }
   }
     // Business errors only (session send / memory). Draft save errors are in draftUi.status.
@@ -420,8 +435,20 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     jsx.jsxs('div', { className: 'dshWmConversationHead', children: [
       jsx.jsx('span', { title: project, children: project.split(/[\\/]/).filter(Boolean).pop() }),
       jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setMemOpen(v => !v), children: memOpen ? '收起备忘' : '项目备忘' }),
-      jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !sessions, title: '打开完整会话，调整模型、工具或处理请求', children: '会话设置 ↗' }),
+      jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => void fullConversation(), disabled: busy || !capability.canSend, title: capability.canSend ? '打开完整会话，调整模型、工具或处理请求' : capabilityText, children: '会话设置 ↗' }),
     ] }),
+    capability.level === 'ok'
+      ? null
+      : jsx.jsxs('div', {
+          className: 'dshWmCapability is-' + capability.level,
+          role: 'status',
+          'data-wm-capability': capability.level,
+          children: [
+            jsx.jsx('strong', { children: capability.headline }),
+            capability.reasons.length ? jsx.jsx('span', { children: capability.reasons.join('；') }) : null,
+            capability.note ? jsx.jsx('span', { className: 'dshWmCapabilityNote', children: capability.note }) : null,
+          ],
+        }, 'capability'),
     memOpen ? jsx.jsxs('div', { className: 'dshWmMemoryWorkspace', children: [jsx.jsx(CompanionMemoryPanel, {
       path: project,
       candidate,
@@ -652,14 +679,13 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           : null,
         jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '移除稿件引用', onClick: () => updateReference(null), children: '×' }),
       ] }) : null,
-      jsx.jsx('textarea', { className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: '说说你正在想的…', value: draft, disabled: !sessions, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
+      jsx.jsx('textarea', { className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: capability.canSend ? '说说你正在想的…' : '先记下来，伙伴恢复后再发…', value: draft, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send() }
       } }),
       jsx.jsxs('div', { className: 'dshWmContext', children: [
         jsx.jsx('button', {
           className: 'dshWmQuiet',
           'data-wm-context-toggle': '1',
-          disabled: !sessions,
           onClick: () => setContextOpen((v) => !v),
           children: includeMemory ? (memoryHint(memoryItems) || '本次没有可参考的已确认条目') : '本次不参考项目备忘',
         }),
@@ -716,15 +742,15 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           : null,
       ] }),
       jsx.jsxs('div', { className: 'dshWmComposeFoot', children: [
-        jsx.jsx('button', { className: 'dshWmQuiet', disabled: !sessions, onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
+        jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
         jsx.jsx('span', { className: 'dshWmInputHint', children: 'Shift + Enter 换行' }),
         snapshot.running ? jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '停止回复', onClick: () => void (handle ? handle.cancel().catch(err => setError(err.message)) : setError('会话尚未就绪')), children: '停止' }) : null,
-        jsx.jsx('button', { className: 'dshWmSend', disabled: !sessions || busy || !draft.trim(), onClick: () => void send(), 'aria-label': snapshot.running ? '排队发送' : '发送', title: snapshot.running ? '在本次回复后发送' : '发送', children: busy ? '…' : '↑' }),
+        jsx.jsx('button', { className: 'dshWmSend', disabled: !capability.canSend || busy || !draft.trim(), onClick: () => void send(), 'aria-label': snapshot.running ? '排队发送' : '发送', title: capability.canSend ? (snapshot.running ? '在本次回复后发送' : '发送') : capabilityText, children: busy ? '…' : '↑' }),
       ] }),
     ] }),
   ] })
 }
-export function WritingCompanion({ path, contextText, sourceInfo, onExit }) {
+export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject }) {
   const [result, setResult] = react.useState(null)
   const [retry, setRetry] = react.useState(0)
   react.useEffect(() => {
@@ -738,7 +764,8 @@ export function WritingCompanion({ path, contextText, sourceInfo, onExit }) {
     }).catch(err => { if (active) setResult({ path, error: err.message }) })
     return () => { active = false }
   }, [path, retry])
-  if (!path || result?.path !== path) return jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' })
-  if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] })
-  return jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit }, result.project)
+  const sessionSection = jsx.jsx(SessionListSection, { currentPath: path || null, onOpenProject: onOpenProject || null }, 'wsl')
+  if (!path || result?.path !== path) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' }, 'empty')] })
+  if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] }, 'err')] })
+  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit }, result.project)] })
 }

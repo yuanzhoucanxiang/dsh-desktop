@@ -449,5 +449,334 @@ await ok('快照引用稳定：无变化时同引用，有变化时换引用', a
   assert.equal(s3.messages.at(-1).kind, 'user')
 })
 
+console.log('--- 0.1.7 双栈：modern 创建（remote.session.create）')
+
+/**
+ * 0.1.7 形状的假内核：sessions 只剩 binding/refresh/retain/list（无 create/open/noteAgentPreset/
+ * provideInfo），没有 connection.agentPresets.select；建会话走 workspaces.create（幂等）+
+ * remote.session.create({workspaceId, agentPreset}) 信封。
+ *   options.refuseCreate —— create 返回 {ok:false, error}（如 agent-preset/not-found）
+ *   options.withUiWorkspace / options.uiOpenSession —— uiWorkspace 形态
+ */
+function createModernKernel(options = {}) {
+  const state = {
+    sessions: new Map(),
+    byPath: new Map(),
+    remoteCreates: [], // { workspaceId, agentPreset }
+    workspaceCreates: [], // { path }（modern 栈：先幂等建/复用作品目录的工作区）
+    retains: [], // { id, source }
+    releases: 0,
+    openSessions: [], // uiWorkspace.openSession（0.1.7 公开聚焦入口，首选路径）
+    replaceMains: [], // { id, panel } —— uiWorkspace.replaceMain 退路
+    refreshes: 0,
+    legacyCalls: 0, // workspaces.create / sessions.create / select 任一被调都 +1（modern 下必须保持 0）
+    drafts: new Map(), // conversation.input.shell 的每会话草稿（id → { draft, listeners }）
+  }
+  let seq = 0
+
+  function makeSession(id) {
+    const chat = { nodes: new Map(), order: [] }
+    const listeners = new Set()
+    const live = {
+      id,
+      async prompt(parts) {
+        const body = parts?.[0]?.text || ''
+        const key = `n${chat.order.length + 1}`
+        chat.nodes.set(key, { kind: 'user', data: { content: [{ type: 'text', text: body }] } })
+        chat.order.push(key)
+        for (const fn of listeners) fn()
+        return { ok: true }
+      },
+      subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) },
+      getSnapshot: () => ({ chat, running: false, queue: [], pending: [], hasMore: false }),
+    }
+    state.sessions.set(id, live)
+    return live
+  }
+
+  const sessions = {
+    async refresh() { state.refreshes++ },
+    list: { getSnapshot: () => ({ byId: Object.fromEntries([...state.sessions.keys()].map((k) => [k, true])) }) },
+    binding: (id) => (state.sessions.has(id) ? { session: state.sessions.get(id) } : null),
+    retain(id, opts) {
+      state.retains.push({ id, source: opts?.source })
+      return { sessionId: id, release: () => { state.releases++ } }
+    },
+  }
+
+  const remoteSession = () => ({
+    async create(payload) {
+      state.remoteCreates.push(payload)
+      if (options.refuseCreate) return { ok: false, error: { code: 'agent-preset/not-found', message: 'preset missing' } }
+      const id = `sess-m${++seq}`
+      makeSession(id)
+      return { ok: true, value: { sessionId: id, agentPreset: payload.agentPreset } }
+    },
+  })
+
+  const workspaces = {
+    async create(input) {
+      // 与真内核一致：按规范路径幂等复用（同 path 返回同一 workspaceId）
+      state.workspaceCreates.push(input)
+      return { workspaceId: 'ws-m1', path: input.path, title: '', sessionIds: [] }
+    },
+  }
+  const connection = { agentPresets: { select: async () => { state.legacyCalls++; throw new Error('modern 下不应调 select') } } }
+  const uiWorkspace = options.withUiWorkspace
+    ? () => ({
+        // 0.1.7 的公开聚焦入口；options.uiOpenSession === false 模拟只有内部方法的老形态
+        ...(options.uiOpenSession === false ? {} : { openSession: (id) => { state.openSessions.push(id) } }),
+        replaceMain: (id, signal, panel) => { state.replaceMains.push({ id, panel }) },
+      })
+    : () => null
+
+  // 0.1.7 的 conversation.input.shell：binding 缺失时抛错（与真内核一致）；
+  // shell = { state: {getSnapshot/subscribe}, actions.setDraft }，草稿存 state.drafts。
+  const conversation = () => ({
+    input: {
+      shell(id) {
+        if (!state.sessions.has(id)) throw new Error(`conversation.input: session "${id}" resolved no binding`)
+        if (!state.drafts.has(id)) state.drafts.set(id, { draft: '', listeners: new Set() })
+        const rec = state.drafts.get(id)
+        return {
+          state: {
+            getSnapshot: () => ({ draft: rec.draft, attachmentIds: [], phase: 'idle' }),
+            subscribe: (fn) => { rec.listeners.add(fn); return () => rec.listeners.delete(fn) },
+          },
+          actions: {
+            setDraft: (text) => { rec.draft = String(text); for (const fn of [...rec.listeners]) fn() },
+          },
+        }
+      },
+    },
+  })
+
+  const api = async (route, opts, query) => {
+    if (route === 'companion') {
+      const body = opts?.body ? JSON.parse(opts.body) : null
+      if (body?.sessionId) { state.byPath.set(body.path, body.sessionId); return { ok: true } }
+      if (body?.prepare) return { ok: true, preset: 'writing-companion', registered: true }
+      const p = query?.path || body?.path
+      return { ok: true, project: p, sessionId: state.byPath.get(p) || null }
+    }
+    if (route === 'coordination') {
+      const body = opts?.body ? JSON.parse(opts.body) : null
+      if (query?.path) return { ok: true, record: safeRead(normKey(query.path)) }
+      const key = normKey(body.path)
+      const fns = {
+        claim: host.claimCoordination,
+        creating: host.markCreatingCoordination,
+        confirm: host.confirmCoordination,
+        uncertain: host.markUncertainCoordination,
+        release: host.releaseCoordination,
+      }
+      const fn = fns[body.op]
+      if (!fn) return { ok: false, error: 'unknown-op' }
+      const r = fn({ projectKey: key, operationToken: body.operationToken, sessionId: body.sessionId, workspaceId: body.workspaceId, owner: body.owner })
+      const { _outcome, stale, ...record } = r
+      return { ok: true, outcome: _outcome, record }
+    }
+    throw new Error('unexpected route ' + route)
+  }
+
+  return { sessions, workspaces, connection, api, state, remoteSession, uiWorkspace, conversation }
+}
+
+const makeModernAdapter = (kernel) => createHarnessAdapter({
+  sessions: kernel.sessions,
+  workspaces: kernel.workspaces,
+  connection: kernel.connection,
+  remoteSession: kernel.remoteSession,
+  uiWorkspace: kernel.uiWorkspace,
+  conversation: kernel.conversation,
+  api: kernel.api,
+  wait: sleep,
+  log: () => {},
+})
+
+await ok('M01 modern：createMode=modern，workspaces.create 幂等取工作区 + remote.create 一把建并绑 preset，不碰旧栈', async () => {
+  const kernel = createModernKernel()
+  const adapter = makeModernAdapter(kernel)
+  assert.equal(adapter.capabilities().createMode, 'modern')
+  assert.equal(adapter.capabilities().canCreate, true)
+  const project = freshProject('M01-作品')
+  const handle = await adapter.connect(project, 'op-m01')
+  const snap = handle.getSnapshot()
+  assert.equal(snap.status, 'ready')
+  assert.equal(kernel.state.workspaceCreates.length, 1)
+  assert.equal(kernel.state.workspaceCreates[0].path, project, '工作区按作品目录幂等建/复用')
+  assert.equal(kernel.state.remoteCreates.length, 1)
+  assert.equal(kernel.state.remoteCreates[0].agentPreset, 'writing-companion')
+  assert.equal(kernel.state.remoteCreates[0].workspaceId, 'ws-m1', '必须用 workspaceId 建会话（cwd 建的会话不挂工作区，hero 输入框 inert）')
+  assert.equal(kernel.state.legacyCalls, 0, 'modern 路径不得触碰 sessions.create/select')
+  handle.dispose()
+})
+
+await ok('M02 modern：create 被拒（agent-preset/not-found）→ error，记录停在 creating（与 legacy 同语义）', async () => {
+  const kernel = createModernKernel({ refuseCreate: true })
+  const adapter = makeModernAdapter(kernel)
+  const project = freshProject('M02-作品')
+  const handle = await adapter.connect(project, 'op-m02')
+  const snap = handle.getSnapshot()
+  assert.equal(snap.status, 'error')
+  assert.match(String(snap.error), /preset missing/)
+  // releaseCoordination 只在 reserved 阶段真删记录；已进入 creating 的失败按设计留在记录里
+  // （删除无法与并发对端仲裁），与 legacy 栈的 create-failed 路径行为一致。
+  const rec = safeRead(normKey(project))
+  assert.equal(rec?.phase, 'creating')
+  assert.equal(rec?.sessionId ?? null, null)
+  handle.dispose()
+})
+
+await ok('M03 modern：无 uiWorkspace 时聚焦走 retain(mainView)，切换/dispose 释放', async () => {
+  const kernel = createModernKernel()
+  const adapter = makeModernAdapter(kernel)
+  const project = freshProject('M03-作品')
+  const handle = await adapter.connect(project, 'op-m03')
+  const id = handle.getSnapshot().sessionId
+  // 创建即聚焦：retain(mainView) 调过一次，由 handle 持有
+  assert.deepEqual(kernel.state.retains, [{ id, source: 'mainView' }])
+  // 打开完整会话：同会话再聚焦 → 释放上一个再 retain
+  handle.openFullSession()
+  assert.equal(kernel.state.retains.length, 2)
+  assert.equal(kernel.state.releases, 1, '换留存前必须先释放旧的')
+  handle.dispose()
+  assert.equal(kernel.state.releases, 2, 'dispose 必须释放持有的 mainView 留存')
+})
+
+await ok('M04 modern：有 uiWorkspace 时聚焦走 openSession（公开、reveal），adapter 不自己 retain', async () => {
+  const kernel = createModernKernel({ withUiWorkspace: true })
+  const adapter = makeModernAdapter(kernel)
+  const project = freshProject('M04-作品')
+  const handle = await adapter.connect(project, 'op-m04')
+  const id = handle.getSnapshot().sessionId
+  assert.deepEqual(kernel.state.openSessions, [id])
+  assert.equal(kernel.state.replaceMains.length, 0, '有 openSession 时不得走内部 replaceMain')
+  assert.equal(kernel.state.retains.length, 0, 'uiWorkspace 可用时不得自行 retain（避免第二 mainView 留存）')
+  handle.openFullSession()
+  assert.deepEqual(kernel.state.openSessions, [id, id])
+  handle.dispose()
+  assert.equal(kernel.state.releases, 0)
+})
+
+await ok('M04b modern：uiWorkspace 只有 replaceMain 时退到它，且必须 reveal（preserve 会让全局面板盖住会话）', async () => {
+  const kernel = createModernKernel({ withUiWorkspace: true, uiOpenSession: false })
+  const adapter = makeModernAdapter(kernel)
+  const project = freshProject('M04b-作品')
+  const handle = await adapter.connect(project, 'op-m04b')
+  const id = handle.getSnapshot().sessionId
+  assert.equal(kernel.state.openSessions.length, 0)
+  assert.deepEqual(kernel.state.replaceMains, [{ id, panel: 'reveal' }])
+  assert.equal(kernel.state.retains.length, 0)
+  handle.dispose()
+})
+
+await ok('M05 能力报告：0.1.7 面缺 create 时 missing 提双栈而非只骂 select', async () => {
+  const kernel = createModernKernel()
+  const adapter = makeModernAdapter(kernel)
+  const caps = adapter.capabilities()
+  assert.equal(caps.flags['remote.session.create'], true)
+  assert.equal(caps.flags['sessions.open'], false)
+  assert.equal(caps.flags['conversation.input.shell'], true, '0.1.7 输入面应识别 conversation.input.shell')
+  assert.ok(!caps.degraded.some((d) => d.includes('provideInfo')), '有 shell 时 provideInfo 缺失不再是软缺口')
+  assert.ok(!caps.missing.join(',').includes('agentPresets.select'), '0.1.7 不该再报 agentPresets.select 缺失')
+  // 连 remote.create 也没有：报双栈缺口；没有 conversation：输入面报组合软缺口
+  const bare = createHarnessAdapter({ sessions: kernel.sessions, api: kernel.api, wait: sleep, log: () => {} })
+  const caps2 = bare.capabilities()
+  assert.equal(caps2.createMode, null)
+  assert.equal(caps2.canCreate, false)
+  assert.ok(caps2.missing.some((m) => m.includes('remote.session.create') && m.includes('agentPresets.select')))
+  assert.ok(caps2.degraded.includes('input:sessions.provideInfo|conversation.input.shell'), '两条输入通道都缺时才报输入面软缺口')
+})
+
+await ok('M06 modern：草稿走 conversation.input.shell（读/写/订阅），不再需要 provideInfo', async () => {
+  const kernel = createModernKernel({ withUiWorkspace: true })
+  const adapter = makeModernAdapter(kernel)
+  const project = freshProject('M06-作品')
+  const handle = await adapter.connect(project, 'op-m06')
+  const id = handle.getSnapshot().sessionId
+  assert.equal(handle.getDraft(), '')
+  handle.setDraft('第一段')
+  assert.equal(kernel.state.drafts.get(id)?.draft, '第一段', 'setDraft 必须落到 shell')
+  // shell 快照驱动 adapter 快照（读通道 + 订阅通知）
+  let notified = 0
+  const off = handle.subscribe(() => { notified++ })
+  assert.equal(handle.getSnapshot().draft, '第一段')
+  // 原生侧编辑（经 shell.actions）→ adapter 订阅者必须收到通知
+  kernel.conversation().input.shell(id).actions.setDraft('原生侧改过')
+  assert.ok(notified >= 1, 'shell.state 变更必须通知 adapter 订阅者')
+  assert.equal(handle.getDraft(), '原生侧改过')
+  assert.equal(handle.getSnapshot().draft, '原生侧改过')
+  off()
+  handle.dispose()
+})
+
+await ok('M07 modern：binding 缺失时不碰 shell，setDraft 报 input-not-ready 而不是内核异常', async () => {
+  const kernel = createModernKernel()
+  const adapter = makeModernAdapter(kernel)
+  const created = await kernel.remoteSession().create({ cwd: '/x', agentPreset: 'writing-companion' })
+  const id = created.value.sessionId
+  // 模拟"会话在列表里、但还没有任何 retained scope"：shell(id) 在真内核会抛 resolved no binding
+  kernel.sessions.binding = () => null
+  const handle = adapter.attach(freshProject('M07-作品'), id)
+  assert.equal(handle.getSnapshot().status, 'ready')
+  assert.equal(handle.getDraft(), '', 'binding 缺失时读草稿返回空而不是抛错')
+  assert.throws(() => handle.setDraft('x'), /原生输入框尚未就绪/)
+  assert.equal(kernel.state.drafts.size, 0, 'binding 缺失时不得创建 shell（真内核会抛 resolved no binding）')
+  handle.dispose()
+})
+
+// ---- 能力缺口 → 作者语言（capability-notice，2026-10 补：缺口以前只在内存里算，界面上不吭声）----
+const { companionCapability } = await import(pathToFileURL(path.join(HERE, '../src/client/features/companion/capability-notice.js')).href)
+
+await ok('N01 会话服务未挂载 = blocked：说清原因与「想法不会丢」，不泄露内核能力名', async () => {
+  const adapter = createHarnessAdapter({ sessions: null, api: async () => ({ ok: true }) })
+  const c = companionCapability(adapter.capabilities())
+  assert.equal(c.level, 'blocked')
+  assert.equal(c.canSend, false)
+  assert.match(c.reasons.join('；'), /内核会话服务未挂载/)
+  assert.match(c.note, /本地草稿/)
+  const authorText = c.headline + c.reasons.join('；') + c.note
+  assert.ok(!/sessions\.binding|remote\.session|provideInfo|coordination|workspaces\.create/.test(authorText), '作者可见文案里不该出现内核能力名')
+})
+
+await ok('N02 有会话但缺创建通道 = limited（已有会话照常用，不该谎称连不上）', async () => {
+  const c = companionCapability({
+    flags: { sessions: true, 'sessions.refresh': true, 'sessions.binding': true, api: true, coordination: true },
+    missing: ['create:remote.session.create+workspaces.create|sessions.create+workspaces.create+agentPresets.select'],
+    degraded: [],
+    canSend: true,
+  })
+  assert.equal(c.level, 'limited')
+  assert.equal(c.canSend, true, '已有会话仍可发送，不该降级成 blocked')
+  assert.match(c.reasons.join('；'), /没有创建写作伙伴会话的通道/)
+  assert.match(c.reasons.join('；'), /已有会话仍可继续/)
+  assert.ok(!/workspaces\.create|remote\.session/.test(c.reasons.join('；')), '能力名清单不该原样出现在作者文案里')
+})
+
+await ok('N03 软缺口只列作者受影响的那几条，切不到完整会话要说明', async () => {
+  const c = companionCapability({
+    flags: { sessions: true, 'sessions.binding': true, api: true, coordination: true },
+    missing: [],
+    degraded: ['sessions.noteAgentPreset', 'sessions.open|retain'],
+    canSend: true,
+  })
+  assert.equal(c.level, 'limited')
+  assert.match(c.reasons.join('；'), /无法把主视图切到完整会话/)
+  assert.ok(!c.reasons.some((t) => /预设标注|noteAgentPreset/.test(t)), '对作者没有影响的能力位不该出现')
+  assert.equal(c.reasons.length, 1)
+})
+
+await ok('N04 能力齐备 = ok：不渲染任何缺口条', async () => {
+  const c = companionCapability({
+    flags: { sessions: true, 'sessions.binding': true, api: true, coordination: true },
+    missing: [], degraded: [], canSend: true,
+  })
+  assert.equal(c.level, 'ok')
+  assert.deepEqual(c.reasons, [])
+  assert.equal(c.headline, '')
+  assert.equal(c.note, '')
+})
+
 console.log(`\nadapter 协调验收: ${pass} 项通过`)
 fs.rmSync(temp, { recursive: true, force: true })

@@ -26,8 +26,12 @@ import {
   prepareProjectTarget,
   isSafeTemplateRel,
   createTemplateFile,
+  realOrNull,
+  listProjectFiles,
 } from './lib/store.js'
+import { COMPANION_PRESET } from './lib/companion-preset.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
+import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
 import {
   readMemory,
   applyMemoryOp,
@@ -117,6 +121,7 @@ export const ROUTE_METHODS = {
   ledger: ['POST'],
   'create-project': ['POST'],
   'project-resource': ['POST'],
+  compile: ['POST'],
 }
 
 function isLoopbackRequest(req) {
@@ -223,6 +228,36 @@ export function apply(ctx) {
   } catch (err) {
     console.warn(`[writing-mode] 残留锁诊断失败（不阻止启动）：${err?.message || err}`)
   }
+  // 0.1.7 起内核不再扫 ~/.dsh/.agent-presets：写作伙伴 preset 改为向 registry 自举注册。
+  // 判据 = registry 同时暴露 register/composeFrom；旧内核没有该服务 → 跳过（走旧 select 路）。
+  // Duplicate 视为已成功（幂等）；其它失败重置 promise，prepare 路由里可重试。
+  let presetRegistration = null
+  const ensurePresetRegistered = () => {
+    if (presetRegistration) return presetRegistration
+    const registry = typeof c.get === 'function' ? c.get('agentPresets') : null
+    if (!registry || typeof registry.register !== 'function' || typeof registry.composeFrom !== 'function') {
+      presetRegistration = Promise.resolve(null)
+      return presetRegistration
+    }
+    presetRegistration = Promise.resolve()
+      .then(() => registry.register(JSON.parse(JSON.stringify(COMPANION_PRESET))))
+      .then((unregister) => ({ unregister }))
+      .catch((err) => {
+        if (/Duplicate agent preset/.test(String(err?.message || err))) return { unregister: null }
+        presetRegistration = null
+        throw err
+      })
+    return presetRegistration
+  }
+  // 抢先注册（fire-and-forget），插件卸载时回收；失败只告警，prepare 路由会再试。
+  ctx.effect(() => {
+    let unregister = null
+    let settled = false
+    ensurePresetRegistered()
+      .then((reg) => { if (settled) reg?.unregister?.(); else unregister = reg?.unregister || null })
+      .catch((err) => console.warn(`[writing-mode] 写作伙伴 preset 注册失败（建伙伴会话时会重试）：${err?.message || err}`))
+    return () => { settled = true; unregister?.() }
+  })
   ctx.effect(() =>
     c.webServer.register({
       kind: 'exact',
@@ -298,10 +333,12 @@ export function apply(ctx) {
           if (req.method === 'POST' && body.prepare === true) {
             try {
               const preset = ensureCompanionPreset()
+              // 0.1.7：文件落盘之外还要向 registry 自举注册（幂等，见上）。
+              const reg = await ensurePresetRegistered()
               // Native preset pickers refresh their roster/current label on this
               // public notification; installing files alone does not notify them.
               c.emit?.('settings/document-updated', 'agent-presets')
-              return writeJson(res, 200, { ok: true, preset })
+              return writeJson(res, 200, { ok: true, preset, registered: Boolean(reg) })
             }
             catch (err) { return writeJson(res, 500, { ok: false, error: String(err.message) }) }
           }
@@ -472,6 +509,112 @@ export function apply(ctx) {
           try {
             deleteDoc(target, parsed.revision)
             writeJson(res, 200, { ok: true })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+          }
+          return
+        }
+
+        /**
+         * 导出成书：把项目里各章的**当前版**按文档树顺序拼成一份完整书稿，
+         * 独占创建在项目根（<书名>-vN.<ext>，可见于文档树；原稿一律只读不动）。
+         * body: { path（项目内任意路径）, include?（rel 数组，顺序即章节顺序）, title?, titles? }
+         * include 省略时默认收 draft/ 下的文本文件，并按系列只取最新版。
+         */
+        if (req.method === 'POST' && route === 'compile') {
+          const parsed = await readJsonBody(req)
+          if (parsed === null) {
+            writeJson(res, 400, { ok: false, error: 'invalid-json' })
+            return
+          }
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(parsed?.path || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const found = resolveProjectDir(target.abs, roots)
+          const projectReal = found && realOrNull(found)
+          if (!projectReal) {
+            writeJson(res, 400, { ok: false, error: 'no-project' })
+            return
+          }
+          const scope = [{ path: projectReal, real: projectReal }]
+          const files = listProjectFiles(projectReal)
+          const byRel = new Map(files.map((f) => [f.rel.toLowerCase(), f]))
+          let selected = []
+          let skipped = []
+          const include = Array.isArray(parsed?.include) ? parsed.include : null
+          if (include) {
+            if (include.length === 0) {
+              writeJson(res, 400, { ok: false, error: 'empty-include' })
+              return
+            }
+            const seenAbs = new Set()
+            for (const item of include) {
+              const rel = String(item || '').replaceAll('\\', '/')
+              if (!isSafeTemplateRel(rel)) {
+                writeJson(res, 400, { ok: false, error: 'bad-include', rel: String(item ?? '') })
+                return
+              }
+              const inProject = resolveUnderRoots(path.join(projectReal, ...rel.split('/')), scope)
+              const f = inProject ? byRel.get(rel.toLowerCase()) : null
+              if (!f) {
+                writeJson(res, 400, { ok: false, error: 'unknown-include', rel })
+                return
+              }
+              if (seenAbs.has(f.abs.toLowerCase())) continue
+              seenAbs.add(f.abs.toLowerCase())
+              selected.push(f)
+            }
+          } else {
+            const drafts = files.filter((f) => f.rel.startsWith('draft/'))
+            if (drafts.length === 0) {
+              writeJson(res, 400, { ok: false, error: 'no-drafts' })
+              return
+            }
+            const r = latestOfSeries(drafts)
+            selected = naturalSortFiles(r.latest)
+            skipped = r.skipped.map((f) => f.rel)
+          }
+          const exts = [...new Set(selected.map((f) => f.ext.toLowerCase()))]
+          if (exts.length > 1) {
+            writeJson(res, 400, { ok: false, error: 'mixed-formats', exts })
+            return
+          }
+          const ext = exts[0]
+          const format = ext === '.fountain' ? 'fountain' : 'markdown'
+          const bookTitle = safeBookTitle(parsed?.title ?? path.basename(projectReal))
+          if (!bookTitle) {
+            writeJson(res, 400, { ok: false, error: 'invalid-title' })
+            return
+          }
+          let entries
+          try {
+            entries = selected.map((f) => ({ title: chapterTitle(f.name), content: fs.readFileSync(f.abs, 'utf8') }))
+          } catch {
+            // 扫描到读取之间文件被移走/改名：如实报，不写半成品
+            writeJson(res, 409, { ok: false, error: 'source-changed' })
+            return
+          }
+          const date = new Date().toLocaleString('zh-CN', { hour12: false })
+          const book = compileBook(entries, { format, title: bookTitle, date, titles: parsed?.titles !== false })
+          try {
+            let doc = null
+            for (let n = 1; n <= 100 && !doc; n++) {
+              const out = resolveUnderRoots(path.join(projectReal, `${bookTitle}-v${n}${ext}`), scope)
+              try {
+                doc = writeDoc(out, book.text, null) // 独占创建：已存在就试下一个编号，绝不覆盖
+              } catch (err) {
+                if (err.status !== 409) throw err
+              }
+            }
+            if (!doc) throw storeError('version-conflict', 409)
+            writeJson(res, 200, {
+              ok: true,
+              doc: { path: doc.path, chars: doc.chars, revision: doc.revision },
+              stats: { files: book.files, chars: book.chars, skipped },
+            })
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
           }
@@ -920,6 +1063,7 @@ export function apply(ctx) {
               writeJson(res, 400, { ok: false, error: 'invalid-json' })
               return
             }
+            console.error('[wm-debug-host] claim path=', JSON.stringify(parsed && parsed.path), 'roots=', JSON.stringify(effectiveRoots(cfg)).slice(0,200));
             const resolved = resolveProjectKey(parsed?.path || '')
             if (!resolved) {
               writeJson(res, 400, { ok: false, error: 'path-outside-roots' })

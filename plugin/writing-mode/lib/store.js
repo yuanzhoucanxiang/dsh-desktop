@@ -7,6 +7,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { createHash, randomUUID } from 'node:crypto'
 import { withFileLock } from './file-lock.js'
+import { COMPANION_PRESET_ID, COMPANION_PRESET_NAME, COMPANION_PRESET_DESCRIPTION } from './companion-preset.js'
 
 export const CONFIG_NAME = 'writing-mode.json'
 export const TEXT_EXTS = new Set(['.md', '.markdown', '.fountain', '.txt'])
@@ -51,7 +52,7 @@ export function configFile() {
 // A local, editable preset, based on the pinned kernel's standard tool set.
 // Never replace a user's existing customization.
 export function ensureCompanionPreset() {
-  const id = 'writing-companion'
+  const id = COMPANION_PRESET_ID
   const file = path.join(path.dirname(configFile()), '.agent-presets', id, 'agent.cordis.yml')
   if (!fs.existsSync(file)) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -60,7 +61,7 @@ export function ensureCompanionPreset() {
   }
   const metadata = path.join(path.dirname(file), 'preset.yml')
   if (!fs.existsSync(metadata)) {
-    try { atomicWrite(metadata, 'name: 写作伙伴\ndescription: 与作者持续交流，按需使用工具与项目资料。\n', { exclusive: true }) }
+    try { atomicWrite(metadata, `name: ${COMPANION_PRESET_NAME}\ndescription: ${COMPANION_PRESET_DESCRIPTION}\n`, { exclusive: true }) }
     catch (err) { if (err.code !== 'EEXIST') throw err }
   }
   return id
