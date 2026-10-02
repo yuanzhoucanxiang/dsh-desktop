@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(project, 'draft/novel/第1章-v1.md'), '第一章旧稿')
   fs.writeFileSync(path.join(project, 'draft/novel/第1章-v2.md'), '第一章新稿，雾从海面压过来。')
   fs.writeFileSync(path.join(project, 'draft/novel/第2章-v1.md'), '第二章正文')
-  fs.writeFileSync(path.join(project, 'bible/characters.md'), '# 人物\n\n**林晚**：送信人。\n\n<script>window.__pwned=1</script>\n<img src=x onerror="window.__pwned=2">\n\n| 人物 | 立场 |\n| --- | --- |\n| 关渡 | 拦信 |\n')
+  fs.writeFileSync(path.join(project, 'bible/characters.md'), '# 人物\n\n**林晚**：送信人，细节见 [[world.md]]。\n\n<script>window.__pwned=1</script>\n<img src=x onerror="window.__pwned=2">\n\n| 人物 | 立场 |\n| --- | --- |\n| 关渡 | 拦信 |\n')
   fs.writeFileSync(path.join(project, 'bible/world.md'), '手写世界设定，不该被档案改写。')
   fs.writeFileSync(path.join(project, 'bible/timeline.md'), '# 时间线\n\n- 雾季第一夜：禁令生效\n- 第二夜：信被拆开')
   fs.writeFileSync(path.join(project, 'outline/foreshadow.md'), '# 伏笔\n\n- 铜钥匙：未回收\n- 电报局：未回收\n- 旧照片：已兑现')
@@ -237,6 +237,13 @@ app.whenReady().then(async () => {
   await waitFor(`document.title.includes('演示项目')`)
   assert.equal(await evaluate(`window.__pwned===undefined`), true, '导出页不得执行稿件里的脚本')
   assert.ok((await evaluate(`document.body.innerText`)).includes('夜行禁令'), '导出页独立打开可读')
+  // 页内导航真的能用：目录链接 → hash 变 → 目标滚进视口；稿件里的 [[名]] 也是可点跳转
+  assert.ok((await evaluate(`document.body.innerHTML`)).includes('<a class="ref" href="#doc-'), '稿件里的 [[world.md]] 应解析成页内链接')
+  const tocHref = await evaluate(`(document.querySelector('.toc a[href^="#doc-"]')||{getAttribute:()=>''}).getAttribute('href')`)
+  assert.ok(/^#doc-\d+$/.test(tocHref), '目录里应有资料锚点：' + tocHref)
+  await evaluate(`document.querySelector('.toc a[href="${tocHref}"]').click()`)
+  await waitFor(`location.hash===${JSON.stringify(tocHref)}`)
+  assert.ok(await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(tocHref)}).getBoundingClientRect();return r.top>-4&&r.top<innerHeight})()`), '点目录应滚到目标')
   await shoot('archive-export.png')
   console.log('PASS 导出页自包含：单文件打开即渲染，脚本不执行')
 

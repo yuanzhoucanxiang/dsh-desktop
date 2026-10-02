@@ -1,6 +1,6 @@
 {
   "commit": "95b138d427f445e933e69811f8a775ce968ffe28",
-  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-nty6j5",
+  "temp": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-WeSSJH",
   "results": [
     {
       "id": "B06-adopt-keeps-recoverable-original",
@@ -8,17 +8,17 @@
       "evidence": {
         "disk": [
           {
-            "windowId": "9ba04c81-a295-499a-abd0-0752b909148f",
+            "windowId": "a8b71623-2556-4b3c-8a3d-496fe6422145",
             "text": "OTHER_WINDOW_CANDIDATE",
             "reference": null
           },
           {
-            "windowId": "9ba04c81-a295-499a-abd0-0752b909148f-before-adopt-1790945055901",
+            "windowId": "a8b71623-2556-4b3c-8a3d-496fe6422145-before-adopt-1790946351716",
             "text": "AUTHOR_ORIGINAL_UNIQUE_DRAFT",
             "reference": {
               "label": "选区 · 第1章-v1.md · 3 字",
               "text": "第一章",
-              "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-nty6j5\\library\\演示项目\\draft\\novel\\第1章-v1.md",
+              "path": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-WeSSJH\\library\\演示项目\\draft\\novel\\第1章-v1.md",
               "revision": "5c6c93e2112df38b82bd55c68d6d53326e693726490120655fa7045b58213de4",
               "selection": {
                 "start": 0,

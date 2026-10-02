@@ -20,6 +20,7 @@ import {
   docGroupRank,
   docLabelOf,
   premiseOf,
+  buildRefResolver,
   ARCHIVE_HTML_VERSION,
 } from '../lib/archive-html.js'
 import { PROJECT_RESOURCES } from '../lib/templates.js'
@@ -172,6 +173,64 @@ ok('A12 稿件里的脚本在导出页只以文字出现，且样式随页走（
   assert.ok(!/<img\s/i.test(html), '不该有真 img 标签')
   assert.ok(html.includes('&lt;script&gt;'), '脚本以字面文字保留')
   assert.ok(!/src\s*=\s*["']https?:/i.test(html) && !/<link\b/i.test(html), '自包含：不引外部样式或脚本')
+})
+
+/* ---- 第三刀：目录与页内跳转 ---- */
+
+const navModel = {
+  title: '雾港',
+  settings: [{ title: '夜行禁令', conclusion: '入夜封港。' }, { title: '铜钥', conclusion: '开电报室。' }],
+  plainItems: [],
+  chapters: [{ name: '第1章-夜行', chars: 10 }, { name: '第2章-v2', chars: 20 }],
+  docs: [{ rel: 'bible/characters.md', label: '人物档案', group: '人物', markdown: true,
+    content: '详见 [[characters.md]] 与 [[第1章-夜行]]，还有 [[不存在的东西]]。\n' },
+    { rel: 'outline/foreshadow.md', label: '伏笔与回收', group: '故事规划', markdown: true, content: '见 [[foreshadow]]。' }],
+  stats: { today: 0, streak: 0 },
+  ledger: { timeline: [], foreshadowOpen: 0 },
+}
+
+ok('B01 目录里每个链接都指到页内真实锚点，每个条目锚点也都进了目录', () => {
+  const html = renderArchiveHtml(navModel)
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1])
+  const hrefs = [...html.matchAll(/<a[^>]*href="(#[^"]+)"/g)].map((m) => m[1].slice(1))
+  assert.ok(ids.length > 0 && hrefs.length > 0, '页面应有锚点与目录链接')
+  for (const target of hrefs) assert.ok(ids.includes(target), '目录指向不存在的锚点：#' + target)
+  for (const id of ids) {
+    if (id.startsWith('set-') || id.startsWith('ch-') || id.startsWith('doc-')) {
+      assert.ok(hrefs.includes(id), '条目锚点没被目录引用：' + id)
+    }
+  }
+  assert.equal(new Set(ids).size, ids.length, '锚点 id 必须唯一')
+})
+
+ok('B02 [[名]] 在导出页里解析成页内跳转，解析不到就退回不可导航的标注', () => {
+  const html = renderArchiveHtml(navModel)
+  assert.ok(/<a class="ref" href="#doc-1">characters\.md<\/a>/.test(html), '精确文件名 → 资料锚点')
+  assert.ok(/<a class="ref" href="#ch-1">第1章-夜行<\/a>/.test(html), '章节也能跳')
+  assert.ok(/<a class="ref" href="#doc-2">foreshadow<\/a>/.test(html), '无扩展名走前缀匹配')
+  assert.ok(/<span class="ref">不存在的东西<\/span>/.test(html), '解析不到不得生成链接')
+})
+
+ok('B03 解析规则：大小写不敏感、抹 -vN 取最新、作者文字进不了 href', () => {
+  const refs = buildRefResolver(navModel)
+  assert.equal(refs('CHARACTERS.MD'), '#doc-1')
+  assert.equal(refs('第2章'), '#ch-2', '没带版本号的题名应能命中 -v2')
+  assert.equal(refs('第2章-v2'), '#ch-2')
+  assert.equal(refs(''), '')
+  assert.equal(refs('javascript:alert(1)'), '')
+  assert.equal(refs('../../etc/passwd'), '')
+  const hostile = renderArchiveHtml({ title: 'T', docs: [{ rel: 'bible/a.md', label: 'a', group: '世界与设定', markdown: true,
+    content: '[[a.md" onmouseover="x]]' }], settings: [], plainItems: [], chapters: [], ledger: null, stats: null })
+  // 作者写的引号只能以 &quot; 出现在文字里；任何开始标签里都不该出现 onmouseover 属性
+  assert.ok(hostile.includes('a.md&quot; onmouseover=&quot;x'), '恶意文字应原样转义保留')
+  assert.ok(!/<[a-z][^>]*\sonmouseover\s*=/i.test(hostile), '标注文字不得逃进属性：' + hostile)
+  assert.ok(!/<a[^>]*href="[^"]*"/.test(hostile.match(/<span class="ref">[^<]*onmouseover[^<]*/)?.[0] || ''), '不应为它生成链接')
+})
+
+ok('B04 打印时藏目录（纸上没有可点的链接）', () => {
+  const html = renderArchiveHtml(navModel)
+  assert.ok(/@media print\{[^}]*\.toc\{display:none\}/.test(html), '目录应有打印隐藏规则')
+  assert.ok(html.includes('class="toc"'), '目录本体在页上')
 })
 
 console.log(`\n作品档案导出: ${pass} 项通过`)

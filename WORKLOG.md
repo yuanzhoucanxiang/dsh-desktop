@@ -171,3 +171,5 @@ v2 交回复核：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-r
 2026-10-02 发版后文档收尾与「作品档案」收账：策划案升 v0.14（§6 仍开放复核划线、新增 §21 两版发布收口）、WORKLOG 补条目；修复 v0.1.47 CHANGELOG [Unreleased]→[0.1.47] 提升被 CRLF 静默吞掉的漏升级。同日发现另一会话在飞的「作品档案」只读汇总页被 `git add -A` 卷入提交 0b85821（功能完整、其唯一未过的门禁项是测试断言自身写错 Number(「12 字 · 今天」)=NaN，已修复并 10/10 绿）；**教训：共享工作树禁 `git add -A`，一律逐个列文件 + 提交前核对 changed 数量**。全链 `verify:writing-quick` 553 项 0 非零。— 署名：ZCode
 
 2026-10-02 作品档案第二刀：档案页可导出为自包含 HTML（POST archive-export + lib/archive-html.js 纯函数核心，写 <书名>-档案-vN.html、独占创建不覆盖）。口径与面板一致、候选不入档、文字整体转义只放白名单标记、链接仅 http(s)、.html 不进 TEXT_EXTS 故不入文档库/不成书候选/不记码字账；为此在 store 开窄口 writeExportFile。纯函数 12 项 + 档案门禁 11 段（末段把导出页当独立文件打开复验脚本不执行）；verify:writing-quick 全链 593 项 0 非零。架构门禁拦下漏登记 runtime-manifest 的交付事故（新 host 模块必须同轮进清单）。日志 logs/2026-10-02.md。— 署名：Qoder
+
+2026-10-02 作品档案第三刀：导出页加目录与页内锚点（tocSection + buildRefResolver，[[文稿名]] 按 jump.js 同规则解析到页内 doc/ch 锚点，解析不到退回不可导航标注；锚点 id 全由 host 生成 + SAFE_ANCHOR 兜底，打印藏目录）。纯函数 12→16 项、档案门禁 11→12 段（含独立打开导出页点目录真跳转），verify:writing-quick 全链 597 项 0 非零。日志 logs/2026-10-02.md。— 署名：Qoder

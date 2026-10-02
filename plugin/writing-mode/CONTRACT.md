@@ -71,7 +71,7 @@
 | `templates` | GET | — | 可用项目模板 |
 | `create-project` | POST | root,title,templateId,premise | 项目骨架；非法名/非空目录拒绝（见 store.prepareProjectTarget） |
 | `compile` | POST | path,include?,title?,titles? | 导出成书：各章当前版按文档树自然序拼成项目根 `<书名>-vN.<ext>`（独占创建、原稿只读；详见末节） |
-| `archive-export` | POST | path,title? | 导出作品档案：与档案面板同一口径的**只读投影**，写成项目根自包含单文件 `<书名>-档案-vN.html`（`writeExportFile` 独占创建、绝不覆盖；`.html` 不在 `TEXT_EXTS` 内，故不进文档库、不参与成书候选，也不记码字账）。设定读 `state/writing-memory.json` 的 confirmed 条目（候选不入档），资料只取每篇当前版；文字一律转义，仅放行白名单标记（标题/列表/表格/引用/粗斜体/行内码/http(s) 链接/`[[标注]]`）。坏 JSON 或未知 schema → 409，不猜不清空 |
+| `archive-export` | POST | path,title? | 导出作品档案：与档案面板同一口径的**只读投影**，写成项目根自包含单文件 `<书名>-档案-vN.html`（`writeExportFile` 独占创建、绝不覆盖；`.html` 不在 `TEXT_EXTS` 内，故不进文档库、不参与成书候选，也不记码字账）。设定读 `state/writing-memory.json` 的 confirmed 条目（候选不入档），资料只取每篇当前版；文字一律转义，仅放行白名单标记（标题/列表/表格/引用/粗斜体/行内码/http(s) 链接/`[[标注]]`）。页内含**目录与页内锚点**：`[[文稿名]]` 按与客户端 `features/companion/jump.js` 一致的规则（精确名 → 抹 `-vN` → 前缀，取最新）解析到本页的资料/章节锚点，解析不到则退回不可导航的标注；锚点 id 一律 host 生成（`set-N`/`ch-N`/`doc-N`/`sec-*`），作者文字进不了 href。坏 JSON 或未知 schema → 409，不猜不清空 |
 | `memory` | GET | path | memory, etag, injectable, **schemaVersion**, **capabilities**, **projection** |
 | `memory` | POST | path,op,baseRevision,baseEtag,… | 见下表 op |
 | `memory-operation` | GET | path,operationId | {found, receipt}；不触发重写 |
