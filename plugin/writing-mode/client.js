@@ -2093,7 +2093,7 @@ __export(entry_exports, {
   subscribeDraftStatus: () => subscribeDraftStatus
 });
 module.exports = __toCommonJS(entry_exports);
-var react9 = __toESM(require("react"), 1);
+var react10 = __toESM(require("react"), 1);
 var jsx22 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/shared/editor-session.js
@@ -2646,7 +2646,27 @@ var zh = {
   suggestRoot: "建议加入库：",
   addSuggest: "加入库",
   copyPath: "复制路径",
-  copied: "已复制"
+  copied: "已复制",
+  stats: "码字",
+  statsToday: "今日净增",
+  statsStreak: "连续",
+  statsStreakUnit: "天",
+  statsGoal: "日更目标",
+  statsGoalUnit: "字",
+  statsGoalSave: "保存目标",
+  statsGoalSaved: "目标已保存",
+  statsNone: "打开项目内文件后统计今日码字",
+  statsNoData: "保存后开始累计",
+  find: "查找",
+  findPlaceholder: "查找…",
+  replacePlaceholder: "替换为…",
+  findPrev: "上一个",
+  findNext: "下一个",
+  findReplace: "替换",
+  findReplaceAll: "全部替换",
+  findClose: "关闭查找",
+  findNone: "无结果",
+  findHint: "Enter 下一个 · Shift+Enter 上一个"
 };
 var en = {
   toggle: "Writing",
@@ -2723,6 +2743,26 @@ var en = {
   suggestRoot: "Suggested library:",
   addSuggest: "Add",
   copyPath: "Copy path",
+  stats: "Stats",
+  statsToday: "Today",
+  statsStreak: "Streak",
+  statsStreakUnit: "d",
+  statsGoal: "Daily goal",
+  statsGoalUnit: "chars",
+  statsGoalSave: "Save goal",
+  statsGoalSaved: "Goal saved",
+  statsNone: "Open a file inside a project to track daily writing",
+  statsNoData: "Starts counting on save",
+  find: "Find",
+  findPlaceholder: "Find…",
+  replacePlaceholder: "Replace with…",
+  findPrev: "Previous",
+  findNext: "Next",
+  findReplace: "Replace",
+  findReplaceAll: "Replace all",
+  findClose: "Close find",
+  findNone: "No matches",
+  findHint: "Enter next · Shift+Enter previous",
   copied: "Copied"
 };
 function pickLocale() {
@@ -2991,6 +3031,16 @@ var CSS = [
   ".dshWmDocAlert{flex:none;display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);border-top:1px solid var(--dsw-alias-border-l2);overflow-wrap:anywhere;}",
   ".dshWmDocAlert>span:first-child{min-width:0;}",
   ".dshWmDocAlert .dshWmBtn{flex:none;}",
+  /* 编辑器查找/替换栏：压在版本条与稿面之间 */
+  ".dshWmFindBar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 16px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);flex-wrap:wrap;}",
+  ".dshWmFindInput{flex:0 1 180px;min-width:110px;height:26px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;}",
+  ".dshWmFindInput.is-replace{flex:0 1 160px;}",
+  ".dshWmFindInput:focus{border-color:var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));}",
+  ".dshWmFindCount{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:44px;text-align:center;}",
+  ".dshWmFindHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.7;margin-left:auto;white-space:nowrap;}",
+  ".dshWmFindBar .dshWmBtn{flex:none;}",
+  /* 状态条里的今日码字芯片 */
+  ".dshWmStatus [data-wm-stats-today]{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}",
   ".dshWmAiBody{",
   "  flex:1;display:flex;flex-direction:column;min-height:0;",
   "  padding:8px 12px 20px;gap:8px;overflow:auto;",
@@ -3039,6 +3089,22 @@ var CSS = [
   ".dshWmLedgerRow{display:flex;gap:8px;}",
   ".dshWmLedgerK{flex:none;min-width:4.5em;color:var(--dsw-alias-label-tertiary);font-size:11px;}",
   ".dshWmLedgerV{flex:1;word-break:break-word;color:var(--dsw-alias-label-primary);}",
+  /* 码字统计（检查页）：今日大数 + 连击 + 近 14 天柱条 + 日更目标 */
+  ".dshWmStats{display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmStatsHead{display:flex;align-items:baseline;gap:10px;}",
+  ".dshWmStatsToday{font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}",
+  ".dshWmStatsToday b{font-size:16px;color:var(--dsw-alias-label-primary);font-weight:700;}",
+  ".dshWmStatsToday .is-hit{color:var(--dsw-alias-state-success-primary);}",
+  ".dshWmStatsStreak{font-size:11px;color:var(--dsw-alias-state-warning-primary,#c9a227);font-variant-numeric:tabular-nums;}",
+  ".dshWmStatsBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:2px 0;}",
+  ".dshWmStatsBarCol{flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%;}",
+  ".dshWmStatsBar{width:70%;min-height:1px;border-radius:2px 2px 0 0;background:var(--dsw-alias-border-l2);}",
+  ".dshWmStatsBar.is-on{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 65%,var(--dsw-alias-bg-layer-1));}",
+  ".dshWmStatsBar.is-today{outline:1px solid var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));outline-offset:1px;}",
+  ".dshWmGoalRow{display:flex;align-items:center;gap:6px;}",
+  ".dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;font-variant-numeric:tabular-nums;}",
+  ".dshWmGoalUnit{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmGoalRow .dshWmBtn{flex:none;margin-left:auto;}",
   ".dshWmDiff{",
   "  flex:none;max-height:36%;overflow:auto;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
@@ -3142,7 +3208,7 @@ async function api(route, opts, query) {
 }
 
 // plugin/writing-mode/src/client/app/WritingModeApp.js
-var react6 = __toESM(require("react"), 1);
+var react7 = __toESM(require("react"), 1);
 var jsx16 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/adapters/harness/identity.js
@@ -4047,7 +4113,8 @@ var DEFAULT_PREFS = {
   aiMode: "harness",
   aiProvider: "deepseek-official",
   aiModel: "deepseek-v4-flash",
-  aiApiKey: ""
+  aiApiKey: "",
+  dailyGoal: 0
 };
 var prefsCache = { ...DEFAULT_PREFS };
 var prefsListeners = /* @__PURE__ */ new Set();
@@ -19332,6 +19399,7 @@ function ExportBookPanel({ proj, onClose, onDone }) {
 }
 
 // plugin/writing-mode/src/client/features/inspection/index.js
+var react6 = __toESM(require("react"), 1);
 var jsx14 = __toESM(require("react/jsx-runtime"), 1);
 function InspectionPanel({
   T: T2,
@@ -19344,11 +19412,108 @@ function InspectionPanel({
   onRunGate,
   ledger,
   ledgerOpen,
-  onToggleLedger
+  onToggleLedger,
+  stats,
+  statsOpen,
+  onToggleStats,
+  dailyGoal,
+  onSaveGoal
 }) {
+  const [goalDraft, setGoalDraft] = react6.useState(String(dailyGoal || ""));
+  react6.useEffect(() => {
+    setGoalDraft(String(dailyGoal || ""));
+  }, [dailyGoal]);
+  const statDays = stats && Array.isArray(stats.days) ? stats.days : [];
+  const statMax = Math.max(1, ...statDays.map((d) => d.total));
   return jsx14.jsxs("div", {
     className: "dshWmAiBody",
     children: [
+      /* ── 码字：今日净增 / 连击 / 近 14 天 / 日更目标 ── */
+      jsx14.jsxs(
+        "div",
+        {
+          className: "dshWmSec",
+          children: [
+            jsx14.jsxs(
+              "button",
+              {
+                type: "button",
+                className: "dshWmSecToggle",
+                onClick: onToggleStats,
+                children: [
+                  jsx14.jsx("span", {
+                    children: (statsOpen ? "▾ " : "▸ ") + T2.stats
+                  }, "t"),
+                  jsx14.jsx("span", {
+                    className: "dshWmSecBadge",
+                    "data-wm-stats-badge": "1",
+                    children: stats ? T2.statsToday + " +" + stats.today : "—"
+                  }, "b")
+                ]
+              },
+              "st"
+            ),
+            statsOpen ? stats ? jsx14.jsxs(
+              "div",
+              {
+                className: "dshWmStats",
+                children: [
+                  jsx14.jsxs("div", { className: "dshWmStatsHead", children: [
+                    jsx14.jsxs("span", { className: "dshWmStatsToday", "data-wm-stats-today-big": "1", children: [
+                      T2.statsToday + " ",
+                      jsx14.jsx("b", { children: "+" + stats.today }),
+                      dailyGoal > 0 ? jsx14.jsx("span", {
+                        className: stats.today >= dailyGoal ? "is-hit" : "",
+                        children: " / " + dailyGoal + T2.statsGoalUnit + (stats.today >= dailyGoal ? " ✓" : "")
+                      }) : null
+                    ] }, "td"),
+                    stats.streak > 1 ? jsx14.jsx("span", {
+                      className: "dshWmStatsStreak",
+                      "data-wm-stats-streak": String(stats.streak),
+                      children: T2.statsStreak + " " + stats.streak + " " + T2.statsStreakUnit
+                    }, "sk") : null
+                  ] }, "hd"),
+                  statDays.length ? jsx14.jsx("div", {
+                    className: "dshWmStatsBars",
+                    "data-wm-stats-bars": "1",
+                    children: statDays.map(
+                      (d, i) => jsx14.jsx("div", {
+                        className: "dshWmStatsBarCol",
+                        title: d.day + " · " + d.total,
+                        children: jsx14.jsx("div", {
+                          className: "dshWmStatsBar" + (d.total > 0 ? " is-on" : "") + (i === statDays.length - 1 ? " is-today" : ""),
+                          style: { height: Math.max(d.total > 0 ? 3 : 1, Math.round(d.total / statMax * 42)) + "px" }
+                        })
+                      }, d.day)
+                    )
+                  }, "bars") : jsx14.jsx("div", { className: "dshWmAiHint", children: T2.statsNoData }, "nd"),
+                  jsx14.jsxs("div", { className: "dshWmGoalRow", children: [
+                    jsx14.jsx("span", { className: "dshWmLedgerK", children: T2.statsGoal }, "gl"),
+                    jsx14.jsx("input", {
+                      className: "dshWmGoalInput",
+                      "data-wm-goal-input": "1",
+                      value: goalDraft,
+                      inputMode: "numeric",
+                      placeholder: "0",
+                      onChange: (e) => setGoalDraft(e.target.value.replace(/[^\d]/g, ""))
+                    }, "gi"),
+                    jsx14.jsx("span", { className: "dshWmGoalUnit", children: T2.statsGoalUnit }, "gu"),
+                    jsx14.jsx("button", {
+                      type: "button",
+                      className: "dshWmBtn is-ghost",
+                      "data-wm-goal-save": "1",
+                      onClick: () => onSaveGoal(Number(goalDraft) || 0),
+                      children: T2.statsGoalSave
+                    }, "gs")
+                  ] }, "gr")
+                ]
+              },
+              "st2"
+            ) : jsx14.jsx("div", { className: "dshWmAiHint", "data-wm-stats-none": "1", children: T2.statsNone }, "sn") : null
+          ]
+        },
+        "ssec"
+      ),
       /* ── 门禁：默认收起，只露一行摘要 ── */
       jsx14.jsxs(
         "div",
@@ -19526,14 +19691,14 @@ function InspectionPanel({
 var LS_FILE = "dsh-writing-mode-file";
 var KEY_HINT = "Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台";
 function WritingModeApp() {
-  const [active, setActive] = react6.useState(getModeActive);
-  react6.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
+  const [active, setActive] = react7.useState(getModeActive);
+  react7.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
   const open = () => setModeActive(true);
   const close = () => setModeActive(false);
-  const [roots, setRoots] = react6.useState([]);
-  const [tree, setTree] = react6.useState([]);
-  const [activeRoot, setActiveRoot] = react6.useState(null);
-  const editorRef = react6.useRef(null);
+  const [roots, setRoots] = react7.useState([]);
+  const [tree, setTree] = react7.useState([]);
+  const [activeRoot, setActiveRoot] = react7.useState(null);
+  const editorRef = react7.useRef(null);
   if (!editorRef.current) {
     let recovered = null;
     let recoveryKey = "dsh-writing-recovery";
@@ -19570,63 +19735,71 @@ function WritingModeApp() {
     }, recovered);
   }
   const editor = editorRef.current;
-  const [documentState, setDocumentState] = react6.useState(editor.get);
-  react6.useEffect(() => editor.subscribe(setDocumentState), [editor]);
+  const [documentState, setDocumentState] = react7.useState(editor.get);
+  react7.useEffect(() => editor.subscribe(setDocumentState), [editor]);
   const { path: filePath, content: content3, dirty, status: saveState } = documentState;
   const setContent = (value) => editor.change(value);
   const setFilePath = (path2) => {
     void editor.open(path2);
   };
-  const [aiOpen, setAiOpen] = react6.useState(true);
-  const [aiTab, setAiTab] = react6.useState("companion");
-  const [aiOut, setAiOut] = react6.useState("");
-  const [aiBusy, setAiBusy] = react6.useState(false);
-  const [aiErr, setAiErr] = react6.useState("");
-  const [gate, setGate] = react6.useState(null);
-  const [gateBusy, setGateBusy] = react6.useState(false);
-  const [gateErr, setGateErr] = react6.useState("");
-  const [focus, setFocus] = react6.useState(false);
-  const [libOpen, setLibOpen] = react6.useState(true);
-  const [libQuery, setLibQuery] = react6.useState("");
-  const [libraryView, setLibraryView] = react6.useState("writing");
-  const [collapsed, setCollapsed] = react6.useState(() => /* @__PURE__ */ new Set());
-  const [copied, setCopied] = react6.useState(false);
-  const [diffLines, setDiffLines] = react6.useState(null);
-  const [diffLabel, setDiffLabel] = react6.useState("");
-  const [ledger, setLedger] = react6.useState(null);
-  const [gateOpen, setGateOpen] = react6.useState(false);
-  const [ledgerOpen, setLedgerOpen] = react6.useState(false);
-  const [newDocMode, setNewDocMode] = react6.useState(false);
-  const [newDocName, setNewDocName] = react6.useState("");
-  const [projMode, setProjMode] = react6.useState(false);
-  const [projTitle, setProjTitle] = react6.useState("");
-  const [projPremise, setProjPremise] = react6.useState("");
-  const [projTemplate, setProjTemplate] = react6.useState("novel");
-  const [templates, setTemplates] = react6.useState([]);
-  const [addRootMode, setAddRootMode] = react6.useState(false);
-  const [addRootPath, setAddRootPath] = react6.useState("");
-  const [addRootKind, setAddRootKind] = react6.useState("library");
-  const [exportProj, setExportProj] = react6.useState(null);
-  const [flash, setFlash] = react6.useState("");
-  const [prefs, setPrefs] = react6.useState(getPrefs);
-  react6.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
-  react6.useEffect(() => {
+  const [aiOpen, setAiOpen] = react7.useState(true);
+  const [aiTab, setAiTab] = react7.useState("companion");
+  const [aiOut, setAiOut] = react7.useState("");
+  const [aiBusy, setAiBusy] = react7.useState(false);
+  const [aiErr, setAiErr] = react7.useState("");
+  const [gate, setGate] = react7.useState(null);
+  const [gateBusy, setGateBusy] = react7.useState(false);
+  const [gateErr, setGateErr] = react7.useState("");
+  const [focus, setFocus] = react7.useState(false);
+  const [libOpen, setLibOpen] = react7.useState(true);
+  const [libQuery, setLibQuery] = react7.useState("");
+  const [libraryView, setLibraryView] = react7.useState("writing");
+  const [collapsed, setCollapsed] = react7.useState(() => /* @__PURE__ */ new Set());
+  const [copied, setCopied] = react7.useState(false);
+  const [diffLines, setDiffLines] = react7.useState(null);
+  const [diffLabel, setDiffLabel] = react7.useState("");
+  const [ledger, setLedger] = react7.useState(null);
+  const [gateOpen, setGateOpen] = react7.useState(false);
+  const [ledgerOpen, setLedgerOpen] = react7.useState(false);
+  const [statsOpen, setStatsOpen] = react7.useState(false);
+  const [newDocMode, setNewDocMode] = react7.useState(false);
+  const [newDocName, setNewDocName] = react7.useState("");
+  const [projMode, setProjMode] = react7.useState(false);
+  const [projTitle, setProjTitle] = react7.useState("");
+  const [projPremise, setProjPremise] = react7.useState("");
+  const [projTemplate, setProjTemplate] = react7.useState("novel");
+  const [templates, setTemplates] = react7.useState([]);
+  const [addRootMode, setAddRootMode] = react7.useState(false);
+  const [addRootPath, setAddRootPath] = react7.useState("");
+  const [addRootKind, setAddRootKind] = react7.useState("library");
+  const [exportProj, setExportProj] = react7.useState(null);
+  const [flash, setFlash] = react7.useState("");
+  const [prefs, setPrefs] = react7.useState(getPrefs);
+  react7.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
+  react7.useEffect(() => {
     void loadPrefs();
   }, [active]);
-  const taRef = react6.useRef(null);
-  const fillOpRef = react6.useRef(null);
-  const aiTarget = react6.useRef(null);
-  const saveTimer = react6.useRef(0);
-  const fileInputRef = react6.useRef(null);
-  const runGateRef = react6.useRef(() => {
+  const taRef = react7.useRef(null);
+  const fillOpRef = react7.useRef(null);
+  const aiTarget = react7.useRef(null);
+  const saveTimer = react7.useRef(0);
+  const fileInputRef = react7.useRef(null);
+  const runGateRef = react7.useRef(() => {
   });
+  const [stats, setStats] = react7.useState(null);
+  const dailyGoal = prefs.dailyGoal || 0;
+  const [findOpen, setFindOpen] = react7.useState(false);
+  const [findQuery, setFindQuery] = react7.useState("");
+  const [replaceText, setReplaceText] = react7.useState("");
+  const [findIndex, setFindIndex] = react7.useState(0);
+  const findInputRef = react7.useRef(null);
   const docBasename = filePath ? String(filePath).split(/[\\/]/).filter(Boolean).pop() : "";
   const docFolder = filePath ? (() => {
     const parts = String(filePath).split(/[\\/]/).filter(Boolean);
     if (parts.length < 2) return "";
     return parts[parts.length - 2];
   })() : "";
-  const versionSeries = react6.useMemo(() => {
+  const versionSeries = react7.useMemo(() => {
     if (!filePath) return [];
     const curVer = versionOf(docBasename);
     if (curVer == null) return [];
@@ -19651,23 +19824,23 @@ function WritingModeApp() {
   const curVerNum = versionOf(docBasename);
   const latestVer = versionSeries.length > 0 ? versionSeries[versionSeries.length - 1] : null;
   const isHistoryDoc = curVerNum != null && latestVer != null && curVerNum < latestVer.v;
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     applyBodyAttr(active);
   }, [active]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     try {
       if (focus) document.body.setAttribute("data-writing-focus", "1");
       else document.body.removeAttribute("data-writing-focus");
     } catch {
     }
   }, [focus]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     try {
       document.body.setAttribute("data-writing-lib", libOpen ? "1" : "0");
     } catch {
     }
   }, [libOpen]);
-  const refreshTree = react6.useCallback(async () => {
+  const refreshTree = react7.useCallback(async () => {
     const data = await api("config");
     if (!data.ok) return;
     setRoots(data.roots || []);
@@ -19675,11 +19848,11 @@ function WritingModeApp() {
     const active2 = data.config && data.config.activeRoot || (data.roots || []).find((r) => r.default && !r.missing)?.path || (data.roots || [])[0]?.path || null;
     setActiveRoot(active2);
   }, []);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active) return;
     void refreshTree();
   }, [active, refreshTree]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active || !harnessSessions()) return;
     let running = /* @__PURE__ */ new Set();
     const update = () => {
@@ -19695,9 +19868,72 @@ function WritingModeApp() {
     update();
     return harnessSessions().list.subscribe(update);
   }, [active, editor, refreshTree]);
-  const persist = react6.useCallback(() => editor.flush(), [editor]);
+  const persist = react7.useCallback(() => editor.flush(), [editor]);
   const saveAsNewVersion = () => editor.version();
-  react6.useEffect(() => {
+  const refreshStats = react7.useCallback((path2) => {
+    if (!path2) {
+      setStats(null);
+      return;
+    }
+    api("stats", void 0, { path: path2 }).then((d) => {
+      if (d && d.ok) setStats(d.stats || null);
+    }).catch(() => {
+    });
+  }, []);
+  react7.useEffect(() => {
+    if (!filePath || documentState.loading) return;
+    void refreshStats(filePath);
+  }, [filePath, documentState.revision, documentState.loading, refreshStats]);
+  const findMatches = react7.useMemo(() => {
+    if (!findOpen || !findQuery) return [];
+    const out = [];
+    let i = content3.indexOf(findQuery);
+    while (i !== -1) {
+      out.push(i);
+      i = content3.indexOf(findQuery, i + findQuery.length);
+    }
+    return out;
+  }, [content3, findQuery, findOpen]);
+  const gotoMatch = react7.useCallback((idx) => {
+    const total = findMatches.length;
+    if (!total) return;
+    const pos = (idx % total + total) % total;
+    setFindIndex(pos);
+    const ta = taRef.current;
+    if (ta) {
+      const start2 = findMatches[pos];
+      ta.focus();
+      ta.setSelectionRange(start2, start2 + findQuery.length);
+    }
+  }, [findMatches, findQuery.length]);
+  const findStep = react7.useCallback((dir) => gotoMatch(findIndex + dir), [gotoMatch, findIndex]);
+  const replaceCurrent = () => {
+    if (!findMatches.length || documentState.loading || isHistoryDoc) return;
+    const pos = (findIndex % findMatches.length + findMatches.length) % findMatches.length;
+    const start2 = findMatches[pos];
+    setContent(content3.slice(0, start2) + replaceText + content3.slice(start2 + findQuery.length));
+  };
+  const replaceAllMatches = () => {
+    if (!findQuery || !findMatches.length || documentState.loading || isHistoryDoc) return;
+    const n = findMatches.length;
+    setContent(content3.split(findQuery).join(replaceText));
+    setFindIndex(0);
+    flashMsg(T.findReplaceAll + " × " + n);
+  };
+  react7.useEffect(() => {
+    if (!findOpen) return;
+    const t = window.setTimeout(() => {
+      if (findInputRef.current) {
+        findInputRef.current.focus();
+        findInputRef.current.select();
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [findOpen]);
+  react7.useEffect(() => {
+    setFindIndex(0);
+  }, [findQuery]);
+  react7.useEffect(() => {
     if (!active) return;
     let reading = false;
     const refresh = async () => {
@@ -19716,7 +19952,7 @@ function WritingModeApp() {
       window.removeEventListener("focus", refresh);
     };
   }, [active, editor]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active || editor.get().path) return;
     try {
       const p = localStorage.getItem(LS_FILE);
@@ -19724,7 +19960,7 @@ function WritingModeApp() {
     } catch {
     }
   }, [active, editor]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     setCloseGuard(async () => {
       if (await editor.close()) commitModeActive(false);
     });
@@ -19739,7 +19975,7 @@ function WritingModeApp() {
       window.removeEventListener("beforeunload", protect);
     };
   }, [editor]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!filePath) return;
     let cancelled = false;
     setGate(null);
@@ -19763,14 +19999,14 @@ function WritingModeApp() {
       cancelled = true;
     };
   }, [filePath, documentState.revision, refreshTree]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active || !dirty || !filePath || documentState.loading || documentState.status === "error") return;
     saveTimer.current = window.setTimeout(() => {
       void persist();
     }, prefs.autoSaveMs || 800);
     return () => window.clearTimeout(saveTimer.current);
   }, [active, dirty, filePath, content3, documentState.loading, documentState.status, persist, prefs.autoSaveMs]);
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active) return;
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -19779,7 +20015,15 @@ function WritingModeApp() {
           setExportProj(null);
           return;
         }
+        if (findOpen) {
+          setFindOpen(false);
+          return;
+        }
         close();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFindOpen(true);
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -19789,7 +20033,7 @@ function WritingModeApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, newDocMode, addRootMode, exportProj, editor, persist]);
+  }, [active, newDocMode, addRootMode, exportProj, findOpen, editor, persist, close]);
   function flashMsg(msg) {
     setFlash(String(msg || ""));
     window.setTimeout(() => setFlash(""), 3200);
@@ -19944,7 +20188,7 @@ function WritingModeApp() {
       setAiBusy(false);
     }
   }
-  const runGate = react6.useCallback(async () => {
+  const runGate = react7.useCallback(async () => {
     setGateBusy(true);
     setGateErr("");
     try {
@@ -19966,7 +20210,7 @@ function WritingModeApp() {
     }
   }, [filePath, content3]);
   runGateRef.current = runGate;
-  react6.useEffect(() => {
+  react7.useEffect(() => {
     if (!active || !filePath || !prefs.autoGate) return;
     const ext = String(filePath).toLowerCase().split(".").pop();
     if (ext !== "md" && ext !== "markdown" && ext !== "fountain") return;
@@ -20623,6 +20867,80 @@ function WritingModeApp() {
                     },
                     "chrome"
                   ),
+                  findOpen ? jsx16.jsxs(
+                    "div",
+                    {
+                      className: "dshWmFindBar",
+                      "data-wm-findbar": "1",
+                      children: [
+                        jsx16.jsx("input", {
+                          ref: findInputRef,
+                          className: "dshWmFindInput",
+                          "data-wm-find-input": "1",
+                          value: findQuery,
+                          placeholder: T.findPlaceholder,
+                          spellCheck: false,
+                          onChange: (e) => setFindQuery(e.target.value),
+                          onKeyDown: (e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              findStep(e.shiftKey ? -1 : 1);
+                            }
+                          }
+                        }, "fq"),
+                        jsx16.jsx("input", {
+                          className: "dshWmFindInput is-replace",
+                          "data-wm-find-replace": "1",
+                          value: replaceText,
+                          placeholder: T.replacePlaceholder,
+                          spellCheck: false,
+                          onChange: (e) => setReplaceText(e.target.value)
+                        }, "fr"),
+                        jsx16.jsx("span", {
+                          className: "dshWmFindCount",
+                          "data-wm-find-count": "1",
+                          children: findQuery ? findMatches.length ? findIndex + 1 + "/" + findMatches.length : T.findNone : ""
+                        }, "fc"),
+                        jsx16.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn is-ghost",
+                          disabled: !findMatches.length,
+                          onClick: () => findStep(-1),
+                          children: T.findPrev
+                        }, "fp"),
+                        jsx16.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn is-ghost",
+                          disabled: !findMatches.length,
+                          onClick: () => findStep(1),
+                          children: T.findNext
+                        }, "fn"),
+                        jsx16.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn is-ghost",
+                          disabled: !findMatches.length || documentState.loading || isHistoryDoc,
+                          onClick: replaceCurrent,
+                          children: T.findReplace
+                        }, "frep"),
+                        jsx16.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn is-ghost",
+                          disabled: !findMatches.length || documentState.loading || isHistoryDoc,
+                          onClick: replaceAllMatches,
+                          children: T.findReplaceAll
+                        }, "fra"),
+                        jsx16.jsx("button", {
+                          type: "button",
+                          className: "dshWmBtn is-ghost",
+                          title: T.findClose,
+                          onClick: () => setFindOpen(false),
+                          children: "✕"
+                        }, "fx"),
+                        jsx16.jsx("span", { className: "dshWmFindHint", children: T.findHint }, "fh")
+                      ]
+                    },
+                    "findbar"
+                  ) : null,
                   jsx16.jsx(
                     "div",
                     {
@@ -20726,6 +21044,12 @@ function WritingModeApp() {
                         jsx16.jsx("span", {
                           children: (filePath || "").toLowerCase().endsWith(".fountain") ? "Fountain" : "Markdown"
                         }),
+                        stats ? jsx16.jsx("span", { className: "dshWmStatusSep", children: "·" }, "sts") : null,
+                        stats ? jsx16.jsx("span", {
+                          "data-wm-stats-today": String(stats.today),
+                          title: T.statsToday + "（" + T.stats + "）",
+                          children: T.statsToday + " +" + stats.today + (dailyGoal > 0 ? " / " + dailyGoal + T.statsGoalUnit : "") + (stats.streak > 1 ? " · " + T.statsStreak + stats.streak + T.statsStreakUnit : "")
+                        }, "stv") : null,
                         gate ? jsx16.jsx("span", {
                           className: "dshWmStatusSep",
                           children: "·"
@@ -20889,7 +21213,16 @@ function WritingModeApp() {
                     onRunGate: runGate,
                     ledger,
                     ledgerOpen,
-                    onToggleLedger: () => setLedgerOpen((v) => !v)
+                    onToggleLedger: () => setLedgerOpen((v) => !v),
+                    stats,
+                    dailyGoal,
+                    statsOpen,
+                    onToggleStats: () => setStatsOpen((v) => !v),
+                    onSaveGoal: (n) => {
+                      const goal = Math.max(0, Math.min(2e5, Number(n) || 0));
+                      void savePrefs({ dailyGoal: goal });
+                      flashMsg(T.statsGoalSaved);
+                    }
                   }, "inspection") : null
                 ]
               },
@@ -20947,14 +21280,14 @@ function ensureDomFloat() {
 }
 
 // plugin/writing-mode/src/client/features/settings/WritingModeSettings.js
-var react7 = __toESM(require("react"), 1);
+var react8 = __toESM(require("react"), 1);
 var jsx18 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeSettings() {
-  const [prefs, setPrefsLocal] = react7.useState(getPrefs);
-  const [roots, setRoots] = react7.useState([]);
-  const [pathDraft, setPathDraft] = react7.useState("");
-  react7.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
-  react7.useEffect(() => {
+  const [prefs, setPrefsLocal] = react8.useState(getPrefs);
+  const [roots, setRoots] = react8.useState([]);
+  const [pathDraft, setPathDraft] = react8.useState("");
+  react8.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
+  react8.useEffect(() => {
     void loadPrefs();
     void api("config").then((d) => {
       if (d.ok) setRoots(d.roots || []);
@@ -21308,11 +21641,11 @@ function WritingModeSettings() {
 }
 
 // plugin/writing-mode/src/client/features/settings/entries.js
-var react8 = __toESM(require("react"), 1);
+var react9 = __toESM(require("react"), 1);
 var jsx20 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeFooterEntry() {
-  const [on, setOn] = react8.useState(getModeActive);
-  react8.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  const [on, setOn] = react9.useState(getModeActive);
+  react9.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
   return jsx20.jsx("button", {
     type: "button",
     className: on ? "dshWmBtn is-primary" : "dshWmBtn",
@@ -21323,8 +21656,8 @@ function WritingModeFooterEntry() {
   });
 }
 function WritingModeHeaderEntry() {
-  const [on, setOn] = react8.useState(getModeActive);
-  react8.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  const [on, setOn] = react9.useState(getModeActive);
+  react9.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
   return jsx20.jsx("button", {
     type: "button",
     className: "dshWmBtn",

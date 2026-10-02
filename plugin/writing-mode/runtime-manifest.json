@@ -19,6 +19,7 @@
     "plugin/writing-mode/lib/setting-projection.js",
     "plugin/writing-mode/lib/store.js",
     "plugin/writing-mode/lib/templates.js",
+    "plugin/writing-mode/lib/writing-stats.js",
     "plugin/writing-mode/lib/websearch.js",
     "plugin/writing-mode/lib/world-setting.js",
     "plugin/writing-mode/lib/project-recovery.js",

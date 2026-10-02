@@ -32,6 +32,7 @@ import {
 import { COMPANION_PRESET } from './lib/companion-preset.js'
 import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
 import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
+import { seedBaseline, recordSave, projectStatsFor } from './lib/writing-stats.js'
 import {
   readMemory,
   applyMemoryOp,
@@ -119,6 +120,7 @@ export const ROUTE_METHODS = {
   assist: ['POST'],
   gate: ['POST'],
   ledger: ['POST'],
+  stats: ['GET'],
   'create-project': ['POST'],
   'project-resource': ['POST'],
   compile: ['POST'],
@@ -453,7 +455,13 @@ export function apply(ctx) {
             return
           }
           try {
-            writeJson(res, 200, { ok: true, doc: readDoc(target) })
+            const doc = readDoc(target)
+            // 打开即播种码字基线：首见稿件只记当前字数、不计增量（防老项目首存虚增）。
+            try {
+              const proj = findProjectRoot(target.abs)
+              if (proj) seedBaseline(proj, target.abs, doc.content)
+            } catch {}
+            writeJson(res, 200, { ok: true, doc })
           } catch (err) {
             writeJson(res, 404, { ok: false, error: String(err?.message || err) })
           }
@@ -488,6 +496,12 @@ export function apply(ctx) {
             const doc = route === 'version'
               ? createVersion(target, parsed.content)
               : writeDoc(target, parsed.content, parsed.revision)
+            // 码字记账在保存成功之后：host 侧权威；version（另存新版）走同一条口径，
+            // 新路径首见自动按播种处理，不会把整章存量算成今日净增。
+            try {
+              const proj = findProjectRoot(doc.path || target)
+              if (proj) recordSave(proj, doc.path || target, doc.content ?? parsed.content)
+            } catch {}
             writeJson(res, 200, { ok: true, doc })
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
@@ -709,6 +723,28 @@ export function apply(ctx) {
             return
           }
           writeJson(res, 200, { ok: true, ledger: ledgerSummary(proj, target.abs) })
+          return
+        }
+
+        // 码字统计：按任意库内稿件路径解析作品，返回今日净增/连击/近 14 天与目标。
+        // 只读不记账；记账只在 save/version 成功后发生。
+        if (req.method === 'GET' && route === 'stats') {
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const found = projectStatsFor(target.abs, { spanDays: 14 })
+          if (!found) {
+            writeJson(res, 200, { ok: true, stats: null })
+            return
+          }
+          if (resolveUnderRoots(found.projectDir, roots) === null) {
+            writeJson(res, 400, { ok: false, error: 'project-outside-roots' })
+            return
+          }
+          writeJson(res, 200, { ok: true, stats: found.summary, dailyGoal: normalizePrefs(cfg.prefs).dailyGoal || 0 })
           return
         }
 

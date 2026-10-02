@@ -37,7 +37,8 @@
     "aiMode": "harness",
     "aiProvider": "deepseek-official",
     "aiModel": "deepseek-v4-flash",
-    "aiApiKey": ""
+    "aiApiKey": "",
+    "dailyGoal": 0
   }
 }
 ```
@@ -58,6 +59,7 @@
 | `delete` | POST | path,revision | ok |
 | `gate` | POST | path?, content? | gate {kind,rows,pass,fail} |
 | `ledger` | POST | path | ledger 摘要 |
+| `stats` | GET | path | 码字统计：`{today,streak,days[14 旧→新]}` + `dailyGoal`；只读，解析不出项目（散稿）时 `stats:null` |
 | `assist` | POST | action,text,path | result / 501 llm-unavailable |
 | `companion` | GET | path | project,sessionId；按最近 project.md 归属，否则按当前目录 |
 | `companion` | POST | path,prepare:true | 安装缺失的本地预设并向内核 registry 自举注册（0.1.7 起内核不扫 ~/.dsh/.agent-presets），返回 preset 与 registered；保留已有自定义 |
@@ -240,3 +242,12 @@ POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:tr
 - 输出：项目根 `<书名>-v<N>.<ext>`，从 v1 起第一个空位，`writeDoc(revision=null)` 独占创建——已有成片永不覆盖，原稿一律只读。成片自身不在 `draft/` 下，不进后续默认候选。
 - 错误码：`no-project`（识别不出项目）、`no-drafts`（默认候选为空）、`empty-include` / `bad-include`（越界或不安全段）/ `unknown-include`（不在项目扫描内）、`mixed-formats`（扩展名不一致）、`invalid-title`、`source-changed`（扫描到读取之间文件变动，409 可重试）。
 - 字数口径与状态栏一致（去空白计字）；成片统一 LF（原稿字节不动）。
+
+## 码字统计（writing-stats，2026-10-02）
+
+- 存储：`{{project}}/state/writing-stats.json`（跟随项目目录）：`{ version:1, days:{"YYYY-MM-DD":净增CJK}, files:{"<项目内相对路径小写>":上次记录CJK} }`；保留最近 400 天。坏 JSON 按空账本起步并标 `corrupt`，绝不挡保存。
+- 记账点：`save` / `version` 路由**成功之后** host 侧记账（compile 导出的成书不算）；`get`（打开）只**播种基线**——`files` 里首见的稿件记当前字数、计 0 增量，防止老项目首次保存把整章存量算成「今天写的」。
+- 净增口径：`max(0, 本次CJK − 该篇上次记录)`；大删减不倒扣。CJK 计数与门禁同源（`[一-鿿]`）。
+- `GET stats?path=`：任意库内稿件路径 → 解析项目根，返回 `{ today, streak, days:[{day,total}×14 旧→新], corrupt }` + `dailyGoal`（来自 prefs）；解析不出项目返回 `stats:null`。越界 400 `path-outside-roots`。
+- 连击口径：从今天往回数 >0 的日；今天还没写不清零（从昨天往回数，保留进行中的连击）。
+- prefs 新增 `dailyGoal`（0–200000，默认 0=不显示目标），经既有 `prefs` 路由读写。

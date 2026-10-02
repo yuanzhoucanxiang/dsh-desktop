@@ -22,6 +22,7 @@ export const DEFAULT_PREFS = {
   aiProvider: 'deepseek-official',
   aiModel: 'deepseek-v4-flash',
   aiApiKey: '',
+  dailyGoal: 0,
 }
 
 function clamp(n, lo, hi, dflt) {
@@ -41,6 +42,7 @@ export function normalizePrefs(raw) {
     aiProvider: String(r.aiProvider || DEFAULT_PREFS.aiProvider).slice(0, 80),
     aiModel: String(r.aiModel || DEFAULT_PREFS.aiModel).slice(0, 80),
     aiApiKey: typeof r.aiApiKey === 'string' ? r.aiApiKey.slice(0, 200) : '',
+    dailyGoal: clamp(r.dailyGoal, 0, 200000, DEFAULT_PREFS.dailyGoal),
   }
 }
 
@@ -522,7 +524,7 @@ function assertTextTarget(target) {
 }
 
 // Same-directory replace; never delete the original as a Windows rename fallback.
-function atomicWrite(file, body, { exclusive = false, beforeCommit = () => {} } = {}) {
+export function atomicWrite(file, body, { exclusive = false, beforeCommit = () => {} } = {}) {
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`)
   let fd
   try {

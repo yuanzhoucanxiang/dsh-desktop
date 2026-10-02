@@ -265,6 +265,18 @@ export const CSS = [
   '.dshWmDocAlert>span:first-child{min-width:0;}',
   '.dshWmDocAlert .dshWmBtn{flex:none;}',
 
+  /* 编辑器查找/替换栏：压在版本条与稿面之间 */
+  '.dshWmFindBar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 16px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);flex-wrap:wrap;}',
+  '.dshWmFindInput{flex:0 1 180px;min-width:110px;height:26px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;}',
+  '.dshWmFindInput.is-replace{flex:0 1 160px;}',
+  '.dshWmFindInput:focus{border-color:var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));}',
+  '.dshWmFindCount{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:44px;text-align:center;}',
+  '.dshWmFindHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.7;margin-left:auto;white-space:nowrap;}',
+  '.dshWmFindBar .dshWmBtn{flex:none;}',
+
+  /* 状态条里的今日码字芯片 */
+  '.dshWmStatus [data-wm-stats-today]{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}',
+
   '.dshWmAiBody{',
   '  flex:1;display:flex;flex-direction:column;min-height:0;',
   '  padding:8px 12px 20px;gap:8px;overflow:auto;',
@@ -313,6 +325,23 @@ export const CSS = [
   '.dshWmLedgerRow{display:flex;gap:8px;}',
   '.dshWmLedgerK{flex:none;min-width:4.5em;color:var(--dsw-alias-label-tertiary);font-size:11px;}',
   '.dshWmLedgerV{flex:1;word-break:break-word;color:var(--dsw-alias-label-primary);}',
+
+  /* 码字统计（检查页）：今日大数 + 连击 + 近 14 天柱条 + 日更目标 */
+  '.dshWmStats{display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmStatsHead{display:flex;align-items:baseline;gap:10px;}',
+  '.dshWmStatsToday{font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}',
+  '.dshWmStatsToday b{font-size:16px;color:var(--dsw-alias-label-primary);font-weight:700;}',
+  '.dshWmStatsToday .is-hit{color:var(--dsw-alias-state-success-primary);}',
+  '.dshWmStatsStreak{font-size:11px;color:var(--dsw-alias-state-warning-primary,#c9a227);font-variant-numeric:tabular-nums;}',
+  '.dshWmStatsBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:2px 0;}',
+  '.dshWmStatsBarCol{flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%;}',
+  '.dshWmStatsBar{width:70%;min-height:1px;border-radius:2px 2px 0 0;background:var(--dsw-alias-border-l2);}',
+  '.dshWmStatsBar.is-on{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 65%,var(--dsw-alias-bg-layer-1));}',
+  '.dshWmStatsBar.is-today{outline:1px solid var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));outline-offset:1px;}',
+  '.dshWmGoalRow{display:flex;align-items:center;gap:6px;}',
+  '.dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;font-variant-numeric:tabular-nums;}',
+  '.dshWmGoalUnit{font-size:11px;color:var(--dsw-alias-label-tertiary);}',
+  '.dshWmGoalRow .dshWmBtn{flex:none;margin-left:auto;}',
   '.dshWmDiff{',
   '  flex:none;max-height:36%;overflow:auto;',
   '  border-top:1px solid var(--dsw-alias-border-l2);',

@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+- 写作模式新增「码字统计与日更目标」：保存成功后 host 按作品记账（`state/writing-stats.json` 跟随项目目录），打开旧稿只播种基线不计增量（老项目首存不会把整章存量算成今天写的），大删减不倒扣；状态条新增「今日净增」，检查页新增「码字」区——今日大数、连击天数、近 14 天柱条与可编辑的日更目标（达标打勾）。测试 23 项（纯函数 + 真实 HTTP 端到端）+ UI 门禁断言。— 署名：ZCode
+- 写作模式编辑器新增查找/替换（Ctrl+F）：计数（n/m）、上一个/下一个、替换、全部替换；Esc 只关查找栏、不退写作台。— 署名：ZCode
+
 ## [0.1.46] - 2026-10-02
 
 - 写作模式适配内核 0.1.7（写作伙伴全链路恢复，修复 v0.1.45 遗留的「写作伙伴在 0.1.7 上不可用」）：预设改由 host 自举注册进 `agentPresets` registry（行表生成物 `lib/companion-preset.js` 带逐字节漂移门禁）；建会话走新栈——`workspaces.create` 按规范路径幂等复用作品目录的工作区，再 `remote.session.create({workspaceId, agentPreset})` 创建即绑角色（用 cwd 直建的会话不挂工作区，主视图 hero 输入框会停在「选择工作区」inert 态）；聚焦会话改用公开的 `uiWorkspace.openSession`（与侧栏点击同一条路径；绕开它直接 retain 切不动主视图）；草稿读写改走 `conversation.input.shell`（0.1.7 已删 provideInfo，前提是该会话有 retained binding）。旧内核路径全部原样保留（双栈自适应）。— 署名：kimi

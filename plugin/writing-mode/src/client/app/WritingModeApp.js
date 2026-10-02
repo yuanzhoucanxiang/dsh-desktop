@@ -86,6 +86,7 @@ export function WritingModeApp() {
   const [ledger, setLedger] = react.useState(null)
   const [gateOpen, setGateOpen] = react.useState(false)
   const [ledgerOpen, setLedgerOpen] = react.useState(false)
+  const [statsOpen, setStatsOpen] = react.useState(false)
   const [newDocMode, setNewDocMode] = react.useState(false)
   const [newDocName, setNewDocName] = react.useState('')
   const [projMode, setProjMode] = react.useState(false)
@@ -109,6 +110,15 @@ export function WritingModeApp() {
   const saveTimer = react.useRef(0)
   const fileInputRef = react.useRef(null)
   const runGateRef = react.useRef(() => {})
+  // 码字统计（host 在 save/version 成功后记账；这里只读展示）
+  const [stats, setStats] = react.useState(null)
+  const dailyGoal = prefs.dailyGoal || 0
+  // 编辑器查找/替换（textarea 无高亮，靠选区定位）
+  const [findOpen, setFindOpen] = react.useState(false)
+  const [findQuery, setFindQuery] = react.useState('')
+  const [replaceText, setReplaceText] = react.useState('')
+  const [findIndex, setFindIndex] = react.useState(0)
+  const findInputRef = react.useRef(null)
 
   const docBasename = filePath
     ? String(filePath).split(/[\\/]/).filter(Boolean).pop()
@@ -205,6 +215,73 @@ export function WritingModeApp() {
   const persist = react.useCallback(() => editor.flush(), [editor])
   const saveAsNewVersion = () => editor.version()
 
+  /** 拉取今日码字/连击/近 14 天（GET stats 只读；记账在 host 的 save/version 里）。 */
+  const refreshStats = react.useCallback(path => {
+    if (!path) { setStats(null); return }
+    api('stats', undefined, { path })
+      .then(d => { if (d && d.ok) setStats(d.stats || null) })
+      .catch(() => {})
+  }, [])
+
+  react.useEffect(() => {
+    // 打开与每次保存（revision 变化）后刷新；打开路径上 host 的 GET 已先播种基线。
+    if (!filePath || documentState.loading) return
+    void refreshStats(filePath)
+  }, [filePath, documentState.revision, documentState.loading, refreshStats])
+
+  /* ── 编辑器查找/替换 ── */
+  const findMatches = react.useMemo(() => {
+    if (!findOpen || !findQuery) return []
+    const out = []
+    let i = content.indexOf(findQuery)
+    while (i !== -1) { out.push(i); i = content.indexOf(findQuery, i + findQuery.length) }
+    return out
+  }, [content, findQuery, findOpen])
+
+  const gotoMatch = react.useCallback(idx => {
+    const total = findMatches.length
+    if (!total) return
+    const pos = ((idx % total) + total) % total
+    setFindIndex(pos)
+    const ta = taRef.current
+    if (ta) {
+      const start = findMatches[pos]
+      ta.focus()
+      ta.setSelectionRange(start, start + findQuery.length)
+    }
+  }, [findMatches, findQuery.length])
+
+  const findStep = react.useCallback(dir => gotoMatch(findIndex + dir), [gotoMatch, findIndex])
+
+  const replaceCurrent = () => {
+    if (!findMatches.length || documentState.loading || isHistoryDoc) return
+    const pos = ((findIndex % findMatches.length) + findMatches.length) % findMatches.length
+    const start = findMatches[pos]
+    setContent(content.slice(0, start) + replaceText + content.slice(start + findQuery.length))
+    // 替换后匹配集合会随 content 重算；停在原序号，效果上=「替换后原地等下一次指令」
+  }
+
+  const replaceAllMatches = () => {
+    if (!findQuery || !findMatches.length || documentState.loading || isHistoryDoc) return
+    const n = findMatches.length
+    setContent(content.split(findQuery).join(replaceText))
+    setFindIndex(0)
+    flashMsg(T.findReplaceAll + ' × ' + n)
+  }
+
+  react.useEffect(() => {
+    // 打开查找栏：聚焦输入框并选中当前稿里的首个匹配
+    if (!findOpen) return
+    const t = window.setTimeout(() => {
+      if (findInputRef.current) { findInputRef.current.focus(); findInputRef.current.select() }
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [findOpen])
+
+  react.useEffect(() => {
+    setFindIndex(0)
+  }, [findQuery])
+
   react.useEffect(() => {
     if (!active) return
     let reading = false
@@ -259,7 +336,13 @@ export function WritingModeApp() {
       if (e.key === 'Escape') {
         if (newDocMode || addRootMode) return
         if (exportProj) { setExportProj(null); return }
+        // 查找栏开着时 Esc 只关查找栏，不退写作台
+        if (findOpen) { setFindOpen(false); return }
         close()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setFindOpen(true)
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
@@ -269,7 +352,7 @@ export function WritingModeApp() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, newDocMode, addRootMode, exportProj, editor, persist])
+  }, [active, newDocMode, addRootMode, exportProj, findOpen, editor, persist, close])
 
   function flashMsg(msg) {
     setFlash(String(msg || ''))
@@ -1179,6 +1262,86 @@ export function WritingModeApp() {
                     },
                     'chrome'
                   ),
+                  findOpen
+                    ? jsx.jsxs(
+                        'div',
+                        {
+                          className: 'dshWmFindBar',
+                          'data-wm-findbar': '1',
+                          children: [
+                            jsx.jsx('input', {
+                              ref: findInputRef,
+                              className: 'dshWmFindInput',
+                              'data-wm-find-input': '1',
+                              value: findQuery,
+                              placeholder: T.findPlaceholder,
+                              spellCheck: false,
+                              onChange: e => setFindQuery(e.target.value),
+                              onKeyDown: e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  findStep(e.shiftKey ? -1 : 1)
+                                }
+                              },
+                            }, 'fq'),
+                            jsx.jsx('input', {
+                              className: 'dshWmFindInput is-replace',
+                              'data-wm-find-replace': '1',
+                              value: replaceText,
+                              placeholder: T.replacePlaceholder,
+                              spellCheck: false,
+                              onChange: e => setReplaceText(e.target.value),
+                            }, 'fr'),
+                            jsx.jsx('span', {
+                              className: 'dshWmFindCount',
+                              'data-wm-find-count': '1',
+                              children: findQuery
+                                ? (findMatches.length
+                                    ? (findIndex + 1) + '/' + findMatches.length
+                                    : T.findNone)
+                                : '',
+                            }, 'fc'),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn is-ghost',
+                              disabled: !findMatches.length,
+                              onClick: () => findStep(-1),
+                              children: T.findPrev,
+                            }, 'fp'),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn is-ghost',
+                              disabled: !findMatches.length,
+                              onClick: () => findStep(1),
+                              children: T.findNext,
+                            }, 'fn'),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn is-ghost',
+                              disabled: !findMatches.length || documentState.loading || isHistoryDoc,
+                              onClick: replaceCurrent,
+                              children: T.findReplace,
+                            }, 'frep'),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn is-ghost',
+                              disabled: !findMatches.length || documentState.loading || isHistoryDoc,
+                              onClick: replaceAllMatches,
+                              children: T.findReplaceAll,
+                            }, 'fra'),
+                            jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn is-ghost',
+                              title: T.findClose,
+                              onClick: () => setFindOpen(false),
+                              children: '✕',
+                            }, 'fx'),
+                            jsx.jsx('span', { className: 'dshWmFindHint', children: T.findHint }, 'fh'),
+                          ],
+                        },
+                        'findbar'
+                      )
+                    : null,
                   jsx.jsx(
                     'div',
                     {
@@ -1292,6 +1455,19 @@ export function WritingModeApp() {
                             ? 'Fountain'
                             : 'Markdown',
                         }),
+                        stats
+                          ? jsx.jsx('span', { className: 'dshWmStatusSep', children: '·' }, 'sts')
+                          : null,
+                        stats
+                          ? jsx.jsx('span', {
+                              'data-wm-stats-today': String(stats.today),
+                              title: T.statsToday + '（' + T.stats + '）',
+                              children:
+                                T.statsToday + ' +' + stats.today +
+                                (dailyGoal > 0 ? ' / ' + dailyGoal + T.statsGoalUnit : '') +
+                                (stats.streak > 1 ? ' · ' + T.statsStreak + stats.streak + T.statsStreakUnit : ''),
+                            }, 'stv')
+                          : null,
                         gate
                           ? jsx.jsx('span', {
                               className: 'dshWmStatusSep',
@@ -1469,6 +1645,13 @@ export function WritingModeApp() {
                         onRunGate: runGate,
                         ledger, ledgerOpen,
                         onToggleLedger: () => setLedgerOpen((v) => !v),
+                        stats, dailyGoal,
+                        statsOpen, onToggleStats: () => setStatsOpen((v) => !v),
+                        onSaveGoal: (n) => {
+                          const goal = Math.max(0, Math.min(200000, Number(n) || 0))
+                          void savePrefs({ dailyGoal: goal })
+                          flashMsg(T.statsGoalSaved)
+                        },
                       }, 'inspection') : null,
                     ],
                   },
