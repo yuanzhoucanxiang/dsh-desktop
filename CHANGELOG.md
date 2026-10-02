@@ -1,6 +1,8 @@
 ## [Unreleased]
 
-- 写作模式适配内核 0.1.7（写作伙伴全链路恢复）：预设改由 host 自举注册进 `agentPresets` registry（行表生成物 `lib/companion-preset.js` 带逐字节漂移门禁）；建会话走新栈——`workspaces.create` 按规范路径幂等复用作品目录的工作区，再 `remote.session.create({workspaceId, agentPreset})` 创建即绑角色（用 cwd 直建的会话不挂工作区，主视图 hero 输入框会停在「选择工作区」inert 态）；聚焦会话改用公开的 `uiWorkspace.openSession`（与侧栏点击同一条路径；绕开它直接 retain 切不动主视图）；草稿读写改走 `conversation.input.shell`（0.1.7 已删 provideInfo，前提是该会话有 retained binding）。旧内核路径全部原样保留（双栈自适应）。— 署名：kimi
+## [0.1.46] - 2026-10-02
+
+- 写作模式适配内核 0.1.7（写作伙伴全链路恢复，修复 v0.1.45 遗留的「写作伙伴在 0.1.7 上不可用」）：预设改由 host 自举注册进 `agentPresets` registry（行表生成物 `lib/companion-preset.js` 带逐字节漂移门禁）；建会话走新栈——`workspaces.create` 按规范路径幂等复用作品目录的工作区，再 `remote.session.create({workspaceId, agentPreset})` 创建即绑角色（用 cwd 直建的会话不挂工作区，主视图 hero 输入框会停在「选择工作区」inert 态）；聚焦会话改用公开的 `uiWorkspace.openSession`（与侧栏点击同一条路径；绕开它直接 retain 切不动主视图）；草稿读写改走 `conversation.input.shell`（0.1.7 已删 provideInfo，前提是该会话有 retained binding）。旧内核路径全部原样保留（双栈自适应）。— 署名：kimi
 - 写作模式右栏整理为三区：伙伴（顶部新增可折叠「写作会话」列表，点击切换该作品的 project.md 与会话）/ 文字工具（只留生成动作）/ 检查（门禁 + 台账，默认收起）；「另存为新版」从顶栏归拢到文档名旁的版本条（单版本文档也显示版本条）。— 署名：kimi
 
 - 写作模式新增「导出成书」：作品头部「成书」按钮打开导出面板——默认勾选 `draft/` 下每章最新版（历史 `-vN` 版自动略过；可改选任意文稿，含设定资料），按目录树顺序拼成整本书稿，写入项目根目录 `书名-vN.md`（v1 起递增、独占创建，原稿一个字不动）；Markdown 书稿自动带书头（书名/篇数/字数），可选「每章前补标题」；Fountain 稿用 `Title:` 题页 + `===` 分页；多种格式混选会被拒绝并给出提示。导出完成自动打开成片。— 署名：kimi
