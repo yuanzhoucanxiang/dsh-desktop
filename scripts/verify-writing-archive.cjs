@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(project, 'draft/novel/第1章-v2.md'), '第一章新稿，雾从海面压过来。')
   fs.writeFileSync(path.join(project, 'draft/novel/第2章-v1.md'), '第二章正文')
   fs.writeFileSync(path.join(project, 'bible/characters.md'), '# 人物\n\n**林晚**：送信人，细节见 [[world.md]]。\n\n<script>window.__pwned=1</script>\n<img src=x onerror="window.__pwned=2">\n\n| 人物 | 立场 |\n| --- | --- |\n| 关渡 | 拦信 |\n')
-  fs.writeFileSync(path.join(project, 'bible/world.md'), '手写世界设定，不该被档案改写。')
+  fs.writeFileSync(path.join(project, 'bible/world.md'), '# 世界设定\n\n手写世界设定，不该被档案改写。\n\n## 港口与禁令\n\n雾季入夜封港。\n\n## 势力\n\n港务所自行执法。\n')
   fs.writeFileSync(path.join(project, 'bible/timeline.md'), '# 时间线\n\n- 雾季第一夜：禁令生效\n- 第二夜：信被拆开')
   fs.writeFileSync(path.join(project, 'outline/foreshadow.md'), '# 伏笔\n\n- 铜钥匙：未回收\n- 电报局：未回收\n- 旧照片：已兑现')
   const store = await import(pathToFileURL(path.join(repo, 'plugin/writing-mode/lib/store.js')))
@@ -244,6 +244,13 @@ app.whenReady().then(async () => {
   await evaluate(`document.querySelector('.toc a[href="${tocHref}"]').click()`)
   await waitFor(`location.hash===${JSON.stringify(tocHref)}`)
   assert.ok(await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(tocHref)}).getBoundingClientRect();return r.top>-4&&r.top<innerHeight})()`), '点目录应滚到目标')
+  // 篇内小目录：多标题的那篇给目录，点它应跳到该篇内的小节
+  const docTocHref = await evaluate(`(document.querySelector('.docToc a[href^="#doc-"]')||{getAttribute:()=>''}).getAttribute('href')`)
+  assert.ok(/^#doc-\d+-h-\d+$/.test(docTocHref), '多标题资料应有篇内小目录锚点：' + docTocHref)
+  assert.equal(await evaluate(`document.querySelectorAll('.docToc').length`), 1, '只有一个标题的篇不该给小目录')
+  await evaluate(`document.querySelector('.docToc a[href="${docTocHref}"]').click()`)
+  await waitFor(`location.hash===${JSON.stringify(docTocHref)}`)
+  assert.ok(await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(docTocHref)}).getBoundingClientRect();return r.top>-4&&r.top<innerHeight})()`), '点篇内小目录应滚到该小节')
   await shoot('archive-export.png')
   console.log('PASS 导出页自包含：单文件打开即渲染，脚本不执行')
 

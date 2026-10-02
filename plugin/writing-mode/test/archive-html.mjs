@@ -229,8 +229,53 @@ ok('B03 解析规则：大小写不敏感、抹 -vN 取最新、作者文字进�
 
 ok('B04 打印时藏目录（纸上没有可点的链接）', () => {
   const html = renderArchiveHtml(navModel)
-  assert.ok(/@media print\{[^}]*\.toc\{display:none\}/.test(html), '目录应有打印隐藏规则')
+  assert.ok(/@media print\{[^}]*\.toc[^}]*display:none/.test(html), '主目录应有打印隐藏规则')
+  assert.ok(/@media print\{[^}]*\.docToc/.test(html), '篇内小目录同样该在纸上藏掉')
   assert.ok(html.includes('class="toc"'), '目录本体在页上')
+})
+
+/* ---- 第四刀：每篇资料的篇内小目录 ---- */
+
+const longDocs = [
+  { rel: 'bible/world.md', label: '世界观', group: '世界与设定', markdown: true,
+    content: '# 世界\n\n## 港口\n\n雾季封港。\n\n### 细则\n\n救援船例外。\n\n## 势力\n\n港务所。\n' },
+  { rel: 'bible/timeline.md', label: '时间线', group: '世界与设定', markdown: true, content: '# 时间线\n\n只有一级标题。\n' },
+  { rel: 'notes/odd.txt', label: '杂记', group: '其他文档', markdown: false, content: '纯文本没有标题\n' },
+]
+const longModel = { title: '长', settings: [], plainItems: [], chapters: [], stats: null, ledger: null, docs: longDocs }
+
+ok('C01 标题 ≥2 的篇给篇内小目录，链接指向该篇自己的标题锚点', () => {
+  const html = renderArchiveHtml(longModel)
+  const toc = /<nav class="docToc"[\s\S]*?<\/nav>/.exec(html)
+  assert.ok(toc, '应出现篇内小目录')
+  const hrefs = [...toc[0].matchAll(/href="#(doc-\d+-h-\d+)"/g)].map((m) => m[1])
+  assert.deepEqual(hrefs, ['doc-1-h-1', 'doc-1-h-2', 'doc-1-h-3', 'doc-1-h-4'], '顺序 = 标题出现顺序（含顶级 #），且带篇号前缀：' + hrefs)
+  const ids = [...html.matchAll(/id="(doc-1-h-\d+)"/g)].map((m) => m[1])
+  assert.deepEqual(ids, hrefs, '小目录每条都要有对应锚点')
+  assert.ok(html.includes('<h4 id="doc-1-h-2">港口</h4>'), '标题按层级出锚点')
+  assert.ok(html.includes('lv4') && html.includes('lv5'), '深浅标题在目录里分级显示')
+})
+
+ok('C02 只有一个标题 / 纯文本的篇不给小目录（不给噪音）', () => {
+  const html = renderArchiveHtml(longModel)
+  const tocs = [...html.matchAll(/<nav class="docToc"/g)].length
+  assert.equal(tocs, 1, '三篇里只有一篇该有小目录')
+  // 标题仍带锚点（无害，且将来可做深链），但不为它单列一条目录
+  assert.ok(html.includes('<h3 id="doc-2-h-1">时间线</h3>') && !html.includes('doc-2-h-2'), '单标题篇不建小目录')
+})
+
+ok('C03 锚点序号按篇独立，作者标题文字进不了 id', () => {
+  const hostile = { title: 'H', settings: [], plainItems: [], chapters: [], stats: null, ledger: null,
+    docs: [{ rel: 'bible/a.md', label: 'a', group: '世界与设定', markdown: true,
+      content: '# a" id="x onclick="y\n\n## 第二段\n' },
+      { rel: 'bible/b.md', label: 'b', group: '世界与设定', markdown: true, content: '# b\n\n## 另一段\n' }]}
+  const html = renderArchiveHtml(hostile)
+  assert.ok(html.includes('id="doc-1-h-1"') && html.includes('id="doc-2-h-1"'), '每篇各自从 h-1 起编号')
+  // 查属性只能查标签内部：全文正则会把转义后的正文文字也当成属性命中（假阳性）
+  const tags = html.match(/<[^>]+>/g) || []
+  assert.ok(!tags.some((t) => /\sid="x"/.test(t)), '作者写的 id 不该逃进属性：' + tags.find((t) => /\sid="x"/.test(t)))
+  assert.ok(!tags.some((t) => /\sonclick\s*=/.test(t)), '作者写的事件属性不该逃进标签：' + tags.find((t) => /\sonclick\s*=/.test(t)))
+  assert.ok(html.includes('a&quot; id=&quot;x onclick=&quot;y'), '恶意标题以字面文字保留')
 })
 
 console.log(`\n作品档案导出: ${pass} 项通过`)

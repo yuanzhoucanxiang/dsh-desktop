@@ -105,7 +105,9 @@ const inline = (text, refs) => inlineMarks(escapeHtml(text), refs)
  * 资料正文的 Markdown 子集渲染（块级）：标题 / 分隔线 / 表格 / 引用 / 有序无序列表 / 段落。
  * 认不出的语法一律当普通段落，不抛错——资料是作者手写的，长得奇怪也得原样读得出来。
  */
-export function renderMarkdown(text, refs) {
+export function renderMarkdown(text, refs, opts) {
+  const prefix = String((opts && opts.anchorPrefix) || '')
+  const sink = Array.isArray(opts && opts.headings) ? opts.headings : null
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n')
   const out = []
   let i = 0
@@ -115,7 +117,15 @@ export function renderMarkdown(text, refs) {
     const h = headingOf(line)
     if (h) {
       const lvl = Math.min(6, h[1].length + 2) // 页面本身占了 h1/h2，文稿标题从 h3 起
-      out.push('<h' + lvl + '>' + inline(h[2].trim(), refs) + '</h' + lvl + '>')
+      const title = h[2].trim()
+      let id = ''
+      // 篇内锚点同样只由 host 生成（<prefix>-h-<序号>）：作者写的标题文字进不了 id
+      if (prefix && SAFE_ANCHOR.test('#' + prefix + '-h-' + (sink.length + 1))) {
+        const anchor = '#' + prefix + '-h-' + (sink.length + 1)
+        id = ' id="' + anchor.slice(1) + '"'
+        sink.push({ level: lvl, title, anchor })
+      }
+      out.push('<h' + lvl + id + '>' + inline(title, refs) + '</h' + lvl + '>')
       i += 1
       continue
     }
@@ -217,10 +227,14 @@ footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-si
 .toc a{text-decoration:none;border-bottom:1px solid transparent}
 .toc a:hover{border-bottom-color:var(--ink3)}
 .tocSub{display:block;margin-top:2px;font-size:12px;color:var(--ink3);line-height:1.9}
+.docToc{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0 10px;padding:8px 12px;border-left:2px solid var(--line);font-size:12.5px;font-family:system-ui,sans-serif}
+.docToc a{color:var(--ink2);text-decoration:none;border-bottom:1px dotted transparent}
+.docToc a:hover{color:var(--ink);border-bottom-color:var(--ink3)}
+.docToc .lv4,.docToc .lv5,.docToc .lv6{font-size:12px;color:var(--ink3)}
 .ref{border-bottom:1px dotted var(--ink3);text-decoration:none}
 a.ref:hover{color:var(--brand)}
 @media print{
- .toc{display:none}
+ .toc,.docToc{display:none}
 }
 @media print{
  body{background:#fff;font-size:11.5pt;line-height:1.6}
@@ -324,10 +338,17 @@ function docsSection(m, refs) {
       group = d.group
       out += '<div class="docgroup"><h3>' + inline(group) + '</h3>'
     }
+    // 篇内小目录：标题 ≥2 才给（一篇只有一个标题时，目录纯属噪音）
+    const headings = []
+    const body = d.markdown === false
+      ? '<pre>' + escapeHtml(d.content) + '</pre>'
+      : renderMarkdown(d.content, refs, { anchorPrefix: 'doc-' + (i + 1), headings })
     out += '<article class="doc" id="doc-' + (i + 1) + '"><div class="rel">' + inline(d.rel) + '</div>'
-      + '<div class="body">'
-      + (d.markdown === false ? '<pre>' + escapeHtml(d.content) + '</pre>' : renderMarkdown(d.content, refs))
-      + '</div></article>'
+      + (headings.length >= 2
+        ? '<nav class="docToc" aria-label="本篇目录">' + headings.map((x) =>
+          '<a class="lv' + x.level + '" href="' + x.anchor + '">' + escapeHtml(x.title) + '</a>').join('') + '</nav>'
+        : '')
+      + '<div class="body">' + body + '</div></article>'
   }
   return out + '</div></section>'
 }
