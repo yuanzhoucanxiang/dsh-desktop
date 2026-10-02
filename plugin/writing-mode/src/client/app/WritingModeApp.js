@@ -1691,6 +1691,7 @@ export function WritingModeApp() {
                         // 从档案跳回写作现场：开文档并收掉档案层，编辑器一直挂着，不丢未保存文字
                         onOpenDoc: (abs) => { setFilePath(abs); setArchiveProj(null) },
                         onJumpToFile: jumpFromArchive,
+                        onExported: (d) => flashMsg('档案已导出 → ' + String(d?.doc?.path || '').split(/[\\/]/).pop()),
                       }, 'archive')
                     : null,
                 ],

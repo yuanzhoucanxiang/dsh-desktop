@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(project, 'draft/novel/第1章-v1.md'), '第一章旧稿')
   fs.writeFileSync(path.join(project, 'draft/novel/第1章-v2.md'), '第一章新稿，雾从海面压过来。')
   fs.writeFileSync(path.join(project, 'draft/novel/第2章-v1.md'), '第二章正文')
-  fs.writeFileSync(path.join(project, 'bible/characters.md'), '# 人物\n\n**林晚**：送信人。\n\n| 人物 | 立场 |\n| --- | --- |\n| 关渡 | 拦信 |\n')
+  fs.writeFileSync(path.join(project, 'bible/characters.md'), '# 人物\n\n**林晚**：送信人。\n\n<script>window.__pwned=1</script>\n<img src=x onerror="window.__pwned=2">\n\n| 人物 | 立场 |\n| --- | --- |\n| 关渡 | 拦信 |\n')
   fs.writeFileSync(path.join(project, 'bible/world.md'), '手写世界设定，不该被档案改写。')
   fs.writeFileSync(path.join(project, 'bible/timeline.md'), '# 时间线\n\n- 雾季第一夜：禁令生效\n- 第二夜：信被拆开')
   fs.writeFileSync(path.join(project, 'outline/foreshadow.md'), '# 伏笔\n\n- 铜钥匙：未回收\n- 电报局：未回收\n- 旧照片：已兑现')
@@ -210,6 +210,36 @@ app.whenReady().then(async () => {
   console.log('PASS 设定区读失败：报原因 + 重试可恢复，其余区不受影响')
 
   await shoot('writing-archive.png')
+  // 10) 导出 HTML：独占命名、内容口径与面板一致、原稿不动、.html 不混进文档库
+  const itemsBefore = await evaluate(`document.querySelectorAll('.dshWmItem').length`)
+  await button('导出 HTML')
+  await waitFor(`!!document.querySelector('[data-wm-wiki-export]')`)
+  const exported = await evaluate(`document.querySelector('[data-wm-wiki-export]').getAttribute('data-wm-wiki-export')`)
+  assert.ok(exported.endsWith('演示项目-档案-v1.html'), '导出落在项目根并带 v1 编号：' + exported)
+  const page = fs.readFileSync(exported, 'utf8')
+  assert.ok(page.includes('夜行禁令') && page.includes('雾季入夜后港口停止民船出航'), '已确认设定进导出页')
+  assert.ok(page.includes('救援船获得许可后可以出航'), '边界随结论一并导出')
+  assert.ok(page.includes('我们让禁令只在雾季生效'), '出处摘录进导出页')
+  // 候选不入档：断言它的**结论句**（'铜钥匙'三个字同时也是伏笔台账里的条目名，拿它断会假阳性）
+  assert.ok(!page.includes('钥匙能开旧电报室'), '候选设定不得进导出页')
+  assert.ok(page.includes('<th>人物</th>') && page.includes('<strong>林晚</strong>'), '资料按 Markdown 渲染')
+  assert.ok(page.includes('&lt;script&gt;') && !/<script\s*>/i.test(page.replace(/<script><\/script>/g, '')), '稿件里的 script 只能以文字出现')
+  assert.ok(!/<img\s/i.test(page), '稿件里的 img 标签不得成为真标签')
+  assert.ok(page.includes('一句话前提：雾港的夜航禁令'), '作品概览的一句话进页头')
+  assert.equal(await evaluate(`document.querySelectorAll('.dshWmItem').length`), itemsBefore, '导出的 .html 不进文档库')
+  await button('导出 HTML')
+  await waitFor(`(()=>{const e=document.querySelector('[data-wm-wiki-export]');return !!e && e.getAttribute('data-wm-wiki-export').endsWith('-v2.html')})()`)
+  assert.equal(fs.readFileSync(exported, 'utf8'), page, '再导出不得覆盖上一份')
+  console.log('PASS 导出 HTML：独占命名、候选不入、转义守住、原稿与文档库不动')
+
+  // 11) 导出页自包含：直接当文件打开就能看，且脚本不执行
+  await win.loadURL(pathToFileURL(exported).href)
+  await waitFor(`document.title.includes('演示项目')`)
+  assert.equal(await evaluate(`window.__pwned===undefined`), true, '导出页不得执行稿件里的脚本')
+  assert.ok((await evaluate(`document.body.innerText`)).includes('夜行禁令'), '导出页独立打开可读')
+  await shoot('archive-export.png')
+  console.log('PASS 导出页自包含：单文件打开即渲染，脚本不执行')
+
   assert.equal(errors.length, 0, errors.join('\n'))
   console.log('WRITING_ARCHIVE_UI_OK', temp)
 }).catch(err => { console.error(err); process.exitCode = 1 }).finally(async () => {

@@ -516,6 +516,9 @@ export const CSS = [
   '.dshWmWikiDocToggle{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWmWikiDocChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}',
   '.dshWmWikiDocBody{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l2);}',
+  '.dshWmWikiBarNote{flex:none;display:flex;align-items:center;gap:10px;padding:8px 24px;font-size:12px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmWikiBarNote.is-error{color:var(--dsw-alias-state-error-primary);}',
+  '.dshWmWikiExportPath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);}',
 ].join('\n')
 
 const TAG = 'dsh-writing-mode-css'

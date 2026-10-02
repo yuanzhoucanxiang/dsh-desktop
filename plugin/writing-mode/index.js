@@ -18,6 +18,7 @@ import {
   newDraftPath,
   readDoc,
   writeDoc,
+  writeExportFile,
   createVersion,
   deleteDoc,
   findProjectRoot,
@@ -33,6 +34,7 @@ import { withFileLock } from './lib/file-lock.js'
 import { COMPANION_PRESET } from './lib/companion-preset.js'
 import { assist, recommend, runGates, ledgerSummary, outlineSummary } from './lib/domain.js'
 import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
+import { renderArchiveHtml, docGroupOf, docGroupRank, docLabelOf, premiseOf } from './lib/archive-html.js'
 import { seedBaseline, recordSave, projectStatsFor } from './lib/writing-stats.js'
 import { reorderDraftSeries } from './lib/reorder.js'
 import {
@@ -128,6 +130,7 @@ export const ROUTE_METHODS = {
   'create-project': ['POST'],
   'project-resource': ['POST'],
   compile: ['POST'],
+  'archive-export': ['POST'],
 }
 
 function isLoopbackRequest(req) {
@@ -632,6 +635,113 @@ export function apply(ctx) {
               ok: true,
               doc: { path: doc.path, chars: doc.chars, revision: doc.revision },
               stats: { files: book.files, chars: book.chars, skipped },
+            })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+          }
+          return
+        }
+
+        /**
+         * 导出作品档案（HTML）：与档案面板同一口径的**只读投影**，自包含单文件，便于分享与打印。
+         * 独占创建在项目根（<书名>-档案-vN.html，绝不覆盖）；.html 不在 TEXT_EXTS 里，
+         * 所以档案页不会混进文档库、也不参与成书候选；与 compile 一样不记码字账。
+         * body: { path（项目内任意路径）, title?（书名，默认取目录名） }
+         */
+        if (req.method === 'POST' && route === 'archive-export') {
+          const parsed = await readJsonBody(req)
+          if (parsed === null) {
+            writeJson(res, 400, { ok: false, error: 'invalid-json' })
+            return
+          }
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(parsed?.path || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const found = resolveProjectDir(target.abs, roots)
+          const projectReal = found && realOrNull(found)
+          if (!projectReal) {
+            writeJson(res, 400, { ok: false, error: 'no-project' })
+            return
+          }
+          const mem = readMemory(projectReal)
+          if (mem?.error) {
+            // 坏 JSON / 未知 schema：不猜、不清空，让作者先处理权威数据
+            writeJson(res, 409, { ok: false, error: 'memory-' + mem.error })
+            return
+          }
+          const items = mem?.memory?.items || []
+          const isWorld = (it) => it.kind === 'fact' && it.setting?.type === 'world'
+          const confirmed = items.filter((it) => it.status === 'confirmed')
+          const settings = confirmed.filter(isWorld).map((it) => ({
+            title: it.setting?.title || '',
+            conclusion: it.setting?.conclusion || it.text || '',
+            explanation: it.setting?.explanation || '',
+            boundaries: it.setting?.boundaries || '',
+            tags: it.setting?.tags || [],
+            sources: it.setting?.sources || [],
+            fromKind: it.source?.kind || 'author',
+          }))
+          const plainItems = confirmed.filter((it) => !isWorld(it)).map((it) => ({ kind: it.kind, text: it.text }))
+          const outline = outlineSummary(projectReal)
+          const statsFound = projectStatsFor(projectReal, { spanDays: 14 })
+          const allFiles = listProjectFiles(projectReal)
+          const docFiles = naturalSortFiles(latestOfSeries(allFiles.filter((f) => !f.rel.startsWith('draft/'))).latest)
+            .sort((a, b) => docGroupRank(docGroupOf(a.rel)) - docGroupRank(docGroupOf(b.rel))
+              || String(a.rel).localeCompare(String(b.rel), 'zh', { numeric: true }))
+          const docs = []
+          try {
+            for (const f of docFiles) {
+              docs.push({
+                rel: f.rel,
+                label: docLabelOf(f.rel, f.name),
+                group: docGroupOf(f.rel),
+                content: fs.readFileSync(f.abs, 'utf8'),
+                markdown: /\.(md|markdown)$/i.test(f.name),
+              })
+            }
+          } catch {
+            // 扫描到读取之间文件被移走：如实报，不写半成品
+            writeJson(res, 409, { ok: false, error: 'source-changed' })
+            return
+          }
+          const bookTitle = safeBookTitle(String(parsed?.title || '').trim() || path.basename(projectReal))
+          if (!bookTitle) {
+            writeJson(res, 400, { ok: false, error: 'invalid-title' })
+            return
+          }
+          const projectDoc = docs.find((d) => String(d.rel).toLowerCase() === 'project.md')
+          const html = renderArchiveHtml({
+            title: bookTitle,
+            premise: premiseOf(projectDoc?.content || ''),
+            generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+            settings,
+            proposedCount: items.filter((it) => it.status === 'proposed').length,
+            plainItems,
+            chapters: outline.rows.map((r) => ({ ...r, name: chapterTitle(r.name) })),
+            stats: statsFound?.summary || null,
+            dailyGoal: normalizePrefs(cfg.prefs).dailyGoal || 0,
+            ledger: ledgerSummary(projectReal, outline.rows[0]?.abs),
+            docs,
+          })
+          try {
+            const scope = [{ path: projectReal, real: projectReal }]
+            let written = null
+            for (let n = 1; n <= 100 && !written; n++) {
+              const out = resolveUnderRoots(path.join(projectReal, `${bookTitle}-档案-v${n}.html`), scope)
+              try {
+                written = writeExportFile(out, html) // 独占创建：已存在就试下一个编号，绝不覆盖
+              } catch (err) {
+                if (err.status !== 409) throw err
+              }
+            }
+            if (!written) throw storeError('version-conflict', 409)
+            writeJson(res, 200, {
+              ok: true,
+              doc: { path: written.path, bytes: written.bytes },
+              stats: { settings: settings.length, docs: docs.length, chapters: outline.rows.length },
             })
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })

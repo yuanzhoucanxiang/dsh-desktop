@@ -546,6 +546,34 @@ export function atomicWrite(file, body, { exclusive = false, beforeCommit = () =
   }
 }
 
+/**
+ * 导出件专用：独占创建**非文稿**文件（目前只有作品档案 .html）。
+ *
+ * 与 writeDoc 分开的理由：TEXT_EXTS 刻意不含 .html——导出的档案页不该混进文档库、
+ * 更不该被当成稿子编辑。所以这里只放行明确的导出扩展名，并要求路径已经过
+ * resolveUnderRoots（带 root 字段）+ 目录 realpath 复核；已存在即 409，绝不覆盖。
+ */
+const EXPORT_EXTS = new Set(['.html'])
+
+export function writeExportFile(target, content) {
+  if (!target?.abs || !target?.root) throw storeError('export-target-required', 400)
+  if (!EXPORT_EXTS.has(path.extname(target.abs).toLowerCase())) throw storeError('unsupported-export-type', 400)
+  const rootReal = realOrNull(target.root)
+  const dirReal = realOrNull(path.dirname(target.abs))
+  if (!rootReal || !dirReal || (dirReal !== rootReal && !dirReal.startsWith(rootReal + path.sep))) {
+    throw storeError('path-outside-roots', 400)
+  }
+  try { fs.mkdirSync(dirReal, { recursive: true }) } catch {}
+  const body = String(content ?? '')
+  try {
+    atomicWrite(target.abs, body, { exclusive: true })
+  } catch (err) {
+    if (err?.code === 'EEXIST') throw storeError('already-exists', 409)
+    throw err
+  }
+  return { path: target.abs, bytes: Buffer.byteLength(body, 'utf8') }
+}
+
 export function writeDoc(target, content, revision) {
   assertTextTarget(target)
   if (revision === undefined) throw storeError('revision-required', 428)

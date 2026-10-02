@@ -147,10 +147,46 @@ function SectionState({ state, onRetry, hasContent, empty }) {
   return hasContent ? null : empty
 }
 
-export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
+export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported }) {
   const [settings, setSettings] = react.useState(LOADING)
   const [progress, setProgress] = react.useState(LOADING)
   const [ledger, setLedger] = react.useState(LOADING)
+  const [exporting, setExporting] = react.useState(false)
+  const [exportResult, setExportResult] = react.useState(null)
+  const [exportError, setExportError] = react.useState('')
+  const [copiedPath, setCopiedPath] = react.useState(false)
+
+  const EXPORT_ERR = {
+    'memory-corrupt': '作品设定读不出（state/writing-memory.json 损坏）：原文已保留，请先在项目备忘里处理。',
+    'memory-unknown-schema': '作品设定是未知版本：不猜、不覆盖，请先在项目备忘里处理。',
+    'source-changed': '导出期间有资料被移动或删除，已放弃，请重试。',
+    'version-conflict': '档案编号已用尽（同名档案超过 100 份），请清理后重试。',
+    'no-project': '没能识别这个项目，请刷新文档库后重试。',
+  }
+
+  const doExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    setExportError('')
+    setExportResult(null)
+    try {
+      const d = await api('archive-export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: proj.path }) })
+      if (d?.ok) {
+        setExportResult(d)
+        if (onExported) onExported(d)
+      } else {
+        setExportError(EXPORT_ERR[String(d?.error)] || ('导出失败：' + String(d?.error || 'unknown')))
+      }
+    } catch (err) {
+      setExportError('导出失败：' + String(err?.message || err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const copyExportPath = async () => {
+    try { await navigator.clipboard.writeText(String(exportResult?.doc?.path || '')); setCopiedPath(true); window.setTimeout(() => setCopiedPath(false), 1500) } catch {}
+  }
 
   const loadSettings = react.useCallback(async () => {
     setSettings(LOADING)
@@ -248,11 +284,33 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) 
         jsx.jsx('button', {
           type: 'button',
           className: 'dshWmBtn',
+          onClick: () => { void doExport() },
+          disabled: exporting,
+          title: '导出为一页自包含 HTML：可分享、可打印；写进作品根目录，原稿一律不动',
+          children: exporting ? '导出中…' : '导出 HTML',
+        }, 'export'),
+        jsx.jsx('button', {
+          type: 'button',
+          className: 'dshWmBtn',
           onClick: () => { void loadSettings(); void loadProgress(); void loadLedger() },
           children: '刷新',
         }),
         jsx.jsx('button', { type: 'button', className: 'dshWmBtn is-primary', onClick: onClose, children: '关闭档案' }),
       ] }),
+      exportError
+        ? jsx.jsxs('div', { className: 'dshWmWikiBarNote is-error', role: 'alert', 'data-wm-wiki-export-error': '1', children: [
+            exportError,
+            jsx.jsx('button', { type: 'button', className: 'dshWmQuiet', onClick: () => void doExport(), children: '重试' }),
+          ] }, 'export-error')
+        : null,
+      exportResult
+        ? jsx.jsxs('div', { className: 'dshWmWikiBarNote', 'data-wm-wiki-export': exportResult.doc.path, children: [
+            jsx.jsx('span', { children: '已导出 ' + String(exportResult.doc.path).split(/[\\/]/).pop()
+              + `（设定 ${exportResult.stats.settings} 条 · 资料 ${exportResult.stats.docs} 篇 · ${Math.round((exportResult.doc.bytes || 0) / 1024)} KB）` }),
+            jsx.jsx('span', { className: 'dshWmWikiExportPath', title: exportResult.doc.path, children: exportResult.doc.path }),
+            jsx.jsx('button', { type: 'button', className: 'dshWmQuiet', onClick: () => void copyExportPath(), children: copiedPath ? '已复制' : '复制路径' }),
+          ] }, 'export-ok')
+        : null,
       jsx.jsxs('div', { className: 'dshWmWikiScroll', children: [
         jsx.jsxs(Section, {
           title: '设定',

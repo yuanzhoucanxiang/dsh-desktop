@@ -1,0 +1,341 @@
+/**
+ * 作品档案导出（HTML）的纯函数核心：把已确认设定、写作进度与资料文稿渲染成一页自包含 HTML。
+ *
+ * 零 IO——读文件、路径校验、独占创建都在 index.js 的 archive-export 路由里（与 compile 同一分工）。
+ * 定位与档案面板一致：**只读投影**，页面本身不保存任何东西，删掉可随时重生成。
+ *
+ * 安全边界：所有文字先整体转义，之后只放进出过白名单的少量标记（标题 / 列表 / 表格 / 引用 /
+ * 粗斜体 / 行内码 / http(s) 链接 / [[文稿名]] 标注）。作者稿子里写的 <script> 或 javascript:
+ * 只会以字面文字出现，不会变成可执行的东西。
+ */
+
+import { PROJECT_RESOURCES } from './templates.js'
+
+export const ARCHIVE_HTML_VERSION = 1
+
+// 摘出行内片段时用的哨兵。转义后的作者文字里不会出现 \u0000（下面先整体剔除），所以不会误伤。
+const HOLD = '\u0000'
+
+export function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/\u0000/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** 只放行 http/https：javascript:、data: 与相对跳转一律不进导出页（档案页不该有能力导航别处）。 */
+function safeHref(url) {
+  const raw = String(url ?? '').replace(/&amp;/g, '&').trim()
+  return /^https?:\/\/\S{1,500}$/i.test(raw) ? raw : ''
+}
+
+/**
+ * 行内标记。入参必须是**已转义**的文字；行内码、链接与 [[标注]] 先摘出来占位，
+ * 其余规则跑完再放回，避免代码里的 ** 被当成粗体。
+ */
+export function inlineMarks(escaped) {
+  const held = []
+  const keep = (html) => {
+    held.push(html)
+    return HOLD + (held.length - 1) + HOLD
+  }
+  let s = String(escaped ?? '')
+  s = s.replace(/`([^`\n]+)`/g, (m, code) => keep('<code>' + code + '</code>'))
+  s = s.replace(/\[\[([^\]\n]{1,80})\]\]/g, (m, name) => keep('<span class="ref">' + name + '</span>'))
+  s = s.replace(/\[([^\]\n]{1,200})\]\(([^)\n]{1,500})\)/g, (m, label, url) => {
+    const href = safeHref(url)
+    return keep(href
+      ? '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
+      : label)
+  })
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+  s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+  return s.replace(new RegExp(HOLD + '(\\d+)' + HOLD, 'g'), (m, n) => held[Number(n)] ?? '')
+}
+
+const isBlank = (l) => !l || !String(l).trim()
+const headingOf = (l) => /^(#{1,6})\s+(.*)$/.exec(String(l))
+const isHr = (l) => /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(String(l))
+const bulletOf = (l) => /^\s*[-*+]\s+(.*)$/.exec(String(l))
+const orderedOf = (l) => /^\s*\d+[.)]\s+(.*)$/.exec(String(l))
+const quoteOf = (l) => /^\s*>\s?(.*)$/.exec(String(l))
+const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(String(l))
+const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(String(l))
+const cellsOf = (l) => String(l).trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+const inline = (text) => inlineMarks(escapeHtml(text))
+
+/**
+ * 资料正文的 Markdown 子集渲染（块级）：标题 / 分隔线 / 表格 / 引用 / 有序无序列表 / 段落。
+ * 认不出的语法一律当普通段落，不抛错——资料是作者手写的，长得奇怪也得原样读得出来。
+ */
+export function renderMarkdown(text) {
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n')
+  const out = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (isBlank(line)) { i += 1; continue }
+    const h = headingOf(line)
+    if (h) {
+      const lvl = Math.min(6, h[1].length + 2) // 页面本身占了 h1/h2，文稿标题从 h3 起
+      out.push('<h' + lvl + '>' + inline(h[2].trim()) + '</h' + lvl + '>')
+      i += 1
+      continue
+    }
+    if (isHr(line)) { out.push('<hr>'); i += 1; continue }
+    if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const head = cellsOf(line)
+      i += 2
+      const body = []
+      while (i < lines.length && isTableRow(lines[i])) { body.push(cellsOf(lines[i])); i += 1 }
+      const thead = '<thead><tr>' + head.map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead>'
+      const tbody = '<tbody>' + body.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody>'
+      out.push('<div class="tablewrap"><table>' + thead + tbody + '</table></div>')
+      continue
+    }
+    if (quoteOf(line)) {
+      const buf = []
+      while (i < lines.length && quoteOf(lines[i])) { buf.push(quoteOf(lines[i])[1]); i += 1 }
+      out.push('<blockquote>' + inline(buf.join(' ')) + '</blockquote>')
+      continue
+    }
+    if (bulletOf(line)) {
+      const buf = []
+      while (i < lines.length && bulletOf(lines[i])) { buf.push(bulletOf(lines[i])[1]); i += 1 }
+      out.push('<ul>' + buf.map((x) => '<li>' + inline(x) + '</li>').join('') + '</ul>')
+      continue
+    }
+    if (orderedOf(line)) {
+      const buf = []
+      while (i < lines.length && orderedOf(lines[i])) { buf.push(orderedOf(lines[i])[1]); i += 1 }
+      out.push('<ol>' + buf.map((x) => '<li>' + inline(x) + '</li>').join('') + '</ol>')
+      continue
+    }
+    const para = []
+    while (
+      i < lines.length
+      && !isBlank(lines[i]) && !headingOf(lines[i]) && !isHr(lines[i])
+      && !bulletOf(lines[i]) && !orderedOf(lines[i]) && !quoteOf(lines[i]) && !isTableRow(lines[i])
+    ) { para.push(lines[i]); i += 1 }
+    out.push('<p>' + inline(para.join('\n')).replace(/\n/g, '<br>') + '</p>')
+  }
+  return out.join('\n')
+}
+
+/** 自包含样式：屏幕上是稿纸色的档案页，打印时去底色、留分页。 */
+const CSS = `
+:root{--ink:#292a26;--ink2:#52554b;--ink3:#777b6c;--line:#cfcec4;--paper:#f7f5ef;--layer:#efede7;--brand:#526d51;--warn:#c9a227;--bad:#b34636}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.85 "Source Han Serif SC","Noto Serif SC","Songti SC","SimSun",Georgia,serif}
+.wrap{max-width:820px;margin:0 auto;padding:48px 28px 72px}
+header h1{font-size:30px;margin:0 0 6px;letter-spacing:.02em}
+.sub{margin:0;color:var(--ink3);font-size:12px;font-family:system-ui,sans-serif}
+.premise{margin:16px 0 0;padding:12px 14px;border-left:3px solid var(--brand);background:var(--layer);color:var(--ink2)}
+h2{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin:44px 0 14px;padding-bottom:6px;border-bottom:1px solid var(--line);font-family:system-ui,sans-serif}
+h2 .meta{float:right;font-weight:400;letter-spacing:0;text-transform:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--layer);border:1px solid var(--line);border-radius:12px;padding:14px 16px;break-inside:avoid}
+.card.boundary{border-left:3px solid var(--warn)}
+.card h3{margin:0;font-size:16px}
+.from{float:right;font-size:11px;color:var(--ink3);font-family:system-ui,sans-serif}
+.concl{margin:8px 0 0}
+.bound{margin:6px 0 0;font-size:13.5px;color:var(--ink2)}
+details{margin-top:8px;font-size:13.5px;color:var(--ink2)}
+summary{cursor:pointer;font-size:11.5px;color:var(--ink3);font-family:system-ui,sans-serif}
+blockquote{margin:8px 0 0;padding-left:10px;border-left:2px solid var(--line);color:var(--ink2);font-size:13.5px}
+blockquote .who{display:block;font-size:11px;color:var(--ink3);font-family:system-ui,sans-serif}
+.tags{margin:8px 0 0;font-size:11.5px;color:var(--ink3);font-family:system-ui,sans-serif}
+.note{margin:12px 0 0;font-size:12.5px;color:var(--ink3);font-family:system-ui,sans-serif}
+ul.plain{list-style:none;margin:0;padding:0}
+ul.plain li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--line)}
+.kind{flex:none;min-width:34px;font-size:11px;color:var(--ink3);font-family:system-ui,sans-serif}
+.stats{display:flex;flex-wrap:wrap;gap:18px;font-family:system-ui,sans-serif;font-size:13px;color:var(--ink2);margin:0 0 10px}
+.stats b{font-size:19px;color:var(--ink)}
+ol.chapters{margin:0;padding-left:26px}
+ol.chapters li{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:3px 0}
+.ch-name{font-weight:600}
+.ch-meta,.ch-hook,.gate{font-size:12px;color:var(--ink3);font-family:system-ui,sans-serif}
+.ch-hook{flex:1;min-width:120px}
+.gate{padding:0 7px;border-radius:999px;background:var(--layer)}
+.gate.pass{color:var(--brand)}
+.gate.fail{color:var(--bad)}
+.doc{margin:0 0 20px}
+.doc h3{margin:22px 0 4px;font-size:15px}
+.doc .rel{font-size:11px;color:var(--ink3);font-family:ui-monospace,Consolas,monospace}
+.doc .body{border-top:1px solid var(--line);padding-top:6px}
+.doc .body h3,.doc .body h4,.doc .body h5{margin:14px 0 4px;font-size:14px}
+.tablewrap{overflow:auto}
+table{border-collapse:collapse;font-size:13.5px;min-width:100%}
+th,td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.ref{border-bottom:1px dotted var(--ink3)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.9em;background:var(--layer);border-radius:4px;padding:.05em .3em}
+a{color:inherit}
+footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3);font-family:system-ui,sans-serif}
+@media print{
+ body{background:#fff;font-size:11.5pt;line-height:1.6}
+ .wrap{max-width:none;padding:0}
+ h2{margin-top:20pt}
+ .card,.doc{background:#fff}
+ summary{display:none}
+ a{text-decoration:none}
+}
+@page{margin:18mm 16mm}
+`
+
+const FROM_LABEL = { assistant: '来自讨论', host: '内核', author: '作者记录' }
+const KIND_LABEL = { preference: '偏好', 'open-question': '待定', fact: '设定' }
+
+function settingsSection(m) {
+  const list = m.settings || []
+  const cards = list.map((it) => {
+    const excerpts = (it.sources || []).filter((x) => x && x.excerpt).slice(0, 2)
+    const more = []
+    if (it.explanation) more.push('<p>' + inline(it.explanation) + '</p>')
+    more.push(...excerpts.map((x, i) => '<blockquote><span class="who">'
+      + inline(x.role === 'author' ? '你说过' : '伙伴说过') + '</span><p>' + inline(x.excerpt) + '</p></blockquote>'))
+    if ((it.tags || []).length) more.push('<p class="tags">标签：' + it.tags.map((t) => inline(t)).join(' · ') + '</p>')
+    return '<article class="card' + (it.boundaries ? ' boundary' : '') + '">'
+      + '<span class="from">' + inline(FROM_LABEL[it.fromKind] || '作者记录') + '</span>'
+      + '<h3>' + inline(it.title || '（未命名条目）') + '</h3>'
+      + '<p class="concl">' + inline(it.conclusion || it.text || '') + '</p>'
+      + (it.boundaries ? '<p class="bound">边界 / 例外：' + inline(it.boundaries) + '</p>' : '')
+      + (more.length ? '<details open><summary>说明与出处</summary>' + more.join('') + '</details>' : '')
+      + '</article>'
+  })
+  const plain = (m.plainItems || []).map((it) => '<li><span class="kind">'
+    + inline(KIND_LABEL[it.kind] || '设定') + '</span><span>' + inline(it.text) + '</span></li>')
+  return '<section><h2>设定<span class="meta">' + inline((list.length + (m.plainItems || []).length) + ' 条已确认') + '</span></h2>'
+    + (cards.length ? '<div class="cards">' + cards.join('') + '</div>' : '')
+    + (plain.length ? '<p class="note">其他已确认备忘</p><ul class="plain">' + plain.join('') + '</ul>' : '')
+    + (list.length || plain.length ? '' : '<p class="note">还没有已确认的设定。与写作伙伴讨论后，在项目备忘里确认的条目才会进这份档案。</p>')
+    + (m.proposedCount ? '<p class="note">另有 ' + inline(m.proposedCount) + ' 条候选未确认，未列入档案。</p>' : '')
+    + '</section>'
+}
+
+function progressSection(m) {
+  const rows = m.chapters || []
+  const s = m.stats || {}
+  const goal = Number(m.dailyGoal) || 0
+  const total = rows.reduce((n, r) => n + (Number(r.chars) || 0), 0)
+  const gate = (r) => (r.gate
+    ? '<span class="gate ' + (r.gate.pass ? 'pass' : 'fail') + '">'
+      + inline(r.gate.pass ? '门禁 ✓' : '门禁 ' + (r.gate.fail ?? '?')) + '</span>'
+    : '')
+  return '<section><h2>进度<span class="meta">' + inline(rows.length + ' 篇 · ' + total + ' 字') + '</span></h2>'
+    + '<p class="stats"><span><b>' + inline(Number(s.today) || 0) + '</b> 字 · 今天</span>'
+    + '<span><b>' + inline(Number(s.streak) || 0) + '</b> 天连更</span>'
+    + (goal ? '<span>日目标 <b>' + inline(goal) + '</b></span>' : '')
+    + '</p>'
+    + (rows.length
+      ? '<ol class="chapters">' + rows.map((r) => '<li><span class="ch-name">' + inline(r.name) + '</span>'
+        + '<span class="ch-meta">' + inline((Number(r.chars) || 0) + ' 字') + '</span>' + gate(r)
+        + (r.hook ? '<span class="ch-hook">' + inline(r.hook) + '</span>' : '') + '</li>').join('') + '</ol>'
+      : '<p class="note">draft/ 下还没有正文。</p>')
+    + (s.corrupt ? '<p class="note">统计文件读取异常，上面的数字可能不准。</p>' : '')
+    + '</section>'
+}
+
+function ledgerSection(m) {
+  const l = m.ledger || {}
+  const timeline = (l.timeline || []).map((x) => '<li>' + inline(x) + '</li>')
+  return '<section><h2>时间与伏笔</h2>'
+    + (timeline.length ? '<ul>' + timeline.join('') + '</ul>' : '<p class="note">bible/timeline.md 还没有条目。</p>')
+    + '<p class="note">未回收伏笔 ' + inline(l.foreshadowOpen ?? 0)
+    + (l.latestReview ? ' · 最新评审 ' + inline(l.latestReview) : '')
+    + (l.hook ? ' · 章末钩子 ' + inline(l.hook) : '') + '</p></section>'
+}
+
+function docsSection(m) {
+  const docs = m.docs || []
+  if (!docs.length) return '<section><h2>资料</h2><p class="note">这个项目还没有设定集、大纲或状态资料。</p></section>'
+  let out = '<section><h2>资料<span class="meta">' + inline(docs.length + ' 篇') + '</span></h2>'
+  let group = null
+  for (const d of docs) {
+    if (d.group !== group) {
+      if (group !== null) out += '</div>'
+      group = d.group
+      out += '<div class="docgroup"><h3>' + inline(group) + '</h3>'
+    }
+    out += '<article class="doc"><div class="rel">' + inline(d.rel) + '</div>'
+      + '<div class="body">'
+      + (d.markdown === false ? '<pre>' + escapeHtml(d.content) + '</pre>' : renderMarkdown(d.content))
+      + '</div></article>'
+  }
+  return out + '</div></section>'
+}
+
+/**
+ * model = { title, premise, generatedAt, settings[], proposedCount, plainItems[],
+ *           chapters[{name,chars,gate,gatePass,gateFail,hook}], stats{today,streak,corrupt},
+ *           dailyGoal, ledger{timeline[],foreshadowOpen,latestReview,hook},
+ *           docs[{rel,label,group,content,markdown}] }
+ */
+export function renderArchiveHtml(model = {}) {
+  const title = String(model.title || '作品档案')
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="generator" content="dsh-writing-mode archive ' + ARCHIVE_HTML_VERSION + '">'
+    + '<title>' + escapeHtml(title) + ' · 作品档案</title>'
+    + '<style>' + CSS + '</style></head><body><div class="wrap">'
+    + '<header><h1>' + escapeHtml(title) + '</h1>'
+    + '<p class="sub">作品档案 · 生成于 ' + escapeHtml(model.generatedAt || '')
+    + ' · 只读投影：改设定请回写作台的项目备忘，这份文件删掉可随时重生成</p>'
+    + (model.premise ? '<p class="premise">' + inline(model.premise) + '</p>' : '')
+    + '</header>'
+    + settingsSection(model)
+    + progressSection(model)
+    + ledgerSection(model)
+    + docsSection(model)
+    + '<footer>内容来自作品自己的文件：已确认设定读自 state/writing-memory.json（权威），'
+    + '进度与资料读自 draft/、bible/、outline/、state/。本页不额外保存任何东西。</footer>'
+    + '</div></body></html>\n'
+}
+
+/* ---- 资料分组 / 标签 / 前提：与客户端文档库同一套目录口径，导出页不该出现第三套名字 ---- */
+
+const DOC_GROUPS = [
+  ['作品概览', (rel) => rel === 'project.md'],
+  ['人物', (rel) => rel === 'bible/characters.md' || rel === 'bible/relationships.md'],
+  ['世界与设定', (rel) => rel.startsWith('bible/')],
+  ['故事规划', (rel) => rel.startsWith('outline/')],
+  ['创作跟踪', (rel) => rel.startsWith('state/')],
+  ['评审', (rel) => rel.startsWith('reviews/')],
+  ['其他文档', () => true],
+]
+
+const normRel = (rel) => String(rel ?? '').replaceAll('\\', '/').toLowerCase()
+
+export function docGroupOf(rel) {
+  const r = normRel(rel)
+  return (DOC_GROUPS.find(([, test]) => test(r)) || DOC_GROUPS[DOC_GROUPS.length - 1])[0]
+}
+
+export function docGroupRank(group) {
+  const i = DOC_GROUPS.findIndex(([name]) => name === group)
+  return i < 0 ? DOC_GROUPS.length : i
+}
+
+/** 标签表直接复用 host 的按需添加资料白名单，避免两处各写一份中文名。 */
+const DOC_LABELS = new Map([
+  ...PROJECT_RESOURCES.map(([rel, label]) => [normRel(rel), label]),
+  ['project.md', '作品概览'],
+  ['bible/世界观整理.md', '已确认设定（整理稿）'],
+])
+
+export function docLabelOf(rel, name) {
+  return DOC_LABELS.get(normRel(rel)) || String(name || rel || '')
+}
+
+/** 作品概览里的一句话：优先「一句话故事 / 前提 / 梗概」小节下的第一段，退回首段正文。 */
+export function premiseOf(projectMarkdown) {
+  const text = String(projectMarkdown ?? '')
+  const one = /一句话(?:故事|前提|梗概)[^\n]*\n+([^\n#]+)/.exec(text)
+  if (one) return one[1].trim().slice(0, 300)
+  const para = text.split(/\r?\n\s*\r?\n/).find((block) => block.trim() && !/^\s*#/.test(block))
+  return para ? para.trim().slice(0, 300) : ''
+}

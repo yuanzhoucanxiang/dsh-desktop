@@ -3299,7 +3299,10 @@ var CSS = [
   ".dshWmWikiDocHead{display:flex;align-items:center;gap:8px;padding:6px 10px;}",
   ".dshWmWikiDocToggle{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWmWikiDocChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiDocBody{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l2);}"
+  ".dshWmWikiDocBody{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWikiBarNote{flex:none;display:flex;align-items:center;gap:10px;padding:8px 24px;font-size:12px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiBarNote.is-error{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmWikiExportPath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);}"
 ].join("\n");
 var TAG = "dsh-writing-mode-css";
 function ensureWritingCss() {
@@ -19844,10 +19847,48 @@ function SectionState({ state, onRetry, hasContent, empty: empty3 }) {
   }
   return hasContent ? null : empty3;
 }
-function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
+function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported }) {
   const [settings, setSettings] = react7.useState(LOADING);
   const [progress, setProgress] = react7.useState(LOADING);
   const [ledger, setLedger] = react7.useState(LOADING);
+  const [exporting, setExporting] = react7.useState(false);
+  const [exportResult, setExportResult] = react7.useState(null);
+  const [exportError, setExportError] = react7.useState("");
+  const [copiedPath, setCopiedPath] = react7.useState(false);
+  const EXPORT_ERR = {
+    "memory-corrupt": "作品设定读不出（state/writing-memory.json 损坏）：原文已保留，请先在项目备忘里处理。",
+    "memory-unknown-schema": "作品设定是未知版本：不猜、不覆盖，请先在项目备忘里处理。",
+    "source-changed": "导出期间有资料被移动或删除，已放弃，请重试。",
+    "version-conflict": "档案编号已用尽（同名档案超过 100 份），请清理后重试。",
+    "no-project": "没能识别这个项目，请刷新文档库后重试。"
+  };
+  const doExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError("");
+    setExportResult(null);
+    try {
+      const d = await api("archive-export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: proj.path }) });
+      if (d?.ok) {
+        setExportResult(d);
+        if (onExported) onExported(d);
+      } else {
+        setExportError(EXPORT_ERR[String(d?.error)] || "导出失败：" + String(d?.error || "unknown"));
+      }
+    } catch (err) {
+      setExportError("导出失败：" + String(err?.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
+  const copyExportPath = async () => {
+    try {
+      await navigator.clipboard.writeText(String(exportResult?.doc?.path || ""));
+      setCopiedPath(true);
+      window.setTimeout(() => setCopiedPath(false), 1500);
+    } catch {
+    }
+  };
   const loadSettings = react7.useCallback(async () => {
     setSettings(LOADING);
     try {
@@ -19935,6 +19976,16 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
           type: "button",
           className: "dshWmBtn",
           onClick: () => {
+            void doExport();
+          },
+          disabled: exporting,
+          title: "导出为一页自包含 HTML：可分享、可打印；写进作品根目录，原稿一律不动",
+          children: exporting ? "导出中…" : "导出 HTML"
+        }, "export"),
+        jsx16.jsx("button", {
+          type: "button",
+          className: "dshWmBtn",
+          onClick: () => {
             void loadSettings();
             void loadProgress();
             void loadLedger();
@@ -19943,6 +19994,15 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
         }),
         jsx16.jsx("button", { type: "button", className: "dshWmBtn is-primary", onClick: onClose, children: "关闭档案" })
       ] }),
+      exportError ? jsx16.jsxs("div", { className: "dshWmWikiBarNote is-error", role: "alert", "data-wm-wiki-export-error": "1", children: [
+        exportError,
+        jsx16.jsx("button", { type: "button", className: "dshWmQuiet", onClick: () => void doExport(), children: "重试" })
+      ] }, "export-error") : null,
+      exportResult ? jsx16.jsxs("div", { className: "dshWmWikiBarNote", "data-wm-wiki-export": exportResult.doc.path, children: [
+        jsx16.jsx("span", { children: "已导出 " + String(exportResult.doc.path).split(/[\\/]/).pop() + `（设定 ${exportResult.stats.settings} 条 · 资料 ${exportResult.stats.docs} 篇 · ${Math.round((exportResult.doc.bytes || 0) / 1024)} KB）` }),
+        jsx16.jsx("span", { className: "dshWmWikiExportPath", title: exportResult.doc.path, children: exportResult.doc.path }),
+        jsx16.jsx("button", { type: "button", className: "dshWmQuiet", onClick: () => void copyExportPath(), children: copiedPath ? "已复制" : "复制路径" })
+      ] }, "export-ok") : null,
       jsx16.jsxs("div", { className: "dshWmWikiScroll", children: [
         jsx16.jsxs(Section, {
           title: "设定",
@@ -21905,7 +21965,8 @@ function WritingModeApp() {
                       setFilePath(abs);
                       setArchiveProj(null);
                     },
-                    onJumpToFile: jumpFromArchive
+                    onJumpToFile: jumpFromArchive,
+                    onExported: (d) => flashMsg("档案已导出 → " + String(d?.doc?.path || "").split(/[\\/]/).pop())
                   }, "archive") : null
                 ]
               },
