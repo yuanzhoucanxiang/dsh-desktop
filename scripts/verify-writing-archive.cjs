@@ -122,6 +122,13 @@ app.whenReady().then(async () => {
   await waitFor(`Array.from(document.querySelectorAll('[data-wm-wiki-section]')).map(e=>e.getAttribute('data-wm-wiki-section')).join('|')==='设定|进度|时间与伏笔|资料'`)
   assert.equal(await evaluate(`document.querySelector('.dshWmWikiTitle').textContent`), '演示项目')
   console.log('PASS 档案入口与四区齐备（设定/进度/时间与伏笔/资料）')
+  /** 隐藏窗口不会主动重绘：先 invalidate，否则 capturePage 拿到的可能是旧帧。 */
+  async function shoot(name) {
+    win.webContents.invalidate()
+    await sleep(180)
+    fs.writeFileSync(path.join(temp, name), (await win.webContents.capturePage()).toPNG())
+  }
+  await shoot('writing-archive-open.png')
 
   // 2) 已确认设定成卡；候选不入卡、只计数；普通备忘另列
   await waitFor(`document.querySelectorAll('[data-wm-wiki-card-id]').length===1`)
@@ -183,7 +190,8 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wm-save-label]').textContent==='已保存'`)
   await button('档案')
   await waitFor(`!!document.querySelector('.dshWmWiki')`)
-  await waitFor(`Number(document.querySelector('[data-wm-wiki-today]')?.textContent||0)>0`)
+  // 读数据属性而非 textContent：卡片文案是「12 字 · 今天」，Number(全文) 是 NaN
+  await waitFor(`Number(document.querySelector('[data-wm-wiki-today]')?.getAttribute('data-wm-wiki-today')||0)>0`)
   console.log('PASS 保存后档案今日字数随之更新')
 
   // 9) 单区读失败：只那一区说话并给重试，其余区照常
@@ -199,8 +207,7 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('[data-wm-wiki-card-id]').length===1`)
   console.log('PASS 设定区读失败：报原因 + 重试可恢复，其余区不受影响')
 
-  await sleep(250)
-  fs.writeFileSync(path.join(temp, 'writing-archive.png'), (await win.webContents.capturePage()).toPNG())
+  await shoot('writing-archive.png')
   assert.equal(errors.length, 0, errors.join('\n'))
   console.log('WRITING_ARCHIVE_UI_OK', temp)
 }).catch(err => { console.error(err); process.exitCode = 1 }).finally(async () => {
