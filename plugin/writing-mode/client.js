@@ -2666,7 +2666,16 @@ var zh = {
   findReplaceAll: "全部替换",
   findClose: "关闭查找",
   findNone: "无结果",
-  findHint: "Enter 下一个 · Shift+Enter 上一个"
+  findHint: "Enter 下一个 · Shift+Enter 上一个",
+  hemingway: "海明威",
+  hemingwayHint: "海明威模式：禁用退格/删除/剪切，只往前写（初稿防回改）",
+  typewriter: "打字机",
+  typewriterHint: "打字机滚动：输入时把光标所在行保持在一屏中部",
+  rewriteTitle: "改稿预览",
+  rewriteAccept: "采纳改稿",
+  rewriteDiscard: "丢弃",
+  rewriteApplied: "改稿已采纳，可用 Ctrl+Z 撤销",
+  rewriteLost: "原选区已变化且无法定位，请重新选区生成"
 };
 var en = {
   toggle: "Writing",
@@ -2763,6 +2772,15 @@ var en = {
   findClose: "Close find",
   findNone: "No matches",
   findHint: "Enter next · Shift+Enter previous",
+  hemingway: "Hemingway",
+  hemingwayHint: "Hemingway mode: disable backspace/delete/cut — keep writing forward",
+  typewriter: "Typewriter",
+  typewriterHint: "Typewriter scrolling: keep the caret line around mid-screen while typing",
+  rewriteTitle: "Rewrite preview",
+  rewriteAccept: "Accept",
+  rewriteDiscard: "Discard",
+  rewriteApplied: "Rewrite applied — Ctrl+Z to undo",
+  rewriteLost: "The original selection moved and cannot be located; select and generate again",
   copied: "Copied"
 };
 function pickLocale() {
@@ -3105,6 +3123,9 @@ var CSS = [
   ".dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;font-variant-numeric:tabular-nums;}",
   ".dshWmGoalUnit{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
   ".dshWmGoalRow .dshWmBtn{flex:none;margin-left:auto;}",
+  /* 改稿预览（选区改稿 diff 回路）：与版本 diff 同骨架，加一条建议色左边线区分 */
+  ".dshWmRewrite{border-left:3px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);}",
+  ".dshWmRewrite .dshWmBtn{flex:none;}",
   ".dshWmDiff{",
   "  flex:none;max-height:36%;overflow:auto;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
@@ -4114,7 +4135,9 @@ var DEFAULT_PREFS = {
   aiProvider: "deepseek-official",
   aiModel: "deepseek-v4-flash",
   aiApiKey: "",
-  dailyGoal: 0
+  dailyGoal: 0,
+  hemingway: false,
+  typewriter: false
 };
 var prefsCache = { ...DEFAULT_PREFS };
 var prefsListeners = /* @__PURE__ */ new Set();
@@ -19793,6 +19816,8 @@ function WritingModeApp() {
   const [replaceText, setReplaceText] = react7.useState("");
   const [findIndex, setFindIndex] = react7.useState(0);
   const findInputRef = react7.useRef(null);
+  const [rewrite, setRewrite] = react7.useState(null);
+  const mirrorRef = react7.useRef(null);
   const docBasename = filePath ? String(filePath).split(/[\\/]/).filter(Boolean).pop() : "";
   const docFolder = filePath ? (() => {
     const parts = String(filePath).split(/[\\/]/).filter(Boolean);
@@ -19933,6 +19958,42 @@ function WritingModeApp() {
   react7.useEffect(() => {
     setFindIndex(0);
   }, [findQuery]);
+  const typewriterScroll = react7.useCallback(() => {
+    const ta = taRef.current;
+    if (!ta || !prefs.typewriter) return;
+    let m = mirrorRef.current;
+    if (!m) {
+      m = document.createElement("div");
+      m.setAttribute("aria-hidden", "true");
+      m.style.position = "absolute";
+      m.style.visibility = "hidden";
+      m.style.whiteSpace = "pre-wrap";
+      m.style.overflowWrap = "break-word";
+      m.style.boxSizing = "border-box";
+      m.style.top = "-9999px";
+      m.style.left = "-9999px";
+      document.body.appendChild(m);
+      mirrorRef.current = m;
+    }
+    const cs = getComputedStyle(ta);
+    for (const prop of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "paddingTop", "paddingLeft", "paddingRight", "width"]) {
+      m.style[prop] = cs[prop];
+    }
+    const caret = typeof ta.selectionStart === "number" ? ta.selectionStart : 0;
+    m.textContent = ta.value.slice(0, caret);
+    ta.scrollTop = Math.max(0, m.scrollHeight - ta.clientHeight / 2);
+  }, [prefs.typewriter]);
+  react7.useEffect(() => () => {
+    if (mirrorRef.current) {
+      mirrorRef.current.remove();
+      mirrorRef.current = null;
+    }
+  }, []);
+  react7.useEffect(() => {
+    if (!prefs.typewriter) return;
+    const id = window.requestAnimationFrame(() => typewriterScroll());
+    return () => window.cancelAnimationFrame(id);
+  }, [content3, prefs.typewriter, typewriterScroll]);
   react7.useEffect(() => {
     if (!active) return;
     let reading = false;
@@ -20167,7 +20228,7 @@ function WritingModeApp() {
           flashMsg("文稿已切换或修改，本次 AI 结果未应用。");
           return;
         }
-        aiTarget.current = { path: snapshot.path, edit: snapshot.edit, ...selection };
+        aiTarget.current = { path: snapshot.path, edit: snapshot.edit, action, ...selection };
         setAiOut(data.result || "");
         return;
       }
@@ -20234,10 +20295,25 @@ function WritingModeApp() {
     const s = target.start;
     const e = target.end;
     if (typeof s === "number" && typeof e === "number" && e > s) {
-      setContent(content3.slice(0, s) + aiOut + content3.slice(e));
+      setRewrite({ before: content3.slice(s, e), after: aiOut, start: s, end: e, label: T[target.action] || "" });
     } else {
       flashMsg("生成前没有选区，请使用“插入文末”。");
     }
+  }
+  function acceptRewrite() {
+    if (!rewrite) return;
+    let pos = rewrite.start;
+    if (content3.slice(rewrite.start, rewrite.end) !== rewrite.before) {
+      const found = content3.indexOf(rewrite.before, Math.max(0, rewrite.start - 2e3));
+      if (found === -1) {
+        flashMsg(T.rewriteLost);
+        return;
+      }
+      pos = found;
+    }
+    setContent(content3.slice(0, pos) + rewrite.after + content3.slice(pos + rewrite.before.length));
+    setRewrite(null);
+    flashMsg(T.rewriteApplied);
   }
   async function copyPath() {
     if (!filePath) return;
@@ -20415,6 +20491,28 @@ function WritingModeApp() {
                     "aria-pressed": focus,
                     title: "专注：只留稿纸，收起文档库与右栏",
                     children: T.focus
+                  }),
+                  jsx16.jsx("button", {
+                    type: "button",
+                    className: "dshWmBtn" + (prefs.hemingway ? " is-on" : ""),
+                    "data-wm-hemingway": "1",
+                    "aria-pressed": prefs.hemingway,
+                    title: T.hemingwayHint,
+                    onClick: () => {
+                      void savePrefs({ hemingway: !prefs.hemingway });
+                    },
+                    children: T.hemingway
+                  }),
+                  jsx16.jsx("button", {
+                    type: "button",
+                    className: "dshWmBtn" + (prefs.typewriter ? " is-on" : ""),
+                    "data-wm-typewriter": "1",
+                    "aria-pressed": prefs.typewriter,
+                    title: T.typewriterHint,
+                    onClick: () => {
+                      void savePrefs({ typewriter: !prefs.typewriter });
+                    },
+                    children: T.typewriter
                   }),
                   jsx16.jsx("button", {
                     type: "button",
@@ -20954,7 +21052,12 @@ function WritingModeApp() {
                         placeholder: filePath ? "开始写…" : "# …",
                         onChange: (e) => {
                           setContent(e.target.value);
-                        }
+                        },
+                        onKeyDown: (e) => {
+                          if (prefs.hemingway && !e.isComposing && (e.key === "Backspace" || e.key === "Delete" || (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x")) e.preventDefault();
+                        },
+                        onKeyUp: () => typewriterScroll(),
+                        onClick: () => typewriterScroll()
                       })
                     },
                     "ew"
@@ -20996,6 +21099,53 @@ function WritingModeApp() {
                       ]
                     },
                     "diff"
+                  ) : null,
+                  rewrite ? jsx16.jsxs(
+                    "div",
+                    {
+                      className: "dshWmDiff dshWmRewrite",
+                      "data-wm-rewrite": "1",
+                      children: [
+                        jsx16.jsx(
+                          "div",
+                          {
+                            className: "dshWmDiffHead",
+                            children: [
+                              jsx16.jsx("span", {
+                                children: T.rewriteTitle + (rewrite.label ? " · " + rewrite.label : "")
+                              }),
+                              jsx16.jsx("span", { style: { flex: 1 } }),
+                              jsx16.jsx("button", {
+                                type: "button",
+                                className: "dshWmBtn",
+                                "data-wm-rewrite-accept": "1",
+                                onClick: acceptRewrite,
+                                children: T.rewriteAccept
+                              }),
+                              jsx16.jsx("button", {
+                                type: "button",
+                                className: "dshWmBtn is-ghost",
+                                "data-wm-rewrite-discard": "1",
+                                onClick: () => setRewrite(null),
+                                children: T.rewriteDiscard
+                              })
+                            ]
+                          },
+                          "rh"
+                        ),
+                        ...lineDiff(rewrite.before, rewrite.after).map(
+                          (d, i) => jsx16.jsx(
+                            "div",
+                            {
+                              className: "dshWmDiffLine " + d.t,
+                              children: (d.t === "add" ? "+ " : d.t === "del" ? "- " : "  ") + d.line
+                            },
+                            "R" + i
+                          )
+                        )
+                      ]
+                    },
+                    "rewrite"
                   ) : null,
                   documentState.error ? jsx16.jsxs("div", {
                     className: "dshWmDocAlert",

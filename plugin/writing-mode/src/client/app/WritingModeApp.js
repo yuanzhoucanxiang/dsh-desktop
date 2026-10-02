@@ -119,6 +119,10 @@ export function WritingModeApp() {
   const [replaceText, setReplaceText] = react.useState('')
   const [findIndex, setFindIndex] = react.useState(0)
   const findInputRef = react.useRef(null)
+  // 选区改稿 diff 回路：文字工具「替换选区」先出预览（行级 diff），作者采纳才落稿
+  const [rewrite, setRewrite] = react.useState(null)
+  // 打字机滚动的镜像测量层（挂在 body 上，跟随 textarea 排版）
+  const mirrorRef = react.useRef(null)
 
   const docBasename = filePath
     ? String(filePath).split(/[\\/]/).filter(Boolean).pop()
@@ -281,6 +285,44 @@ export function WritingModeApp() {
   react.useEffect(() => {
     setFindIndex(0)
   }, [findQuery])
+
+  /* ── 专注深化：打字机滚动（镜像层测量光标行） ── */
+  const typewriterScroll = react.useCallback(() => {
+    const ta = taRef.current
+    if (!ta || !prefs.typewriter) return
+    let m = mirrorRef.current
+    if (!m) {
+      m = document.createElement('div')
+      m.setAttribute('aria-hidden', 'true')
+      m.style.position = 'absolute'
+      m.style.visibility = 'hidden'
+      m.style.whiteSpace = 'pre-wrap'
+      m.style.overflowWrap = 'break-word'
+      m.style.boxSizing = 'border-box'
+      m.style.top = '-9999px'
+      m.style.left = '-9999px'
+      document.body.appendChild(m)
+      mirrorRef.current = m
+    }
+    const cs = getComputedStyle(ta)
+    for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingLeft', 'paddingRight', 'width']) {
+      m.style[prop] = cs[prop]
+    }
+    const caret = typeof ta.selectionStart === 'number' ? ta.selectionStart : 0
+    m.textContent = ta.value.slice(0, caret)
+    // 光标近似在镜像内容底部：让光标行保持在稿面中部（textarea 自带溢出滚动）
+    ta.scrollTop = Math.max(0, m.scrollHeight - ta.clientHeight / 2)
+  }, [prefs.typewriter])
+
+  react.useEffect(() => () => {
+    if (mirrorRef.current) { mirrorRef.current.remove(); mirrorRef.current = null }
+  }, [])
+
+  react.useEffect(() => {
+    if (!prefs.typewriter) return
+    const id = window.requestAnimationFrame(() => typewriterScroll())
+    return () => window.cancelAnimationFrame(id)
+  }, [content, prefs.typewriter, typewriterScroll])
 
   react.useEffect(() => {
     if (!active) return
@@ -500,7 +542,7 @@ export function WritingModeApp() {
           flashMsg('文稿已切换或修改，本次 AI 结果未应用。')
           return
         }
-        aiTarget.current = { path: snapshot.path, edit: snapshot.edit, ...selection }
+        aiTarget.current = { path: snapshot.path, edit: snapshot.edit, action, ...selection }
         setAiOut(data.result || '')
         return
       }
@@ -578,10 +620,25 @@ export function WritingModeApp() {
     const s = target.start
     const e = target.end
     if (typeof s === 'number' && typeof e === 'number' && e > s) {
-      setContent(content.slice(0, s) + aiOut + content.slice(e))
+      // 改稿 diff 回路：不再一步覆写选区——先出预览（原文 vs 建议稿），作者采纳才落
+      setRewrite({ before: content.slice(s, e), after: aiOut, start: s, end: e, label: T[target.action] || '' })
     } else {
       flashMsg('生成前没有选区，请使用“插入文末”。')
     }
+  }
+
+  function acceptRewrite() {
+    if (!rewrite) return
+    let pos = rewrite.start
+    // 预览期间作者可能继续打字：先按原偏移校验，错位则在附近窗口重新定位原文
+    if (content.slice(rewrite.start, rewrite.end) !== rewrite.before) {
+      const found = content.indexOf(rewrite.before, Math.max(0, rewrite.start - 2000))
+      if (found === -1) { flashMsg(T.rewriteLost); return }
+      pos = found
+    }
+    setContent(content.slice(0, pos) + rewrite.after + content.slice(pos + rewrite.before.length))
+    setRewrite(null)
+    flashMsg(T.rewriteApplied)
   }
 
   async function copyPath() {
@@ -784,6 +841,24 @@ export function WritingModeApp() {
                     'aria-pressed': focus,
                     title: '专注：只留稿纸，收起文档库与右栏',
                     children: T.focus,
+                  }),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn' + (prefs.hemingway ? ' is-on' : ''),
+                    'data-wm-hemingway': '1',
+                    'aria-pressed': prefs.hemingway,
+                    title: T.hemingwayHint,
+                    onClick: () => { void savePrefs({ hemingway: !prefs.hemingway }) },
+                    children: T.hemingway,
+                  }),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn' + (prefs.typewriter ? ' is-on' : ''),
+                    'data-wm-typewriter': '1',
+                    'aria-pressed': prefs.typewriter,
+                    title: T.typewriterHint,
+                    onClick: () => { void savePrefs({ typewriter: !prefs.typewriter }) },
+                    children: T.typewriter,
                   }),
                   jsx.jsx('button', {
                     type: 'button',
@@ -1356,6 +1431,15 @@ export function WritingModeApp() {
                         onChange: (e) => {
                           setContent(e.target.value)
                         },
+                        onKeyDown: (e) => {
+                          // 海明威模式：禁退格/删除/剪切，初稿只往前写；IME 组合中的按键不拦（拼音要能删）
+                          if (
+                            prefs.hemingway && !e.isComposing &&
+                            (e.key === 'Backspace' || e.key === 'Delete' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x'))
+                          ) e.preventDefault()
+                        },
+                        onKeyUp: () => typewriterScroll(),
+                        onClick: () => typewriterScroll(),
                       }),
                     },
                     'ew'
@@ -1398,6 +1482,55 @@ export function WritingModeApp() {
                           ],
                         },
                         'diff'
+                      )
+                    : null,
+                  rewrite
+                    ? jsx.jsxs(
+                        'div',
+                        {
+                          className: 'dshWmDiff dshWmRewrite',
+                          'data-wm-rewrite': '1',
+                          children: [
+                            jsx.jsx(
+                              'div',
+                              {
+                                className: 'dshWmDiffHead',
+                                children: [
+                                  jsx.jsx('span', {
+                                    children: T.rewriteTitle + (rewrite.label ? ' · ' + rewrite.label : ''),
+                                  }),
+                                  jsx.jsx('span', { style: { flex: 1 } }),
+                                  jsx.jsx('button', {
+                                    type: 'button',
+                                    className: 'dshWmBtn',
+                                    'data-wm-rewrite-accept': '1',
+                                    onClick: acceptRewrite,
+                                    children: T.rewriteAccept,
+                                  }),
+                                  jsx.jsx('button', {
+                                    type: 'button',
+                                    className: 'dshWmBtn is-ghost',
+                                    'data-wm-rewrite-discard': '1',
+                                    onClick: () => setRewrite(null),
+                                    children: T.rewriteDiscard,
+                                  }),
+                                ],
+                              },
+                              'rh'
+                            ),
+                            ...lineDiff(rewrite.before, rewrite.after).map((d, i) =>
+                              jsx.jsx(
+                                'div',
+                                {
+                                  className: 'dshWmDiffLine ' + d.t,
+                                  children: (d.t === 'add' ? '+ ' : d.t === 'del' ? '- ' : '  ') + d.line,
+                                },
+                                'R' + i
+                              )
+                            ),
+                          ],
+                        },
+                        'rewrite'
                       )
                     : null,
                   documentState.error

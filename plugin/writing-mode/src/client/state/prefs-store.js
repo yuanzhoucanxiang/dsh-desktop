@@ -18,6 +18,8 @@ export const DEFAULT_PREFS = {
   aiModel: 'deepseek-v4-flash',
   aiApiKey: '',
   dailyGoal: 0,
+  hemingway: false,
+  typewriter: false,
 }
 export let prefsCache = { ...DEFAULT_PREFS }
 export const prefsListeners = new Set()

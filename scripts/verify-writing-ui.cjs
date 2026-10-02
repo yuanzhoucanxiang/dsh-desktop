@@ -25,7 +25,14 @@ app.whenReady().then(async () => {
   const host = await import(pathToFileURL(path.join(repo, 'plugin/writing-mode/index.js')))
   store.writeConfig({ roots: [{ path: root, default: true }], activeRoot: root, prefs: { ...store.DEFAULT_PREFS, autoSaveMs: 5000 } })
   let handler
-  host.apply({ effect: f => f(), webServer: { register: route => { handler = route.handler; return () => {} } } })
+  // 假 llm：让「文字工具」在 fixture 里确定性地产出改稿建议，从而端到端测改稿 diff 回路
+  const fakeLlm = {
+    stream: async function* () {
+      yield { type: 'text-delta', index: 0, text: '改写后的句子' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  }
+  host.apply({ effect: f => f(), webServer: { register: route => { handler = route.handler; return () => {} } }, llm: fakeLlm })
   // React 来源：优先仓库 node_modules（devDependencies 已显式声明 react-dom）；
   // 旧内核运行时（0.1.1 时代 react 内嵌于 dsh-client-ui-trajectory）作回退。
   const runtimeModules = path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules')
@@ -176,6 +183,38 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wm-findbar]')===null`)
   assert.ok(await evaluate(`document.querySelector('.dshWmRoot')!==null`), 'Esc 关查找栏不得顺带退写作台')
   console.log('PASS UI 查找/替换：计数、替换、全部替换，Esc 先关栏')
+  // 顶栏专注增强开关：海明威（禁退格）与打字机滚动，随 prefs 持久化
+  await button('海明威')
+  await button('打字机')
+  await waitFor(`document.querySelector('[data-wm-hemingway]').className.includes('is-on') && document.querySelector('[data-wm-typewriter]').className.includes('is-on')`)
+  const cfgNow = await evaluate(`(async()=>(await (await fetch('/api/writing-mode?route=config')).json()).prefs)()`)
+  assert.equal(cfgNow.hemingway, true, '海明威开关应写进 prefs')
+  assert.equal(cfgNow.typewriter, true, '打字机开关应写进 prefs')
+  console.log('PASS UI 海明威/打字机开关持久化到 prefs')
+  // 选区改稿 diff 回路：替换选区先出预览（原文 vs 建议稿），采纳才落稿（fixture 假 llm 输出确定）
+  await input('.dshWmEditor', '挑选出来的句子要改稿')
+  await evaluate(`(()=>{const ta=document.querySelector('.dshWmEditor');ta.focus();ta.setSelectionRange(5,7)})()`)
+  await button('文字工具')
+  await button('润色')
+  await waitFor(`document.querySelector('.dshWmAiOut')?.textContent.includes('改写后的句子')`)
+  await button('替换选区')
+  await waitFor(`document.querySelector('[data-wm-rewrite]')!==null`)
+  assert.match(await evaluate(`document.querySelector('[data-wm-rewrite]').textContent`), /改稿预览 · 润色/, '预览头应带动作名')
+  assert.match(await evaluate(`document.querySelector('[data-wm-rewrite]').textContent`), /\+ 改写后的句子/, '预览应有建议稿行')
+  assert.equal(await evaluate(`document.querySelector('.dshWmEditor').value`), '挑选出来的句子要改稿', '预览期间不得改稿')
+  await button('采纳改稿')
+  await waitFor(`document.querySelector('.dshWmEditor').value==='挑选出来的改写后的句子要改稿'`)
+  assert.equal(await evaluate(`document.querySelector('[data-wm-rewrite]')`), null, '采纳后预览应收起')
+  // 丢弃路径：再生成一次，丢弃后稿面原样
+  await evaluate(`(()=>{const ta=document.querySelector('.dshWmEditor');ta.focus();ta.setSelectionRange(0,2)})()`)
+  await button('润色')
+  await waitFor(`document.querySelector('.dshWmAiOut')?.textContent.includes('改写后的句子')`)
+  await button('替换选区')
+  await waitFor(`document.querySelector('[data-wm-rewrite]')!==null`)
+  await button('丢弃')
+  assert.equal(await evaluate(`document.querySelector('[data-wm-rewrite]')`), null, '丢弃后预览应收起')
+  assert.equal(await evaluate(`document.querySelector('.dshWmEditor').value`), '挑选出来的改写后的句子要改稿', '丢弃不得改稿')
+  console.log('PASS UI 选区改稿 diff 回路：预览、采纳、丢弃')
   await sleep(250)
   fs.writeFileSync(path.join(temp, 'writing-ui.png'), (await win.webContents.capturePage()).toPNG())
   assert.equal(errors.length, 0, errors.join('\n'))

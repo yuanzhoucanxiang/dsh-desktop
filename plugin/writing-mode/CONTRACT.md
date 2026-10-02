@@ -38,7 +38,9 @@
     "aiProvider": "deepseek-official",
     "aiModel": "deepseek-v4-flash",
     "aiApiKey": "",
-    "dailyGoal": 0
+    "dailyGoal": 0,
+    "hemingway": false,
+    "typewriter": false
   }
 }
 ```
@@ -251,3 +253,8 @@ POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:tr
 - `GET stats?path=`：任意库内稿件路径 → 解析项目根，返回 `{ today, streak, days:[{day,total}×14 旧→新], corrupt }` + `dailyGoal`（来自 prefs）；解析不出项目返回 `stats:null`。越界 400 `path-outside-roots`。
 - 连击口径：从今天往回数 >0 的日；今天还没写不清零（从昨天往回数，保留进行中的连击）。
 - prefs 新增 `dailyGoal`（0–200000，默认 0=不显示目标），经既有 `prefs` 路由读写。
+
+## 专注深化与改稿预览（2026-10-02 第二批）
+
+- prefs 新增 `hemingway` / `typewriter`（布尔，默认关）：海明威模式在稿面 keydown 拦 Backspace/Delete/Ctrl+X（`isComposing` 时不拦，保住拼音输入法）；打字机滚动用隐藏镜像层按 textarea 同款排版测光标行高，输入/点选/方向键后把光标行保持在一屏中部。两开关在顶栏，随 prefs 路由持久化。
+- 选区改稿 diff 回路：文字工具「替换选区」不再一步覆写——先在稿面下方出「改稿预览」（`data-wm-rewrite`，复用行级 diff：`- 原文行 / + 建议行`），作者「采纳改稿」才落稿（预览期间继续打字的错位用「原偏移校验 → 附近窗口重定位」两级兜底），「丢弃」原稿不动。动作名（润色/扩写…）进预览头。产出仍然只是建议稿，不碰版本协议。

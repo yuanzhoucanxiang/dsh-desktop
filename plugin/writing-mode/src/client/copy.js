@@ -98,6 +98,15 @@ const zh = {
   findClose: '关闭查找',
   findNone: '无结果',
   findHint: 'Enter 下一个 · Shift+Enter 上一个',
+  hemingway: '海明威',
+  hemingwayHint: '海明威模式：禁用退格/删除/剪切，只往前写（初稿防回改）',
+  typewriter: '打字机',
+  typewriterHint: '打字机滚动：输入时把光标所在行保持在一屏中部',
+  rewriteTitle: '改稿预览',
+  rewriteAccept: '采纳改稿',
+  rewriteDiscard: '丢弃',
+  rewriteApplied: '改稿已采纳，可用 Ctrl+Z 撤销',
+  rewriteLost: '原选区已变化且无法定位，请重新选区生成',
 }
 const en = {
   toggle: 'Writing',
@@ -194,6 +203,15 @@ const en = {
   findClose: 'Close find',
   findNone: 'No matches',
   findHint: 'Enter next · Shift+Enter previous',
+  hemingway: 'Hemingway',
+  hemingwayHint: 'Hemingway mode: disable backspace/delete/cut — keep writing forward',
+  typewriter: 'Typewriter',
+  typewriterHint: 'Typewriter scrolling: keep the caret line around mid-screen while typing',
+  rewriteTitle: 'Rewrite preview',
+  rewriteAccept: 'Accept',
+  rewriteDiscard: 'Discard',
+  rewriteApplied: 'Rewrite applied — Ctrl+Z to undo',
+  rewriteLost: 'The original selection moved and cannot be located; select and generate again',
   copied: 'Copied',
 }
 

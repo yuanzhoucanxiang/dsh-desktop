@@ -342,6 +342,10 @@ export const CSS = [
   '.dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;font-variant-numeric:tabular-nums;}',
   '.dshWmGoalUnit{font-size:11px;color:var(--dsw-alias-label-tertiary);}',
   '.dshWmGoalRow .dshWmBtn{flex:none;margin-left:auto;}',
+
+  /* 改稿预览（选区改稿 diff 回路）：与版本 diff 同骨架，加一条建议色左边线区分 */
+  '.dshWmRewrite{border-left:3px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);}',
+  '.dshWmRewrite .dshWmBtn{flex:none;}',
   '.dshWmDiff{',
   '  flex:none;max-height:36%;overflow:auto;',
   '  border-top:1px solid var(--dsw-alias-border-l2);',

@@ -23,6 +23,8 @@ export const DEFAULT_PREFS = {
   aiModel: 'deepseek-v4-flash',
   aiApiKey: '',
   dailyGoal: 0,
+  hemingway: false,
+  typewriter: false,
 }
 
 function clamp(n, lo, hi, dflt) {
@@ -43,6 +45,8 @@ export function normalizePrefs(raw) {
     aiModel: String(r.aiModel || DEFAULT_PREFS.aiModel).slice(0, 80),
     aiApiKey: typeof r.aiApiKey === 'string' ? r.aiApiKey.slice(0, 200) : '',
     dailyGoal: clamp(r.dailyGoal, 0, 200000, DEFAULT_PREFS.dailyGoal),
+    hemingway: Boolean(r.hemingway),
+    typewriter: Boolean(r.typewriter),
   }
 }
 
