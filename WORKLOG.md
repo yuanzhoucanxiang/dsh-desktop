@@ -43,6 +43,7 @@ V1–V9 / G1–G4 hunt 与逐一修复完成：**13 项缺陷全部实锤复现�
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
+| 2026-10-02 | [`logs/2026-10-02.md`](logs/2026-10-02.md) | ZCode：**v0.1.46**（0.1.7 适配/成书/UX 收口收账发布）+ **v0.1.47**（码字统计与日更目标、查找替换、改稿 diff 回路、海明威/打字机、[[文稿名]] 跳回、mention 可见化、大纲卡片看板+拖拽重排重命名事务）；quick 全链 544 项 PASS，真包 9/9 + 冷启动 12/12 | ZCode |
 | 2026-10-02 | [`logs/2026-10-02.md`](logs/2026-10-02.md) | Qoder：写作模式 UX 收口（接 09-26「只剩 UX 层」）——能力缺口翻译层（`capability-notice.js`，blocked/limited/ok，作者文案不出现内核能力名）、连不上时输入可写、会话列表不可用留话可重试、保存/读取失败从浮层改稿面下常驻行带「重试保存/另存新版」、专注不卸载伙伴面板 + AI 死键改退出专注唤回右栏、快捷键提示统一；adapter 23→27、`verify:writing-quick` 25 条全绿；ZCode：三轮在飞工作收账提交 + v0.1.46 发版 | Qoder / ZCode |
 | 2026-09-26 | [`logs/2026-09-26.md`](logs/2026-09-26.md) | kimi：写作模式「导出成书」（`POST /compile` + 作品头「成书」面板；每章默认取最新 `-vN` 版按树序拼整本、`书名-vN` 独占命名不覆盖原稿、MD 书头 / fountain 题页分页）；33 项单测 + Electron 端到端 `WRITING_COMPILE_UI_OK`；顺手修了 Electron 测试的 React 供给与内核运行时的耦合（0.1.7 内核不再内嵌 react，新增 react-dom devDep + 旧运行时回退），writing-ui / navigation 回归绿；未提交、未发布 | kimi |
 | 2026-09-25 | [`logs/2026-09-25.md`](logs/2026-09-25.md) | ox-alpha：移除外壳审阅侧栏 UI（better-sidebar 接管）+ 种子修复机制（bundles/隔离名单内的缺失真包自动补齐，用户卸载不顶回）；v0.1.44 发布 | ox-alpha |
