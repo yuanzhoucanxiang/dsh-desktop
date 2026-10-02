@@ -2093,8 +2093,8 @@ __export(entry_exports, {
   subscribeDraftStatus: () => subscribeDraftStatus
 });
 module.exports = __toCommonJS(entry_exports);
-var react11 = __toESM(require("react"), 1);
-var jsx24 = __toESM(require("react/jsx-runtime"), 1);
+var react12 = __toESM(require("react"), 1);
+var jsx26 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/shared/editor-session.js
 function createEditorSession(io, recovered) {
@@ -3241,7 +3241,65 @@ var CSS = [
   ".dshWmSessDot{flex:none;width:14px;text-align:center;color:var(--dsw-alias-label-tertiary);}",
   ".dshWmSessDot.is-live{color:var(--dsw-alias-brand-primary);}",
   ".dshWmSessName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmSessMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}"
+  ".dshWmSessMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  /* 作品档案：覆盖中央编辑区的只读汇总页（与「成书」同层级手法，z-index 高一层便于两面板互斥切换） */
+  ".dshWmWiki{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;min-height:0;background:var(--dsw-alias-bg-base);}",
+  ".dshWmWikiBar{flex:none;display:flex;align-items:center;gap:10px;padding:12px 24px;border-bottom:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWikiTitle{font-size:16px;font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiSub{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiScroll{flex:1;min-height:0;overflow:auto;width:100%;max-width:960px;margin:0 auto;padding:22px 24px 48px;display:flex;flex-direction:column;gap:26px;}",
+  ".dshWmWikiSection{display:flex;flex-direction:column;gap:10px;}",
+  ".dshWmWikiSectionHead{display:flex;align-items:baseline;gap:8px;}",
+  ".dshWmWikiSectionHead h3{margin:0;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiSectionMeta{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiSectionError{display:flex;align-items:center;gap:8px;margin:0;font-size:12px;color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmWikiCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;}",
+  ".dshWmWikiCard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);}",
+  ".dshWmWikiCard.has-boundary{border-left:3px solid var(--dsw-alias-state-warning-primary,#c9a227);}",
+  ".dshWmWikiCardHead{display:flex;align-items:baseline;gap:8px;}",
+  ".dshWmWikiCardHead h4{margin:0;font-size:13.5px;font-weight:600;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiCardFrom{margin-left:auto;flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiConclusion{margin:0;font-size:14px;line-height:1.75;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}",
+  ".dshWmWikiBoundary{margin:0;font-size:12px;line-height:1.65;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;}",
+  ".dshWmWikiMore{font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiMore summary{cursor:pointer;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiPlain{margin:.5em 0 0;}",
+  ".dshWmWikiExcerpt{margin:8px 0 0;padding-left:10px;border-left:2px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWikiExcerptWho{font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiExcerpt p{margin:2px 0 0;}",
+  ".dshWmWikiTags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}",
+  ".dshWmWikiTag{font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiPlainList{display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmWikiPlainRow{display:flex;gap:8px;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiPlainKind{flex:none;min-width:32px;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiNote{margin:0;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiStats{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiStats b{font-size:15px;font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWikiBar{flex:1;min-width:5px;max-width:22px;border-radius:3px 3px 0 0;background:var(--dsw-alias-brand-primary);opacity:.5;}",
+  ".dshWmWikiBar.is-hit{opacity:1;}",
+  ".dshWmWikiChapters{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:3px;font-size:12.5px;}",
+  ".dshWmWikiChapters li{display:flex;align-items:baseline;gap:8px;min-width:0;}",
+  ".dshWmWikiChapterName{border:0;background:none;padding:0;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
+  ".dshWmWikiChapterName:hover{text-decoration:underline;}",
+  ".dshWmWikiChapterChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiChapterGate{flex:none;font-size:10.5px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmWikiChapterGate.is-pass{color:var(--dsw-alias-state-success-primary);}",
+  ".dshWmWikiChapterGate.is-fail{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmWikiChapterHook{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiStructure{font-size:12.5px;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiStructure summary{cursor:pointer;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiTimeline{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiLedgerFoot{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiLedgerFoot b{font-weight:600;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiHook{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmWikiDocGroup{display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmWikiSubHead{margin-top:6px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiDoc{border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);}",
+  ".dshWmWikiDocHead{display:flex;align-items:center;gap:8px;padding:6px 10px;}",
+  ".dshWmWikiDocToggle{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmWikiDocChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiDocBody{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l2);}"
 ].join("\n");
 var TAG = "dsh-writing-mode-css";
 function ensureWritingCss() {
@@ -3268,8 +3326,8 @@ async function api(route, opts, query) {
 }
 
 // plugin/writing-mode/src/client/app/WritingModeApp.js
-var react8 = __toESM(require("react"), 1);
-var jsx18 = __toESM(require("react/jsx-runtime"), 1);
+var react9 = __toESM(require("react"), 1);
+var jsx20 = __toESM(require("react/jsx-runtime"), 1);
 
 // plugin/writing-mode/src/client/adapters/harness/identity.js
 function canonicalProjectKey(input) {
@@ -4246,6 +4304,7 @@ var NAV_FILES = {
   "outline/foreshadow.md": ["故事规划", "伏笔与回收"],
   "state/character-state.md": ["创作跟踪", "人物状态"]
 };
+var navFileLabels = NAV_FILES;
 function navigationGroups(files, q) {
   const query = String(q || "").trim().toLowerCase();
   const groups = /* @__PURE__ */ new Map();
@@ -7442,11 +7501,11 @@ function addChildren(props, children) {
     }
   }
 }
-function productionCreate(_, jsx25, jsxs9) {
+function productionCreate(_, jsx27, jsxs10) {
   return create2;
   function create2(_2, type, props, key) {
     const isStaticChildren = Array.isArray(props.children);
-    const fn = isStaticChildren ? jsxs9 : jsx25;
+    const fn = isStaticChildren ? jsxs10 : jsx27;
     return key ? fn(type, props, key) : fn(type, props);
   }
 }
@@ -17604,7 +17663,7 @@ function resolveToPotentialGfmFootnoteCall(events, context) {
   }
   events[index2 + 1][1].type = "data";
   events[index2 + 3][1].type = "gfmFootnoteCallLabelMarker";
-  const call = {
+  const call2 = {
     type: "gfmFootnoteCall",
     start: Object.assign({}, events[index2 + 3][1].start),
     end: Object.assign({}, events[events.length - 1][1].end)
@@ -17632,7 +17691,7 @@ function resolveToPotentialGfmFootnoteCall(events, context) {
     // Take the `labelImageMarker` (now `data`, the `!`)
     events[index2 + 1],
     events[index2 + 2],
-    ["enter", call, context],
+    ["enter", call2, context],
     // The `[`
     events[index2 + 3],
     events[index2 + 4],
@@ -17647,7 +17706,7 @@ function resolveToPotentialGfmFootnoteCall(events, context) {
     // The ending (`]`, properly parsed and labelled).
     events[events.length - 2],
     events[events.length - 1],
-    ["exit", call, context]
+    ["exit", call2, context]
   ];
   events.splice(index2, events.length - index2 + 1, ...replacement);
   return events;
@@ -19671,9 +19730,323 @@ function ExportBookPanel({ proj, onClose, onDone }) {
   });
 }
 
-// plugin/writing-mode/src/client/features/inspection/index.js
+// plugin/writing-mode/src/client/features/archive/index.js
 var react7 = __toESM(require("react"), 1);
 var jsx16 = __toESM(require("react/jsx-runtime"), 1);
+var LOADING = { phase: "loading" };
+var ERR_TEXT2 = {
+  "memory-unavailable": "项目备忘读不到",
+  "identity-unverified": "作品身份未被 host 确认",
+  "invalid-project": "没能识别这个项目",
+  "path-outside-roots": "项目路径不在文库根内"
+};
+async function call(route, init, params) {
+  const d = await api(route, init, params);
+  if (!d || d.ok === false) throw new Error(ERR_TEXT2[String(d && d.error)] || String(d?.error || "读取失败"));
+  return d;
+}
+function SettingCard({ item }) {
+  const s = item.setting || {};
+  const excerpts = (s.sources || []).filter((x) => x && x.excerpt).slice(0, 2);
+  return jsx16.jsxs("article", {
+    className: "dshWmWikiCard" + (s.boundaries ? " has-boundary" : ""),
+    "data-wm-wiki-card-id": item.id,
+    children: [
+      jsx16.jsxs("header", { className: "dshWmWikiCardHead", children: [
+        jsx16.jsx("h4", { children: s.title || "（未命名条目）" }, "t"),
+        jsx16.jsx("span", {
+          className: "dshWmWikiCardFrom",
+          title: item.source?.sessionId ? "会话 " + item.source.sessionId : void 0,
+          children: item.source?.kind === "assistant" ? "来自讨论" : item.source?.kind === "host" ? "内核" : "作者记录"
+        }, "f")
+      ] }),
+      jsx16.jsx("p", { className: "dshWmWikiConclusion", children: s.conclusion || item.text || "" }, "c"),
+      s.boundaries ? jsx16.jsx("p", { className: "dshWmWikiBoundary", children: "边界 / 例外：" + s.boundaries }, "b") : null,
+      s.explanation || excerpts.length || (s.tags || []).length ? jsx16.jsxs("details", { className: "dshWmWikiMore", children: [
+        jsx16.jsx("summary", { children: "展开说明与出处" }),
+        s.explanation ? jsx16.jsx("p", { className: "dshWmWikiPlain", children: s.explanation }, "e") : null,
+        ...excerpts.map((x, i) => jsx16.jsxs("blockquote", { className: "dshWmWikiExcerpt", children: [
+          jsx16.jsx("span", { className: "dshWmWikiExcerptWho", children: x.role === "author" ? "你说过" : "伙伴说过" }),
+          jsx16.jsx("p", { children: x.excerpt })
+        ] }, "x" + i)),
+        (s.tags || []).length ? jsx16.jsx("div", { className: "dshWmWikiTags", children: s.tags.map((t) => jsx16.jsx("span", { className: "dshWmWikiTag", children: t }, t)) }, "g") : null
+      ] }, "more") : null
+    ]
+  });
+}
+function DocCard({ file, onOpenDoc, onJumpToFile }) {
+  const [doc, setDoc] = react7.useState(null);
+  const [state, setState] = react7.useState(LOADING);
+  const [open, setOpen] = react7.useState(false);
+  const label = navFileLabels[file.rel]?.[1] || file.name;
+  const load = react7.useCallback(async () => {
+    setState(LOADING);
+    try {
+      const d = await call("get", void 0, { path: file.abs });
+      setDoc(d.doc);
+      setState({ phase: "ready" });
+    } catch (err) {
+      setState({ phase: "error", error: "读不到这篇资料：" + String(err?.message || err) });
+    }
+  }, [file.abs]);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !doc) void load();
+  };
+  return jsx16.jsxs("section", {
+    className: "dshWmWikiDoc",
+    "data-wm-wiki-doc": file.rel,
+    children: [
+      jsx16.jsxs("div", { className: "dshWmWikiDocHead", children: [
+        jsx16.jsx("button", {
+          type: "button",
+          className: "dshWmWikiDocToggle",
+          onClick: toggle,
+          "aria-expanded": open,
+          children: (open ? "▾ " : "▸ ") + label
+        }),
+        jsx16.jsx("span", { className: "dshWmWikiDocChars", children: (doc ? String(doc.content || "").length : file.chars || 0) + " 字" }, "c"),
+        jsx16.jsx("button", {
+          type: "button",
+          className: "dshWmQuiet",
+          title: "在编辑器里打开并继续写（" + file.rel + "）",
+          onClick: () => onOpenDoc(file.abs),
+          children: "去写"
+        }, "o")
+      ] }),
+      open ? state.phase === "loading" ? jsx16.jsx("p", { className: "dshWmAiHint", role: "status", children: "读取中…" }, "l") : state.phase === "error" ? jsx16.jsxs("p", { className: "dshWmWikiSectionError", role: "alert", "data-wm-wiki-doc-error": file.rel, children: [
+        state.error,
+        jsx16.jsx("button", { type: "button", className: "dshWmQuiet", onClick: () => void load(), children: "重试" })
+      ] }, "e") : jsx16.jsx("div", {
+        className: "dshWmWikiDocBody",
+        children: jsx16.jsx(CompanionMessage, { text: doc.content, kind: "assistant", onJumpToFile })
+      }, "b") : null
+    ]
+  }, file.rel);
+}
+function Section({ title, meta, children }) {
+  return jsx16.jsxs("section", { className: "dshWmWikiSection", "data-wm-wiki-section": title, children: [
+    jsx16.jsxs("div", { className: "dshWmWikiSectionHead", children: [
+      jsx16.jsx("h3", { children: title }),
+      meta ? jsx16.jsx("span", { className: "dshWmWikiSectionMeta", children: meta }) : null
+    ] }),
+    children
+  ] });
+}
+function SectionState({ state, onRetry, hasContent, empty: empty3 }) {
+  if (state.phase === "loading") return jsx16.jsx("p", { className: "dshWmAiHint", role: "status", children: "读取中…" });
+  if (state.phase === "error") {
+    return jsx16.jsxs("p", { className: "dshWmWikiSectionError", role: "alert", "data-wm-wiki-error": "1", children: [
+      state.error,
+      jsx16.jsx("button", { type: "button", className: "dshWmQuiet", onClick: onRetry, children: "重试" })
+    ] });
+  }
+  return hasContent ? null : empty3;
+}
+function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile }) {
+  const [settings, setSettings] = react7.useState(LOADING);
+  const [progress, setProgress] = react7.useState(LOADING);
+  const [ledger, setLedger] = react7.useState(LOADING);
+  const loadSettings = react7.useCallback(async () => {
+    setSettings(LOADING);
+    try {
+      const d = await call("memory", void 0, { path: proj.path });
+      setSettings({ phase: "ready", items: d.memory?.items || [] });
+    } catch (err) {
+      setSettings({ phase: "error", error: "设定读不到：" + String(err?.message || err) });
+    }
+  }, [proj.path]);
+  const loadProgress = react7.useCallback(async () => {
+    setProgress(LOADING);
+    try {
+      const [outline, stats] = await Promise.all([
+        call("outline", void 0, { project: proj.path }),
+        call("stats", void 0, { path: proj.path })
+      ]);
+      setProgress({
+        phase: "ready",
+        rows: outline.outline?.rows || [],
+        structure: outline.outline?.structure || [],
+        stats: stats.stats,
+        dailyGoal: stats.dailyGoal || 0
+      });
+    } catch (err) {
+      setProgress({ phase: "error", error: "进度读不到：" + String(err?.message || err) });
+    }
+  }, [proj.path]);
+  const loadLedger = react7.useCallback(async () => {
+    setLedger(LOADING);
+    try {
+      const entry = (proj.files || []).find((f) => String(f.rel).startsWith("draft/")) || (proj.files || []).find((f) => f.rel === "project.md");
+      if (!entry) {
+        setLedger({ phase: "ready", ledger: null });
+        return;
+      }
+      const d = await call("ledger", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: entry.abs }) });
+      setLedger({ phase: "ready", ledger: d.ledger });
+    } catch (err) {
+      setLedger({ phase: "error", error: "台账读不到：" + String(err?.message || err) });
+    }
+  }, [proj]);
+  react7.useEffect(() => {
+    void loadSettings();
+    void loadProgress();
+    void loadLedger();
+  }, [loadSettings, loadProgress, loadLedger]);
+  const items = settings.items || [];
+  const confirmed = items.filter((it) => it.status === "confirmed");
+  const world = confirmed.filter((it) => it.kind === "fact" && it.setting?.type === "world");
+  const worldIds = new Set(world.map((it) => it.id));
+  const plain = confirmed.filter((it) => !worldIds.has(it.id));
+  const proposed = items.filter((it) => it.status === "proposed").length;
+  const rows = progress.rows || [];
+  const totalChars = rows.reduce((n, r) => n + (Number(r.chars) || 0), 0);
+  const days = progress.stats?.days || [];
+  const maxDay = Math.max(1, ...days.map((d) => Number(d.total) || 0));
+  const goal = Number(progress.dailyGoal) || 0;
+  const today = Number(progress.stats?.today) || 0;
+  const maxVer = maxVersionInGroup(proj.files || []);
+  const docs2 = (proj.files || []).filter((f) => !String(f.rel).startsWith("draft/")).filter((f) => {
+    const v = versionOf(f.name);
+    return v === null || v === maxVer.get(groupKeyOf(f.abs));
+  }).sort((a, b) => {
+    const rank = (rel) => rel === "project.md" ? 0 : rel.startsWith("bible/") ? 1 : rel.startsWith("outline/") ? 2 : rel.startsWith("state/") ? 3 : 4;
+    return rank(a.rel) - rank(b.rel) || String(a.rel).localeCompare(String(b.rel), "zh", { numeric: true });
+  });
+  const groups = [];
+  for (const f of docs2) {
+    const key = navFileLabels[f.rel]?.[0] || (f.rel.includes("/") ? f.rel.slice(0, f.rel.lastIndexOf("/")) : "其他文档");
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.files.push(f);
+    else groups.push({ key, files: [f] });
+  }
+  return jsx16.jsxs("div", {
+    className: "dshWmWiki",
+    role: "region",
+    "aria-label": "作品档案",
+    "data-wm-archive": proj.path,
+    children: [
+      jsx16.jsxs("div", { className: "dshWmWikiBar", children: [
+        jsx16.jsx("span", { className: "dshWmWikiTitle", children: proj.name || "作品档案" }),
+        jsx16.jsx("span", { className: "dshWmWikiSub", children: "只读档案：内容来自已确认设定与文稿本身，这里改动不了它们" }),
+        jsx16.jsx("span", { style: { flex: 1 } }),
+        jsx16.jsx("button", {
+          type: "button",
+          className: "dshWmBtn",
+          onClick: () => {
+            void loadSettings();
+            void loadProgress();
+            void loadLedger();
+          },
+          children: "刷新"
+        }),
+        jsx16.jsx("button", { type: "button", className: "dshWmBtn is-primary", onClick: onClose, children: "关闭档案" })
+      ] }),
+      jsx16.jsxs("div", { className: "dshWmWikiScroll", children: [
+        jsx16.jsxs(Section, {
+          title: "设定",
+          meta: world.length + plain.length ? `${world.length + plain.length} 条已确认` : "",
+          children: [
+            jsx16.jsx(SectionState, {
+              state: settings,
+              onRetry: () => void loadSettings(),
+              hasContent: world.length + plain.length > 0,
+              empty: jsx16.jsxs("div", { className: "dshWmAiHint", children: [
+                "还没有已确认的设定。与写作伙伴讨论后，在右栏「项目备忘」里确认的条目会自动出现在这里。",
+                proposed ? `（另有 ${proposed} 条候选，确认前不进档案。）` : null
+              ] })
+            }),
+            world.length ? jsx16.jsx("div", { className: "dshWmWikiCards", "data-wm-wiki-cards": String(world.length), children: world.map((it) => jsx16.jsx(SettingCard, { item: it }, it.id)) }, "world") : null,
+            plain.length ? jsx16.jsxs("div", { className: "dshWmWikiPlainList", "data-wm-wiki-plain": String(plain.length), children: [
+              jsx16.jsx("div", { className: "dshWmWikiSubHead", children: "其他已确认备忘" }),
+              ...plain.map((it) => jsx16.jsxs("div", { className: "dshWmWikiPlainRow", children: [
+                jsx16.jsx("span", { className: "dshWmWikiPlainKind", children: it.kind === "preference" ? "偏好" : it.kind === "open-question" ? "待定" : "设定" }),
+                jsx16.jsx("span", { children: it.text })
+              ] }, it.id))
+            ] }, "plain") : null,
+            settings.phase === "ready" && proposed && world.length + plain.length ? jsx16.jsx("p", { className: "dshWmWikiNote", "data-wm-wiki-proposed": String(proposed), children: `另有 ${proposed} 条候选未确认，未列入档案。` }) : null
+          ]
+        }, "sec-settings"),
+        jsx16.jsxs(Section, {
+          title: "进度",
+          meta: rows.length ? `${rows.length} 篇 · ${totalChars} 字` : "",
+          children: [
+            jsx16.jsx(SectionState, {
+              state: progress,
+              onRetry: () => void loadProgress(),
+              hasContent: rows.length > 0,
+              empty: jsx16.jsx("div", { className: "dshWmAiHint", children: "draft/ 下还没有正文。" })
+            }),
+            progress.phase === "ready" ? jsx16.jsxs("div", { className: "dshWmWikiStats", "data-wm-wiki-stats": "1", children: [
+              jsx16.jsxs("span", { "data-wm-wiki-today": String(today), children: [jsx16.jsx("b", { children: String(today) }), " 字 · 今天"] }, "today"),
+              jsx16.jsxs("span", { children: [jsx16.jsx("b", { children: String(progress.stats?.streak || 0) }), " 天连更"] }, "streak"),
+              goal ? jsx16.jsxs("span", { children: ["日目标 ", jsx16.jsx("b", { children: String(goal) })] }, "goal") : null,
+              progress.stats?.corrupt ? jsx16.jsx("span", { className: "dshWmWikiSectionError", children: "统计文件损坏，数字可能不准" }, "corrupt") : null
+            ] }, "stats") : null,
+            progress.phase === "ready" && days.length ? jsx16.jsx("div", {
+              className: "dshWmWikiBars",
+              "data-wm-wiki-bars": String(days.length),
+              title: "近 14 天每日净增字数",
+              children: days.map((d) => jsx16.jsx("span", {
+                className: "dshWmWikiBar" + (goal > 0 && (Number(d.total) || 0) >= goal ? " is-hit" : ""),
+                style: { height: Math.max(3, Math.round((Number(d.total) || 0) / maxDay * 100)) + "%" },
+                title: d.day + "：" + (d.total || 0) + " 字"
+              }, d.day))
+            }, "bars") : null,
+            progress.phase === "ready" && rows.length ? jsx16.jsx("ol", {
+              className: "dshWmWikiChapters",
+              "data-wm-wiki-chapters": String(rows.length),
+              children: rows.map((r) => jsx16.jsxs("li", { children: [
+                jsx16.jsx("button", { type: "button", className: "dshWmWikiChapterName", title: "打开 " + r.name, onClick: () => onOpenDoc(r.abs), children: r.name.replace(/\.[^.]+$/, "").replace(/-v\d+$/i, "") }),
+                jsx16.jsx("span", { className: "dshWmWikiChapterChars", children: (r.chars || 0) + " 字" }),
+                r.gate ? jsx16.jsx("span", { className: "dshWmWikiChapterGate" + (r.gate.pass ? " is-pass" : " is-fail"), title: r.gate.pass ? "门禁全部通过" : "在「检查」页看明细", children: r.gate.pass ? "门禁 ✓" : "门禁 " + r.gate.fail }) : null,
+                r.hook ? jsx16.jsx("span", { className: "dshWmWikiChapterHook", title: r.hook, children: r.hook }) : null
+              ] }, r.abs))
+            }) : null,
+            progress.phase === "ready" && progress.structure.length ? jsx16.jsxs("details", { className: "dshWmWikiStructure", children: [
+              jsx16.jsx("summary", { children: "结构（outline/structure.md 标题行）" }),
+              ...progress.structure.map((l, i) => jsx16.jsx("div", { children: l.replace(/^#+\s*/, "") }, "s" + i))
+            ] }, "struct") : null
+          ]
+        }, "sec-progress"),
+        jsx16.jsx(Section, {
+          title: "时间与伏笔",
+          children: [
+            jsx16.jsx(SectionState, {
+              state: ledger,
+              onRetry: () => void loadLedger(),
+              hasContent: Boolean(ledger.ledger),
+              empty: jsx16.jsx("div", { className: "dshWmAiHint", children: "还没有时间线与伏笔记录（写进 bible/timeline.md 与 outline/foreshadow.md 后会出现在这里）。" })
+            }),
+            ledger.phase === "ready" && ledger.ledger ? jsx16.jsxs("div", { className: "dshWmWikiLedger", "data-wm-wiki-ledger": "1", children: [
+              (ledger.ledger.timeline || []).length ? jsx16.jsx("ul", { className: "dshWmWikiTimeline", children: ledger.ledger.timeline.map((l, i) => jsx16.jsx("li", { children: l }, i)) }) : jsx16.jsx("p", { className: "dshWmAiHint", children: "bible/timeline.md 还没有条目。" }),
+              jsx16.jsxs("div", { className: "dshWmWikiLedgerFoot", children: [
+                jsx16.jsxs("span", { children: ["未回收伏笔 ", jsx16.jsx("b", { children: String(ledger.ledger.foreshadowOpen ?? 0) })] }, "f"),
+                ledger.ledger.latestReview ? jsx16.jsxs("span", { children: ["最新评审 ", jsx16.jsx("b", { children: ledger.ledger.latestReview })] }, "r") : null,
+                ledger.ledger.hook ? jsx16.jsxs("span", { className: "dshWmWikiHook", title: ledger.ledger.hook, children: ["章末钩子 ", jsx16.jsx("b", { children: ledger.ledger.hook })] }, "h") : null
+              ] })
+            ] }, "ledger") : null
+          ]
+        }, "sec-ledger"),
+        jsx16.jsxs(Section, {
+          title: "资料",
+          meta: docs2.length ? `${docs2.length} 篇` : "",
+          children: [
+            docs2.length ? groups.map((g) => jsx16.jsxs("div", { className: "dshWmWikiDocGroup", children: [
+              jsx16.jsx("div", { className: "dshWmWikiSubHead", children: g.key }),
+              ...g.files.map((f) => jsx16.jsx(DocCard, { file: f, onOpenDoc, onJumpToFile }, f.rel))
+            ] }, g.key)) : jsx16.jsx("div", { className: "dshWmAiHint", children: "这个项目还没有设定集、大纲或状态资料，可在左栏项目行的「＋ 添加资料」按需建。" })
+          ]
+        }, "sec-docs")
+      ] })
+    ]
+  });
+}
+
+// plugin/writing-mode/src/client/features/inspection/index.js
+var react8 = __toESM(require("react"), 1);
+var jsx18 = __toESM(require("react/jsx-runtime"), 1);
 function InspectionPanel({
   T: T2,
   filePath,
@@ -19692,32 +20065,32 @@ function InspectionPanel({
   dailyGoal,
   onSaveGoal
 }) {
-  const [goalDraft, setGoalDraft] = react7.useState(String(dailyGoal || ""));
-  react7.useEffect(() => {
+  const [goalDraft, setGoalDraft] = react8.useState(String(dailyGoal || ""));
+  react8.useEffect(() => {
     setGoalDraft(String(dailyGoal || ""));
   }, [dailyGoal]);
   const statDays = stats && Array.isArray(stats.days) ? stats.days : [];
   const statMax = Math.max(1, ...statDays.map((d) => d.total));
-  return jsx16.jsxs("div", {
+  return jsx18.jsxs("div", {
     className: "dshWmAiBody",
     children: [
       /* ── 码字：今日净增 / 连击 / 近 14 天 / 日更目标 ── */
-      jsx16.jsxs(
+      jsx18.jsxs(
         "div",
         {
           className: "dshWmSec",
           children: [
-            jsx16.jsxs(
+            jsx18.jsxs(
               "button",
               {
                 type: "button",
                 className: "dshWmSecToggle",
                 onClick: onToggleStats,
                 children: [
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     children: (statsOpen ? "▾ " : "▸ ") + T2.stats
                   }, "t"),
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     className: "dshWmSecBadge",
                     "data-wm-stats-badge": "1",
                     children: stats ? T2.statsToday + " +" + stats.today : "—"
@@ -19726,43 +20099,43 @@ function InspectionPanel({
               },
               "st"
             ),
-            statsOpen ? stats ? jsx16.jsxs(
+            statsOpen ? stats ? jsx18.jsxs(
               "div",
               {
                 className: "dshWmStats",
                 children: [
-                  jsx16.jsxs("div", { className: "dshWmStatsHead", children: [
-                    jsx16.jsxs("span", { className: "dshWmStatsToday", "data-wm-stats-today-big": "1", children: [
+                  jsx18.jsxs("div", { className: "dshWmStatsHead", children: [
+                    jsx18.jsxs("span", { className: "dshWmStatsToday", "data-wm-stats-today-big": "1", children: [
                       T2.statsToday + " ",
-                      jsx16.jsx("b", { children: "+" + stats.today }),
-                      dailyGoal > 0 ? jsx16.jsx("span", {
+                      jsx18.jsx("b", { children: "+" + stats.today }),
+                      dailyGoal > 0 ? jsx18.jsx("span", {
                         className: stats.today >= dailyGoal ? "is-hit" : "",
                         children: " / " + dailyGoal + T2.statsGoalUnit + (stats.today >= dailyGoal ? " ✓" : "")
                       }) : null
                     ] }, "td"),
-                    stats.streak > 1 ? jsx16.jsx("span", {
+                    stats.streak > 1 ? jsx18.jsx("span", {
                       className: "dshWmStatsStreak",
                       "data-wm-stats-streak": String(stats.streak),
                       children: T2.statsStreak + " " + stats.streak + " " + T2.statsStreakUnit
                     }, "sk") : null
                   ] }, "hd"),
-                  statDays.length ? jsx16.jsx("div", {
+                  statDays.length ? jsx18.jsx("div", {
                     className: "dshWmStatsBars",
                     "data-wm-stats-bars": "1",
                     children: statDays.map(
-                      (d, i) => jsx16.jsx("div", {
+                      (d, i) => jsx18.jsx("div", {
                         className: "dshWmStatsBarCol",
                         title: d.day + " · " + d.total,
-                        children: jsx16.jsx("div", {
+                        children: jsx18.jsx("div", {
                           className: "dshWmStatsBar" + (d.total > 0 ? " is-on" : "") + (i === statDays.length - 1 ? " is-today" : ""),
                           style: { height: Math.max(d.total > 0 ? 3 : 1, Math.round(d.total / statMax * 42)) + "px" }
                         })
                       }, d.day)
                     )
-                  }, "bars") : jsx16.jsx("div", { className: "dshWmAiHint", children: T2.statsNoData }, "nd"),
-                  jsx16.jsxs("div", { className: "dshWmGoalRow", children: [
-                    jsx16.jsx("span", { className: "dshWmLedgerK", children: T2.statsGoal }, "gl"),
-                    jsx16.jsx("input", {
+                  }, "bars") : jsx18.jsx("div", { className: "dshWmAiHint", children: T2.statsNoData }, "nd"),
+                  jsx18.jsxs("div", { className: "dshWmGoalRow", children: [
+                    jsx18.jsx("span", { className: "dshWmLedgerK", children: T2.statsGoal }, "gl"),
+                    jsx18.jsx("input", {
                       className: "dshWmGoalInput",
                       "data-wm-goal-input": "1",
                       value: goalDraft,
@@ -19770,8 +20143,8 @@ function InspectionPanel({
                       placeholder: "0",
                       onChange: (e) => setGoalDraft(e.target.value.replace(/[^\d]/g, ""))
                     }, "gi"),
-                    jsx16.jsx("span", { className: "dshWmGoalUnit", children: T2.statsGoalUnit }, "gu"),
-                    jsx16.jsx("button", {
+                    jsx18.jsx("span", { className: "dshWmGoalUnit", children: T2.statsGoalUnit }, "gu"),
+                    jsx18.jsx("button", {
                       type: "button",
                       className: "dshWmBtn is-ghost",
                       "data-wm-goal-save": "1",
@@ -19782,28 +20155,28 @@ function InspectionPanel({
                 ]
               },
               "st2"
-            ) : jsx16.jsx("div", { className: "dshWmAiHint", "data-wm-stats-none": "1", children: T2.statsNone }, "sn") : null
+            ) : jsx18.jsx("div", { className: "dshWmAiHint", "data-wm-stats-none": "1", children: T2.statsNone }, "sn") : null
           ]
         },
         "ssec"
       ),
       /* ── 门禁：默认收起，只露一行摘要 ── */
-      jsx16.jsxs(
+      jsx18.jsxs(
         "div",
         {
           className: "dshWmSec",
           children: [
-            jsx16.jsxs(
+            jsx18.jsxs(
               "button",
               {
                 type: "button",
                 className: "dshWmSecToggle",
                 onClick: onToggleGate,
                 children: [
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     children: (gateOpen ? "▾ " : "▸ ") + T2.gates
                   }, "t"),
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     className: "dshWmSecBadge" + (gate ? gate.pass ? " is-pass" : " is-fail" : ""),
                     children: gateBusy ? T2.applying : gate ? gate.pass ? T2.gatesPass : T2.gatesFail.replace("{n}", String(gate.fail)) : "—"
                   }, "b")
@@ -19811,17 +20184,17 @@ function InspectionPanel({
               },
               "gt"
             ),
-            gateOpen ? jsx16.jsxs(
+            gateOpen ? jsx18.jsxs(
               "div",
               {
                 className: "dshWmSec",
                 children: [
-                  jsx16.jsx(
+                  jsx18.jsx(
                     "div",
                     {
                       className: "dshWmAiActions",
                       children: [
-                        jsx16.jsx("button", {
+                        jsx18.jsx("button", {
                           type: "button",
                           className: "dshWmBtn",
                           disabled: gateBusy || !filePath,
@@ -19832,24 +20205,24 @@ function InspectionPanel({
                     },
                     "gb"
                   ),
-                  gateErr ? jsx16.jsx("div", { className: "dshWmAiHint", children: gateErr }, "ge") : null,
-                  !gate && !gateErr ? jsx16.jsx("div", { className: "dshWmAiHint", children: T2.gatesIdle }, "gi") : null,
-                  gate && gate.rows ? jsx16.jsx(
+                  gateErr ? jsx18.jsx("div", { className: "dshWmAiHint", children: gateErr }, "ge") : null,
+                  !gate && !gateErr ? jsx18.jsx("div", { className: "dshWmAiHint", children: T2.gatesIdle }, "gi") : null,
+                  gate && gate.rows ? jsx18.jsx(
                     "div",
                     {
                       className: "dshWmGateList",
                       children: gate.rows.map(
-                        (r, i) => jsx16.jsxs(
+                        (r, i) => jsx18.jsxs(
                           "div",
                           {
                             className: "dshWmGateRow",
                             children: [
-                              jsx16.jsx("span", {
+                              jsx18.jsx("span", {
                                 className: r.ok ? "ok" : "bad",
                                 children: r.ok ? "PASS" : "FAIL"
                               }),
-                              jsx16.jsx("span", { className: "dshWmGateLabel", children: r.label }),
-                              jsx16.jsx("span", { className: "dshWmGateDetail", children: r.detail })
+                              jsx18.jsx("span", { className: "dshWmGateLabel", children: r.label }),
+                              jsx18.jsx("span", { className: "dshWmGateDetail", children: r.detail })
                             ]
                           },
                           "r" + i
@@ -19867,22 +20240,22 @@ function InspectionPanel({
         "gh"
       ),
       /* ── 台账：默认收起 ── */
-      jsx16.jsxs(
+      jsx18.jsxs(
         "div",
         {
           className: "dshWmSec",
           children: [
-            jsx16.jsxs(
+            jsx18.jsxs(
               "button",
               {
                 type: "button",
                 className: "dshWmSecToggle",
                 onClick: onToggleLedger,
                 children: [
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     children: (ledgerOpen ? "▾ " : "▸ ") + T2.ledger
                   }, "t"),
-                  jsx16.jsx("span", {
+                  jsx18.jsx("span", {
                     className: "dshWmSecBadge",
                     children: ledger ? (ledger.foreshadowOpen != null ? ledger.foreshadowOpen + " · " : "") + (ledger.latestReview || "—").slice(0, 18) : "—"
                   }, "b")
@@ -19890,29 +20263,29 @@ function InspectionPanel({
               },
               "lt"
             ),
-            ledgerOpen ? ledger ? jsx16.jsxs(
+            ledgerOpen ? ledger ? jsx18.jsxs(
               "div",
               {
                 className: "dshWmLedger",
                 children: [
-                  jsx16.jsxs(
+                  jsx18.jsxs(
                     "div",
                     {
                       className: "dshWmLedgerRow",
                       children: [
-                        jsx16.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerHook }),
-                        jsx16.jsx("span", { className: "dshWmLedgerV", children: ledger.hook || "—" })
+                        jsx18.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerHook }),
+                        jsx18.jsx("span", { className: "dshWmLedgerV", children: ledger.hook || "—" })
                       ]
                     },
                     "lh"
                   ),
-                  jsx16.jsxs(
+                  jsx18.jsxs(
                     "div",
                     {
                       className: "dshWmLedgerRow",
                       children: [
-                        jsx16.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerFores }),
-                        jsx16.jsx("span", {
+                        jsx18.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerFores }),
+                        jsx18.jsx("span", {
                           className: "dshWmLedgerV",
                           children: ledger.foreshadowOpen == null ? "—" : String(ledger.foreshadowOpen)
                         })
@@ -19920,13 +20293,13 @@ function InspectionPanel({
                     },
                     "lf"
                   ),
-                  jsx16.jsxs(
+                  jsx18.jsxs(
                     "div",
                     {
                       className: "dshWmLedgerRow",
                       children: [
-                        jsx16.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerReview }),
-                        jsx16.jsx("span", {
+                        jsx18.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerReview }),
+                        jsx18.jsx("span", {
                           className: "dshWmLedgerV",
                           children: ledger.latestReview || "—"
                         })
@@ -19934,13 +20307,13 @@ function InspectionPanel({
                     },
                     "lr"
                   ),
-                  ledger.timeline && ledger.timeline.length ? jsx16.jsxs(
+                  ledger.timeline && ledger.timeline.length ? jsx18.jsxs(
                     "div",
                     {
                       className: "dshWmLedgerRow",
                       children: [
-                        jsx16.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerTimeline }),
-                        jsx16.jsx("span", {
+                        jsx18.jsx("span", { className: "dshWmLedgerK", children: T2.ledgerTimeline }),
+                        jsx18.jsx("span", {
                           className: "dshWmLedgerV",
                           children: ledger.timeline[ledger.timeline.length - 1]
                         })
@@ -19951,7 +20324,7 @@ function InspectionPanel({
                 ]
               },
               "lb"
-            ) : jsx16.jsx("div", { className: "dshWmAiHint", children: T2.ledgerNone }, "ln") : null
+            ) : jsx18.jsx("div", { className: "dshWmAiHint", children: T2.ledgerNone }, "ln") : null
           ]
         },
         "lsec"
@@ -19964,14 +20337,14 @@ function InspectionPanel({
 var LS_FILE = "dsh-writing-mode-file";
 var KEY_HINT = "Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台";
 function WritingModeApp() {
-  const [active, setActive] = react8.useState(getModeActive);
-  react8.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
+  const [active, setActive] = react9.useState(getModeActive);
+  react9.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
   const open = () => setModeActive(true);
   const close = () => setModeActive(false);
-  const [roots, setRoots] = react8.useState([]);
-  const [tree, setTree] = react8.useState([]);
-  const [activeRoot, setActiveRoot] = react8.useState(null);
-  const editorRef = react8.useRef(null);
+  const [roots, setRoots] = react9.useState([]);
+  const [tree, setTree] = react9.useState([]);
+  const [activeRoot, setActiveRoot] = react9.useState(null);
+  const editorRef = react9.useRef(null);
   if (!editorRef.current) {
     let recovered = null;
     let recoveryKey = "dsh-writing-recovery";
@@ -20008,73 +20381,74 @@ function WritingModeApp() {
     }, recovered);
   }
   const editor = editorRef.current;
-  const [documentState, setDocumentState] = react8.useState(editor.get);
-  react8.useEffect(() => editor.subscribe(setDocumentState), [editor]);
+  const [documentState, setDocumentState] = react9.useState(editor.get);
+  react9.useEffect(() => editor.subscribe(setDocumentState), [editor]);
   const { path: filePath, content: content3, dirty, status: saveState } = documentState;
   const setContent = (value) => editor.change(value);
   const setFilePath = (path2) => {
     void editor.open(path2);
   };
-  const [aiOpen, setAiOpen] = react8.useState(true);
-  const [aiTab, setAiTab] = react8.useState("companion");
-  const [aiOut, setAiOut] = react8.useState("");
-  const [aiBusy, setAiBusy] = react8.useState(false);
-  const [aiErr, setAiErr] = react8.useState("");
-  const [gate, setGate] = react8.useState(null);
-  const [gateBusy, setGateBusy] = react8.useState(false);
-  const [gateErr, setGateErr] = react8.useState("");
-  const [focus, setFocus] = react8.useState(false);
-  const [libOpen, setLibOpen] = react8.useState(true);
-  const [libQuery, setLibQuery] = react8.useState("");
-  const [libraryView, setLibraryView] = react8.useState("writing");
-  const [collapsed, setCollapsed] = react8.useState(() => /* @__PURE__ */ new Set());
-  const [copied, setCopied] = react8.useState(false);
-  const [diffLines, setDiffLines] = react8.useState(null);
-  const [diffLabel, setDiffLabel] = react8.useState("");
-  const [ledger, setLedger] = react8.useState(null);
-  const [gateOpen, setGateOpen] = react8.useState(false);
-  const [ledgerOpen, setLedgerOpen] = react8.useState(false);
-  const [statsOpen, setStatsOpen] = react8.useState(false);
-  const [newDocMode, setNewDocMode] = react8.useState(false);
-  const [newDocName, setNewDocName] = react8.useState("");
-  const [projMode, setProjMode] = react8.useState(false);
-  const [projTitle, setProjTitle] = react8.useState("");
-  const [projPremise, setProjPremise] = react8.useState("");
-  const [projTemplate, setProjTemplate] = react8.useState("novel");
-  const [templates, setTemplates] = react8.useState([]);
-  const [addRootMode, setAddRootMode] = react8.useState(false);
-  const [addRootPath, setAddRootPath] = react8.useState("");
-  const [addRootKind, setAddRootKind] = react8.useState("library");
-  const [exportProj, setExportProj] = react8.useState(null);
-  const [flash, setFlash] = react8.useState("");
-  const [prefs, setPrefs] = react8.useState(getPrefs);
-  react8.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
-  react8.useEffect(() => {
+  const [aiOpen, setAiOpen] = react9.useState(true);
+  const [aiTab, setAiTab] = react9.useState("companion");
+  const [aiOut, setAiOut] = react9.useState("");
+  const [aiBusy, setAiBusy] = react9.useState(false);
+  const [aiErr, setAiErr] = react9.useState("");
+  const [gate, setGate] = react9.useState(null);
+  const [gateBusy, setGateBusy] = react9.useState(false);
+  const [gateErr, setGateErr] = react9.useState("");
+  const [focus, setFocus] = react9.useState(false);
+  const [libOpen, setLibOpen] = react9.useState(true);
+  const [libQuery, setLibQuery] = react9.useState("");
+  const [libraryView, setLibraryView] = react9.useState("writing");
+  const [collapsed, setCollapsed] = react9.useState(() => /* @__PURE__ */ new Set());
+  const [copied, setCopied] = react9.useState(false);
+  const [diffLines, setDiffLines] = react9.useState(null);
+  const [diffLabel, setDiffLabel] = react9.useState("");
+  const [ledger, setLedger] = react9.useState(null);
+  const [gateOpen, setGateOpen] = react9.useState(false);
+  const [ledgerOpen, setLedgerOpen] = react9.useState(false);
+  const [statsOpen, setStatsOpen] = react9.useState(false);
+  const [newDocMode, setNewDocMode] = react9.useState(false);
+  const [newDocName, setNewDocName] = react9.useState("");
+  const [projMode, setProjMode] = react9.useState(false);
+  const [projTitle, setProjTitle] = react9.useState("");
+  const [projPremise, setProjPremise] = react9.useState("");
+  const [projTemplate, setProjTemplate] = react9.useState("novel");
+  const [templates, setTemplates] = react9.useState([]);
+  const [addRootMode, setAddRootMode] = react9.useState(false);
+  const [addRootPath, setAddRootPath] = react9.useState("");
+  const [addRootKind, setAddRootKind] = react9.useState("library");
+  const [exportProj, setExportProj] = react9.useState(null);
+  const [archiveProj, setArchiveProj] = react9.useState(null);
+  const [flash, setFlash] = react9.useState("");
+  const [prefs, setPrefs] = react9.useState(getPrefs);
+  react9.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), []);
+  react9.useEffect(() => {
     void loadPrefs();
   }, [active]);
-  const taRef = react8.useRef(null);
-  const fillOpRef = react8.useRef(null);
-  const aiTarget = react8.useRef(null);
-  const saveTimer = react8.useRef(0);
-  const fileInputRef = react8.useRef(null);
-  const runGateRef = react8.useRef(() => {
+  const taRef = react9.useRef(null);
+  const fillOpRef = react9.useRef(null);
+  const aiTarget = react9.useRef(null);
+  const saveTimer = react9.useRef(0);
+  const fileInputRef = react9.useRef(null);
+  const runGateRef = react9.useRef(() => {
   });
-  const [stats, setStats] = react8.useState(null);
+  const [stats, setStats] = react9.useState(null);
   const dailyGoal = prefs.dailyGoal || 0;
-  const [findOpen, setFindOpen] = react8.useState(false);
-  const [findQuery, setFindQuery] = react8.useState("");
-  const [replaceText, setReplaceText] = react8.useState("");
-  const [findIndex, setFindIndex] = react8.useState(0);
-  const findInputRef = react8.useRef(null);
-  const [rewrite, setRewrite] = react8.useState(null);
-  const mirrorRef = react8.useRef(null);
+  const [findOpen, setFindOpen] = react9.useState(false);
+  const [findQuery, setFindQuery] = react9.useState("");
+  const [replaceText, setReplaceText] = react9.useState("");
+  const [findIndex, setFindIndex] = react9.useState(0);
+  const findInputRef = react9.useRef(null);
+  const [rewrite, setRewrite] = react9.useState(null);
+  const mirrorRef = react9.useRef(null);
   const docBasename = filePath ? String(filePath).split(/[\\/]/).filter(Boolean).pop() : "";
   const docFolder = filePath ? (() => {
     const parts = String(filePath).split(/[\\/]/).filter(Boolean);
     if (parts.length < 2) return "";
     return parts[parts.length - 2];
   })() : "";
-  const versionSeries = react8.useMemo(() => {
+  const versionSeries = react9.useMemo(() => {
     if (!filePath) return [];
     const curVer = versionOf(docBasename);
     if (curVer == null) return [];
@@ -20099,23 +20473,23 @@ function WritingModeApp() {
   const curVerNum = versionOf(docBasename);
   const latestVer = versionSeries.length > 0 ? versionSeries[versionSeries.length - 1] : null;
   const isHistoryDoc = curVerNum != null && latestVer != null && curVerNum < latestVer.v;
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     applyBodyAttr(active);
   }, [active]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     try {
       if (focus) document.body.setAttribute("data-writing-focus", "1");
       else document.body.removeAttribute("data-writing-focus");
     } catch {
     }
   }, [focus]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     try {
       document.body.setAttribute("data-writing-lib", libOpen ? "1" : "0");
     } catch {
     }
   }, [libOpen]);
-  const refreshTree = react8.useCallback(async () => {
+  const refreshTree = react9.useCallback(async () => {
     const data = await api("config");
     if (!data.ok) return;
     setRoots(data.roots || []);
@@ -20123,11 +20497,11 @@ function WritingModeApp() {
     const active2 = data.config && data.config.activeRoot || (data.roots || []).find((r) => r.default && !r.missing)?.path || (data.roots || [])[0]?.path || null;
     setActiveRoot(active2);
   }, []);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active) return;
     void refreshTree();
   }, [active, refreshTree]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active || !harnessSessions()) return;
     let running = /* @__PURE__ */ new Set();
     const update = () => {
@@ -20143,9 +20517,9 @@ function WritingModeApp() {
     update();
     return harnessSessions().list.subscribe(update);
   }, [active, editor, refreshTree]);
-  const persist = react8.useCallback(() => editor.flush(), [editor]);
+  const persist = react9.useCallback(() => editor.flush(), [editor]);
   const saveAsNewVersion = () => editor.version();
-  const refreshStats = react8.useCallback((path2) => {
+  const refreshStats = react9.useCallback((path2) => {
     if (!path2) {
       setStats(null);
       return;
@@ -20155,11 +20529,11 @@ function WritingModeApp() {
     }).catch(() => {
     });
   }, []);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!filePath || documentState.loading) return;
     void refreshStats(filePath);
   }, [filePath, documentState.revision, documentState.loading, refreshStats]);
-  const findMatches = react8.useMemo(() => {
+  const findMatches = react9.useMemo(() => {
     if (!findOpen || !findQuery) return [];
     const out = [];
     let i = content3.indexOf(findQuery);
@@ -20169,7 +20543,7 @@ function WritingModeApp() {
     }
     return out;
   }, [content3, findQuery, findOpen]);
-  const gotoMatch = react8.useCallback((idx) => {
+  const gotoMatch = react9.useCallback((idx) => {
     const total = findMatches.length;
     if (!total) return;
     const pos = (idx % total + total) % total;
@@ -20181,7 +20555,7 @@ function WritingModeApp() {
       ta.setSelectionRange(start2, start2 + findQuery.length);
     }
   }, [findMatches, findQuery.length]);
-  const findStep = react8.useCallback((dir) => gotoMatch(findIndex + dir), [gotoMatch, findIndex]);
+  const findStep = react9.useCallback((dir) => gotoMatch(findIndex + dir), [gotoMatch, findIndex]);
   const replaceCurrent = () => {
     if (!findMatches.length || documentState.loading || isHistoryDoc) return;
     const pos = (findIndex % findMatches.length + findMatches.length) % findMatches.length;
@@ -20195,7 +20569,7 @@ function WritingModeApp() {
     setFindIndex(0);
     flashMsg(T.findReplaceAll + " × " + n);
   };
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!findOpen) return;
     const t = window.setTimeout(() => {
       if (findInputRef.current) {
@@ -20205,10 +20579,10 @@ function WritingModeApp() {
     }, 0);
     return () => window.clearTimeout(t);
   }, [findOpen]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     setFindIndex(0);
   }, [findQuery]);
-  const typewriterScroll = react8.useCallback(() => {
+  const typewriterScroll = react9.useCallback(() => {
     const ta = taRef.current;
     if (!ta || !prefs.typewriter) return;
     let m = mirrorRef.current;
@@ -20233,18 +20607,18 @@ function WritingModeApp() {
     m.textContent = ta.value.slice(0, caret);
     ta.scrollTop = Math.max(0, m.scrollHeight - ta.clientHeight / 2);
   }, [prefs.typewriter]);
-  react8.useEffect(() => () => {
+  react9.useEffect(() => () => {
     if (mirrorRef.current) {
       mirrorRef.current.remove();
       mirrorRef.current = null;
     }
   }, []);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!prefs.typewriter) return;
     const id = window.requestAnimationFrame(() => typewriterScroll());
     return () => window.cancelAnimationFrame(id);
   }, [content3, prefs.typewriter, typewriterScroll]);
-  const jumpToFile = react8.useCallback((name3) => {
+  const jumpToFile = react9.useCallback((name3) => {
     const all2 = [];
     for (const r of tree) for (const p of r.projects || []) for (const f of p.files || []) all2.push(f);
     const hit = resolveFileByName(all2, name3);
@@ -20256,7 +20630,11 @@ function WritingModeApp() {
     setAiOpen(true);
     flashMsg("已跳到 " + hit.name);
   }, [tree]);
-  const handleReordered = react8.useCallback((renames) => {
+  const jumpFromArchive = react9.useCallback((name3) => {
+    setArchiveProj(null);
+    jumpToFile(name3);
+  }, [jumpToFile]);
+  const handleReordered = react9.useCallback((renames) => {
     void refreshTree();
     const snap = editor.get();
     const cur = snap.path;
@@ -20270,7 +20648,7 @@ function WritingModeApp() {
       flashMsg("当前编辑的章节已改名：请先用「另存为新版」把手上的修改存进新文件");
     }
   }, [editor, refreshTree]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active) return;
     let reading = false;
     const refresh = async () => {
@@ -20289,7 +20667,7 @@ function WritingModeApp() {
       window.removeEventListener("focus", refresh);
     };
   }, [active, editor]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active || editor.get().path) return;
     try {
       const p = localStorage.getItem(LS_FILE);
@@ -20297,7 +20675,7 @@ function WritingModeApp() {
     } catch {
     }
   }, [active, editor]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     setCloseGuard(async () => {
       if (await editor.close()) commitModeActive(false);
     });
@@ -20312,7 +20690,7 @@ function WritingModeApp() {
       window.removeEventListener("beforeunload", protect);
     };
   }, [editor]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!filePath) return;
     let cancelled = false;
     setGate(null);
@@ -20336,18 +20714,22 @@ function WritingModeApp() {
       cancelled = true;
     };
   }, [filePath, documentState.revision, refreshTree]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active || !dirty || !filePath || documentState.loading || documentState.status === "error") return;
     saveTimer.current = window.setTimeout(() => {
       void persist();
     }, prefs.autoSaveMs || 800);
     return () => window.clearTimeout(saveTimer.current);
   }, [active, dirty, filePath, content3, documentState.loading, documentState.status, persist, prefs.autoSaveMs]);
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active) return;
     const onKey = (e) => {
       if (e.key === "Escape") {
         if (newDocMode || addRootMode) return;
+        if (archiveProj) {
+          setArchiveProj(null);
+          return;
+        }
         if (exportProj) {
           setExportProj(null);
           return;
@@ -20370,7 +20752,7 @@ function WritingModeApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, newDocMode, addRootMode, exportProj, findOpen, editor, persist, close]);
+  }, [active, newDocMode, addRootMode, exportProj, archiveProj, findOpen, editor, persist, close]);
   function flashMsg(msg) {
     setFlash(String(msg || ""));
     window.setTimeout(() => setFlash(""), 3200);
@@ -20525,7 +20907,7 @@ function WritingModeApp() {
       setAiBusy(false);
     }
   }
-  const runGate = react8.useCallback(async () => {
+  const runGate = react9.useCallback(async () => {
     setGateBusy(true);
     setGateErr("");
     try {
@@ -20547,7 +20929,7 @@ function WritingModeApp() {
     }
   }, [filePath, content3]);
   runGateRef.current = runGate;
-  react8.useEffect(() => {
+  react9.useEffect(() => {
     if (!active || !filePath || !prefs.autoGate) return;
     const ext = String(filePath).toLowerCase().split(".").pop();
     if (ext !== "md" && ext !== "markdown" && ext !== "fountain") return;
@@ -20659,19 +21041,19 @@ function WritingModeApp() {
     const prompt = reviewPrompt({ reportContent: content3, reportPath: filePath });
     await fillComposer(prompt);
   }
-  return jsx18.jsx("div", {
+  return jsx20.jsx("div", {
     className: "dshWmRoot",
     role: "dialog",
     "aria-label": T.toggle,
     children: [
-      notice ? jsx18.jsx("div", { className: "dshWmFlash", role: "alert", children: notice }, "flash") : null,
-      jsx18.jsx(
+      notice ? jsx20.jsx("div", { className: "dshWmFlash", role: "alert", children: notice }, "flash") : null,
+      jsx20.jsx(
         "div",
         {
           className: "dshWmBar",
           children: [
-            jsx18.jsx("span", { className: "dshWmBrand", children: "写作台" }),
-            roots.length > 0 ? jsx18.jsx(
+            jsx20.jsx("span", { className: "dshWmBrand", children: "写作台" }),
+            roots.length > 0 ? jsx20.jsx(
               "select",
               {
                 className: "dshWmSelect",
@@ -20679,7 +21061,7 @@ function WritingModeApp() {
                 onChange: (e) => void activateRoot(e.target.value),
                 title: T.switchRoot,
                 children: roots.map(
-                  (r) => jsx18.jsx(
+                  (r) => jsx20.jsx(
                     "option",
                     {
                       value: r.path,
@@ -20691,7 +21073,7 @@ function WritingModeApp() {
               },
               "roots"
             ) : null,
-            jsx18.jsx("button", {
+            jsx20.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
               onClick: () => {
@@ -20701,7 +21083,7 @@ function WritingModeApp() {
               title: T.addRoot,
               children: "+"
             }),
-            jsx18.jsx("button", {
+            jsx20.jsx("button", {
               type: "button",
               className: "dshWmBtn is-ghost",
               onClick: () => {
@@ -20712,18 +21094,18 @@ function WritingModeApp() {
               children: "打开已有",
               title: "读取原有目录，不搬动资料、不自动确认设定"
             }),
-            addRootMode ? jsx18.jsx(
+            addRootMode ? jsx20.jsx(
               "span",
               {
                 className: "dshWmBarGroup",
                 children: [
-                  jsx18.jsx("select", {
+                  jsx20.jsx("select", {
                     "aria-label": "文件夹用途",
                     value: addRootKind,
                     onChange: (e) => setAddRootKind(e.target.value),
-                    children: [jsx18.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx18.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
+                    children: [jsx20.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx20.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
                   }),
-                  jsx18.jsx("input", {
+                  jsx20.jsx("input", {
                     className: "dshWmSearch",
                     style: { width: 180, margin: 0 },
                     value: addRootPath,
@@ -20737,7 +21119,7 @@ function WritingModeApp() {
                       if (e.key === "Escape") setAddRootMode(false);
                     }
                   }),
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn is-primary",
                     onClick: () => void commitAddRoot(),
@@ -20747,20 +21129,20 @@ function WritingModeApp() {
               },
               "add-root"
             ) : null,
-            jsx18.jsx("span", { className: "dshWmBarSpacer" }),
-            jsx18.jsx(
+            jsx20.jsx("span", { className: "dshWmBarSpacer" }),
+            jsx20.jsx(
               "div",
               {
                 className: "dshWmBarGroup",
                 children: [
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn is-ghost",
                     onClick: () => setLibOpen((v) => !v),
                     title: libOpen ? T.hideLib : T.showLib,
                     children: libOpen ? "⟨" : "⟩"
                   }),
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn" + (focus ? " is-on" : ""),
                     onClick: () => setFocus((v) => !v),
@@ -20768,7 +21150,7 @@ function WritingModeApp() {
                     title: "专注：只留稿纸，收起文档库与右栏",
                     children: T.focus
                   }),
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn" + (prefs.hemingway ? " is-on" : ""),
                     "data-wm-hemingway": "1",
@@ -20779,7 +21161,7 @@ function WritingModeApp() {
                     },
                     children: T.hemingway
                   }),
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn" + (prefs.typewriter ? " is-on" : ""),
                     "data-wm-typewriter": "1",
@@ -20790,7 +21172,7 @@ function WritingModeApp() {
                     },
                     children: T.typewriter
                   }),
-                  jsx18.jsx("button", {
+                  jsx20.jsx("button", {
                     type: "button",
                     className: "dshWmBtn" + (aiOpen && !focus ? " is-on" : ""),
                     // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
@@ -20808,8 +21190,8 @@ function WritingModeApp() {
               },
               "views"
             ),
-            jsx18.jsx("span", { className: "dshWmBarGroup", children: [
-              jsx18.jsx("button", {
+            jsx20.jsx("span", { className: "dshWmBarGroup", children: [
+              jsx20.jsx("button", {
                 type: "button",
                 className: "dshWmBtn",
                 disabled: !filePath,
@@ -20818,7 +21200,7 @@ function WritingModeApp() {
                 children: saveState === "saving" ? T.saving : saveState === "error" ? "重试保存" : saveState === "saved" && !dirty ? T.saved : T.save
               })
             ] }, "file-ops"),
-            jsx18.jsx("button", {
+            jsx20.jsx("button", {
               type: "button",
               className: "dshWmBtn is-primary",
               onClick: close,
@@ -20828,30 +21210,30 @@ function WritingModeApp() {
         },
         "bar"
       ),
-      jsx18.jsx(
+      jsx20.jsx(
         "div",
         {
           className: "dshWmBody",
           children: [
-            jsx18.jsx(
+            jsx20.jsx(
               "aside",
               {
                 className: "dshWmSide",
                 children: [
-                  jsx18.jsx(
+                  jsx20.jsx(
                     "div",
                     {
                       className: "dshWmSideHead",
                       children: [
-                        jsx18.jsx("span", { children: T.docs }),
-                        jsx18.jsx("span", { style: { flex: 1 } }),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("span", { children: T.docs }),
+                        jsx20.jsx("span", { style: { flex: 1 } }),
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn",
                           onClick: openProjectMode,
                           children: T.newProject
                         }),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn",
                           onClick: createDocInRoot,
@@ -20861,7 +21243,7 @@ function WritingModeApp() {
                     },
                     "dh"
                   ),
-                  projMode ? jsx18.jsx(
+                  projMode ? jsx20.jsx(
                     "div",
                     {
                       style: {
@@ -20871,7 +21253,7 @@ function WritingModeApp() {
                         padding: "0 10px 10px"
                       },
                       children: [
-                        jsx18.jsx("input", {
+                        jsx20.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0 },
                           value: projTitle,
@@ -20879,14 +21261,14 @@ function WritingModeApp() {
                           placeholder: T.projTitle,
                           onChange: (e) => setProjTitle(e.target.value)
                         }),
-                        jsx18.jsx("input", {
+                        jsx20.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0 },
                           value: projPremise,
                           placeholder: T.projPremise,
                           onChange: (e) => setProjPremise(e.target.value)
                         }),
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "select",
                           {
                             className: "dshWmSearch",
@@ -20898,7 +21280,7 @@ function WritingModeApp() {
                               { id: "shortdrama", name: "短剧 · 竖屏" },
                               { id: "screenplay", name: "电影 / 剧集" }
                             ]).map(
-                              (t) => jsx18.jsx(
+                              (t) => jsx20.jsx(
                                 "option",
                                 { value: t.id, children: t.name },
                                 t.id
@@ -20907,19 +21289,19 @@ function WritingModeApp() {
                           },
                           "tmpl"
                         ),
-                        jsx18.jsx("p", { className: "dshWmAiHint", children: "只创建作品概览和第一篇正文，其他资料需要时再添加。" }, "starter-hint"),
-                        jsx18.jsx(
+                        jsx20.jsx("p", { className: "dshWmAiHint", children: "只创建作品概览和第一篇正文，其他资料需要时再添加。" }, "starter-hint"),
+                        jsx20.jsx(
                           "div",
                           {
                             style: { display: "flex", gap: 6 },
                             children: [
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-primary",
                                 onClick: () => void commitProject(),
                                 children: T.create
                               }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: () => setProjMode(false),
@@ -20933,12 +21315,12 @@ function WritingModeApp() {
                     },
                     "proj"
                   ) : null,
-                  newDocMode ? jsx18.jsx(
+                  newDocMode ? jsx20.jsx(
                     "div",
                     {
                       style: { display: "flex", gap: 6, padding: "0 10px 8px" },
                       children: [
-                        jsx18.jsx("input", {
+                        jsx20.jsx("input", {
                           className: "dshWmSearch",
                           style: { margin: 0, flex: 1 },
                           value: newDocName,
@@ -20950,7 +21332,7 @@ function WritingModeApp() {
                             if (e.key === "Escape") setNewDocMode(false);
                           }
                         }),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-primary",
                           onClick: commitNewDoc,
@@ -20960,9 +21342,9 @@ function WritingModeApp() {
                     },
                     "new-doc"
                   ) : null,
-                  roots.length > 0 ? jsx18.jsx("div", {
+                  roots.length > 0 ? jsx20.jsx("div", {
                     style: { padding: "8px", display: "flex", gap: 6 },
-                    children: [["writing", "作品导航"], ["files", "文件视图"], ["outline", "大纲"]].map(([value, label]) => jsx18.jsx("button", {
+                    children: [["writing", "作品导航"], ["files", "文件视图"], ["outline", "大纲"]].map(([value, label]) => jsx20.jsx("button", {
                       type: "button",
                       className: "dshWmBtn",
                       "aria-pressed": libraryView === value,
@@ -20970,11 +21352,11 @@ function WritingModeApp() {
                       children: label
                     }, value))
                   }, "library-view") : null,
-                  roots.length > 0 ? jsx18.jsx(
+                  roots.length > 0 ? jsx20.jsx(
                     "div",
                     {
                       style: { padding: "8px 8px 0" },
-                      children: jsx18.jsx("input", {
+                      children: jsx20.jsx("input", {
                         className: "dshWmSearch",
                         value: libQuery,
                         placeholder: T.search,
@@ -20983,26 +21365,26 @@ function WritingModeApp() {
                     },
                     "sq"
                   ) : null,
-                  jsx18.jsx(
+                  jsx20.jsx(
                     "div",
                     {
                       className: "dshWmList",
-                      children: libraryView === "outline" ? jsx18.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, "outline-view") : roots.length === 0 ? jsx18.jsx(
+                      children: libraryView === "outline" ? jsx20.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, "outline-view") : roots.length === 0 ? jsx20.jsx(
                         "div",
                         {
                           className: "dshWmWelcome",
                           children: [
-                            jsx18.jsx(
+                            jsx20.jsx(
                               "div",
                               { className: "dshWmWelcomeTitle", children: T.toggle },
                               "wt"
                             ),
-                            jsx18.jsx(
+                            jsx20.jsx(
                               "div",
                               { className: "dshWmWelcomeBody", children: T.empty },
                               "wb"
                             ),
-                            jsx18.jsx(
+                            jsx20.jsx(
                               "button",
                               {
                                 type: "button",
@@ -21015,7 +21397,7 @@ function WritingModeApp() {
                               },
                               "wc"
                             ),
-                            jsx18.jsx(
+                            jsx20.jsx(
                               "div",
                               {
                                 className: "dshWmAiHint",
@@ -21026,7 +21408,7 @@ function WritingModeApp() {
                           ]
                         },
                         "wel"
-                      ) : projects.length === 0 ? jsx18.jsx("div", {
+                      ) : projects.length === 0 ? jsx20.jsx("div", {
                         className: "dshWmEmpty",
                         children: (activeTree && activeTree.missing ? T.missing + "\n" : "") + T.noProjects
                       }) : projects.map((proj) => {
@@ -21036,19 +21418,19 @@ function WritingModeApp() {
                           (proj.files || []).filter((f) => String(f.rel).startsWith("draft/"))
                         );
                         if (libQuery && groups.length === 0) return null;
-                        return jsx18.jsx(
+                        return jsx20.jsx(
                           "div",
                           {
                             className: "dshWmProj",
                             children: [
-                              jsx18.jsx(
+                              jsx20.jsx(
                                 "button",
                                 {
                                   type: "button",
                                   className: "dshWmProjToggle",
                                   onClick: () => toggleProj(proj.path),
                                   children: [
-                                    jsx18.jsx(
+                                    jsx20.jsx(
                                       "span",
                                       {
                                         className: "dshWmProjChev" + (openP ? " is-open" : ""),
@@ -21056,41 +21438,54 @@ function WritingModeApp() {
                                       },
                                       "c"
                                     ),
-                                    jsx18.jsx("span", { children: proj.name }, "n")
+                                    jsx20.jsx("span", { children: proj.name }, "n")
                                   ]
                                 },
                                 "pt"
                               ),
-                              openP ? jsx18.jsxs("div", {
+                              openP ? jsx20.jsxs("div", {
                                 className: "dshWmProjOps",
                                 children: [
-                                  jsx18.jsx("button", {
+                                  jsx20.jsx("button", {
+                                    type: "button",
+                                    className: "dshWmBtn is-ghost",
+                                    title: "作品档案：已确认设定、进度与资料的只读汇总页",
+                                    onClick: () => {
+                                      setExportProj(null);
+                                      setArchiveProj(proj);
+                                    },
+                                    children: "档案"
+                                  }, "archive"),
+                                  jsx20.jsx("button", {
                                     type: "button",
                                     className: "dshWmBtn is-ghost",
                                     title: "导出成书：把各章最新版按顺序拼成一份完整书稿（原稿不动）",
-                                    onClick: () => setExportProj(proj),
+                                    onClick: () => {
+                                      setArchiveProj(null);
+                                      setExportProj(proj);
+                                    },
                                     children: "成书"
                                   }, "export"),
-                                  jsx18.jsx("select", {
+                                  jsx20.jsx("select", {
                                     className: "dshWmSearch",
                                     "aria-label": "按需添加资料",
                                     value: "",
                                     onChange: (e) => void addProjectResource(proj, e.target.value),
                                     children: [
-                                      jsx18.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
-                                      ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx18.jsx("option", { value: item.rel, children: item.label }, item.rel))
+                                      jsx20.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
+                                      ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx20.jsx("option", { value: item.rel, children: item.label }, item.rel))
                                     ]
                                   }, "add-resource")
                                 ]
                               }, "proj-ops") : null,
-                              proj.scanWarning ? jsx18.jsx("p", { role: "status", children: proj.scanWarning }) : null,
+                              proj.scanWarning ? jsx20.jsx("p", { role: "status", children: proj.scanWarning }) : null,
                               openP ? groups.map(
-                                (g) => jsx18.jsx(
+                                (g) => jsx20.jsx(
                                   "details",
                                   {
                                     open: libraryView === "files" || Boolean(libQuery) || ["正文", "作品概览"].includes(g.key) || g.files.some((f) => f.abs === filePath),
                                     children: [
-                                      jsx18.jsx(
+                                      jsx20.jsx(
                                         "summary",
                                         {
                                           className: "dshWmFolder",
@@ -21125,32 +21520,32 @@ function WritingModeApp() {
               },
               "docs"
             ),
-            jsx18.jsx(
+            jsx20.jsx(
               "main",
               {
                 className: "dshWmMain",
                 children: [
-                  jsx18.jsx(
+                  jsx20.jsx(
                     "div",
                     {
                       className: "dshWmDocChrome",
                       children: [
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           {
                             className: "dshWmPathRow",
                             children: [
-                              jsx18.jsx("span", {
+                              jsx20.jsx("span", {
                                 className: "dshWmPathText",
                                 children: filePath ? (docFolder ? docFolder + " / " : "") + docBasename : "—"
                               }),
-                              filePath ? jsx18.jsx("button", {
+                              filePath ? jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-ghost",
                                 onClick: () => void copyPath(),
                                 children: copied ? T.copied : T.copyPath
                               }) : null,
-                              isReviewFile ? jsx18.jsx("button", {
+                              isReviewFile ? jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: sendReviewToChat,
@@ -21160,7 +21555,7 @@ function WritingModeApp() {
                           },
                           "pr"
                         ),
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           {
                             className: "dshWmDocName",
@@ -21168,16 +21563,16 @@ function WritingModeApp() {
                           },
                           "dn"
                         ),
-                        isHistoryDoc && latestVer ? jsx18.jsx(
+                        isHistoryDoc && latestVer ? jsx20.jsx(
                           "div",
                           {
                             className: "dshWmHistBanner",
                             children: [
-                              jsx18.jsx("span", {
+                              jsx20.jsx("span", {
                                 children: T.isHistory + " · " + T.isLatest + " v" + latestVer.v
                               }, "h"),
-                              jsx18.jsx("span", { style: { flex: 1 } }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("span", { style: { flex: 1 } }),
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 onClick: () => setFilePath(latestVer.abs),
@@ -21187,18 +21582,18 @@ function WritingModeApp() {
                           },
                           "hb"
                         ) : null,
-                        filePath ? jsx18.jsx(
+                        filePath ? jsx20.jsx(
                           "div",
                           {
                             className: "dshWmVerBar",
                             children: [
-                              jsx18.jsx(
+                              jsx20.jsx(
                                 "span",
                                 { className: "dshWmVerBarLabel", children: T.versions },
                                 "vl"
                               ),
                               ...versionSeries.map(
-                                (s) => jsx18.jsx(
+                                (s) => jsx20.jsx(
                                   "button",
                                   {
                                     type: "button",
@@ -21209,7 +21604,7 @@ function WritingModeApp() {
                                   "v" + s.v
                                 )
                               ),
-                              jsx18.jsx(
+                              jsx20.jsx(
                                 "button",
                                 {
                                   type: "button",
@@ -21220,7 +21615,7 @@ function WritingModeApp() {
                                 },
                                 "cmp"
                               ),
-                              jsx18.jsx(
+                              jsx20.jsx(
                                 "button",
                                 {
                                   type: "button",
@@ -21236,18 +21631,18 @@ function WritingModeApp() {
                           },
                           "vb"
                         ) : null,
-                        jsx18.jsx("div", { className: "dshWmDocRule" }, "dr")
+                        jsx20.jsx("div", { className: "dshWmDocRule" }, "dr")
                       ]
                     },
                     "chrome"
                   ),
-                  findOpen ? jsx18.jsxs(
+                  findOpen ? jsx20.jsxs(
                     "div",
                     {
                       className: "dshWmFindBar",
                       "data-wm-findbar": "1",
                       children: [
-                        jsx18.jsx("input", {
+                        jsx20.jsx("input", {
                           ref: findInputRef,
                           className: "dshWmFindInput",
                           "data-wm-find-input": "1",
@@ -21262,7 +21657,7 @@ function WritingModeApp() {
                             }
                           }
                         }, "fq"),
-                        jsx18.jsx("input", {
+                        jsx20.jsx("input", {
                           className: "dshWmFindInput is-replace",
                           "data-wm-find-replace": "1",
                           value: replaceText,
@@ -21270,56 +21665,56 @@ function WritingModeApp() {
                           spellCheck: false,
                           onChange: (e) => setReplaceText(e.target.value)
                         }, "fr"),
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", {
                           className: "dshWmFindCount",
                           "data-wm-find-count": "1",
                           children: findQuery ? findMatches.length ? findIndex + 1 + "/" + findMatches.length : T.findNone : ""
                         }, "fc"),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
                           disabled: !findMatches.length,
                           onClick: () => findStep(-1),
                           children: T.findPrev
                         }, "fp"),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
                           disabled: !findMatches.length,
                           onClick: () => findStep(1),
                           children: T.findNext
                         }, "fn"),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
                           disabled: !findMatches.length || documentState.loading || isHistoryDoc,
                           onClick: replaceCurrent,
                           children: T.findReplace
                         }, "frep"),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
                           disabled: !findMatches.length || documentState.loading || isHistoryDoc,
                           onClick: replaceAllMatches,
                           children: T.findReplaceAll
                         }, "fra"),
-                        jsx18.jsx("button", {
+                        jsx20.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
                           title: T.findClose,
                           onClick: () => setFindOpen(false),
                           children: "✕"
                         }, "fx"),
-                        jsx18.jsx("span", { className: "dshWmFindHint", children: T.findHint }, "fh")
+                        jsx20.jsx("span", { className: "dshWmFindHint", children: T.findHint }, "fh")
                       ]
                     },
                     "findbar"
                   ) : null,
-                  jsx18.jsx(
+                  jsx20.jsx(
                     "div",
                     {
                       className: "dshWmEditorWrap",
-                      children: jsx18.jsx("textarea", {
+                      children: jsx20.jsx("textarea", {
                         ref: taRef,
                         className: "dshWmEditor",
                         value: content3,
@@ -21338,21 +21733,21 @@ function WritingModeApp() {
                     },
                     "ew"
                   ),
-                  diffLines ? jsx18.jsx(
+                  diffLines ? jsx20.jsx(
                     "div",
                     {
                       className: "dshWmDiff",
                       children: [
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           {
                             className: "dshWmDiffHead",
                             children: [
-                              jsx18.jsx("span", {
+                              jsx20.jsx("span", {
                                 children: T.diffTitle + " " + diffLabel
                               }),
-                              jsx18.jsx("span", { style: { flex: 1 } }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("span", { style: { flex: 1 } }),
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-ghost",
                                 onClick: () => setDiffLines(null),
@@ -21363,7 +21758,7 @@ function WritingModeApp() {
                           "dh"
                         ),
                         ...diffLines.map(
-                          (d, i) => jsx18.jsx(
+                          (d, i) => jsx20.jsx(
                             "div",
                             {
                               className: "dshWmDiffLine " + d.t,
@@ -21376,29 +21771,29 @@ function WritingModeApp() {
                     },
                     "diff"
                   ) : null,
-                  rewrite ? jsx18.jsxs(
+                  rewrite ? jsx20.jsxs(
                     "div",
                     {
                       className: "dshWmDiff dshWmRewrite",
                       "data-wm-rewrite": "1",
                       children: [
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           {
                             className: "dshWmDiffHead",
                             children: [
-                              jsx18.jsx("span", {
+                              jsx20.jsx("span", {
                                 children: T.rewriteTitle + (rewrite.label ? " · " + rewrite.label : "")
                               }),
-                              jsx18.jsx("span", { style: { flex: 1 } }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("span", { style: { flex: 1 } }),
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 "data-wm-rewrite-accept": "1",
                                 onClick: acceptRewrite,
                                 children: T.rewriteAccept
                               }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-ghost",
                                 "data-wm-rewrite-discard": "1",
@@ -21410,7 +21805,7 @@ function WritingModeApp() {
                           "rh"
                         ),
                         ...lineDiff(rewrite.before, rewrite.after).map(
-                          (d, i) => jsx18.jsx(
+                          (d, i) => jsx20.jsx(
                             "div",
                             {
                               className: "dshWmDiffLine " + d.t,
@@ -21423,20 +21818,20 @@ function WritingModeApp() {
                     },
                     "rewrite"
                   ) : null,
-                  documentState.error ? jsx18.jsxs("div", {
+                  documentState.error ? jsx20.jsxs("div", {
                     className: "dshWmDocAlert",
                     role: "alert",
                     "data-wm-doc-alert": saveState,
                     children: [
-                      jsx18.jsx("span", { children: documentState.error }, "m"),
-                      jsx18.jsx("span", { style: { flex: 1 } }, "s"),
-                      dirty && filePath ? jsx18.jsx("button", {
+                      jsx20.jsx("span", { children: documentState.error }, "m"),
+                      jsx20.jsx("span", { style: { flex: 1 } }, "s"),
+                      dirty && filePath ? jsx20.jsx("button", {
                         type: "button",
                         className: "dshWmBtn",
                         onClick: () => void persist(),
                         children: "重试保存"
                       }, "retry") : null,
-                      filePath ? jsx18.jsx("button", {
+                      filePath ? jsx20.jsx("button", {
                         type: "button",
                         className: "dshWmBtn is-ghost",
                         title: T.bumpHint,
@@ -21445,42 +21840,42 @@ function WritingModeApp() {
                       }, "bump") : null
                     ]
                   }, "doc-alert") : null,
-                  jsx18.jsx(
+                  jsx20.jsx(
                     "div",
                     {
                       className: "dshWmStatus",
                       children: [
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", {
                           className: "dot " + (saveState === "error" ? "is-error" : dirty ? "is-dirty" : saveState === "saved" ? "is-saved" : ""),
                           "data-wm-save-dot": saveState
                         }),
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", {
                           className: saveState === "error" ? "dshWmStatusError" : "",
                           "data-wm-save-label": "1",
                           children: saveLabel
                         }),
-                        jsx18.jsx("span", { className: "dshWmStatusSep", children: "·" }),
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", { className: "dshWmStatusSep", children: "·" }),
+                        jsx20.jsx("span", {
                           children: `${content3.replace(/\s+/g, "").length} ${T.chars}`
                         }),
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", {
                           className: "dshWmStatusSep",
                           children: "·"
                         }),
-                        jsx18.jsx("span", {
+                        jsx20.jsx("span", {
                           children: (filePath || "").toLowerCase().endsWith(".fountain") ? "Fountain" : "Markdown"
                         }),
-                        stats ? jsx18.jsx("span", { className: "dshWmStatusSep", children: "·" }, "sts") : null,
-                        stats ? jsx18.jsx("span", {
+                        stats ? jsx20.jsx("span", { className: "dshWmStatusSep", children: "·" }, "sts") : null,
+                        stats ? jsx20.jsx("span", {
                           "data-wm-stats-today": String(stats.today),
                           title: T.statsToday + "（" + T.stats + "）",
                           children: T.statsToday + " +" + stats.today + (dailyGoal > 0 ? " / " + dailyGoal + T.statsGoalUnit : "") + (stats.streak > 1 ? " · " + T.statsStreak + stats.streak + T.statsStreakUnit : "")
                         }, "stv") : null,
-                        gate ? jsx18.jsx("span", {
+                        gate ? jsx20.jsx("span", {
                           className: "dshWmStatusSep",
                           children: "·"
                         }) : null,
-                        gate ? jsx18.jsx("span", {
+                        gate ? jsx20.jsx("span", {
                           style: {
                             color: gate.pass ? "var(--dsw-alias-state-success-primary)" : "var(--dsw-alias-state-error-primary)",
                             fontWeight: 600
@@ -21491,7 +21886,7 @@ function WritingModeApp() {
                     },
                     "st"
                   ),
-                  exportProj ? jsx18.jsx(ExportBookPanel, {
+                  exportProj ? jsx20.jsx(ExportBookPanel, {
                     proj: exportProj,
                     onClose: () => setExportProj(null),
                     onDone: (data) => {
@@ -21501,24 +21896,34 @@ function WritingModeApp() {
                       void refreshTree();
                       if (data?.doc?.path) setFilePath(data.doc.path);
                     }
-                  }, "export-book") : null
+                  }, "export-book") : null,
+                  archiveProj ? jsx20.jsx(ProjectArchivePanel, {
+                    proj: archiveProj,
+                    onClose: () => setArchiveProj(null),
+                    // 从档案跳回写作现场：开文档并收掉档案层，编辑器一直挂着，不丢未保存文字
+                    onOpenDoc: (abs) => {
+                      setFilePath(abs);
+                      setArchiveProj(null);
+                    },
+                    onJumpToFile: jumpFromArchive
+                  }, "archive") : null
                 ]
               },
               "main"
             ),
-            aiOpen ? jsx18.jsx(
+            aiOpen ? jsx20.jsx(
               "aside",
               {
                 className: "dshWmSide is-ai",
                 children: [
-                  jsx18.jsxs("div", { className: "dshWmSideHead", children: [
-                    jsx18.jsx("button", { className: "dshWmTab" + (aiTab === "companion" ? " is-on" : ""), onClick: () => setAiTab("companion"), children: T.ai }),
-                    jsx18.jsx("button", { className: "dshWmTab" + (aiTab === "tools" ? " is-on" : ""), onClick: () => setAiTab("tools"), children: "文字工具" }),
-                    jsx18.jsx("button", { className: "dshWmTab" + (aiTab === "check" ? " is-on" : ""), onClick: () => setAiTab("check"), children: "检查" })
+                  jsx20.jsxs("div", { className: "dshWmSideHead", children: [
+                    jsx20.jsx("button", { className: "dshWmTab" + (aiTab === "companion" ? " is-on" : ""), onClick: () => setAiTab("companion"), children: T.ai }),
+                    jsx20.jsx("button", { className: "dshWmTab" + (aiTab === "tools" ? " is-on" : ""), onClick: () => setAiTab("tools"), children: "文字工具" }),
+                    jsx20.jsx("button", { className: "dshWmTab" + (aiTab === "check" ? " is-on" : ""), onClick: () => setAiTab("check"), children: "检查" })
                   ] }, "ah"),
                   // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
                   // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
-                  aiTab === "companion" ? jsx18.jsx(WritingCompanion, {
+                  aiTab === "companion" ? jsx20.jsx(WritingCompanion, {
                     path: filePath || activeRoot,
                     sourceInfo: () => {
                       const snap = editor.get();
@@ -21551,21 +21956,21 @@ function WritingModeApp() {
                     // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
                     onJumpToFile: jumpToFile
                   }, "companion") : null,
-                  aiTab === "tools" ? jsx18.jsx(
+                  aiTab === "tools" ? jsx20.jsx(
                     "div",
                     {
                       className: "dshWmAiBody",
                       children: [
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           { className: "dshWmAiSection", children: [
-                            jsx18.jsx("div", { className: "dshWmAiSectionTitle", children: "AI" }, "at"),
-                            jsx18.jsx(
+                            jsx20.jsx("div", { className: "dshWmAiSectionTitle", children: "AI" }, "at"),
+                            jsx20.jsx(
                               "div",
                               {
                                 className: "dshWmAiActions",
                                 children: ["polish", "continue", "outline", "compress", "expand", "research", "spark"].map(
-                                  (a) => jsx18.jsx(
+                                  (a) => jsx20.jsx(
                                     "button",
                                     {
                                       type: "button",
@@ -21583,35 +21988,35 @@ function WritingModeApp() {
                           ] },
                           "sec-ai"
                         ),
-                        aiBusy ? jsx18.jsx("div", { className: "dshWmAiHint", children: T.applying }) : null,
-                        aiErr ? jsx18.jsx("div", { className: "dshWmAiHint", children: aiErr }) : null,
-                        jsx18.jsx(
+                        aiBusy ? jsx20.jsx("div", { className: "dshWmAiHint", children: T.applying }) : null,
+                        aiErr ? jsx20.jsx("div", { className: "dshWmAiHint", children: aiErr }) : null,
+                        jsx20.jsx(
                           "div",
                           { className: "dshWmAiMain", children: [
-                            jsx18.jsx("div", { className: "dshWmAiOut", children: aiOut || " " }, "out")
+                            jsx20.jsx("div", { className: "dshWmAiOut", children: aiOut || " " }, "out")
                           ] },
                           "aim"
                         ),
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           {
                             className: "dshWmAiActions",
                             children: [
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 disabled: !aiOut,
                                 onClick: applyInsert,
                                 children: T.insert
                               }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn",
                                 disabled: !aiOut,
                                 onClick: applyReplace,
                                 children: T.replaceSel
                               }),
-                              jsx18.jsx("button", {
+                              jsx20.jsx("button", {
                                 type: "button",
                                 className: "dshWmBtn is-primary",
                                 onClick: sendToChat,
@@ -21621,7 +22026,7 @@ function WritingModeApp() {
                           },
                           "apply"
                         ),
-                        jsx18.jsx(
+                        jsx20.jsx(
                           "div",
                           { className: "dshWmAiHint", children: KEY_HINT },
                           "kbd"
@@ -21630,7 +22035,7 @@ function WritingModeApp() {
                     },
                     "ab"
                   ) : null,
-                  aiTab === "check" ? jsx18.jsx(InspectionPanel, {
+                  aiTab === "check" ? jsx20.jsx(InspectionPanel, {
                     T,
                     filePath,
                     gate,
@@ -21708,14 +22113,14 @@ function ensureDomFloat() {
 }
 
 // plugin/writing-mode/src/client/features/settings/WritingModeSettings.js
-var react9 = __toESM(require("react"), 1);
-var jsx20 = __toESM(require("react/jsx-runtime"), 1);
+var react10 = __toESM(require("react"), 1);
+var jsx22 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeSettings() {
-  const [prefs, setPrefsLocal] = react9.useState(getPrefs);
-  const [roots, setRoots] = react9.useState([]);
-  const [pathDraft, setPathDraft] = react9.useState("");
-  react9.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
-  react9.useEffect(() => {
+  const [prefs, setPrefsLocal] = react10.useState(getPrefs);
+  const [roots, setRoots] = react10.useState([]);
+  const [pathDraft, setPathDraft] = react10.useState("");
+  react10.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), []);
+  react10.useEffect(() => {
     void loadPrefs();
     void api("config").then((d) => {
       if (d.ok) setRoots(d.roots || []);
@@ -21726,7 +22131,7 @@ function WritingModeSettings() {
   const label = { width: 120, flex: "none", color: "var(--dsw-alias-label-secondary)", fontSize: 13 };
   const hint = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.5 };
   function numInput(key, min, max, step) {
-    return jsx20.jsx("input", {
+    return jsx22.jsx("input", {
       type: "number",
       min: String(min),
       max: String(max),
@@ -21767,7 +22172,7 @@ function WritingModeSettings() {
     const d = await api("config");
     if (d.ok) setRoots(d.roots || []);
   }
-  return jsx20.jsx(
+  return jsx22.jsx(
     "div",
     {
       style: {
@@ -21779,7 +22184,7 @@ function WritingModeSettings() {
         color: "var(--dsw-alias-label-primary)"
       },
       children: [
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: { fontSize: 13, color: "var(--dsw-alias-label-tertiary)", marginBottom: 8 },
@@ -21787,19 +22192,19 @@ function WritingModeSettings() {
           },
           "intro"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "库根目录" }),
-              jsx20.jsx(
+              jsx22.jsx("span", { style: label, children: "库根目录" }),
+              jsx22.jsx(
                 "div",
                 {
                   style: { flex: 1, display: "flex", flexDirection: "column", gap: 6 },
                   children: [
                     ...(roots || []).map(
-                      (r) => jsx20.jsx(
+                      (r) => jsx22.jsx(
                         "div",
                         {
                           style: {
@@ -21809,7 +22214,7 @@ function WritingModeSettings() {
                             fontSize: 13
                           },
                           children: [
-                            jsx20.jsx("span", {
+                            jsx22.jsx("span", {
                               style: {
                                 flex: 1,
                                 overflow: "hidden",
@@ -21818,7 +22223,7 @@ function WritingModeSettings() {
                               },
                               children: (r.missing ? "⚠ " : "") + r.path
                             }),
-                            jsx20.jsx("button", {
+                            jsx22.jsx("button", {
                               type: "button",
                               className: "dshWmBtn",
                               onClick: () => void removeRoot(r.path),
@@ -21829,12 +22234,12 @@ function WritingModeSettings() {
                         r.path
                       )
                     ),
-                    jsx20.jsx(
+                    jsx22.jsx(
                       "div",
                       {
                         style: { display: "flex", gap: 8 },
                         children: [
-                          jsx20.jsx("input", {
+                          jsx22.jsx("input", {
                             style: {
                               flex: 1,
                               padding: "6px 10px",
@@ -21852,7 +22257,7 @@ function WritingModeSettings() {
                               if (e.key === "Enter") void addRoot();
                             }
                           }),
-                          jsx20.jsx("button", {
+                          jsx22.jsx("button", {
                             type: "button",
                             className: "dshWmBtn is-primary",
                             onClick: () => void addRoot(),
@@ -21869,58 +22274,58 @@ function WritingModeSettings() {
           },
           "roots"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "正文字号" }),
+              jsx22.jsx("span", { style: label, children: "正文字号" }),
               numInput("fontSize", 12, 28, 1),
-              jsx20.jsx("span", { style: hint, children: "px" })
+              jsx22.jsx("span", { style: hint, children: "px" })
             ]
           },
           "fs"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "行距" }),
+              jsx22.jsx("span", { style: label, children: "行距" }),
               numInput("lineHeight", 1.4, 2.6, 0.05)
             ]
           },
           "lh"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "自动保存" }),
+              jsx22.jsx("span", { style: label, children: "自动保存" }),
               numInput("autoSaveMs", 200, 5e3, 100),
-              jsx20.jsx("span", { style: hint, children: "ms（防抖）" })
+              jsx22.jsx("span", { style: hint, children: "ms（防抖）" })
             ]
           },
           "as"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "保存后门禁" }),
-              jsx20.jsx("input", {
+              jsx22.jsx("span", { style: label, children: "保存后门禁" }),
+              jsx22.jsx("input", {
                 type: "checkbox",
                 checked: Boolean(prefs.autoGate),
                 onChange: (e) => void savePrefs({ autoGate: e.target.checked })
               }),
-              jsx20.jsx("span", { style: hint, children: "md / fountain 存盘后自动跑一次" })
+              jsx22.jsx("span", { style: hint, children: "md / fountain 存盘后自动跑一次" })
             ]
           },
           "ag"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: {
@@ -21936,13 +22341,13 @@ function WritingModeSettings() {
           },
           "ai-head"
         ),
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "来源" }),
-              jsx20.jsx(
+              jsx22.jsx("span", { style: label, children: "来源" }),
+              jsx22.jsx(
                 "select",
                 {
                   value: prefs.aiMode === "custom" ? "custom" : "harness",
@@ -21957,12 +22362,12 @@ function WritingModeSettings() {
                   },
                   onChange: (e) => void savePrefs({ aiMode: e.target.value === "custom" ? "custom" : "harness" }),
                   children: [
-                    jsx20.jsx("option", { value: "harness", children: "Harness 全局默认（文字工具）" }, "h"),
-                    jsx20.jsx("option", { value: "custom", children: "自定义 Provider / Model" }, "c")
+                    jsx22.jsx("option", { value: "harness", children: "Harness 全局默认（文字工具）" }, "h"),
+                    jsx22.jsx("option", { value: "custom", children: "自定义 Provider / Model" }, "c")
                   ]
                 }
               ),
-              jsx20.jsx("span", {
+              jsx22.jsx("span", {
                 style: hint,
                 children: prefs.aiMode === "custom" ? "润色/续写/找资料走下面配置的模型" : "文字工具使用 Harness 全局默认模型；写作伙伴使用其原生会话模型"
               })
@@ -21970,13 +22375,13 @@ function WritingModeSettings() {
           },
           "ai-mode"
         ),
-        prefs.aiMode === "custom" ? jsx20.jsx(
+        prefs.aiMode === "custom" ? jsx22.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx20.jsx("span", { style: label, children: "Provider" }),
-              jsx20.jsx("input", {
+              jsx22.jsx("span", { style: label, children: "Provider" }),
+              jsx22.jsx("input", {
                 style: {
                   flex: 1,
                   padding: "6px 10px",
@@ -21995,13 +22400,13 @@ function WritingModeSettings() {
           },
           "ai-prov"
         ) : null,
-        prefs.aiMode === "custom" ? jsx20.jsx(
+        prefs.aiMode === "custom" ? jsx22.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx20.jsx("span", { style: label, children: "Model" }),
-              jsx20.jsx("input", {
+              jsx22.jsx("span", { style: label, children: "Model" }),
+              jsx22.jsx("input", {
                 style: {
                   flex: 1,
                   padding: "6px 10px",
@@ -22020,13 +22425,13 @@ function WritingModeSettings() {
           },
           "ai-model"
         ) : null,
-        prefs.aiMode === "custom" ? jsx20.jsx(
+        prefs.aiMode === "custom" ? jsx22.jsx(
           "div",
           {
             style: { ...row, alignItems: "flex-start" },
             children: [
-              jsx20.jsx("span", { style: label, children: "API Key" }),
-              jsx20.jsx("input", {
+              jsx22.jsx("span", { style: label, children: "API Key" }),
+              jsx22.jsx("input", {
                 type: "password",
                 style: {
                   flex: 1,
@@ -22046,19 +22451,19 @@ function WritingModeSettings() {
           },
           "ai-key"
         ) : null,
-        jsx20.jsx(
+        jsx22.jsx(
           "div",
           {
             style: row,
             children: [
-              jsx20.jsx("span", { style: label, children: "进入工作台" }),
-              jsx20.jsx("button", {
+              jsx22.jsx("span", { style: label, children: "进入工作台" }),
+              jsx22.jsx("button", {
                 type: "button",
                 className: "dshWmBtn is-primary",
                 onClick: () => setModeActive(true),
                 children: "打开写作模式"
               }),
-              jsx20.jsx("span", { style: hint, children: "快捷键 Ctrl+Shift+W" })
+              jsx22.jsx("span", { style: hint, children: "快捷键 Ctrl+Shift+W" })
             ]
           },
           "open"
@@ -22069,12 +22474,12 @@ function WritingModeSettings() {
 }
 
 // plugin/writing-mode/src/client/features/settings/entries.js
-var react10 = __toESM(require("react"), 1);
-var jsx22 = __toESM(require("react/jsx-runtime"), 1);
+var react11 = __toESM(require("react"), 1);
+var jsx24 = __toESM(require("react/jsx-runtime"), 1);
 function WritingModeFooterEntry() {
-  const [on, setOn] = react10.useState(getModeActive);
-  react10.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
-  return jsx22.jsx("button", {
+  const [on, setOn] = react11.useState(getModeActive);
+  react11.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  return jsx24.jsx("button", {
     type: "button",
     className: on ? "dshWmBtn is-primary" : "dshWmBtn",
     title: on ? T.exit : T.toggle,
@@ -22084,9 +22489,9 @@ function WritingModeFooterEntry() {
   });
 }
 function WritingModeHeaderEntry() {
-  const [on, setOn] = react10.useState(getModeActive);
-  react10.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
-  return jsx22.jsx("button", {
+  const [on, setOn] = react11.useState(getModeActive);
+  react11.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  return jsx24.jsx("button", {
     type: "button",
     className: "dshWmBtn",
     title: on ? T.exit : T.toggle,

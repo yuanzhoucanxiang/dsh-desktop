@@ -17,6 +17,9 @@ const NAV_FILES = {
   'state/character-state.md': ['创作跟踪', '人物状态'],
 }
 
+/** 契约内已知资料的展示名（作品档案面板复用同一张表，避免两处各写一份标签）。 */
+export const navFileLabels = NAV_FILES
+
 export function navigationGroups(files, q) {
   const query = String(q || '').trim().toLowerCase()
   const groups = new Map()

@@ -21,6 +21,7 @@ import { makeReference, referenceStatus } from '../../shared/reference.js'
 import { WritingCompanion } from '../features/companion/index.js'
 import { resolveFileByName } from '../features/companion/jump.js'
 import { ExportBookPanel } from '../features/export-book/index.js'
+import { ProjectArchivePanel } from '../features/archive/index.js'
 import { InspectionPanel } from '../features/inspection/index.js'
 
 const LS_FILE = 'dsh-writing-mode-file'
@@ -100,6 +101,7 @@ export function WritingModeApp() {
   const [addRootPath, setAddRootPath] = react.useState('')
   const [addRootKind, setAddRootKind] = react.useState('library')
   const [exportProj, setExportProj] = react.useState(null)
+  const [archiveProj, setArchiveProj] = react.useState(null)
   const [flash, setFlash] = react.useState('')
   const [prefs, setPrefs] = react.useState(getPrefs)
   react.useEffect(() => subscribePrefs(() => setPrefs({ ...getPrefs() })), [])
@@ -337,6 +339,12 @@ export function WritingModeApp() {
     flashMsg('已跳到 ' + hit.name)
   }, [tree])
 
+  /** 档案层里的 [[跳转]]：先收掉档案层再走同一套解析，否则跳完仍被档案盖着（CompanionMessage 是 memo，回调要稳定）。 */
+  const jumpFromArchive = react.useCallback((name) => {
+    setArchiveProj(null)
+    jumpToFile(name)
+  }, [jumpToFile])
+
   /** 卡片拖拽重排成功后：刷新文件树；编辑中的章节被改名时把打开文档切到新路径（有未保存修改则提示走另存）。 */
   const handleReordered = react.useCallback((renames) => {
     void refreshTree()
@@ -406,6 +414,7 @@ export function WritingModeApp() {
     const onKey = e => {
       if (e.key === 'Escape') {
         if (newDocMode || addRootMode) return
+        if (archiveProj) { setArchiveProj(null); return }
         if (exportProj) { setExportProj(null); return }
         // 查找栏开着时 Esc 只关查找栏，不退写作台
         if (findOpen) { setFindOpen(false); return }
@@ -423,7 +432,7 @@ export function WritingModeApp() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, newDocMode, addRootMode, exportProj, findOpen, editor, persist, close])
+  }, [active, newDocMode, addRootMode, exportProj, archiveProj, findOpen, editor, persist, close])
 
   function flashMsg(msg) {
     setFlash(String(msg || ''))
@@ -1184,8 +1193,15 @@ export function WritingModeApp() {
                                           jsx.jsx('button', {
                                             type: 'button',
                                             className: 'dshWmBtn is-ghost',
+                                            title: '作品档案：已确认设定、进度与资料的只读汇总页',
+                                            onClick: () => { setExportProj(null); setArchiveProj(proj) },
+                                            children: '档案',
+                                          }, 'archive'),
+                                          jsx.jsx('button', {
+                                            type: 'button',
+                                            className: 'dshWmBtn is-ghost',
                                             title: '导出成书：把各章最新版按顺序拼成一份完整书稿（原稿不动）',
-                                            onClick: () => setExportProj(proj),
+                                            onClick: () => { setArchiveProj(null); setExportProj(proj) },
                                             children: '成书',
                                           }, 'export'),
                                           jsx.jsx('select', {
@@ -1667,6 +1683,15 @@ export function WritingModeApp() {
                           if (data?.doc?.path) setFilePath(data.doc.path)
                         },
                       }, 'export-book')
+                    : null,
+                  archiveProj
+                    ? jsx.jsx(ProjectArchivePanel, {
+                        proj: archiveProj,
+                        onClose: () => setArchiveProj(null),
+                        // 从档案跳回写作现场：开文档并收掉档案层，编辑器一直挂着，不丢未保存文字
+                        onOpenDoc: (abs) => { setFilePath(abs); setArchiveProj(null) },
+                        onJumpToFile: jumpFromArchive,
+                      }, 'archive')
                     : null,
                 ],
               },
