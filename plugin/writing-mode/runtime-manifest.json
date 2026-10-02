@@ -23,7 +23,8 @@
     "plugin/writing-mode/lib/websearch.js",
     "plugin/writing-mode/lib/world-setting.js",
     "plugin/writing-mode/lib/project-recovery.js",
-    "plugin/writing-mode/lib/project-identity.js"
+    "plugin/writing-mode/lib/project-identity.js",
+    "plugin/writing-mode/lib/reorder.js"
   ],
   "docs": [
     "plugin/writing-mode/CONTRACT.md"

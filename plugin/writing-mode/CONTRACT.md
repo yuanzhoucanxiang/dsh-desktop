@@ -61,6 +61,7 @@
 | `delete` | POST | path,revision | ok |
 | `gate` | POST | path?, content? | gate {kind,rows,pass,fail} |
 | `ledger` | POST | path | ledger 摘要 |
+| `reorder` | POST | project,order | 章节重排序（卡片拖拽）：order=期望顺序的当前版 abs 数组，与现有系列一一对应才受理；以**重命名事务**落实（项目锁 + 两阶段改名 + 回滚 + 绝不覆盖），返回 {moved,renames}；遗留 .reorder-*.tmp → 409 reorder-leftovers |
 | `outline` | GET | project | 大纲视图批量口径：每 draft 系列当前版 `{abs,name,chars,hook,gate}`（自然序）+ `structure.md` 标题行；非法/越界项目 400 `invalid-project` |
 | `stats` | GET | path | 码字统计：`{today,streak,days[14 旧→新]}` + `dailyGoal`；只读，解析不出项目（散稿）时 `stats:null` |
 | `assist` | POST | action,text,path | result / 501 llm-unavailable |

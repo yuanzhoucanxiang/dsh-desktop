@@ -369,6 +369,15 @@ export const CSS = [
   '.dshWmOutlineGate.is-pass{color:var(--dsw-alias-state-success-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 40%,transparent);}',
   '.dshWmOutlineGate.is-fail{color:var(--dsw-alias-state-error-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);}',
   '.dshWmOutlineHook{flex-basis:100%;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+
+  /* 卡片态（大纲视图的 corkboard）：网格卡片，可拖拽重排 */
+  '.dshWmOutlineHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.75;}',
+  '.dshWmCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}',
+  '.dshWmCard{position:relative;display:flex;flex-direction:column;gap:4px;min-height:84px;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);cursor:grab;}',
+  '.dshWmCard:active{cursor:grabbing;}',
+  '.dshWmCardName{flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}',
+  '.dshWmCardName:hover{text-decoration:underline;}',
+  '.dshWmCardDrag{position:absolute;top:6px;right:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);letter-spacing:-1px;}',
   '.dshWmDiff{',
   '  flex:none;max-height:36%;overflow:auto;',
   '  border-top:1px solid var(--dsw-alias-border-l2);',

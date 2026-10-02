@@ -1,7 +1,7 @@
 # 大纲视图 / 卡片视图调研（写作模式下一批候选）
 
 > 2026-10-02 · ZCode · 依据：对照 manuskript（index cards / Snowflake）/ novelWriter（Outline View）的评估结论，策划案 §3.1/§3.4。本文档只做调研与方案骨架，不是实施承诺。
-> **进展（2026-10-02 当日）**：§2.1 大纲只读视图已实施——文档库第三态「大纲」+ 只读路由 `GET outline`（`domain.outlineSummary`），见 CHANGELOG [Unreleased] 与 CONTRACT.md；§2.2 卡片只读版与拖拽排序仍未实施。
+> **进展（2026-10-02 当日，全部完成）**：§2.1 大纲视图已实施并升级为 §2.2 的**卡片看板**——拖拽重排以重命名事务落实（`lib/reorder.js`：项目锁 + 两阶段改名 + 回滚 + 绝不覆盖，`POST reorder`），见 CHANGELOG [Unreleased] 与 CONTRACT.md。§3 非目标与「不新增存储」结论维持不变。
 
 ## 1. 现状盘点（能复用什么）
 

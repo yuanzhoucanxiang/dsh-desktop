@@ -29,10 +29,12 @@ import {
   realOrNull,
   listProjectFiles,
 } from './lib/store.js'
+import { withFileLock } from './lib/file-lock.js'
 import { COMPANION_PRESET } from './lib/companion-preset.js'
 import { assist, recommend, runGates, ledgerSummary, outlineSummary } from './lib/domain.js'
 import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
 import { seedBaseline, recordSave, projectStatsFor } from './lib/writing-stats.js'
+import { reorderDraftSeries } from './lib/reorder.js'
 import {
   readMemory,
   applyMemoryOp,
@@ -122,6 +124,7 @@ export const ROUTE_METHODS = {
   ledger: ['POST'],
   stats: ['GET'],
   outline: ['GET'],
+  reorder: ['POST'],
   'create-project': ['POST'],
   'project-resource': ['POST'],
   compile: ['POST'],
@@ -758,6 +761,37 @@ export function apply(ctx) {
             return
           }
           writeJson(res, 200, { ok: true, outline: outlineSummary(project) })
+          return
+        }
+
+        // 章节重排序（卡片拖拽）：把期望顺序落实为 draft/ 内的重命名事务。
+        // 项目级锁互斥；期望顺序与现有系列一一对应才受理；绝不覆盖既有文件。
+        if (req.method === 'POST' && route === 'reorder') {
+          const parsed = await readJsonBody(req)
+          if (parsed === null) {
+            writeJson(res, 400, { ok: false, error: 'invalid-json' })
+            return
+          }
+          const roots = effectiveRoots(cfg)
+          const project = resolveProjectDir(parsed?.project || '', roots)
+          if (!project) {
+            writeJson(res, 400, { ok: false, error: 'invalid-project' })
+            return
+          }
+          if (!Array.isArray(parsed?.order)) {
+            writeJson(res, 400, { ok: false, error: 'order-required' })
+            return
+          }
+          try {
+            const result = withFileLock(path.join(project, 'state', '.reorder.lock'), () => reorderDraftSeries(project, parsed.order))
+            writeJson(res, 200, { ok: true, ...result })
+          } catch (err) {
+            const code = String(err?.code || err?.message || err)
+            const status = code === 'reorder-collision' || code === 'reorder-leftovers' || code === 'reorder-tmp-exists' || code.startsWith('reorder-leftovers')
+              ? 409
+              : code.startsWith('order-') ? 400 : (err?.status || 500)
+            writeJson(res, status, { ok: false, error: code })
+          }
           return
         }
 

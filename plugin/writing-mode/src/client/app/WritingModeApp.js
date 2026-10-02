@@ -337,6 +337,22 @@ export function WritingModeApp() {
     flashMsg('已跳到 ' + hit.name)
   }, [tree])
 
+  /** 卡片拖拽重排成功后：刷新文件树；编辑中的章节被改名时把打开文档切到新路径（有未保存修改则提示走另存）。 */
+  const handleReordered = react.useCallback((renames) => {
+    void refreshTree()
+    const snap = editor.get()
+    const cur = snap.path
+    if (!cur || !Array.isArray(renames) || !renames.length) return
+    const hit = renames.find((r) => String(r.from).toLowerCase() === String(cur).toLowerCase())
+    if (!hit) return
+    if (!snap.dirty && snap.status !== 'error') {
+      void editor.open(hit.to)
+      flashMsg('章节已改名，已切换到新文件')
+    } else {
+      flashMsg('当前编辑的章节已改名：请先用「另存为新版」把手上的修改存进新文件')
+    }
+  }, [editor, refreshTree])
+
   react.useEffect(() => {
     if (!active) return
     let reading = false
@@ -1082,7 +1098,7 @@ export function WritingModeApp() {
                       className: 'dshWmList',
                       children:
                         libraryView === 'outline'
-                          ? jsx.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs) }, 'outline-view')
+                          ? jsx.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, 'outline-view')
                           : roots.length === 0
                           ? jsx.jsx(
                               'div',

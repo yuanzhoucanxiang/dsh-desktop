@@ -3157,6 +3157,14 @@ var CSS = [
   ".dshWmOutlineGate.is-pass{color:var(--dsw-alias-state-success-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 40%,transparent);}",
   ".dshWmOutlineGate.is-fail{color:var(--dsw-alias-state-error-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);}",
   ".dshWmOutlineHook{flex-basis:100%;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  /* 卡片态（大纲视图的 corkboard）：网格卡片，可拖拽重排 */
+  ".dshWmOutlineHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.75;}",
+  ".dshWmCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}",
+  ".dshWmCard{position:relative;display:flex;flex-direction:column;gap:4px;min-height:84px;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);cursor:grab;}",
+  ".dshWmCard:active{cursor:grabbing;}",
+  ".dshWmCardName{flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}",
+  ".dshWmCardName:hover{text-decoration:underline;}",
+  ".dshWmCardDrag{position:absolute;top:6px;right:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);letter-spacing:-1px;}",
   ".dshWmDiff{",
   "  flex:none;max-height:36%;overflow:auto;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
@@ -4345,58 +4353,136 @@ function fileRow({ file: f, maxVer, active, onPick, labels }) {
 // plugin/writing-mode/src/client/features/library/OutlineView.js
 var react = __toESM(require("react"), 1);
 var jsx3 = __toESM(require("react/jsx-runtime"), 1);
-function OutlineSection({ proj, onOpen }) {
+async function loadOutline(proj) {
+  const d = await api("outline", void 0, { project: proj.path });
+  if (d && d.ok) return { loading: false, error: "", outline: d.outline };
+  return { loading: false, error: d && d.error || "outline-failed", outline: null };
+}
+function OutlineSection({ proj, onOpen, onReorderDone, onFlash }) {
   const [state, setState] = react.useState({ loading: true, error: "", outline: null });
-  react.useEffect(() => {
-    let alive = true;
+  const [busy, setBusy] = react.useState(false);
+  const dragFrom = react.useRef(-1);
+  const refresh = react.useCallback(() => {
     setState({ loading: true, error: "", outline: null });
-    api("outline", void 0, { project: proj.path }).then((d) => {
-      if (!alive) return;
-      if (d.ok) setState({ loading: false, error: "", outline: d.outline });
-      else setState({ loading: false, error: d.error || "outline-failed", outline: null });
-    }).catch((err) => {
-      if (alive) setState({ loading: false, error: String(err?.message || err), outline: null });
-    });
-    return () => {
-      alive = false;
-    };
+    loadOutline(proj).then((s) => {
+      if (s) setState(s);
+    }).catch((err) => setState({ loading: false, error: String(err?.message || err), outline: null }));
   }, [proj.path]);
+  react.useEffect(() => {
+    refresh();
+  }, [refresh]);
+  const doReorder = async (rowsInOrder) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const d = await api("reorder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project: proj.path, order: rowsInOrder.map((r) => r.abs) })
+      });
+      if (d && d.ok) {
+        if (onReorderDone) onReorderDone(d.renames || []);
+        if (onFlash) onFlash("章节顺序已更新");
+      } else {
+        if (onFlash) onFlash("重排失败：" + (d && d.error || "unknown"));
+      }
+    } catch (err) {
+      if (onFlash) onFlash("重排失败：" + String(err?.message || err));
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
   const outline = state.outline;
+  const rows = outline && outline.rows || [];
+  const cardProps = (idx) => ({
+    draggable: true,
+    onDragStart: (e) => {
+      dragFrom.current = idx;
+      try {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(idx));
+      } catch {
+      }
+    },
+    onDragOver: (e) => {
+      e.preventDefault();
+      try {
+        e.dataTransfer.dropEffect = "move";
+      } catch {
+      }
+    },
+    onDrop: (e) => {
+      e.preventDefault();
+      let from = dragFrom.current;
+      if (from === -1) {
+        try {
+          from = Number(e.dataTransfer.getData("text/plain"));
+        } catch {
+        }
+      }
+      dragFrom.current = -1;
+      if (!Number.isInteger(from) || from < 0 || from >= rows.length || from === idx) return;
+      const next = [...rows];
+      const moved = next.splice(from, 1)[0];
+      next.splice(idx, 0, moved);
+      void doReorder(next);
+    },
+    onDragEnd: () => {
+      dragFrom.current = -1;
+    }
+  });
+  const gateBadge = (row) => row.gate ? jsx3.jsx("span", {
+    className: "dshWmOutlineGate" + (row.gate.pass ? " is-pass" : " is-fail"),
+    "data-wm-outline-gate": row.name,
+    title: row.gate.pass ? "门禁全部通过" : row.gate.fail + " 项未达标（在「检查」页看明细）",
+    children: row.gate.pass ? "门禁 ✓" : "门禁 " + row.gate.fail
+  }) : null;
   return jsx3.jsxs("div", { className: "dshWmOutlineProj", children: [
     jsx3.jsx("div", { className: "dshWmOutlineTitle", children: proj.name }, "t"),
     state.loading ? jsx3.jsx("div", { className: "dshWmAiHint", children: "读取大纲…" }, "l") : null,
     state.error ? jsx3.jsxs("div", { className: "dshWmAiHint", "data-wm-outline-error": "1", children: [
       "大纲读取失败（" + state.error + "）",
-      jsx3.jsx("button", { type: "button", className: "dshWmQuiet", onClick: () => setState((s) => ({ ...s, loading: true, error: "" })), children: "重试" })
+      jsx3.jsx("button", { type: "button", className: "dshWmQuiet", onClick: refresh, children: "重试" })
     ] }, "e") : null,
     outline && outline.structure && outline.structure.length ? jsx3.jsxs("details", { className: "dshWmOutlineStructure", children: [
       jsx3.jsx("summary", { children: "结构（outline/structure.md）" }),
       ...outline.structure.map((l, i) => jsx3.jsx("div", { className: "dshWmOutlineStructLine", children: l.replace(/^#+\s*/, "") }, "s" + i))
     ] }, "struct") : null,
-    outline && outline.rows.length ? outline.rows.map((row) => jsx3.jsxs("div", { className: "dshWmOutlineRow", "data-wm-outline-row": row.name, children: [
-      jsx3.jsx("button", {
-        type: "button",
-        className: "dshWmOutlineName",
-        title: "打开当前版（" + row.name + "）",
-        onClick: () => onOpen(row.abs),
-        children: row.name
-      }, "n"),
-      jsx3.jsx("span", { className: "dshWmOutlineChars", children: row.chars + " 字" }, "c"),
-      row.gate ? jsx3.jsx("span", {
-        className: "dshWmOutlineGate" + (row.gate.pass ? " is-pass" : " is-fail"),
-        "data-wm-outline-gate": row.name,
-        title: row.gate.pass ? "门禁全部通过" : row.gate.fail + " 项未达标（在「检查」页看明细）",
-        children: row.gate.pass ? "门禁 ✓" : "门禁 " + row.gate.fail
-      }, "g") : null,
-      row.hook ? jsx3.jsx("div", { className: "dshWmOutlineHook", children: row.hook }, "h") : null
-    ] }, row.abs)) : outline ? jsx3.jsx("div", { className: "dshWmAiHint", children: "draft/ 下还没有文稿。" }, "nr") : null
+    outline && rows.length ? jsx3.jsxs(jsx3.Fragment, { children: [
+      jsx3.jsxs("div", { className: "dshWmOutlineHint", children: [
+        busy ? "正在按新顺序改名（原稿内容不动）…" : "拖拽卡片可调整章节顺序（重命名文件实现，历史版本一起跟着走）"
+      ] }, "hint"),
+      jsx3.jsx("div", {
+        className: "dshWmCards",
+        "data-wm-cards": "1",
+        children: rows.map((row, idx) => jsx3.jsxs("div", {
+          className: "dshWmCard",
+          "data-wm-outline-row": row.name,
+          ...cardProps(idx),
+          children: [
+            jsx3.jsx("button", {
+              type: "button",
+              className: "dshWmCardName dshWmOutlineName",
+              title: "打开当前版（" + row.name + "）",
+              onClick: () => onOpen(row.abs),
+              children: row.name
+            }, "n"),
+            jsx3.jsx("span", { className: "dshWmCardDrag", title: "拖拽调整顺序", children: "⋮⋮" }, "d"),
+            jsx3.jsx("span", { className: "dshWmOutlineChars", children: row.chars + " 字" }, "c"),
+            gateBadge(row),
+            row.hook ? jsx3.jsx("div", { className: "dshWmOutlineHook", children: row.hook }, "h") : null
+          ]
+        }, row.abs))
+      }, "cards")
+    ] }, "cards-wrap") : outline ? jsx3.jsx("div", { className: "dshWmAiHint", children: "draft/ 下还没有文稿。" }, "nr") : null
   ] }, proj.path);
 }
-function OutlineView({ projects, onOpen }) {
+function OutlineView({ projects, onOpen, onReorderDone, onFlash }) {
   return jsx3.jsx("div", {
     className: "dshWmOutline",
     "data-wm-outline": "1",
-    children: projects.length ? projects.map((p) => jsx3.jsx(OutlineSection, { proj: p, onOpen }, p.path)) : jsx3.jsx("div", { className: "dshWmAiHint", children: "该库下没有项目。" }, "none")
+    children: projects.length ? projects.map((p) => jsx3.jsx(OutlineSection, { proj: p, onOpen, onReorderDone, onFlash }, p.path)) : jsx3.jsx("div", { className: "dshWmAiHint", children: "该库下没有项目。" }, "none")
   });
 }
 
@@ -20170,6 +20256,20 @@ function WritingModeApp() {
     setAiOpen(true);
     flashMsg("已跳到 " + hit.name);
   }, [tree]);
+  const handleReordered = react8.useCallback((renames) => {
+    void refreshTree();
+    const snap = editor.get();
+    const cur = snap.path;
+    if (!cur || !Array.isArray(renames) || !renames.length) return;
+    const hit = renames.find((r) => String(r.from).toLowerCase() === String(cur).toLowerCase());
+    if (!hit) return;
+    if (!snap.dirty && snap.status !== "error") {
+      void editor.open(hit.to);
+      flashMsg("章节已改名，已切换到新文件");
+    } else {
+      flashMsg("当前编辑的章节已改名：请先用「另存为新版」把手上的修改存进新文件");
+    }
+  }, [editor, refreshTree]);
   react8.useEffect(() => {
     if (!active) return;
     let reading = false;
@@ -20887,7 +20987,7 @@ function WritingModeApp() {
                     "div",
                     {
                       className: "dshWmList",
-                      children: libraryView === "outline" ? jsx18.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs) }, "outline-view") : roots.length === 0 ? jsx18.jsx(
+                      children: libraryView === "outline" ? jsx18.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, "outline-view") : roots.length === 0 ? jsx18.jsx(
                         "div",
                         {
                           className: "dshWmWelcome",
