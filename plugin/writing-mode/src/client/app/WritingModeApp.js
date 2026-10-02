@@ -13,6 +13,7 @@ import { applyBodyAttr, setCloseGuard, commitModeActive, getModeActive, subscrib
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs, versionOf } from '../state/prefs-store.js'
 import { groupFiles, navigationGroups, maxVersionInGroup, resourceChoices } from '../features/library/grouping.js'
 import { fileRow } from '../features/library/FileRow.js'
+import { OutlineView } from '../features/library/OutlineView.js'
 import { lineDiff } from '../features/editor/diff.js'
 import { selectionText } from '../features/tools/selection.js'
 import { assistantPrompt, reviewPrompt } from '../features/tools/prompts.js'
@@ -1055,7 +1056,7 @@ export function WritingModeApp() {
                     : null,
                   roots.length > 0 ? jsx.jsx('div', {
                     style: { padding: '8px', display: 'flex', gap: 6 },
-                    children: [['writing', '作品导航'], ['files', '文件视图']].map(([value, label]) => jsx.jsx('button', {
+                    children: [['writing', '作品导航'], ['files', '文件视图'], ['outline', '大纲']].map(([value, label]) => jsx.jsx('button', {
                       type: 'button', className: 'dshWmBtn', 'aria-pressed': libraryView === value,
                       onClick: () => setLibraryView(value), children: label,
                     }, value)),
@@ -1080,7 +1081,9 @@ export function WritingModeApp() {
                     {
                       className: 'dshWmList',
                       children:
-                        roots.length === 0
+                        libraryView === 'outline'
+                          ? jsx.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs) }, 'outline-view')
+                          : roots.length === 0
                           ? jsx.jsx(
                               'div',
                               {

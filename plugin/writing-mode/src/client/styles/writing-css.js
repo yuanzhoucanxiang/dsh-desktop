@@ -353,6 +353,22 @@ export const CSS = [
 
   /* 参考预览行的「正文提及」徽标 */
   '.dshWmMention{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);}',
+
+  /* 大纲视图（只读投影） */
+  '.dshWmOutline{padding:4px 8px 16px;display:flex;flex-direction:column;gap:10px;}',
+  '.dshWmOutlineProj{display:flex;flex-direction:column;gap:4px;}',
+  '.dshWmOutlineTitle{font-size:12px;font-weight:700;color:var(--dsw-alias-label-secondary);padding:4px 2px;}',
+  '.dshWmOutlineStructure{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:2px 4px;}',
+  '.dshWmOutlineStructure summary{cursor:pointer;}',
+  '.dshWmOutlineStructLine{padding:1px 0 1px 14px;}',
+  '.dshWmOutlineRow{display:flex;align-items:baseline;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap;}',
+  '.dshWmOutlineName{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:13px;color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}',
+  '.dshWmOutlineName:hover{text-decoration:underline;}',
+  '.dshWmOutlineChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}',
+  '.dshWmOutlineGate{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;font-variant-numeric:tabular-nums;}',
+  '.dshWmOutlineGate.is-pass{color:var(--dsw-alias-state-success-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 40%,transparent);}',
+  '.dshWmOutlineGate.is-fail{color:var(--dsw-alias-state-error-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);}',
+  '.dshWmOutlineHook{flex-basis:100%;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWmDiff{',
   '  flex:none;max-height:36%;overflow:auto;',
   '  border-top:1px solid var(--dsw-alias-border-l2);',

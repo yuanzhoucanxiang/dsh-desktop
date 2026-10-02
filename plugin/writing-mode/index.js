@@ -30,7 +30,7 @@ import {
   listProjectFiles,
 } from './lib/store.js'
 import { COMPANION_PRESET } from './lib/companion-preset.js'
-import { assist, recommend, runGates, ledgerSummary } from './lib/domain.js'
+import { assist, recommend, runGates, ledgerSummary, outlineSummary } from './lib/domain.js'
 import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
 import { seedBaseline, recordSave, projectStatsFor } from './lib/writing-stats.js'
 import {
@@ -121,6 +121,7 @@ export const ROUTE_METHODS = {
   gate: ['POST'],
   ledger: ['POST'],
   stats: ['GET'],
+  outline: ['GET'],
   'create-project': ['POST'],
   'project-resource': ['POST'],
   compile: ['POST'],
@@ -745,6 +746,18 @@ export function apply(ctx) {
             return
           }
           writeJson(res, 200, { ok: true, stats: found.summary, dailyGoal: normalizePrefs(cfg.prefs).dailyGoal || 0 })
+          return
+        }
+
+        // 大纲视图批量口径（只读）：每章当前版字数/钩子/门禁 + structure.md 标题行
+        if (req.method === 'GET' && route === 'outline') {
+          const roots = effectiveRoots(cfg)
+          const project = resolveProjectDir(url.searchParams.get('project') || '', roots)
+          if (!project) {
+            writeJson(res, 400, { ok: false, error: 'invalid-project' })
+            return
+          }
+          writeJson(res, 200, { ok: true, outline: outlineSummary(project) })
           return
         }
 

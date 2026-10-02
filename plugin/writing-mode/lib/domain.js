@@ -7,6 +7,7 @@ import path from 'node:path'
 import { findProjectRoot, readTextOrNull, listProjectFiles, effectiveRoots, readConfig } from './store.js'
 import { loadKnowledgeFromRoot, searchKnowledge, formatKnowledgeHits } from './knowledge.js'
 import { extractSearchQueries, webResearch, formatWebHits } from './websearch.js'
+import { naturalSortFiles } from './compile.js'
 
 /* ── 门禁（与 E:\剧本\验证 的 check-*.mjs 同口径）── */
 const WEAK_ADVERBS = ['微微', '淡淡', '缓缓', '轻轻', '悄然', '默默']
@@ -125,6 +126,39 @@ export function runGates(filePath, content) {
   if (ext === '.fountain') return checkFountainGates(content)
   if ((ext === '.md' || ext === '.markdown') && /[\\/]draft[\\/]novel[\\/]/i.test(filePath)) return checkNovelGates(content)
   return { kind: 'none', rows: [], pass: true, fail: 0, extra: {} }
+}
+
+/**
+ * 大纲视图批量口径（只读）：每个 draft 系列取当前版（与 compile 同口径），
+ * 返回 { 字数(去空白), 章末钩子(仅显式标记), 门禁摘要 }；外加 outline/structure.md 的标题行。
+ * 纯读函数，不改文件、不碰版本协议。
+ */
+export function outlineSummary(projectDir) {
+  const files = listProjectFiles(projectDir)
+  const seriesKey = (p) => p.replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()
+  const groups = new Map()
+  for (const f of files.filter((f) => f.rel.startsWith('draft/'))) {
+    const v = Number(f.name.match(/-v(\d+)\.[^.]+$/i)?.[1] || 0)
+    const key = seriesKey(f.rel)
+    if (!groups.has(key) || v > groups.get(key).v) groups.set(key, { ...f, v })
+  }
+  const rows = naturalSortFiles([...groups.values()]).map((f) => {
+    const text = readTextOrNull(f.abs) || ''
+    const m = text.match(/章末钩子[:：]\s*(.+)$/m)
+    const gate = runGates(f.abs, text)
+    return {
+      abs: f.abs,
+      name: f.name,
+      chars: text.replace(/\s+/g, '').length,
+      hook: m ? m[1].trim().slice(0, 80) : '',
+      gate: gate.kind === 'none' ? null : { pass: gate.pass, fail: gate.fail },
+    }
+  })
+  const structure = readTextOrNull(path.join(projectDir, 'outline', 'structure.md'))
+  const structureLines = structure
+    ? structure.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('#')).slice(0, 50)
+    : []
+  return { project: projectDir, rows, structure: structureLines }
 }
 
 export function ledgerSummary(projectDir, activePath) {
