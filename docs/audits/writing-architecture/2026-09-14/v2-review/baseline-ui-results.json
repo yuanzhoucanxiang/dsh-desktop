@@ -65,12 +65,12 @@
         "visible": "NEW_DURING_RECOVERY",
         "disk": {
           "schemaVersion": 2,
-          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-Tg3GNm\\library\\演示项目",
-          "windowId": "5e3a05f3-d472-4e01-b4e2-7726ad095419",
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-WSpS27\\library\\演示项目",
+          "windowId": "2ae8740d-67a5-44f6-8e61-46badb672e83",
           "text": "NEW_DURING_RECOVERY",
           "reference": null,
           "rev": 8,
-          "updatedAt": "2026-10-03T12:38:52.314Z",
+          "updatedAt": "2026-10-03T14:22:19.985Z",
           "cleared": false
         }
       }
@@ -125,7 +125,7 @@
         "sent": [
           {
             "type": "text",
-            "text": "【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-Tg3GNm\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
+            "text": "【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-WSpS27\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
           }
         ]
       }
