@@ -1,5 +1,6 @@
 # 写作模式整合策划案
 
+> 版本：v0.15 · 2026-10-03（作品档案 wiki 化：独立窗口 `shell:open-wiki` + 作品切换条；顺带修掉外壳 dsh-app 协议同源判定老 bug。见 §22。）\
 > 版本：v0.14 · 2026-10-02（v0.1.46 与 v0.1.47 两次发布：0.1.7 适配/成书、码字统计与日更目标、查找替换、改稿 diff 回路、海明威/打字机、[[文稿名]] 跳回、mention 可见化、大纲卡片看板 + 拖拽重排。见 §21。）\
 > 版本：v0.13 · 2026-09-22（已有项目接入与可靠性整改已随 v0.1.42 发布）\
 > 范围：原生写作伙伴会话（`writing-companion`）+ 桌面工作台（`writing-mode`）；`writing-studio` 留作按需采用的严格流程\
@@ -559,3 +560,18 @@ v0.1.42 于 2026-09-22 公开，代码 ac00c15，Release ID 393502728；五项�
 - 档案第四刀（同日）：**篇内小目录**——标题 ≥2 的资料篇在篇名下给一条小目录，跳到本篇小节；单标题/纯文本篇不给。锚点 `doc-N-h-M` 由 host 生成、每篇独立编号，打印时与主目录一起藏。纯函数 16 → 19 项、门禁 12 → 13 段。**刻意不新增存储**：档案页仍是 `state/writing-memory.json` 与作品文件的投影（§18.3 单一权威数据）。
 
 署名：ZCode，2026-10-02
+
+## 22. 作品档案 wiki 化与外壳同源修复（2026-10-03）
+
+> 逐条证据在 `logs/2026-10-03.md`（Qoder 两条）与提交 `755b587` / `ba05904` / `008f8d3` / `b7b5bda` / `31e71c9`。本节为收口补记。
+
+**作品档案六刀成形**：工作台覆盖层（`0b85821` 收账）→ 导出单文件 HTML（`002d7d3`）→ 目录与页内锚点（`53fba69`）→ 篇内小目录（`e311c21`）→ **wiki 路由 + 独立窗口**（`755b587` / `ba05904`）→ **作品切换条**（`31e71c9`）。前四刀见 §21 末。
+
+- **wiki 路由**：`GET route=wiki` 与 `archive-export` 共用 `assembleArchiveModel()`（同一份口径两个出口），不落盘、每次现算、`cache-control: no-store`；CSP `script-src 'none'` + `nosniff`；路径越界 400、备忘坏 JSON / 未知 schema 409，不猜不清空。
+- **独立窗口**：外壳新增 `shell:open-wiki` IPC（preload 暴露 `dshShell.openWiki(路径)`）。刻意不做通用「开任意 URL」：调用方只给作品路径，URL 由外壳拼；窗口上限 6、同一作品复用同一窗口、`restartKernel()` 与装更新时统一关闭（投影零丢失）。客户端优先走窗口，无桥环境（官方桌面/浏览器）自动退回覆盖层并说明原因。CDP 取证脚本 `verify-wiki-window.mjs`（工作区根）拿真实文库验证 **WIKI_WINDOW_OK**。
+- **作品切换条**：库内 ≥2 部作品时页头给一排同源相对链接 `?route=wiki&path=…`（零脚本，CSP 不动；GET 表单在 `dsh-app:` 下 Chromium 不提交，故用链接；当前这部渲染成不可点 span，打印时藏）。只列 `resolveProjectDir` 真解析得出且仍在库根内的作品——库根散稿会让 `scanTree` 冒出伪作品条目，且 Windows 上 `realpathSync('')` 返回进程 cwd（曾列出指向仓库目录自己的链接），两道闸都挡住。
+- **外壳修复（顺带挖出的老 bug）**：WHATWG 对非标准协议返回 `origin === "null"`，`isKernelPageUrl` 直接比 `.origin` 导致 dsh-app 协议下自家地址全被判跨域（`will-navigate` 拦自家链接、`sendToFocused` 同源校验永不通过、`restartKernel` 走错分支）。新增零依赖 `lib/url-origin.js`（origin 为 `"null"` 时退 `protocol//host` 作键；解析失败一律不同源），shell-hardening 加 **S8 八条行为断言**（形状断言抓不到「看起来对」的比较，先钉平台事实再钉产出）。
+
+**验收**：`verify:writing-quick` 全链 26 套件 **QUICK_EXIT=0**（10-03 两轮复跑一致：Qoder 报 566 段 PASS，Kimi 收账复跑 592 行 PASS/OK 记录、0 非零退出）；`shell-hardening-test` **SHELL_HARDENING_OK**；`test:writing-archive-html` 23 项；`verify:writing-archive` 15 段（含切换条死链逐一实测 200、库根 400 `no-project`、真导航换作品）。**以上全部未随版本发布**，随下个版本走；正式版仍由用户自行「检查更新」。
+
+署名：Kimi（收口补记；实现为 Qoder），2026-10-03
