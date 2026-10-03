@@ -285,4 +285,40 @@ ok('C03 锚点序号按篇独立，作者标题文字进不了 id', () => {
   assert.ok(html.includes('a&quot; id=&quot;x onclick=&quot;y'), '恶意标题以字面文字保留')
 })
 
+ok('D01 作品切换器：只有一部作品时不给，多部时当前这部不是链接', () => {
+  const single = renderArchiveHtml({ ...longModel, projects: [{ path: 'E:/x/A', name: 'A' }], currentPath: 'E:/x/A' })
+  assert.ok(!single.includes('class="switcher"'), '一部作品不该给切换器')
+  const many = renderArchiveHtml({ ...longModel,
+    projects: [{ path: 'E:/x/A', name: '甲', rootLabel: '剧本' }, { path: 'E:/x/B', name: '乙' }],
+    currentPath: 'e:/x/a' })
+  const bar = /class="switcher"[\s\S]*?<\/nav>/.exec(many)
+  assert.ok(bar, '两部作品应给切换器')
+  assert.ok(bar[0].includes('<span class="is-current">甲 · 剧本</span>'), '当前这部只显示、不给链接（点了也是自己）')
+  assert.ok(bar[0].includes('<a href="?route=wiki&amp;path=E%3A%2Fx%2FB">乙</a>'), '另一部给同源相对链接：' + bar[0])
+})
+
+ok('D02 切换器不需要任何脚本：整页 0 个 script，链接同源相对', () => {
+  const html = renderArchiveHtml({ ...longModel,
+    projects: [{ path: 'E:/x/A', name: '甲' }, { path: 'E:/x/B', name: '乙' }], currentPath: 'E:/x/A' })
+  assert.equal((html.match(/<script[\s>]/gi) || []).length, 0, '整页不该有脚本')
+  const bar = /class="switcher"[\s\S]*?<\/nav>/.exec(html)[0]
+  assert.ok(!/<form|\sonchange=|\sonsubmit=/.test(bar), '不该依赖表单或事件属性：' + bar)
+  assert.ok(!/href="(https?:|file:|dsh-app:)/.test(bar), '切换链接必须同源相对')
+  assert.ok(/@media print\{[^}]*\.switcher[^}]*display:none/.test(html), '打印时藏切换器')
+})
+
+ok('D03 导出页不带切换器；作品路径与名字里的引号逃不出属性', () => {
+  const exported = renderArchiveHtml(longModel)
+  assert.ok(!exported.includes('class="switcher"'), '导出是单部作品的快照，不是入口')
+  const hostile = renderArchiveHtml({ ...longModel,
+    projects: [{ path: 'E:/x/" onload="x', name: '"><script>alert(1)</script>' }, { path: 'E:/x/B', name: '乙' }],
+    currentPath: 'E:/x/B' })
+  const bar = /class="switcher"[\s\S]*?<\/nav>/.exec(hostile)[0]
+  const link = /<a href="([^"]*)">/.exec(bar)
+  assert.ok(link, '应有切换链接')
+  assert.ok(!link[1].includes('"'), 'href 里不该有裸引号（会被提前闭合）：' + link[1])
+  assert.ok(!/<script[\s>]/.test(hostile), '作品名里的脚本标签只能以文字出现')
+  assert.ok(hostile.includes('&quot;&gt;&lt;script&gt;'), '作品名以转义文字保留')
+})
+
 console.log(`\n作品档案导出: ${pass} 项通过`)

@@ -166,7 +166,7 @@ function writeJson(res, status, obj) {
  * 免得两个出口对「什么算已确认设定」「哪篇算当前版」各说各话。
  * 抛出的错误带 status/code，由调用方原样回给客户端——这里不决定「是文件还是页面」。
  */
-function assembleArchiveModel(projectReal, prefs, titleOverride) {
+function assembleArchiveModel(projectReal, prefs, titleOverride, extra) {
   const mem = readMemory(projectReal)
   if (mem?.error) throw storeError('memory-' + mem.error, 409)
   const items = mem?.memory?.items || []
@@ -218,13 +218,14 @@ function assembleArchiveModel(projectReal, prefs, titleOverride) {
     dailyGoal: normalizePrefs(prefs).dailyGoal || 0,
     ledger: ledgerSummary(projectReal, outline.rows[0]?.abs),
     docs,
+    ...(extra || {}),
   })
   return { html, bookTitle, counts: { settings: settings.length, docs: docs.length, chapters: outline.rows.length } }
 }
 
 /**
  * 档案页是「作者自己写的文字 + 我们的模板」拼出来的文档，CSP 把可执行性整个关掉：
- * 页面本来就没有脚本（导航全靠锚点），这条头是第二道防线——稿子里的 <script>
+ * 页面本来就没有脚本（导航全靠锚点与相对链接），这条头是第二道防线——稿子里的 <script>
  * 既已被转义，也绝不会被放行执行。样式必须 'unsafe-inline'（单文件自包含的代价）。
  */
 const WIKI_CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
@@ -786,7 +787,27 @@ export function apply(ctx) {
             return
           }
           try {
-            const { html } = assembleArchiveModel(projectReal, cfg.prefs, '')
+            // 切换器只列**真能渲染的作品**：scanTree 会把库根本身（根目录下的散稿）也算成
+            // 一个条目，那种路径 resolveProjectDir 给不出结果，点了就是死链（实测撞到过）。
+            // 两道闸都要有：resolveProjectDir 为 null 时**不能**把空串交给 realOrNull
+            // （Windows 上 realpathSync('') 会返回进程 cwd，于是链接能指到仓库目录去）；
+            // 解析出来的目录还必须仍在库根内，越界一律不列。
+            // 名单沿用 scanTree 而不是另写一套目录扫描——「库里有哪些作品」只该有一处说法；
+            // 代价是每次开页多走一遍目录，而档案页是作者点开才算、不轮询。
+            const seen = new Set()
+            const projects = []
+            for (const r of scanTree(cfg)) {
+              for (const p of (r.projects || [])) {
+                const dir = resolveProjectDir(p.path, roots)
+                const resolved = dir ? realOrNull(dir) : null
+                if (!resolved || resolveUnderRoots(resolved, roots) === null) continue
+                const key = resolved.toLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                projects.push({ path: resolved, name: p.name, rootLabel: r.label || '' })
+              }
+            }
+            const { html } = assembleArchiveModel(projectReal, cfg.prefs, '', { projects, currentPath: projectReal })
             res.statusCode = 200
             res.setHeader('content-type', 'text/html; charset=utf-8')
             res.setHeader('content-security-policy', WIKI_CSP)

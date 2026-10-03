@@ -221,6 +221,12 @@ a{color:inherit}
 footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3);font-family:system-ui,sans-serif}
 [id]{scroll-margin-top:14px}
 .toc{margin:28px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--layer)}
+.switcher{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:22px 0 0;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--layer);font-family:system-ui,sans-serif;font-size:12.5px}
+.switcherLabel{color:var(--ink3);margin-right:2px}
+.switcher a{color:var(--ink2);text-decoration:none;border-bottom:1px dotted var(--ink3)}
+.switcher a:hover{color:var(--brand);border-bottom-color:var(--brand)}
+.switcher .is-current{color:var(--ink);font-weight:600}
+.switcher .sep{color:var(--ink3);opacity:.5}
 .toc h2{margin:0 0 8px;border:0;padding:0}
 .toc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .toc li{font-size:13px}
@@ -234,7 +240,7 @@ footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-si
 .ref{border-bottom:1px dotted var(--ink3);text-decoration:none}
 a.ref:hover{color:var(--brand)}
 @media print{
- .toc,.docToc{display:none}
+ .toc,.docToc,.switcher{display:none}
 }
 @media print{
  body{background:#fff;font-size:11.5pt;line-height:1.6}
@@ -310,6 +316,26 @@ function ledgerSection(m, refs) {
     + (l.hook ? ' · 章末钩子 ' + inline(l.hook, refs) : '') + '</p></section>'
 }
 
+/**
+ * 作品切换器：一排链接（当前这部不是链接）。档案页 CSP 关着脚本，所以不能做下拉 + onchange；
+ * 试过 GET 表单，但 Chromium 对 `dsh-app:` 这类自定义协议不提交表单（点了没导航），
+ * 于是回到最朴素也最稳的办法——相对链接，浏览器原生就能跳，无需任何脚本。
+ * 只有 ≥2 部作品时才给。projects 由 wiki 出口自己算并塞进 model（见 index.js 的 route=wiki），
+ * 导出出口不塞——那是一部作品的快照，不是入口，所以自然长不出这块。
+ */
+export function switcherSection(m) {
+  const list = (m.projects || []).filter((p) => p && p.path)
+  if (list.length < 2) return ''
+  const current = String(m.currentPath || '').toLowerCase()
+  const items = list.map((p) => {
+    const label = escapeHtml(p.name || p.path) + (p.rootLabel ? ' · ' + escapeHtml(p.rootLabel) : '')
+    if (String(p.path).toLowerCase() === current) return '<span class="is-current">' + label + '</span>'
+    return '<a href="?route=wiki&amp;path=' + escapeHtml(encodeURIComponent(p.path)) + '">' + label + '</a>'
+  })
+  return '<nav class="switcher" aria-label="切换作品"><span class="switcherLabel">换作品</span>'
+    + items.join('<span class="sep">·</span>') + '</nav>'
+}
+
 /** 目录：条目不多时连设定与资料一起列，多到一定量就只留四个大区，不把导航变成负担。 */
 function tocSection(m) {
   const SUB_LIMIT = 40
@@ -373,6 +399,7 @@ export function renderArchiveHtml(model = {}) {
     + ' · 只读投影：改设定请回写作台的项目备忘，这份文件删掉可随时重生成</p>'
     + (model.premise ? '<p class="premise">' + inline(model.premise, refs) + '</p>' : '')
     + '</header>'
+    + switcherSection(model)
     + tocSection(model)
     + settingsSection(model, refs)
     + progressSection(model, refs)

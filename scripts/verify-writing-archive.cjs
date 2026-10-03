@@ -234,6 +234,9 @@ app.whenReady().then(async () => {
 
   // 11) wiki 文档路由：与导出同一份口径，但它是「一个页面」——禁脚本、不缓存、越界要拒
   //     （必须在切到 file:// 之前跑：那时相对 fetch 会打到 file:///api/…）
+  // 库根下的散稿让 scanTree 把库根自己也列成一条"作品"（独立文稿）：它渲染不出档案，
+  // 既不该凑成"两部作品"，也不该作为切换链接出现（曾指到进程 cwd 去）。
+  fs.writeFileSync(path.join(root, '一张便签.md'), '随手记：雾港的方言里"禁令"叫"夜锁"。\n')
   const wiki = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)}));return {status:r.status,type:r.headers.get('content-type'),csp:r.headers.get('content-security-policy')||'',cache:r.headers.get('cache-control'),text:await r.text()}})()`)
   assert.equal(wiki.status, 200)
   assert.match(wiki.type, /text\/html/, 'wiki 应返回 HTML：' + wiki.type)
@@ -244,7 +247,33 @@ app.whenReady().then(async () => {
   const outside = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(temp)}));return {s:r.status,b:(await r.text()).slice(0,120)}})()`)
   assert.equal(outside.s, 400, '库外路径应被拒，实得 ' + outside.s)
   assert.match(outside.b, /path-outside-roots|no-project/, outside.b)
+  assert.ok(!wiki.text.includes('class="switcher"'), '库根散稿不算第二部作品，只有一部时不该给切换器')
   console.log('PASS wiki 路由：HTML + CSP 禁脚本 + 不缓存 + 库外拒绝')
+
+  // 11b) 作品切换器：文库里出现第二部作品后给下拉，提交能换到另一部的档案
+  const second = path.join(root, '第二部')
+  fs.mkdirSync(path.join(second, 'bible'), { recursive: true })
+  fs.writeFileSync(path.join(second, 'project.md'), '# 第二部\n\n## 一句话故事\n\n另一部作品的开头。\n')
+  const wiki2 = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)}));return await r.text()})()`)
+  assert.ok(wiki2.includes('class="switcher"'), '两部作品时应给切换器')
+  assert.ok(/<span class="is-current">演示项目/.test(wiki2), '当前这部不该是链接')
+  assert.ok(/<a href="\?route=wiki&amp;path=[^"]*">第二部/.test(wiki2), '另一部应是同源相对链接：' + (/class="switcher"[\s\S]{0,320}/.exec(wiki2)?.[0] || ''))
+  assert.ok(wiki2.includes('第二部'), '切换器里要列出另一部作品')
+  assert.ok(!wiki2.includes('独立文稿'), '库根散稿不是作品，不该进切换器：' + (/class="switcher"[\s\S]{0,320}/.exec(wiki2)?.[0] || ''))
+  const switched = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(second)}));return await r.text()})()`)
+  assert.ok(switched.includes('另一部作品的开头'), '切过去应是另一部的前提')
+  assert.ok(!switched.includes('夜行禁令'), '切过去不该还带着上一部的设定')
+  // 切换器里不许有死链：每个链接的目标都必须真能渲染（库根这类"不是作品"的条目不该出现）
+  const links = [...wiki2.matchAll(/<a href="\?route=wiki&amp;path=([^"]+)"/g)].map((m) => decodeURIComponent(m[1]))
+  assert.ok(links.length >= 1, '应有至少一条切换链接')
+  for (const target of links) {
+    const status = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(target)}));return r.status})()`)
+    assert.equal(status, 200, '切换链接指向了渲染不出来的地址：' + target)
+  }
+  const rootAsWiki = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(root)}));return {s:r.status,b:(await r.text()).slice(0,80)}})()`)
+  assert.equal(rootAsWiki.s, 400, '库根本身不是作品，不该渲染成档案')
+  assert.match(rootAsWiki.b, /no-project/, rootAsWiki.b)
+  console.log('PASS 作品切换器：出现第二部才给，切换后是另一部的档案，且没有死链')
 
   // 12) 导出页自包含：直接当文件打开就能看，且脚本不执行
   await win.loadURL(pathToFileURL(exported).href)
@@ -276,6 +305,16 @@ app.whenReady().then(async () => {
   const wikiHash = await evaluate(`(document.querySelector('.toc a[href^="#sec-"]')||{getAttribute:()=>''}).getAttribute('href')`)
   await evaluate(`document.querySelector('.toc a[href="${wikiHash}"]').click()`)
   await waitFor(`location.hash===${JSON.stringify(wikiHash)}`)
+  // 切换条在**真页面**里点了要能换页（fetch 200 只证明服务端渲染得出，不证明浏览器会导航）
+  assert.ok(await evaluate(`!!document.querySelector('.switcher a')`), '此时库里已有第二部，该给切换链接')
+  assert.ok(await evaluate(`!!document.querySelector('.switcher .is-current')`), '当前这部应显示为不可点')
+  await evaluate(`document.querySelector('.switcher a').click()`)
+  await waitFor(`document.title.includes('第二部')`)
+  const switchedBody = await evaluate(`document.body.innerText`)
+  assert.ok(switchedBody.includes('另一部作品的开头'), '点切换条后页面应是另一部作品的档案')
+  assert.ok(!switchedBody.includes('夜行禁令'), '换到另一部后不该还带着上一部的已确认设定')
+  await shoot('archive-wiki-switched.png')
+  console.log('PASS 档案页里真点切换条：换到另一部作品的档案')
   await shoot('wiki-page.png')
   console.log('PASS wiki 页作为独立文档打开：目录跳转可用')
 
