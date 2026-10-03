@@ -451,7 +451,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           role: 'status',
           'data-wm-capability': capability.level,
           children: [
-            jsx.jsx('strong', { children: capability.headline }),
+            jsx.jsx('strong', { children: capability.cardHeadline || capability.headline }),
             capability.reasons.length ? jsx.jsx('span', { children: capability.reasons.join('；') }) : null,
             capability.note ? jsx.jsx('span', { className: 'dshWmCapabilityNote', children: capability.note }) : null,
           ],
@@ -682,7 +682,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
                 const value = contextText?.()
                 if (value?.text) updateReference(value)
               },
-              children: '引用来自旧快照 · 重新引用',
+              children: '引用已过期 · 重新引用',
             })
           : null,
         jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '移除稿件引用', onClick: () => updateReference(null), children: '×' }),

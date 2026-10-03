@@ -54,7 +54,8 @@ export function SessionListSection({ currentPath, onOpenProject }) {
       className: 'dshWmAiHint',
       role: 'status',
       'data-wm-session-list': 'unavailable',
-      children: '写作会话列表暂不可用：内核会话服务未挂载。作品与稿件不受影响。',
+      title: '内核会话服务未挂载',
+      children: '会话列表暂时不可用。作品与稿件不受影响。',
     })
   }
   if (loadError) {

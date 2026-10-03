@@ -42,7 +42,8 @@ export const EditorChrome = react.memo(function EditorChrome({
                     type: 'button',
                     className: 'dshWmBtn is-ghost',
                     onClick: () => void copyPath(),
-                    children: copied ? T.copied : T.copyPath,
+                    title: copied ? T.copied : T.copyPath,
+                    children: copied ? '✓' : '⧉',
                   })
                 : null,
               isReviewFile
@@ -114,17 +115,19 @@ export const EditorChrome = react.memo(function EditorChrome({
                       'v' + s.v
                     )
                   ),
-                  jsx.jsx(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dshWmBtn is-ghost',
-                      disabled: curVerNum == null || versionSeries.length < 2,
-                      onClick: () => void comparePrev(),
-                      children: T.comparePrev,
-                    },
-                    'cmp'
-                  ),
+                  versionSeries.length >= 2
+                    ? jsx.jsx(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dshWmBtn is-ghost',
+                          disabled: curVerNum == null,
+                          onClick: () => void comparePrev(),
+                          children: T.comparePrev,
+                        },
+                        'cmp'
+                      )
+                    : null,
                   jsx.jsx(
                     'button',
                     {

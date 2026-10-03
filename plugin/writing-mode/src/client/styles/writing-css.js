@@ -72,6 +72,11 @@ export const CSS = [
   '.dshWmBarGroup{display:flex;align-items:center;gap:6px;min-width:0;flex:none;}',
   /* C6 顶栏分组之间的分隔线（根/视图/保存/退出四段） */
   '.dshWmBarSep{flex:none;width:1px;height:20px;background:var(--dsw-alias-border-l2);}',
+  /* E1 「辅助 ▾」下拉：菜单内容常驻 DOM，关闭时 display:none（门禁按钮点击不看可见性，照旧命中） */
+  '.dshWmAux{position:relative;flex:none;display:flex;align-items:center;}',
+  '.dshWmMenu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:190px;padding:var(--wm-space-1);flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 24px rgba(0,0,0,.24);}',
+  '.dshWmMenu.is-open{display:flex;}',
+  '.dshWmMenuRow{width:100%;text-align:left;border-color:transparent;background:transparent;}',
   '.dshWmBarSpacer{flex:1;min-width:16px;}',
   '.dshWmSelect{',
   '  font:inherit;font-size:var(--wm-text-sm);padding:6px 10px;border-radius:var(--wm-radius-m);',

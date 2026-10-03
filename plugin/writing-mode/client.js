@@ -2286,7 +2286,7 @@ var zh = {
   sendChat: "发送到会话",
   applying: "处理中…",
   noText: "先选中或写点内容",
-  aiUnavailable: "内核未提供 LLM 服务，可「发送到会话」由主对话完成。",
+  aiUnavailable: "未连接模型服务。可先「发送到会话」，由主对话处理。",
   empty: "还没有库根。点 + 选择写作文件夹（例如 E:\\剧本）。",
   emptyCta: "一键加入 E:\\剧本",
   noProjects: "该库下没有含 project.md 的项目。可打开任意 .md / .fountain。",
@@ -2300,7 +2300,7 @@ var zh = {
   gatesPass: "全部通过",
   gatesFail: "{n} 项未达标",
   gatesNone: "不支持该类型",
-  gatesIdle: "打开 .md / .fountain 后可跑门禁",
+  gatesIdle: "打开一篇文稿后可运行检查。",
   saveAsNew: "另存为新版",
   bumpHint: "按文件名生成 v(N+1)，保留旧稿",
   hideLib: "收起库",
@@ -2384,7 +2384,7 @@ var en = {
   sendChat: "Send to chat",
   applying: "Working…",
   noText: "Select or write something first",
-  aiUnavailable: "No LLM service; use Send to chat instead.",
+  aiUnavailable: "No model service. Use Send to chat for now.",
   empty: "No library root. Click + to pick a folder (e.g. E:\\剧本).",
   emptyCta: "Add E:\\剧本",
   noProjects: "No project.md under this root. You can still open any .md / .fountain.",
@@ -2398,7 +2398,7 @@ var en = {
   gatesPass: "All pass",
   gatesFail: "{n} failed",
   gatesNone: "Unsupported type",
-  gatesIdle: "Open .md / .fountain to run gates",
+  gatesIdle: "Open a document to run checks.",
   saveAsNew: "Save as v+1",
   bumpHint: "Create -v(N+1) keeping the old draft",
   hideLib: "Hide library",
@@ -2529,6 +2529,11 @@ var CSS = [
   ".dshWmBarGroup{display:flex;align-items:center;gap:6px;min-width:0;flex:none;}",
   /* C6 顶栏分组之间的分隔线（根/视图/保存/退出四段） */
   ".dshWmBarSep{flex:none;width:1px;height:20px;background:var(--dsw-alias-border-l2);}",
+  /* E1 「辅助 ▾」下拉：菜单内容常驻 DOM，关闭时 display:none（门禁按钮点击不看可见性，照旧命中） */
+  ".dshWmAux{position:relative;flex:none;display:flex;align-items:center;}",
+  ".dshWmMenu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:190px;padding:var(--wm-space-1);flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 24px rgba(0,0,0,.24);}",
+  ".dshWmMenu.is-open{display:flex;}",
+  ".dshWmMenuRow{width:100%;text-align:left;border-color:transparent;background:transparent;}",
   ".dshWmBarSpacer{flex:1;min-width:16px;}",
   ".dshWmSelect{",
   "  font:inherit;font-size:var(--wm-text-sm);padding:6px 10px;border-radius:var(--wm-radius-m);",
@@ -3193,6 +3198,23 @@ var TopBar = react.memo(function TopBar2({
   persist,
   close
 }) {
+  const [auxOpen, setAuxOpen] = react.useState(false);
+  const auxRef = react.useRef(null);
+  react.useEffect(() => {
+    if (!auxOpen) return void 0;
+    const onKey = (e) => {
+      if (e.key === "Escape") setAuxOpen(false);
+    };
+    const onDown = (e) => {
+      if (!auxRef.current?.contains(e.target)) setAuxOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [auxOpen]);
   return jsx.jsx(
     "div",
     {
@@ -3296,28 +3318,40 @@ var TopBar = react.memo(function TopBar2({
                 title: "专注：只留稿纸，收起文档库与右栏",
                 children: T.focus
               }),
-              jsx.jsx("button", {
-                type: "button",
-                className: "dshWmBtn" + (prefs.hemingway ? " is-on" : ""),
-                "data-wm-hemingway": "1",
-                "aria-pressed": prefs.hemingway,
-                title: T.hemingwayHint,
-                onClick: () => {
-                  void savePrefs({ hemingway: !prefs.hemingway });
-                },
-                children: T.hemingway
-              }),
-              jsx.jsx("button", {
-                type: "button",
-                className: "dshWmBtn" + (prefs.typewriter ? " is-on" : ""),
-                "data-wm-typewriter": "1",
-                "aria-pressed": prefs.typewriter,
-                title: T.typewriterHint,
-                onClick: () => {
-                  void savePrefs({ typewriter: !prefs.typewriter });
-                },
-                children: T.typewriter
-              }),
+              jsx.jsxs("div", { className: "dshWmAux", ref: auxRef, children: [
+                jsx.jsx("button", {
+                  type: "button",
+                  className: "dshWmBtn" + (prefs.hemingway || prefs.typewriter ? " is-on" : ""),
+                  onClick: () => setAuxOpen((v) => !v),
+                  "aria-expanded": auxOpen,
+                  title: "写作辅助开关",
+                  children: "辅助 ▾"
+                }, "aux-btn"),
+                jsx.jsxs("div", { className: "dshWmMenu" + (auxOpen ? " is-open" : ""), children: [
+                  jsx.jsx("button", {
+                    type: "button",
+                    className: "dshWmBtn dshWmMenuRow" + (prefs.hemingway ? " is-on" : ""),
+                    "data-wm-hemingway": "1",
+                    "aria-pressed": prefs.hemingway,
+                    title: T.hemingwayHint,
+                    onClick: () => {
+                      void savePrefs({ hemingway: !prefs.hemingway });
+                    },
+                    children: T.hemingway
+                  }, "hemingway"),
+                  jsx.jsx("button", {
+                    type: "button",
+                    className: "dshWmBtn dshWmMenuRow" + (prefs.typewriter ? " is-on" : ""),
+                    "data-wm-typewriter": "1",
+                    "aria-pressed": prefs.typewriter,
+                    title: T.typewriterHint,
+                    onClick: () => {
+                      void savePrefs({ typewriter: !prefs.typewriter });
+                    },
+                    children: T.typewriter
+                  }, "typewriter")
+                ] }, "aux-menu")
+              ] }, "aux"),
               jsx.jsx("button", {
                 type: "button",
                 className: "dshWmBtn" + (aiOpen && !focus ? " is-on" : ""),
@@ -5005,7 +5039,8 @@ var EditorChrome = react6.memo(function EditorChrome2({
                 type: "button",
                 className: "dshWmBtn is-ghost",
                 onClick: () => void copyPath(),
-                children: copied ? T.copied : T.copyPath
+                title: copied ? T.copied : T.copyPath,
+                children: copied ? "✓" : "⧉"
               }) : null,
               isReviewFile ? jsx11.jsx("button", {
                 type: "button",
@@ -5069,17 +5104,17 @@ var EditorChrome = react6.memo(function EditorChrome2({
                   "v" + s.v
                 )
               ),
-              jsx11.jsx(
+              versionSeries.length >= 2 ? jsx11.jsx(
                 "button",
                 {
                   type: "button",
                   className: "dshWmBtn is-ghost",
-                  disabled: curVerNum == null || versionSeries.length < 2,
+                  disabled: curVerNum == null,
                   onClick: () => void comparePrev(),
                   children: T.comparePrev
                 },
                 "cmp"
-              ),
+              ) : null,
               jsx11.jsx(
                 "button",
                 {
@@ -8528,11 +8563,11 @@ function addChildren(props, children) {
     }
   }
 }
-function productionCreate(_, jsx41, jsxs15) {
+function productionCreate(_, jsx41, jsxs16) {
   return create2;
   function create2(_2, type, props, key) {
     const isStaticChildren = Array.isArray(props.children);
-    const fn = isStaticChildren ? jsxs15 : jsx41;
+    const fn = isStaticChildren ? jsxs16 : jsx41;
     return key ? fn(type, props, key) : fn(type, props);
   }
 }
@@ -19733,7 +19768,8 @@ function SessionListSection({ currentPath, onOpenProject }) {
       className: "dshWmAiHint",
       role: "status",
       "data-wm-session-list": "unavailable",
-      children: "写作会话列表暂不可用：内核会话服务未挂载。作品与稿件不受影响。"
+      title: "内核会话服务未挂载",
+      children: "会话列表暂时不可用。作品与稿件不受影响。"
     });
   }
   if (loadError) {
@@ -19837,7 +19873,11 @@ function companionCapability(caps) {
     level,
     canSend,
     reasons: level === "blocked" ? blocked : level === "limited" ? limited : [],
+    // headline 是「诊断口径」：发送键/会话设置键的 title 由它拼出，
+    // ui 门禁钉死 title 必须含「连不上内核」（verify-writing-ui.cjs:102），故这行不能去工程词。
     headline: level === "blocked" ? "写作伙伴暂时连不上内核" : level === "limited" ? "可以继续聊，部分能力受限" : "",
+    // cardHeadline 是卡片（第一屏）给作者看的那一行：短、不说「内核」。
+    cardHeadline: level === "blocked" ? "写作伙伴暂时不可用" : "",
     // 只有连不上的时候才需要安抚「写下来的东西不会丢」——草稿确实另有本地存档。
     note: level === "blocked" ? "这里写下的想法会存进本地草稿，伙伴恢复后可以直接发送。" : ""
   };
@@ -20254,7 +20294,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       role: "status",
       "data-wm-capability": capability.level,
       children: [
-        jsx26.jsx("strong", { children: capability.headline }),
+        jsx26.jsx("strong", { children: capability.cardHeadline || capability.headline }),
         capability.reasons.length ? jsx26.jsx("span", { children: capability.reasons.join("；") }) : null,
         capability.note ? jsx26.jsx("span", { className: "dshWmCapabilityNote", children: capability.note }) : null
       ]
@@ -20467,7 +20507,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
             const value = contextText?.();
             if (value?.text) updateReference(value);
           },
-          children: "引用来自旧快照 · 重新引用"
+          children: "引用已过期 · 重新引用"
         }) : null,
         jsx26.jsx("button", { className: "dshWmQuiet", "aria-label": "移除稿件引用", onClick: () => updateReference(null), children: "×" })
       ] }) : null,

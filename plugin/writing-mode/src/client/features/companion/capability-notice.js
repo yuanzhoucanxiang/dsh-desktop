@@ -50,11 +50,15 @@ export function companionCapability(caps) {
     level,
     canSend,
     reasons: level === 'blocked' ? blocked : level === 'limited' ? limited : [],
+    // headline 是「诊断口径」：发送键/会话设置键的 title 由它拼出，
+    // ui 门禁钉死 title 必须含「连不上内核」（verify-writing-ui.cjs:102），故这行不能去工程词。
     headline: level === 'blocked'
       ? '写作伙伴暂时连不上内核'
       : level === 'limited'
         ? '可以继续聊，部分能力受限'
         : '',
+    // cardHeadline 是卡片（第一屏）给作者看的那一行：短、不说「内核」。
+    cardHeadline: level === 'blocked' ? '写作伙伴暂时不可用' : '',
     // 只有连不上的时候才需要安抚「写下来的东西不会丢」——草稿确实另有本地存档。
     note: level === 'blocked' ? '这里写下的想法会存进本地草稿，伙伴恢复后可以直接发送。' : '',
   }

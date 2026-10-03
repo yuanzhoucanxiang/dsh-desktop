@@ -1,6 +1,6 @@
 /**
- * 顶栏（P1-② 从 app/WritingModeApp.js 抽出；DOM、类名与事件语义逐字不变）。
- * 纯 props 渲染：状态与动作全部来自 WritingModeApp（无本地 hooks）。
+ * 顶栏（P1-② 从 app/WritingModeApp.js 抽出）。
+ * 状态与动作仍全部来自 WritingModeApp；本地只有「辅助 ▾」菜单的开合（E1 控件降噪）。
  */
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
@@ -33,6 +33,20 @@ export const TopBar = react.memo(function TopBar({
   persist,
   close,
 }) {
+  // 「辅助 ▾」菜单：内容常挂载（门禁按文本点击不检查可见性），关闭时由 .dshWmMenu 规则 display:none
+  const [auxOpen, setAuxOpen] = react.useState(false)
+  const auxRef = react.useRef(null)
+  react.useEffect(() => {
+    if (!auxOpen) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setAuxOpen(false) }
+    const onDown = (e) => { if (!auxRef.current?.contains(e.target)) setAuxOpen(false) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [auxOpen])
   return jsx.jsx(
     'div',
     {
@@ -132,24 +146,36 @@ export const TopBar = react.memo(function TopBar({
                 title: '专注：只留稿纸，收起文档库与右栏',
                 children: T.focus,
               }),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn' + (prefs.hemingway ? ' is-on' : ''),
-                'data-wm-hemingway': '1',
-                'aria-pressed': prefs.hemingway,
-                title: T.hemingwayHint,
-                onClick: () => { void savePrefs({ hemingway: !prefs.hemingway }) },
-                children: T.hemingway,
-              }),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn' + (prefs.typewriter ? ' is-on' : ''),
-                'data-wm-typewriter': '1',
-                'aria-pressed': prefs.typewriter,
-                title: T.typewriterHint,
-                onClick: () => { void savePrefs({ typewriter: !prefs.typewriter }) },
-                children: T.typewriter,
-              }),
+              jsx.jsxs('div', { className: 'dshWmAux', ref: auxRef, children: [
+                jsx.jsx('button', {
+                  type: 'button',
+                  className: 'dshWmBtn' + (prefs.hemingway || prefs.typewriter ? ' is-on' : ''),
+                  onClick: () => setAuxOpen((v) => !v),
+                  'aria-expanded': auxOpen,
+                  title: '写作辅助开关',
+                  children: '辅助 ▾',
+                }, 'aux-btn'),
+                jsx.jsxs('div', { className: 'dshWmMenu' + (auxOpen ? ' is-open' : ''), children: [
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow' + (prefs.hemingway ? ' is-on' : ''),
+                    'data-wm-hemingway': '1',
+                    'aria-pressed': prefs.hemingway,
+                    title: T.hemingwayHint,
+                    onClick: () => { void savePrefs({ hemingway: !prefs.hemingway }) },
+                    children: T.hemingway,
+                  }, 'hemingway'),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow' + (prefs.typewriter ? ' is-on' : ''),
+                    'data-wm-typewriter': '1',
+                    'aria-pressed': prefs.typewriter,
+                    title: T.typewriterHint,
+                    onClick: () => { void savePrefs({ typewriter: !prefs.typewriter }) },
+                    children: T.typewriter,
+                  }, 'typewriter'),
+                ] }, 'aux-menu'),
+              ] }, 'aux'),
               jsx.jsx('button', {
                 type: 'button',
                 className: 'dshWmBtn' + (aiOpen && !focus ? ' is-on' : ''),
