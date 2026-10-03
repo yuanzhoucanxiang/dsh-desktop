@@ -3295,6 +3295,25 @@ if (!gotLock) {
       } catch (err) {
         log(`app scheme handler failed: ${err.message}`)
       }
+      // 页面直连内核的 WebSocket（remote.mux、插件终端/文件监听，见 makeWebSocketShim）
+      // 会带 Origin: dsh-app://app，撞内核 Host/Origin 栅栏恒 403——页面侧受同源策略
+      // 无法自改 Origin，只能在网络层改写握手：剥 Origin/sec-fetch-*、代持鉴权 cookie，
+      // 与 forwardToKernel 的转发口径一致（栅栏对无 Origin 的回环 Host 放行）。
+      session.defaultSession.webRequest.onBeforeSendHeaders(
+        { urls: ['ws://127.0.0.1:*/*', 'wss://127.0.0.1:*/*', 'ws://localhost:*/*', 'wss://localhost:*/*'] },
+        (details, callback) => {
+          const headers = { ...details.requestHeaders }
+          try {
+            const kernel = state.url ? new URL(state.url) : null
+            if (!kernel || new URL(details.url).host !== kernel.host) return callback({ requestHeaders: headers })
+          } catch { return callback({ requestHeaders: headers }) }
+          for (const name of Object.keys(headers)) {
+            if (/^(origin|sec-fetch-.+)$/i.test(name)) delete headers[name]
+          }
+          if (state.webCookie) headers['Cookie'] = state.webCookie
+          callback({ requestHeaders: headers })
+        },
+      )
     }
     // 命令走原生菜单（菜单栏默认隐藏，accelerator 始终有效）；冒烟下不挂菜单
     refreshMenus()
