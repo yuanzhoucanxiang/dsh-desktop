@@ -37,6 +37,7 @@ const appIconLib = require('./lib/app-icon')
 const { inspectProfile, bundleBootable, compareVersions, PROBLEM_LABELS: PLUGIN_PROBLEM_LABELS } = require('./lib/profile-inspect')
 const { needsSeed: builtinNeedsSeed, runSeed: builtinRunSeed } = require('./lib/builtin-seed')
 const { readJsonSafe, writeJsonAtomic, writeFileAtomic } = require('./lib/atomic-file')
+const { originKey } = require('./lib/url-origin')
 const { migrateProfileKernelLinks } = require('./lib/profile-kernel-links')
 const { createSettingsStore } = require('./lib/settings-store')
 const { expandNotifyCommand } = require('./lib/shell-quote')
@@ -1045,14 +1046,12 @@ async function checkPluginUpdates() {
  * 那页面的脚本。
  */
 function isKernelPageUrl(url) {
-  try {
-    const u = new URL(url)
-    // 应用协议下内核页恒为本应用源；旧直连方式按内核端口的 origin 判
-    if (SCHEME_ENABLED && u.origin === APP_ORIGIN) return true
-    return state.ready && u.origin === new URL(state.url).origin
-  } catch {
-    return false
-  }
+  // 不能用 u.origin 直接比：非标准协议（dsh-app:）的 origin 是字符串 "null"，
+  // 那样会把自家地址全判成不同源（页内链接不跳、sendToFocused 不发）。见 lib/url-origin.js。
+  const key = originKey(url)
+  if (!key) return false
+  if (SCHEME_ENABLED && key === originKey(`${APP_ORIGIN}/`)) return true
+  return state.ready && Boolean(state.url) && key === originKey(state.url)
 }
 
 function isAppFileUrl(url) {
