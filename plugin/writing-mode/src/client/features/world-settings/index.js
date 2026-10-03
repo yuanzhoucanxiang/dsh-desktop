@@ -1,5 +1,6 @@
 /** World settings: explicit author actions, durable window drafts, authoritative receipts. */
 import * as react from 'react'
+import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
 import { parseOrganizeResult, stableStringify } from '../../../shared/world-setting.js'
 import { snapshotHash } from '../../services/world-organizer.js'
@@ -7,7 +8,6 @@ import { snapshotHash } from '../../services/world-organizer.js'
 import { createWorldJournal, titlesOf } from '../../services/world-drafts.js'
 import { QUOTA_ERROR_COPY, isQuotaError } from '../memory/index.js'
 
-const h = react.createElement
 export function newOperationId() { return crypto.randomUUID() }
 export async function requestHashOf(payload) { return snapshotHash(stableStringify(payload)) }
 export function extractSettingsFromAssistantText(text) {
@@ -33,18 +33,21 @@ function settingOf(d) {
 
 export function WorldSettingCard({ draft, onChange, onSaveCandidate, onConfirm, onDiscard, busy, notice }) {
   const fields = [['title', '标题'], ['conclusion', '结论'], ['explanation', '说明（可选）'], ['boundaries', '边界 / 例外（可选）']]
-  return h('div', { className: 'dshWmWorldCard' },
-    h('strong', null, draft.savedId ? '设定修订' : '设定候选'),
-    h('p', null, draft.modelMark === 'open' ? '仍待讨论，确认前请核对。' : draft.modelMark === 'suggestion' ? '助手建议，尚未由作者确认。' : '尚待作者确认。'),
-    ...fields.map(([key, title]) => h('label', { key }, title,
-      h(key === 'title' ? 'input' : 'textarea', { 'data-world-field': key, value: draft[key] || '', rows: key === 'explanation' ? 4 : 2, disabled: busy || Boolean(draft.pendingOperation), onChange: e => onChange({ ...draft, [key]: e.target.value, dirty: true }) }))),
-    h('details', null, h('summary', null, `来源 ${draft.sources?.length || 0} 条`), ...(draft.sources || []).map((s, i) => h('div', { key: i },
-      h('small', null, `${s.role || '未知'} · ${s.sessionId || '来源不可用'} / ${s.messageId || '来源不可用'}`), h('pre', null, s.excerpt || '')))),
-    notice ? h('p', { role: 'status' }, notice) : null,
-    h('div', { className: 'dshWmWorldOps' },
-      h('button', { type: 'button', disabled: busy || !!draft.pendingOperation || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onConfirm }, draft.savedId ? '确认修改' : '确认设定'),
-      h('button', { type: 'button', disabled: busy || !!draft.pendingOperation || draft.savedStatus === 'confirmed' || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onSaveCandidate }, '存为候选'),
-      h('button', { type: 'button', disabled: busy || !!draft.pendingOperation, onClick: onDiscard }, '关闭本地编辑')))
+  return jsx.jsxs('div', { className: 'dshWmWorldCard', children: [
+    jsx.jsx('strong', { children: draft.savedId ? '设定修订' : '设定候选' }),
+    jsx.jsx('p', { children: draft.modelMark === 'open' ? '仍待讨论，确认前请核对。' : draft.modelMark === 'suggestion' ? '助手建议，尚未由作者确认。' : '尚待作者确认。' }),
+    ...fields.map(([key, title]) => jsx.jsxs('label', { children: [title,
+      jsx.jsx(key === 'title' ? 'input' : 'textarea', { 'data-world-field': key, value: draft[key] || '', rows: key === 'explanation' ? 4 : 2, disabled: busy || Boolean(draft.pendingOperation), onChange: e => onChange({ ...draft, [key]: e.target.value, dirty: true }) })] }, key)),
+    jsx.jsxs('details', { children: [jsx.jsx('summary', { children: `来源 ${draft.sources?.length || 0} 条` }), ...(draft.sources || []).map((s, i) => jsx.jsxs('div', { children: [
+      jsx.jsx('small', { children: `${s.role || '未知'} · ${s.sessionId || '来源不可用'} / ${s.messageId || '来源不可用'}` }), jsx.jsx('pre', { children: s.excerpt || '' }),
+    ] }, i))] }),
+    notice ? jsx.jsx('p', { role: 'status', children: notice }) : null,
+    jsx.jsxs('div', { className: 'dshWmWorldOps', children: [
+      jsx.jsx('button', { type: 'button', disabled: busy || !!draft.pendingOperation || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onConfirm, children: draft.savedId ? '确认修改' : '确认设定' }),
+      jsx.jsx('button', { type: 'button', disabled: busy || !!draft.pendingOperation || draft.savedStatus === 'confirmed' || !draft.title?.trim() || !draft.conclusion?.trim(), onClick: onSaveCandidate, children: '存为候选' }),
+      jsx.jsx('button', { type: 'button', disabled: busy || !!draft.pendingOperation, onClick: onDiscard, children: '关闭本地编辑' }),
+    ] }),
+  ] })
 }
 
 export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, onStatus, onRequestOrganize, onChanged, onReadHistory }) {
@@ -192,26 +195,26 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
   const draft = local.drafts[active] || local.drafts[0]
   const worldItems = (data?.memory?.items || []).filter(it => it.setting?.type === 'world')
   const histories = (data?.memory?.changes || []).filter(c => c.id === historyId).slice().reverse()
-  return h('section', { className: 'dshWmWorldPanel', 'data-world-panel': '' },
-    h('h3', null, '世界观整理'),
-    h('p', null, `已选消息 ${selectedMessages?.length || 0} · 设定 ${worldItems.length}`),
-    h('details', null, h('summary', null, '查看整理范围'), ...(selectedMessages || []).map(m => h('pre', { key: m.id }, `${m.role}：${m.text}`))),
-    h('label', null, '补充要求', h('input', { value: local.extra, onChange: e => patchLocal({ extra: e.target.value }) })),
-    h('button', { disabled: phase !== 'idle' || !selectedMessages?.length, onClick: organize }, '整理为设定'),
-    h('button', { disabled: phase !== 'idle', onClick: onClearSelection }, '清除选择'),
-    h('button', { disabled: phase !== 'idle', onClick: () => { patchLocal({ drafts: [...localRef.current.drafts, blankDraft()] }); setActive(localRef.current.drafts.length - 1) } }, '手动新建设定'),
-    phase === 'organizing' ? h('button', { onClick: () => controller.current?.abort() }, '停止等待') : null,
-    h('p', { role: 'status', 'data-world-notice': '' }, note), storageError ? h('p', { role: 'alert' }, storageError) : null,
-    h('button', { disabled: phase !== 'idle', onClick: () => void refresh().catch(err => setNote(err.message)) }, '重新读取设定'),
-    h('p', { 'data-world-journal': '' }, journalNote),
-    h('button', { onClick: () => { try { void journal.current.save(localRef.current) } catch (err) { setStorageError(err.message) } } }, '重试保留窗口编辑'),
-    h('button', { onClick: () => void refreshRecoveries() }, '查找可恢复编辑'),
+  return jsx.jsxs('section', { className: 'dshWmWorldPanel', 'data-world-panel': '', children: [
+    jsx.jsx('h3', { children: '世界观整理' }),
+    jsx.jsx('p', { children: `已选消息 ${selectedMessages?.length || 0} · 设定 ${worldItems.length}` }),
+    jsx.jsxs('details', { children: [jsx.jsx('summary', { children: '查看整理范围' }), ...(selectedMessages || []).map(m => jsx.jsx('pre', { children: `${m.role}：${m.text}` }, m.id))] }),
+    jsx.jsxs('label', { children: ['补充要求', jsx.jsx('input', { value: local.extra, onChange: e => patchLocal({ extra: e.target.value }) })] }),
+    jsx.jsx('button', { disabled: phase !== 'idle' || !selectedMessages?.length, onClick: organize, children: '整理为设定' }),
+    jsx.jsx('button', { disabled: phase !== 'idle', onClick: onClearSelection, children: '清除选择' }),
+    jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => { patchLocal({ drafts: [...localRef.current.drafts, blankDraft()] }); setActive(localRef.current.drafts.length - 1) }, children: '手动新建设定' }),
+    phase === 'organizing' ? jsx.jsx('button', { onClick: () => controller.current?.abort(), children: '停止等待' }) : null,
+    jsx.jsx('p', { role: 'status', 'data-world-notice': '', children: note }), storageError ? jsx.jsx('p', { role: 'alert', children: storageError }) : null,
+    jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => void refresh().catch(err => setNote(err.message)), children: '重新读取设定' }),
+    jsx.jsx('p', { 'data-world-journal': '', children: journalNote }),
+    jsx.jsx('button', { onClick: () => { try { void journal.current.save(localRef.current) } catch (err) { setStorageError(err.message) } }, children: '重试保留窗口编辑' }),
+    jsx.jsx('button', { onClick: () => void refreshRecoveries(), children: '查找可恢复编辑' }),
     recoveryMeta.truncated
-      ? h('p', { role: 'status' }, `列表只显示最新 ${recoveries.length} 份副本（共 ${recoveryMeta.total} 份）。项目移动后的导入不走这个上限，会复制全部旧桶。`)
+      ? jsx.jsx('p', { role: 'status', children: `列表只显示最新 ${recoveries.length} 份副本（共 ${recoveryMeta.total} 份）。项目移动后的导入不走这个上限，会复制全部旧桶。` })
       : null,
-    ...recoveries.map(c => h('div', { key: c.windowId },
-      h('span', null, `恢复副本（${c.draftCount || titlesOf(c).length} 条）：` + (titlesOf(c).join('、') || '（无标题）')),
-      h('button', { disabled: phase !== 'idle' || recoveringId !== null, onClick: () => void (async () => {
+    ...recoveries.map(c => jsx.jsxs('div', { children: [
+      jsx.jsx('span', { children: `恢复副本（${c.draftCount || titlesOf(c).length} 条）：` + (titlesOf(c).join('、') || '（无标题）') }),
+      jsx.jsx('button', { disabled: phase !== 'idle' || recoveringId !== null, onClick: () => void (async () => {
         // V7：正文惰取。列表只有标题汇总，点了才去取那一个桶的全文。
         if (recoveryBusy.current) return
         recoveryBusy.current = true
@@ -228,13 +231,14 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
           setNote(drafts.length ? '恢复副本已加入，本窗口已有编辑保留。' : '这份副本已在本窗口中，未重复添加。')
         } catch (err) { if (alive.current && recoveryEpoch.current === epoch) setJournalNote('恢复失败：' + err.message) }
         finally { recoveryBusy.current = false; if (alive.current && recoveryEpoch.current === epoch) setRecoveringId(null) }
-      })() }, recoveringId === c.windowId ? '正在读取副本…' : '恢复这份编辑'))),
-    h('details', null, h('summary', null, '项目移动后的恢复'),
-      h('p', null, '仅列出已不存在的旧位置。每条会说明它与当前作品有没有关联证据——证据只有两种：作品备忘里记过这个旧路径，或可读稿抬头里记过这个旧路径。有证据的可直接导入；没证据的仍可以导，但需你显式确认这是同一部作品——否则两部作品的草稿会被混在一起。注意：“旧草稿引用的手稿在本作品里同名同位”**不算证据**（两部不同作品都会很自然地有 draft/第一章.md），它只会作为提示列出；内容一致也只是辅助线索。导入只复制到独立恢复桶，保留旧记录，不合并会话，重试不覆盖已恢复的编辑。旧会话仍属于旧工作目录，请勿直接在那里执行文件操作。'),
-      ...relocation.candidates.map(c => h('div', { key: c.oldPath, 'data-relocation-candidate': c.relation || 'unrelated', 'data-relocation-importable': c.importable ? 'yes' : 'no' },
-        h('span', null, c.oldPath),
-        h('small', null, c.importable ? `可导入 · 依据：${c.detail}` : `无关联证据 · ${c.detail}`),
-        h('button', { onClick: async () => {
+      })(), children: recoveringId === c.windowId ? '正在读取副本…' : '恢复这份编辑' }),
+    ] }, c.windowId)),
+    jsx.jsxs('details', { children: [jsx.jsx('summary', { children: '项目移动后的恢复' }),
+      jsx.jsx('p', { children: '仅列出已不存在的旧位置。每条会说明它与当前作品有没有关联证据——证据只有两种：作品备忘里记过这个旧路径，或可读稿抬头里记过这个旧路径。有证据的可直接导入；没证据的仍可以导，但需你显式确认这是同一部作品——否则两部作品的草稿会被混在一起。注意：“旧草稿引用的手稿在本作品里同名同位”**不算证据**（两部不同作品都会很自然地有 draft/第一章.md），它只会作为提示列出；内容一致也只是辅助线索。导入只复制到独立恢复桶，保留旧记录，不合并会话，重试不覆盖已恢复的编辑。旧会话仍属于旧工作目录，请勿直接在那里执行文件操作。' }),
+      ...relocation.candidates.map(c => jsx.jsxs('div', { 'data-relocation-candidate': c.relation || 'unrelated', 'data-relocation-importable': c.importable ? 'yes' : 'no', children: [
+        jsx.jsx('span', { children: c.oldPath }),
+        jsx.jsx('small', { children: c.importable ? `可导入 · 依据：${c.detail}` : `无关联证据 · ${c.detail}` }),
+        jsx.jsx('button', { onClick: async () => {
           // CXR02 / 复核裁决 1：确认框必须**同时显示来源与目的项目**，
           // 不能只说“当前作品”——作者要能看出这是从哪个目录往哪个目录导。
           const ask = c.importable
@@ -248,29 +252,36 @@ export function WorldSettingsPanel({ path, selectedMessages, onClearSelection, o
               : '恢复失败：' + (r.error === 'recovery-source-unrelated' ? '没找到关联证据，且未带上你的显式确认，已拒绝导入（旧记录未改动）。' : r.error))
             await refreshRecoveries()
           } catch (err) { setNote('恢复失败：' + err.message) }
-        } }, '导入旧位置草稿'))),
-      ...relocation.histories.flatMap(c => c.sessions.map(id => h('button', { key: c.oldPath + id, onClick: () => onReadHistory?.(c.oldPath, id) }, '查看旧位置会话 ' + id.slice(0, 8))))),
-    local.rawReply ? h('details', null, h('summary', null, '整理原文'), h('pre', null, local.rawReply)) : null,
-    h('div', null, ...local.drafts.map((d, i) => h('button', { key: d.id, onClick: () => setActive(i) }, `${d.title || '未命名'}${d.dirty ? ' · 本地编辑' : ''}`))),
-    draft ? h(WorldSettingCard, { draft, busy: phase !== 'idle' || !!conflict, onChange: changeDraft,
+        }, children: '导入旧位置草稿' }),
+      ] }, c.oldPath)),
+      ...relocation.histories.flatMap(c => c.sessions.map(id => jsx.jsx('button', { onClick: () => onReadHistory?.(c.oldPath, id), children: '查看旧位置会话 ' + id.slice(0, 8) }, c.oldPath + id)))] }),
+    local.rawReply ? jsx.jsxs('details', { children: [jsx.jsx('summary', { children: '整理原文' }), jsx.jsx('pre', { children: local.rawReply })] }) : null,
+    jsx.jsxs('div', { children: [...local.drafts.map((d, i) => jsx.jsx('button', { onClick: () => setActive(i), children: `${d.title || '未命名'}${d.dirty ? ' · 本地编辑' : ''}` }, d.id))] }),
+    draft ? jsx.jsx(WorldSettingCard, { draft, busy: phase !== 'idle' || !!conflict, onChange: changeDraft,
       onSaveCandidate: () => void requestSave(draft, 'save-setting-candidate'), onConfirm: () => void requestSave(draft, 'confirm-setting'),
       onDiscard: () => { if (draft.dirty && !window.confirm('关闭这份本地编辑？已保存的设定不会删除。')) return; patchLocal({ drafts: localRef.current.drafts.filter(d => d.id !== draft.id) }); setActive(0) },
       notice: draft.pendingOperation ? '结果待核对；重试会使用原操作编号，不重复新增。' : '本窗口编辑已缓存；确认后才更新项目设定。' }) : null,
-    draft?.pendingOperation ? h('button', { disabled: phase !== 'idle', onClick: () => void requestSave(draft, null, true) }, '核对并重试保存') : null,
-    conflict ? h('div', { role: 'alert' }, h('strong', null, '保存冲突：本地编辑保留'), ...['title', 'conclusion', 'explanation', 'boundaries'].map((key, i) => h('div', { key }, h('strong', null, ['标题', '结论', '说明', '边界'][i]), h('p', null, '本地：' + (local.drafts.find(d => d.id === conflict.draftId)?.[key] || '（空）')), h('p', null, '远端：' + (conflict.remote?.setting?.[key] || '（空）')))),
-      h('button', { onClick: () => { const d = localRef.current.drafts.find(x => x.id === conflict.draftId); if (d) updateDraft(d.id, x => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null })); setConflict(null); setNote('已采用最新基线；请核对后再次确认保存。') } }, '已比较，保留本地修订'),
-      h('button', { onClick: () => setConflict(null) }, '暂不保存')) : null,
-    data?.memory?.projection && data.memory.projection.status !== 'idle' ? h('div', { className: 'dshWmWorldProjection' },
-      h('p', null, data?.memory?.projection?.status === 'synced' ? '可读稿已同步' : `可读稿待同步：${data?.memory?.projection?.lastError || 'pending'}`),
-      h('button', { disabled: phase !== 'idle', onClick: () => void runProjection(false) }, '重试同步可读稿'),
-      h('button', { onClick: () => void api('setting-projection', undefined, { path }).then(r => r.ok ? setProjection(r) : setNote(r.error)).catch(err => setNote(err.message)) }, '查看可读稿差异')) : null,
-    projection ? h('div', null, h('h4', null, '磁盘原文'), h('pre', null, projection.content), h('h4', null, '将生成的内容'), h('pre', null, projection.proposed),
-      projection.exists ? h('button', { disabled: phase !== 'idle', onClick: () => void runProjection(true) }, '保留手稿副本并重建整理稿') : null) : null,
-    h('h4', null, '已保存设定'), ...worldItems.map(it => h('article', { key: it.id, 'data-world-item': it.id },
-      h('strong', null, it.setting.title), h('span', null, ` · ${it.status} · 修订 ${it.itemRevision}`), h('p', null, it.setting.conclusion),
-      h('button', { disabled: phase !== 'idle', onClick: () => openItem(it) }, it.status === 'proposed' ? '打开候选' : '编辑设定'),
-      h('button', { onClick: () => setHistoryId(it.id) }, '设定历史'),
-      h('button', { disabled: phase !== 'idle' || it.status === 'retracted', onClick: () => { const d = blankDraft({ ...it.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision }); patchLocal({ drafts: [...localRef.current.drafts, d] }); setActive(localRef.current.drafts.length - 1); void requestSave(d, 'retract-setting') } }, '撤回设定'))),
-    historyId ? h('div', null, h('h4', null, '历史内容（恢复将创建新修订）'), ...histories.map((c, i) => h('div', { key: i }, h('small', null, `${c.at} · ${c.actor} · ${c.op}`), h('pre', null, JSON.stringify(c.before?.setting || c.after?.setting || {}, null, 2)),
-      h('button', { disabled: phase !== 'idle', onClick: () => { const it = worldItems.find(x => x.id === historyId); if (it) openItem(it, c.before?.setting ? c.before : c.after) } }, '载入这版为修订稿')))) : null)
+    draft?.pendingOperation ? jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => void requestSave(draft, null, true), children: '核对并重试保存' }) : null,
+    conflict ? jsx.jsxs('div', { role: 'alert', children: [jsx.jsx('strong', { children: '保存冲突：本地编辑保留' }), ...['title', 'conclusion', 'explanation', 'boundaries'].map((key, i) => jsx.jsxs('div', { children: [
+      jsx.jsx('strong', { children: ['标题', '结论', '说明', '边界'][i] }), jsx.jsx('p', { children: '本地：' + (local.drafts.find(d => d.id === conflict.draftId)?.[key] || '（空）') }), jsx.jsx('p', { children: '远端：' + (conflict.remote?.setting?.[key] || '（空）') }),
+    ] }, key)),
+      jsx.jsx('button', { onClick: () => { const d = localRef.current.drafts.find(x => x.id === conflict.draftId); if (d) updateDraft(d.id, x => ({ ...x, openedItemRevision: conflict.remote?.itemRevision, pendingOperation: null })); setConflict(null); setNote('已采用最新基线；请核对后再次确认保存。') }, children: '已比较，保留本地修订' }),
+      jsx.jsx('button', { onClick: () => setConflict(null), children: '暂不保存' })] }) : null,
+    data?.memory?.projection && data.memory.projection.status !== 'idle' ? jsx.jsxs('div', { className: 'dshWmWorldProjection', children: [
+      jsx.jsx('p', { children: data?.memory?.projection?.status === 'synced' ? '可读稿已同步' : `可读稿待同步：${data?.memory?.projection?.lastError || 'pending'}` }),
+      jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => void runProjection(false), children: '重试同步可读稿' }),
+      jsx.jsx('button', { onClick: () => void api('setting-projection', undefined, { path }).then(r => r.ok ? setProjection(r) : setNote(r.error)).catch(err => setNote(err.message)), children: '查看可读稿差异' }),
+    ] }) : null,
+    projection ? jsx.jsxs('div', { children: [jsx.jsx('h4', { children: '磁盘原文' }), jsx.jsx('pre', { children: projection.content }), jsx.jsx('h4', { children: '将生成的内容' }), jsx.jsx('pre', { children: projection.proposed }),
+      projection.exists ? jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => void runProjection(true), children: '保留手稿副本并重建整理稿' }) : null] }) : null,
+    jsx.jsx('h4', { children: '已保存设定' }), ...worldItems.map(it => jsx.jsxs('article', { 'data-world-item': it.id, children: [
+      jsx.jsx('strong', { children: it.setting.title }), jsx.jsx('span', { children: ` · ${it.status} · 修订 ${it.itemRevision}` }), jsx.jsx('p', { children: it.setting.conclusion }),
+      jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => openItem(it), children: it.status === 'proposed' ? '打开候选' : '编辑设定' }),
+      jsx.jsx('button', { onClick: () => setHistoryId(it.id), children: '设定历史' }),
+      jsx.jsx('button', { disabled: phase !== 'idle' || it.status === 'retracted', onClick: () => { const d = blankDraft({ ...it.setting, savedId: it.id, savedStatus: it.status, openedItemRevision: it.itemRevision }); patchLocal({ drafts: [...localRef.current.drafts, d] }); setActive(localRef.current.drafts.length - 1); void requestSave(d, 'retract-setting') }, children: '撤回设定' }),
+    ] }, it.id)),
+    historyId ? jsx.jsxs('div', { children: [jsx.jsx('h4', { children: '历史内容（恢复将创建新修订）' }), ...histories.map((c, i) => jsx.jsxs('div', { children: [
+      jsx.jsx('small', { children: `${c.at} · ${c.actor} · ${c.op}` }), jsx.jsx('pre', { children: JSON.stringify(c.before?.setting || c.after?.setting || {}, null, 2) }),
+      jsx.jsx('button', { disabled: phase !== 'idle', onClick: () => { const it = worldItems.find(x => x.id === historyId); if (it) openItem(it, c.before?.setting ? c.before : c.after) }, children: '载入这版为修订稿' }),
+    ] }, i))] }) : null] })
 }

@@ -1,8 +1,8 @@
 /**
  * 文件库分组与版本归并（P1-① 从 app/WritingModeApp.js 搬出；行为不变）。
- * 纯函数：只依赖 versionOf（版本号解析）与传入的文件数组。
+ * 纯函数：只依赖 shared/filename.js 的版本工具与传入的文件数组。
  */
-import { versionOf } from '../../state/prefs-store.js'
+import { versionOf, stemWithExtOf } from '../../../shared/filename.js'
 
 const NAV_FILES = {
   'project.md': ['作品概览', '创作方向'],
@@ -41,7 +41,7 @@ export function navigationGroups(files, q) {
 
 /** 版本归并键：抹掉 -vN 后缀，同一文件的不同版本归到同一键。 */
 export function groupKeyOf(absPath) {
-  return String(absPath || '').replace(/-v\d+(\.[^.]+)$/i, '$1').toLowerCase()
+  return stemWithExtOf(absPath).toLowerCase()
 }
 
 export function groupFiles(files, q) {

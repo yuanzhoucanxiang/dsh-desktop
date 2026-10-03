@@ -6,7 +6,6 @@
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { createEditorSession } from '../shared/editor-session.js'
-import { buildPreparedTurn, memoryHint } from '../shared/context-builder.js'
 import { T } from './copy.js'
 import { ensureWritingCss } from './styles/writing-css.js'
 import { api } from './services/writing-api.js'
@@ -14,10 +13,8 @@ import { WritingModeApp } from './app/WritingModeApp.js'
 import { ensureDomFloat } from './app/dom-float.js'
 import { WritingModeSettings } from './features/settings/WritingModeSettings.js'
 import { WritingModeFooterEntry, WritingModeHeaderEntry } from './features/settings/entries.js'
-import { applyBodyAttr, setCloseGuard, modeListeners, setModeActive, commitModeActive, subscribeMode, getModeActive } from './state/mode-store.js'
-import { companionRows, WritingCompanion } from './features/companion/index.js'
-import { loadProjectMemory, CompanionMemoryPanel } from './features/memory/index.js'
-import { bindHarness, harnessSessions, harnessConnection, harnessWorkspaces } from './adapters/harness/runtime.js'
+import { companionRows } from './features/companion/index.js'
+import { bindHarness } from './adapters/harness/runtime.js'
 import {
   companionDrafts,
   loadCompanionDraft,
@@ -32,41 +29,13 @@ import {
   retryDraftConflictRemote,
   persistCompanionDraft,
 } from './state/companion-drafts.js'
-import { versionOf, getPrefs, subscribePrefs, loadPrefs, savePrefs } from './state/prefs-store.js'
 
 const __wmAlreadyLoaded = window.__dshWritingModeLoaded === true
 window.__dshWritingModeLoaded = true
 
 export const name = 'writing-mode'
 
-
-
-
-// Conversation history stays in Harness. Unsent text lives in host checkpoints.
-
-
-
-
-
-
-
-
-
-
-
 ensureWritingCss()
-
-
-
-
-
-/** 侧栏底部入口：点击切换写作模式。 */
-
-/** 从文件名提取 -vN。模块级，供组件内 useMemo 使用。 */
-
-/** DOM 常驻浮动入口：不依赖 shell.overlay 是否在当前页挂载。 */
-
-/** 内核设置 → 写作模式 */
 
 export const inject = __wmAlreadyLoaded ? [] : ['slots', 'sessions', 'connection', 'workspaces']
 export function apply(ctx) {

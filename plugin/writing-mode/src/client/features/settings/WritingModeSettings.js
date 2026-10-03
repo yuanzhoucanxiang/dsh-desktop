@@ -2,23 +2,21 @@
  * 写作模式客户端模块（P1 从 entry.js 搬迁；行为不变）。
  */
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs } from '../../state/prefs-store.js'
+import { getLibrary, subscribeLibrary, refreshLibrary } from '../../state/library-store.js'
 import { setModeActive } from '../../state/mode-store.js'
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
-import { api, API } from '../../services/writing-api.js'
+import { api } from '../../services/writing-api.js'
 
 export function WritingModeSettings() {
   const [prefs, setPrefsLocal] = react.useState(getPrefs)
-  const [roots, setRoots] = react.useState([])
+  const roots = react.useSyncExternalStore(subscribeLibrary, getLibrary).roots
   const [pathDraft, setPathDraft] = react.useState('')
   react.useEffect(() => subscribePrefs(() => setPrefsLocal({ ...getPrefs() })), [])
   react.useEffect(() => {
     void loadPrefs()
-    void api('config')
-      .then((d) => {
-        if (d.ok) setRoots(d.roots || [])
-      })
-      .catch(() => {})
+    // 打开设置就重取一次库（与旧行为同请求数）；并发/失败语义由 store 承担。
+    void refreshLibrary()
   }, [])
 
   const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }
@@ -55,8 +53,7 @@ export function WritingModeSettings() {
       body: JSON.stringify({ mode: 'add', path: p, active: true }),
     })
     setPathDraft('')
-    const d = await api('config')
-    if (d.ok) setRoots(d.roots || [])
+    await refreshLibrary()
     void loadPrefs()
   }
 
@@ -66,8 +63,7 @@ export function WritingModeSettings() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ mode: 'remove', path: p }),
     })
-    const d = await api('config')
-    if (d.ok) setRoots(d.roots || [])
+    await refreshLibrary()
   }
 
   return jsx.jsx(

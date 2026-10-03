@@ -3,11 +3,6 @@
  */
 import { api } from '../services/writing-api.js'
 
-export function versionOf(name) {
-  const m = String(name || '').match(/-v(\d+)(\.[^.]+)?$/i)
-  return m ? Number(m[1]) : null
-}
-
 export const DEFAULT_PREFS = {
   fontSize: 17,
   lineHeight: 1.95,

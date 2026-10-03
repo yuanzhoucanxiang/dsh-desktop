@@ -8,7 +8,7 @@
  */
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
-import { api } from '../../services/writing-api.js'
+import { getLibrary, subscribeLibrary, refreshLibrary, getLibraryError } from '../../state/library-store.js'
 import { harnessSessions } from '../../adapters/harness/runtime.js'
 
 const basename = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '')
@@ -16,23 +16,29 @@ const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLo
 
 export function SessionListSection({ currentPath, onOpenProject }) {
   const sessions = harnessSessions()
-  const [companions, setCompanions] = react.useState(null)
+  const library = react.useSyncExternalStore(subscribeLibrary, getLibrary)
+  const companions = library.companions
   const [loadError, setLoadError] = react.useState('')
-  const [retry, setRetry] = react.useState(0)
   const [open, setOpen] = react.useState(false)
+  const alive = react.useRef(true)
 
   react.useEffect(() => {
-    let live = true
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
+
+  /** 重试 = 再触发一次库刷新；失败原因由 store 记着（成功后它自己清空）。 */
+  const reload = react.useCallback(() => {
     setLoadError('')
-    api('config')
-      .then((res) => {
-        if (!live) return
-        if (res?.ok) setCompanions(res.config?.companions || {})
-        else setLoadError(String(res?.error || 'unknown'))
-      })
-      .catch((err) => { if (live) setLoadError(err.message || String(err)) })
-    return () => { live = false }
-  }, [retry])
+    void refreshLibrary().then((ok) => {
+      if (alive.current && !ok) setLoadError(getLibraryError() || 'unknown')
+    })
+  }, [])
+
+  // 别处已经取过（App 打开时会取）就不重复打一次 config；store 侧另有并发合并。
+  react.useEffect(() => {
+    if (getLibrary().loadedAt === 0) reload()
+  }, [reload])
 
   const subscribe = react.useCallback(
     (fn) => (sessions?.list?.subscribe?.(fn) || (() => {})),
@@ -58,7 +64,7 @@ export function SessionListSection({ currentPath, onOpenProject }) {
       'data-wm-session-list': 'error',
       children: [
         '写作会话列表读取失败：' + loadError,
-        jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' }),
+        jsx.jsx('button', { className: 'dshWmQuiet', onClick: reload, children: '重试' }),
       ],
     })
   }

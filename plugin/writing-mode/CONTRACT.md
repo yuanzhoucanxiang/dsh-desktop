@@ -212,6 +212,8 @@
 | `src/shared/world-setting.js` | setting 规范化/派生 text/结果解析/排序（纯函数） | IO/DOM |
 | `src/shared/context-builder.js` | preparedTurn 选择与冻结（纯函数） | DOM/React/适配器 |
 | `src/shared/reference.js` | 引用身份与状态（纯函数） | IO、UI |
+| `src/shared/filename.js` | 版本号/文件名/章节题纯函数（VERSION_RE/versionOf/stemOf/chapterTitleOf 等） | IO/DOM |
+| `src/client/state/*` | prefs 与 library 的模块级缓存 + 订阅广播（prefs-store / library-store） | 直接渲染、React 组件 |
 | `src/client/adapters/harness/*` | 唯一 native 接触面 + 会话投影 + 协调客户端 | React/JSX/组件/样式 |
 | `runtime-manifest.json` | 发布集合唯一来源（repo→包→profile 逐文件比对） | — |
 | `client.js` | 编辑器、HTTP；native 接触已收进 `adapters/harness` | 直连 fs / 外部 LLM；在组件里直接读 `chat.nodes/order` |

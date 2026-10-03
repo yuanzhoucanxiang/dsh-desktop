@@ -2,7 +2,6 @@
  * 写作模式客户端模块（P1 从 entry.js 搬迁；行为不变）。
  */
 import { T } from '../copy.js'
-import { CSS } from '../styles/writing-css.js'
 import { modeListeners, setModeActive, getModeActive } from '../state/mode-store.js'
 
 export let domFloatEl = null

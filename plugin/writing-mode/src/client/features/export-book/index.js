@@ -6,7 +6,7 @@
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
-import { versionOf } from '../../state/prefs-store.js'
+import { versionOf, chapterTitleOf } from '../../../shared/filename.js'
 import { groupKeyOf, maxVersionInGroup } from '../library/grouping.js'
 
 const ERR_TEXT = {
@@ -19,11 +19,6 @@ const ERR_TEXT = {
   'path-outside-roots': '项目路径不在文库根内',
   'no-project': '没能识别这个项目',
   'source-changed': '导出期间有文稿被改动，已放弃，请重试',
-}
-
-/** 与 host lib/compile.js 的 chapterTitle 同口径。 */
-function chapterTitle(name) {
-  return String(name || '').replace(/\.[^.]+$/, '').replace(/-v\d+$/i, '')
 }
 
 export function ExportBookPanel({ proj, onClose, onDone }) {
@@ -170,7 +165,7 @@ export function ExportBookPanel({ proj, onClose, onDone }) {
                   className: 'dshWmExportRow' + (checked.has(f.abs) ? '' : ' is-off'),
                   children: [
                     jsx.jsx('input', { type: 'checkbox', checked: checked.has(f.abs), onChange: () => toggle(f.abs) }, 'c'),
-                    jsx.jsx('span', { className: 'dshWmExportRowName', title: f.rel, children: chapterTitle(f.name) }, 'n'),
+                    jsx.jsx('span', { className: 'dshWmExportRowName', title: f.rel, children: chapterTitleOf(f.name) }, 'n'),
                     jsx.jsx('span', {
                       className: 'dshWmExportRowMeta',
                       children: (versionOf(f.name) != null ? 'v' + versionOf(f.name) + ' · ' : '') + (f.chars || 0) + ' 字',

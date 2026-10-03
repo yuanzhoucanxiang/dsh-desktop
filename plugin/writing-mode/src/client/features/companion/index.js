@@ -4,7 +4,7 @@
 import { loadProjectMemory, CompanionMemoryPanel } from '../memory/index.js'
 import { organizeWorld } from '../../services/world-organizer.js'
 import { WorldSettingsPanel } from '../world-settings/index.js'
-import { memoryHint, isInjectable, isPinnable, selectMemory, DEFAULT_MEMORY_BUDGET } from '../../../shared/context-builder.js'
+import { memoryHint, isPinnable, selectMemory, DEFAULT_MEMORY_BUDGET } from '../../../shared/context-builder.js'
 import { referenceStatus, sameReference, normalizeReference } from '../../../shared/reference.js'
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'

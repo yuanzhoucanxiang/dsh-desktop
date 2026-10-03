@@ -10,7 +10,7 @@
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { api } from '../../services/writing-api.js'
-import { versionOf } from '../../state/prefs-store.js'
+import { versionOf, chapterTitleOf } from '../../../shared/filename.js'
 import { navFileLabels, groupKeyOf, maxVersionInGroup } from '../library/grouping.js'
 import { CompanionMessage } from '../companion/CompanionMessage.js'
 
@@ -386,7 +386,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, on
                   className: 'dshWmWikiChapters',
                   'data-wm-wiki-chapters': String(rows.length),
                   children: rows.map((r) => jsx.jsxs('li', { children: [
-                    jsx.jsx('button', { type: 'button', className: 'dshWmWikiChapterName', title: '打开 ' + r.name, onClick: () => onOpenDoc(r.abs), children: r.name.replace(/\.[^.]+$/, '').replace(/-v\d+$/i, '') }),
+                    jsx.jsx('button', { type: 'button', className: 'dshWmWikiChapterName', title: '打开 ' + r.name, onClick: () => onOpenDoc(r.abs), children: chapterTitleOf(r.name) }),
                     jsx.jsx('span', { className: 'dshWmWikiChapterChars', children: (r.chars || 0) + ' 字' }),
                     r.gate ? jsx.jsx('span', { className: 'dshWmWikiChapterGate' + (r.gate.pass ? ' is-pass' : ' is-fail'), title: r.gate.pass ? '门禁全部通过' : '在「检查」页看明细', children: r.gate.pass ? '门禁 ✓' : '门禁 ' + r.gate.fail }) : null,
                     r.hook ? jsx.jsx('span', { className: 'dshWmWikiChapterHook', title: r.hook, children: r.hook }) : null,

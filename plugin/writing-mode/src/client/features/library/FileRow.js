@@ -1,12 +1,14 @@
 /**
- * 文件行（带版本徽标；P1-① 从 app/WritingModeApp.js 搬出）。
- * 由闭包捕获改为显式 props：{ file, maxVer, active, onPick, labels }；DOM 类名保持不变。
+ * 文件行（带版本徽标；P1-① 从 app/WritingModeApp.js 搬出；P1-② 由普通函数改为 memo 组件）。
+ * 显式 props：{ file, maxVer, active, onPick, labels }；DOM 类名不变，
+ * key 由调用点传入（值仍是 f.abs）。
  */
+import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
-import { versionOf } from '../../state/prefs-store.js'
+import { versionOf, stemWithExtOf } from '../../../shared/filename.js'
 import { groupKeyOf } from './grouping.js'
 
-export function fileRow({ file: f, maxVer, active, onPick, labels }) {
+export const FileRow = react.memo(function FileRow({ file: f, maxVer, active, onPick, labels }) {
   const T = labels
   const ver = versionOf(f.name)
   const latest = maxVer instanceof Map ? maxVer.get(groupKeyOf(f.abs)) : 0
@@ -29,7 +31,7 @@ export function fileRow({ file: f, maxVer, active, onPick, labels }) {
                 {
                   className: 'dshWmItemTitle',
                   style: { flex: 1, minWidth: 0 },
-                  children: (f.displayName || f.name).replace(/-v\d+(\.[^.]+)?$/i, '$1'),
+                  children: stemWithExtOf(f.displayName || f.name),
                 },
                 't'
               ),
@@ -53,7 +55,6 @@ export function fileRow({ file: f, maxVer, active, onPick, labels }) {
           'm'
         ),
       ],
-    },
-    f.abs
+    }
   )
-}
+})
