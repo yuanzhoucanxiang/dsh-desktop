@@ -131,6 +131,7 @@ export const ROUTE_METHODS = {
   'project-resource': ['POST'],
   compile: ['POST'],
   'archive-export': ['POST'],
+  wiki: ['GET'],
 }
 
 function isLoopbackRequest(req) {
@@ -159,6 +160,74 @@ function writeJson(res, status, obj) {
   res.setHeader('content-type', 'application/json; charset=utf-8')
   res.end(JSON.stringify(obj))
 }
+
+/**
+ * 档案页的数据组装：`archive-export`（落盘）与 `wiki`（当页面看）共用同一份口径，
+ * 免得两个出口对「什么算已确认设定」「哪篇算当前版」各说各话。
+ * 抛出的错误带 status/code，由调用方原样回给客户端——这里不决定「是文件还是页面」。
+ */
+function assembleArchiveModel(projectReal, prefs, titleOverride) {
+  const mem = readMemory(projectReal)
+  if (mem?.error) throw storeError('memory-' + mem.error, 409)
+  const items = mem?.memory?.items || []
+  const isWorld = (it) => it.kind === 'fact' && it.setting?.type === 'world'
+  const confirmed = items.filter((it) => it.status === 'confirmed')
+  const settings = confirmed.filter(isWorld).map((it) => ({
+    title: it.setting?.title || '',
+    conclusion: it.setting?.conclusion || it.text || '',
+    explanation: it.setting?.explanation || '',
+    boundaries: it.setting?.boundaries || '',
+    tags: it.setting?.tags || [],
+    sources: it.setting?.sources || [],
+    fromKind: it.source?.kind || 'author',
+  }))
+  const plainItems = confirmed.filter((it) => !isWorld(it)).map((it) => ({ kind: it.kind, text: it.text }))
+  const outline = outlineSummary(projectReal)
+  const statsFound = projectStatsFor(projectReal, { spanDays: 14 })
+  const allFiles = listProjectFiles(projectReal)
+  const docFiles = naturalSortFiles(latestOfSeries(allFiles.filter((f) => !f.rel.startsWith('draft/'))).latest)
+    .sort((a, b) => docGroupRank(docGroupOf(a.rel)) - docGroupRank(docGroupOf(b.rel))
+      || String(a.rel).localeCompare(String(b.rel), 'zh', { numeric: true }))
+  const docs = []
+  try {
+    for (const f of docFiles) {
+      docs.push({
+        rel: f.rel,
+        label: docLabelOf(f.rel, f.name),
+        group: docGroupOf(f.rel),
+        content: fs.readFileSync(f.abs, 'utf8'),
+        markdown: /\.(md|markdown)$/i.test(f.name),
+      })
+    }
+  } catch {
+    // 扫描到读取之间文件被移走：如实报，不半成品
+    throw storeError('source-changed', 409)
+  }
+  const bookTitle = safeBookTitle(String(titleOverride || '').trim() || path.basename(projectReal))
+  if (!bookTitle) throw storeError('invalid-title', 400)
+  const projectDoc = docs.find((d) => String(d.rel).toLowerCase() === 'project.md')
+  const html = renderArchiveHtml({
+    title: bookTitle,
+    premise: premiseOf(projectDoc?.content || ''),
+    generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+    settings,
+    proposedCount: items.filter((it) => it.status === 'proposed').length,
+    plainItems,
+    chapters: outline.rows.map((r) => ({ ...r, name: chapterTitle(r.name) })),
+    stats: statsFound?.summary || null,
+    dailyGoal: normalizePrefs(prefs).dailyGoal || 0,
+    ledger: ledgerSummary(projectReal, outline.rows[0]?.abs),
+    docs,
+  })
+  return { html, bookTitle, counts: { settings: settings.length, docs: docs.length, chapters: outline.rows.length } }
+}
+
+/**
+ * 档案页是「作者自己写的文字 + 我们的模板」拼出来的文档，CSP 把可执行性整个关掉：
+ * 页面本来就没有脚本（导航全靠锚点），这条头是第二道防线——稿子里的 <script>
+ * 既已被转义，也绝不会被放行执行。样式必须 'unsafe-inline'（单文件自包含的代价）。
+ */
+const WIKI_CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 /**
  * V1（P0）：按字节收集、最后一次性解码。
@@ -666,66 +735,14 @@ export function apply(ctx) {
             writeJson(res, 400, { ok: false, error: 'no-project' })
             return
           }
-          const mem = readMemory(projectReal)
-          if (mem?.error) {
-            // 坏 JSON / 未知 schema：不猜、不清空，让作者先处理权威数据
-            writeJson(res, 409, { ok: false, error: 'memory-' + mem.error })
-            return
-          }
-          const items = mem?.memory?.items || []
-          const isWorld = (it) => it.kind === 'fact' && it.setting?.type === 'world'
-          const confirmed = items.filter((it) => it.status === 'confirmed')
-          const settings = confirmed.filter(isWorld).map((it) => ({
-            title: it.setting?.title || '',
-            conclusion: it.setting?.conclusion || it.text || '',
-            explanation: it.setting?.explanation || '',
-            boundaries: it.setting?.boundaries || '',
-            tags: it.setting?.tags || [],
-            sources: it.setting?.sources || [],
-            fromKind: it.source?.kind || 'author',
-          }))
-          const plainItems = confirmed.filter((it) => !isWorld(it)).map((it) => ({ kind: it.kind, text: it.text }))
-          const outline = outlineSummary(projectReal)
-          const statsFound = projectStatsFor(projectReal, { spanDays: 14 })
-          const allFiles = listProjectFiles(projectReal)
-          const docFiles = naturalSortFiles(latestOfSeries(allFiles.filter((f) => !f.rel.startsWith('draft/'))).latest)
-            .sort((a, b) => docGroupRank(docGroupOf(a.rel)) - docGroupRank(docGroupOf(b.rel))
-              || String(a.rel).localeCompare(String(b.rel), 'zh', { numeric: true }))
-          const docs = []
+          let built
           try {
-            for (const f of docFiles) {
-              docs.push({
-                rel: f.rel,
-                label: docLabelOf(f.rel, f.name),
-                group: docGroupOf(f.rel),
-                content: fs.readFileSync(f.abs, 'utf8'),
-                markdown: /\.(md|markdown)$/i.test(f.name),
-              })
-            }
-          } catch {
-            // 扫描到读取之间文件被移走：如实报，不写半成品
-            writeJson(res, 409, { ok: false, error: 'source-changed' })
+            built = assembleArchiveModel(projectReal, cfg.prefs, parsed?.title)
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
             return
           }
-          const bookTitle = safeBookTitle(String(parsed?.title || '').trim() || path.basename(projectReal))
-          if (!bookTitle) {
-            writeJson(res, 400, { ok: false, error: 'invalid-title' })
-            return
-          }
-          const projectDoc = docs.find((d) => String(d.rel).toLowerCase() === 'project.md')
-          const html = renderArchiveHtml({
-            title: bookTitle,
-            premise: premiseOf(projectDoc?.content || ''),
-            generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
-            settings,
-            proposedCount: items.filter((it) => it.status === 'proposed').length,
-            plainItems,
-            chapters: outline.rows.map((r) => ({ ...r, name: chapterTitle(r.name) })),
-            stats: statsFound?.summary || null,
-            dailyGoal: normalizePrefs(cfg.prefs).dailyGoal || 0,
-            ledger: ledgerSummary(projectReal, outline.rows[0]?.abs),
-            docs,
-          })
+          const { html, bookTitle, counts } = built
           try {
             const scope = [{ path: projectReal, real: projectReal }]
             let written = null
@@ -741,8 +758,41 @@ export function apply(ctx) {
             writeJson(res, 200, {
               ok: true,
               doc: { path: written.path, bytes: written.bytes },
-              stats: { settings: settings.length, docs: docs.length, chapters: outline.rows.length },
+              stats: counts,
             })
+          } catch (err) {
+            writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
+          }
+          return
+        }
+
+        /**
+         * 作品档案页（HTML 文档，只读）：与 archive-export 同一份组装口径，但**不落盘**。
+         * 它是「档案作为一个页面」的地址——独立窗口（shell:open-wiki）或浏览器直接打开都走这里。
+         * 每次请求现算、明确不缓存（缓存里的设定是过期的，比没有更糟）；CSP 关掉脚本/图片/连接，
+         * 作者稿子里的东西只能当文字看。query: path（项目内任意路径）
+         */
+        if (req.method === 'GET' && route === 'wiki') {
+          const roots = effectiveRoots(cfg)
+          const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
+          if (target === null) {
+            writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
+            return
+          }
+          const found = resolveProjectDir(target.abs, roots)
+          const projectReal = found && realOrNull(found)
+          if (!projectReal) {
+            writeJson(res, 400, { ok: false, error: 'no-project' })
+            return
+          }
+          try {
+            const { html } = assembleArchiveModel(projectReal, cfg.prefs, '')
+            res.statusCode = 200
+            res.setHeader('content-type', 'text/html; charset=utf-8')
+            res.setHeader('content-security-policy', WIKI_CSP)
+            res.setHeader('x-content-type-options', 'nosniff')
+            res.setHeader('cache-control', 'no-store')
+            res.end(html)
           } catch (err) {
             writeJson(res, err.status || 500, { ok: false, error: String(err?.message || err) })
           }

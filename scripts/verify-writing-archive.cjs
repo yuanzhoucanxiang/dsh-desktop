@@ -232,7 +232,21 @@ app.whenReady().then(async () => {
   assert.equal(fs.readFileSync(exported, 'utf8'), page, '再导出不得覆盖上一份')
   console.log('PASS 导出 HTML：独占命名、候选不入、转义守住、原稿与文档库不动')
 
-  // 11) 导出页自包含：直接当文件打开就能看，且脚本不执行
+  // 11) wiki 文档路由：与导出同一份口径，但它是「一个页面」——禁脚本、不缓存、越界要拒
+  //     （必须在切到 file:// 之前跑：那时相对 fetch 会打到 file:///api/…）
+  const wiki = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)}));return {status:r.status,type:r.headers.get('content-type'),csp:r.headers.get('content-security-policy')||'',cache:r.headers.get('cache-control'),text:await r.text()}})()`)
+  assert.equal(wiki.status, 200)
+  assert.match(wiki.type, /text\/html/, 'wiki 应返回 HTML：' + wiki.type)
+  assert.ok(wiki.csp.includes("script-src 'none'"), 'wiki 页必须禁脚本：' + wiki.csp)
+  assert.equal(wiki.cache, 'no-store', '档案是此刻的投影，不许缓存')
+  assert.ok(wiki.text.includes('夜行禁令') && wiki.text.includes('港口与禁令'), '与导出页同一份内容口径')
+  assert.ok(!wiki.text.includes('钥匙能开旧电报室'), '候选不入 wiki 页')
+  const outside = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(temp)}));return {s:r.status,b:(await r.text()).slice(0,120)}})()`)
+  assert.equal(outside.s, 400, '库外路径应被拒，实得 ' + outside.s)
+  assert.match(outside.b, /path-outside-roots|no-project/, outside.b)
+  console.log('PASS wiki 路由：HTML + CSP 禁脚本 + 不缓存 + 库外拒绝')
+
+  // 12) 导出页自包含：直接当文件打开就能看，且脚本不执行
   await win.loadURL(pathToFileURL(exported).href)
   await waitFor(`document.title.includes('演示项目')`)
   assert.equal(await evaluate(`window.__pwned===undefined`), true, '导出页不得执行稿件里的脚本')
@@ -253,6 +267,17 @@ app.whenReady().then(async () => {
   assert.ok(await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(docTocHref)}).getBoundingClientRect();return r.top>-4&&r.top<innerHeight})()`), '点篇内小目录应滚到该小节')
   await shoot('archive-export.png')
   console.log('PASS 导出页自包含：单文件打开即渲染，脚本不执行')
+
+  // 13) 当独立页面打开：目录可用、稿件脚本不执行
+  await win.loadURL(`http://127.0.0.1:${server.address().port}/api/writing-mode?route=wiki&path=${encodeURIComponent(project)}`)
+  await waitFor(`document.title.includes('演示项目')`)
+  assert.equal(await evaluate(`window.__pwned===undefined`), true, 'wiki 页里稿件脚本不得执行')
+  assert.ok(await evaluate(`!!document.querySelector('.toc a[href^="#doc-"]')`), 'wiki 页应带目录')
+  const wikiHash = await evaluate(`(document.querySelector('.toc a[href^="#sec-"]')||{getAttribute:()=>''}).getAttribute('href')`)
+  await evaluate(`document.querySelector('.toc a[href="${wikiHash}"]').click()`)
+  await waitFor(`location.hash===${JSON.stringify(wikiHash)}`)
+  await shoot('wiki-page.png')
+  console.log('PASS wiki 页作为独立文档打开：目录跳转可用')
 
   assert.equal(errors.length, 0, errors.join('\n'))
   console.log('WRITING_ARCHIVE_UI_OK', temp)
