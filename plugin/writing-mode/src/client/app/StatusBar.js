@@ -58,6 +58,8 @@ export const StatusBar = react.memo(function StatusBar({
                 (stats.streak > 1 ? ' · ' + T.statsStreak + stats.streak + T.statsStreakUnit : ''),
             }, 'stv')
           : null,
+        /* G4 分组：码字统计与门禁摘要是两个心智模型，中间放无文本分隔线（复用顶栏那条） */
+        gate ? jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-gate') : null,
         gate
           ? jsx.jsx('span', {
               className: 'dshWmStatusSep',
