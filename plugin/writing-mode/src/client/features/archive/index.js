@@ -147,7 +147,7 @@ function SectionState({ state, onRetry, hasContent, empty }) {
   return hasContent ? null : empty
 }
 
-export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported }) {
+export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported, onOpenWindow }) {
   const [settings, setSettings] = react.useState(LOADING)
   const [progress, setProgress] = react.useState(LOADING)
   const [ledger, setLedger] = react.useState(LOADING)
@@ -281,6 +281,15 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, on
         jsx.jsx('span', { className: 'dshWmWikiTitle', children: proj.name || '作品档案' }),
         jsx.jsx('span', { className: 'dshWmWikiSub', children: '只读档案：内容来自已确认设定与文稿本身，这里改动不了它们' }),
         jsx.jsx('span', { style: { flex: 1 } }),
+        onOpenWindow
+          ? jsx.jsx('button', {
+              type: 'button',
+              className: 'dshWmBtn',
+              onClick: () => onOpenWindow(proj),
+              title: '在独立窗口打开这一页（可缩放、可打印；内容是同一份只读投影）',
+              children: '独立窗口',
+            }, 'open-window')
+          : null,
         jsx.jsx('button', {
           type: 'button',
           className: 'dshWmBtn',

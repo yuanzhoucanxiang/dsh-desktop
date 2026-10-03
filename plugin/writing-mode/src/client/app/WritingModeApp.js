@@ -345,6 +345,24 @@ export function WritingModeApp() {
     jumpToFile(name)
   }, [jumpToFile])
 
+  /** 外壳提供了档案窗口桥就走独立页面；没有（官方桌面/浏览器里跑插件）就退回覆盖层，功能不丢。 */
+  const wikiBridge = typeof window !== 'undefined' && typeof (window.dshShell || {}).openWiki === 'function'
+    ? window.dshShell : null
+  const openArchive = react.useCallback((proj) => {
+    if (!wikiBridge) { setArchiveProj(proj); return }
+    Promise.resolve(wikiBridge.openWiki(proj.path))
+      .then((r) => {
+        if (r && r.ok === false) {
+          setArchiveProj(proj)
+          flashMsg('独立窗口没开成（' + r.error + '），先在写作台里打开')
+        }
+      })
+      .catch((err) => {
+        setArchiveProj(proj)
+        flashMsg('独立窗口没开成（' + (err?.message || err) + '），先在写作台里打开')
+      })
+  }, [wikiBridge])
+
   /** 卡片拖拽重排成功后：刷新文件树；编辑中的章节被改名时把打开文档切到新路径（有未保存修改则提示走另存）。 */
   const handleReordered = react.useCallback((renames) => {
     void refreshTree()
@@ -1194,7 +1212,7 @@ export function WritingModeApp() {
                                             type: 'button',
                                             className: 'dshWmBtn is-ghost',
                                             title: '作品档案：已确认设定、进度与资料的只读汇总页',
-                                            onClick: () => { setExportProj(null); setArchiveProj(proj) },
+                                            onClick: () => { setExportProj(null); openArchive(proj) },
                                             children: '档案',
                                           }, 'archive'),
                                           jsx.jsx('button', {
@@ -1692,6 +1710,7 @@ export function WritingModeApp() {
                         onOpenDoc: (abs) => { setFilePath(abs); setArchiveProj(null) },
                         onJumpToFile: jumpFromArchive,
                         onExported: (d) => flashMsg('档案已导出 → ' + String(d?.doc?.path || '').split(/[\\/]/).pop()),
+                        onOpenWindow: wikiBridge ? (p) => openArchive(p) : null,
                       }, 'archive')
                     : null,
                 ],

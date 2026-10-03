@@ -1599,6 +1599,8 @@ async function restartKernel() {
   try {
     killChild()
     state.ready = false
+    // 端口与 token 每次启动都换，档案窗口里那个地址已经死了；它是投影、零丢失，直接收掉
+    closeWikiWindows()
     // 内核重启也走隔离恢复链（装了坏插件后点「重启内核」不再把应用搞挂）；
     // 但不做补丁降级——内核偶发慢启动不该悄悄丢掉审阅桥。
     await startKernelUntilReady({ degradePatch: false })
@@ -1758,6 +1760,72 @@ function openSplashPreview(withError) {
 
 /** @type {Set<BrowserWindow>} 附加窗口（同一内核，多会话并行） */
 const extraWins = new Set()
+
+/** @type {Map<string, BrowserWindow>} 作品档案窗口：一部作品一个，重复点「档案」是聚焦它而不是再开一个 */
+const wikiWins = new Map()
+const WIKI_WINDOW_LIMIT = 6
+
+/**
+ * 作品档案窗口：把插件的 wiki 文档路由（GET ?route=wiki&path=…）装进独立窗口。
+ *
+ * 为什么不让插件自己开：preload 的 dshShell 桥对所有窗口等权暴露，而 `window.open`
+ * 被 hardenWindow 一律 deny（弹窗只能去外部浏览器）。所以「应用内多开一页」必须过外壳——
+ * 那就把它做成**只能开这一个地址**的口子：调用方只给作品路径，URL 由外壳用
+ * kernelPageUrl() 拼（协议/端口/token 都不出自外壳），插件传不进任何 URL；
+ * 路径本身还要过长度、控制字符与 scheme 前缀检查，并由插件侧的库根校验兜底。
+ */
+function openWikiWindow(rawPath) {
+  const p = String(rawPath ?? '')
+  if (!p || p.length > 500 || /[\u0000-\u001f\u007f]/.test(p) || /^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
+    log('wiki window refused: invalid path')
+    return { ok: false, error: 'invalid-path' }
+  }
+  if (!state.ready || !state.url) return { ok: false, error: 'kernel-not-ready' }
+  const key = p.toLowerCase()
+  const existing = wikiWins.get(key)
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore()
+    existing.show()
+    existing.focus()
+    return { ok: true, reused: true }
+  }
+  if (wikiWins.size >= WIKI_WINDOW_LIMIT) return { ok: false, error: 'too-many-windows' }
+  const base = String(kernelPageUrl() || '').replace(/\/+$/, '')
+  const url = `${base}/api/writing-mode?route=wiki&path=${encodeURIComponent(p)}`
+  const w = new BrowserWindow({
+    width: 1000,
+    height: 800,
+    minWidth: 620,
+    minHeight: 440,
+    title: `作品档案 · ${path.basename(p) || '未命名'}`,
+    backgroundColor: THEMES[themeId()].bg,
+    icon: appIconImage(),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  wikiWins.set(key, w)
+  w.on('closed', () => wikiWins.delete(key))
+  hardenWindow(w) // wiki 页与内核页同源，导航仍受 isKernelPageUrl 约束
+  w.loadURL(url).catch((err) => log(`wiki window failed: ${err.message}`))
+  log(`wiki window open ${path.basename(p)}`)
+  return { ok: true }
+}
+
+/** 内核重启/退出时一并收掉的档案窗口（它们指向的端口已经作废）。 */
+function closeWikiWindows() {
+  for (const w of [...wikiWins.values()]) {
+    try {
+      if (!w.isDestroyed()) w.destroy()
+    } catch {}
+  }
+  wikiWins.clear()
+}
 
 /** 把命令发给当前聚焦的窗口（没有就发主窗口）。 */
 function sendToFocused(channel, payload) {
@@ -2202,6 +2270,7 @@ function installUpdateNow() {
   for (const w of extraWins) {
     if (!w.isDestroyed()) w.destroy()
   }
+  closeWikiWindows()
   if (previewWin && !previewWin.isDestroyed()) previewWin.destroy()
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy()
   // 等内核进程真正退出（taskkill 是异步生效的），再交给安装器，避免它撞上还在跑的进程；
@@ -2890,6 +2959,8 @@ function registerIpc() {
     shell.showItemInFolder(fp)
     return ''
   })
+  // 作品档案窗口：只接受作品路径，URL 一律由外壳拼（见 openWikiWindow 的说明）
+  ipcMain.handle('shell:open-wiki', (_e, p) => openWikiWindow(p))
   // 面板内文件查看器：读文件内容（UTF-8，上限 512KB，二进制拒绝）
   ipcMain.handle('shell:read-file', (_e, p) => {
     const fp = workspacePath(p)

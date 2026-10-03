@@ -418,11 +418,19 @@ export function docLabelOf(rel, name) {
   return DOC_LABELS.get(normRel(rel)) || String(name || rel || '')
 }
 
-/** 作品概览里的一句话：优先「一句话故事 / 前提 / 梗概」小节下的第一段，退回首段正文。 */
+/**
+ * 作品概览里的一句话：优先「一句话故事 / 前提 / 梗概」小节下的第一段，退回首段正文。
+ * 退回首段时要跳过"光有标签没有内容"的行（模板里 `核心冲突：` 后面还没填时，
+ * 把它当前提显示出来只会像半成品）——真实作品上踩过。
+ */
 export function premiseOf(projectMarkdown) {
   const text = String(projectMarkdown ?? '')
   const one = /一句话(?:故事|前提|梗概)[^\n]*\n+([^\n#]+)/.exec(text)
-  if (one) return one[1].trim().slice(0, 300)
-  const para = text.split(/\r?\n\s*\r?\n/).find((block) => block.trim() && !/^\s*#/.test(block))
-  return para ? para.trim().slice(0, 300) : ''
+  const first = (one && one[1].trim()) || ''
+  if (first && !/[:：]\s*$/.test(first)) return first.slice(0, 300)
+  const para = (text.split(/\r?\n\s*\r?\n/).find((block) => {
+    const t = block.trim()
+    return t && !/^\s*#/.test(t) && !/[:：]\s*$/.test(t.split('\n')[0]) && t.length >= 6
+  }) || '').trim()
+  return para.slice(0, 300)
 }

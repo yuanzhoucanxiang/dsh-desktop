@@ -175,3 +175,5 @@ v2 交回复核：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-r
 2026-10-02 作品档案第三刀：导出页加目录与页内锚点（tocSection + buildRefResolver，[[文稿名]] 按 jump.js 同规则解析到页内 doc/ch 锚点，解析不到退回不可导航标注；锚点 id 全由 host 生成 + SAFE_ANCHOR 兜底，打印藏目录）。纯函数 12→16 项、档案门禁 11→12 段（含独立打开导出页点目录真跳转），verify:writing-quick 全链 597 项 0 非零。日志 logs/2026-10-02.md。— 署名：Qoder
 
 2026-10-02 作品档案第四刀：导出页每篇资料加篇内小目录（标题 ≥2 才给；锚点 doc-N-h-M 由 host 生成、每篇独立编号；打印时与主目录一起藏）。纯函数 16→19 项、档案门禁 12→13 段（真点篇内目录复验滚到小节）、quick 全链结果见日志。— 署名：Qoder
+
+2026-10-03 作品档案第五刀：wiki 改为独立窗口（新 GET route=wiki 与 archive-export 共用 assembleArchiveModel；外壳新增 shell:open-wiki，只收路径、URL 外壳拼、窗口上限 6、同作品复用、随内核重启收掉；无桥环境退回覆盖层）。shell-hardening S7 九条 + 零依赖 CDP 取证 verify-wiki-window.mjs 真点一次通过；纯函数 19→20 项。日志 logs/2026-10-03.md。— 署名：Qoder

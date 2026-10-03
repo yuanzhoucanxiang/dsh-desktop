@@ -19847,7 +19847,7 @@ function SectionState({ state, onRetry, hasContent, empty: empty3 }) {
   }
   return hasContent ? null : empty3;
 }
-function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported }) {
+function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExported, onOpenWindow }) {
   const [settings, setSettings] = react7.useState(LOADING);
   const [progress, setProgress] = react7.useState(LOADING);
   const [ledger, setLedger] = react7.useState(LOADING);
@@ -19972,6 +19972,13 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExporte
         jsx16.jsx("span", { className: "dshWmWikiTitle", children: proj.name || "作品档案" }),
         jsx16.jsx("span", { className: "dshWmWikiSub", children: "只读档案：内容来自已确认设定与文稿本身，这里改动不了它们" }),
         jsx16.jsx("span", { style: { flex: 1 } }),
+        onOpenWindow ? jsx16.jsx("button", {
+          type: "button",
+          className: "dshWmBtn",
+          onClick: () => onOpenWindow(proj),
+          title: "在独立窗口打开这一页（可缩放、可打印；内容是同一份只读投影）",
+          children: "独立窗口"
+        }, "open-window") : null,
         jsx16.jsx("button", {
           type: "button",
           className: "dshWmBtn",
@@ -20694,6 +20701,22 @@ function WritingModeApp() {
     setArchiveProj(null);
     jumpToFile(name3);
   }, [jumpToFile]);
+  const wikiBridge = typeof window !== "undefined" && typeof (window.dshShell || {}).openWiki === "function" ? window.dshShell : null;
+  const openArchive = react9.useCallback((proj) => {
+    if (!wikiBridge) {
+      setArchiveProj(proj);
+      return;
+    }
+    Promise.resolve(wikiBridge.openWiki(proj.path)).then((r) => {
+      if (r && r.ok === false) {
+        setArchiveProj(proj);
+        flashMsg("独立窗口没开成（" + r.error + "），先在写作台里打开");
+      }
+    }).catch((err) => {
+      setArchiveProj(proj);
+      flashMsg("独立窗口没开成（" + (err?.message || err) + "），先在写作台里打开");
+    });
+  }, [wikiBridge]);
   const handleReordered = react9.useCallback((renames) => {
     void refreshTree();
     const snap = editor.get();
@@ -21512,7 +21535,7 @@ function WritingModeApp() {
                                     title: "作品档案：已确认设定、进度与资料的只读汇总页",
                                     onClick: () => {
                                       setExportProj(null);
-                                      setArchiveProj(proj);
+                                      openArchive(proj);
                                     },
                                     children: "档案"
                                   }, "archive"),
@@ -21966,7 +21989,8 @@ function WritingModeApp() {
                       setArchiveProj(null);
                     },
                     onJumpToFile: jumpFromArchive,
-                    onExported: (d) => flashMsg("档案已导出 → " + String(d?.doc?.path || "").split(/[\\/]/).pop())
+                    onExported: (d) => flashMsg("档案已导出 → " + String(d?.doc?.path || "").split(/[\\/]/).pop()),
+                    onOpenWindow: wikiBridge ? (p) => openArchive(p) : null
                   }, "archive") : null
                 ]
               },
