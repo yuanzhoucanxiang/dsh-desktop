@@ -32,6 +32,7 @@ export const StatusBar = react.memo(function StatusBar({
         }),
         jsx.jsx('span', { className: 'dshWmStatusSep', children: '·' }),
         jsx.jsx('span', {
+          className: 'dshWmStatusMeta',
           children: `${content.replace(/\s+/g, '').length} ${T.chars}`,
         }),
         jsx.jsx('span', {
@@ -39,6 +40,7 @@ export const StatusBar = react.memo(function StatusBar({
           children: '·',
         }),
         jsx.jsx('span', {
+          className: 'dshWmStatusMeta',
           children: (filePath || '').toLowerCase().endsWith('.fountain')
             ? 'Fountain'
             : 'Markdown',

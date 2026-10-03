@@ -6,6 +6,7 @@ import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { T } from '../copy.js'
 import { savePrefs } from '../state/prefs-store.js'
+import { basenameOf } from '../../shared/filename.js'
 
 export const TopBar = react.memo(function TopBar({
   roots,
@@ -51,7 +52,7 @@ export const TopBar = react.memo(function TopBar({
                     'option',
                     {
                       value: r.path,
-                      children: (r.missing ? '⚠ ' : '') + (r.label || r.path),
+                      children: (r.missing ? '⚠ ' : '') + (r.label || basenameOf(r.path)),
                     },
                     r.path
                   )
@@ -109,6 +110,7 @@ export const TopBar = react.memo(function TopBar({
               'add-root'
             )
           : null,
+        jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-roots'),
         jsx.jsx('span', { className: 'dshWmBarSpacer' }),
         jsx.jsx(
           'div',
@@ -120,7 +122,7 @@ export const TopBar = react.memo(function TopBar({
                 className: 'dshWmBtn is-ghost',
                 onClick: () => setLibOpen((v) => !v),
                 title: libOpen ? T.hideLib : T.showLib,
-                children: libOpen ? '⟨' : '⟩',
+                children: libOpen ? '⟨ 库' : '库 ⟩',
               }),
               jsx.jsx('button', {
                 type: 'button',
@@ -164,10 +166,11 @@ export const TopBar = react.memo(function TopBar({
           },
           'views'
         ),
+        jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-save'),
         jsx.jsx('span', { className: 'dshWmBarGroup', children: [
           jsx.jsx('button', {
             type: 'button',
-            className: 'dshWmBtn',
+            className: 'dshWmBtn is-primary',
             disabled: !filePath,
             title: saveState === 'error' ? documentState.error : undefined,
             onClick: () => void persist(),
@@ -180,9 +183,10 @@ export const TopBar = react.memo(function TopBar({
                   : T.save,
           }),
         ]}, 'file-ops'),
+        jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-exit'),
         jsx.jsx('button', {
           type: 'button',
-          className: 'dshWmBtn is-primary',
+          className: 'dshWmBtn',
           onClick: close,
           children: T.exit,
         }),

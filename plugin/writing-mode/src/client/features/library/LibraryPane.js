@@ -299,7 +299,7 @@ export const LibraryPane = react.memo(function LibraryPane({
                                   children: '成书',
                                 }, 'export'),
                                 jsx.jsx('select', {
-                                  className: 'dshWmSearch', 'aria-label': '按需添加资料', value: '',
+                                  className: 'dshWmSearch dshWmAddRes', 'aria-label': '按需添加资料', value: '',
                                   onChange: e => void addProjectResource(proj, e.target.value),
                                   children: [jsx.jsx('option', { value: '', children: '＋ 添加人物、设定或规划…' }, 'placeholder'),
                                     ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],

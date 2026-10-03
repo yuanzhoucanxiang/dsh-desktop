@@ -57,13 +57,14 @@ export const EditorChrome = react.memo(function EditorChrome({
           },
           'pr'
         ),
-        jsx.jsx(
+        jsx.jsxs(
           'div',
           {
             className: 'dshWmDocName',
-            children:
-              stemWithExtOf(docBasename || T.untitled) +
-              (curVerNum != null ? '  v' + curVerNum : ''),
+            children: [
+              stemWithExtOf(docBasename || T.untitled),
+              curVerNum != null ? jsx.jsx('span', { className: 'dshWmDocVer', children: '  v' + curVerNum }) : null,
+            ],
           },
           'dn'
         ),

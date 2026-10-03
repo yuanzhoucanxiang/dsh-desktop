@@ -10,13 +10,15 @@ export const CSS = [
      设置页（.dshWmSettings，走 settings.section 槽位挂在外壳设置弹层）、外壳里的入口钮
      （.dshWmBtn，侧边栏 footer / 会话顶栏槽位）都在根外，挂 .dshWmRoot 会让它们解析不到
      令牌（font-size 之类会退回 inherit）。
-     状态色别名里的字面回退取自外壳调色（preload.js），仅在外壳变量缺席时生效。 */
+     状态色别名里的字面回退取自外壳调色（preload.js），仅在外壳变量缺席时生效。
+     --wm-warn 引用的是外壳真名 --dsw-alias-state-warn-primary（短名）：
+     早先写的 --dsw-alias-state-warning-primary 外壳从未定义，导致 warn 色永远停在 #c9a227。 */
   ':root{',
   '  --wm-text-xs:11px;--wm-text-sm:12.5px;--wm-text-md:14px;--wm-text-lg:17px;--wm-text-xl:21px;',
   '  --wm-space-1:4px;--wm-space-2:8px;--wm-space-3:12px;--wm-space-4:20px;--wm-space-5:32px;',
   '  --wm-radius-s:6px;--wm-radius-m:10px;--wm-radius-l:14px;',
   '  --wm-weight-normal:400;--wm-weight-medium:600;--wm-weight-bold:700;',
-  '  --wm-ok:var(--dsw-alias-state-success-primary,#a9c2b6);--wm-err:var(--dsw-alias-state-error-primary,#c9adad);--wm-warn:var(--dsw-alias-state-warning-primary,#c9a227);',
+  '  --wm-ok:var(--dsw-alias-state-success-primary,#a9c2b6);--wm-err:var(--dsw-alias-state-error-primary,#c9adad);--wm-warn:var(--dsw-alias-state-warn-primary,#c9a227);',
   '}',
 
   /* 写作台打开：藏自有浮钮 + PALIS 浮钮/状态条，避免叠层 */
@@ -68,6 +70,8 @@ export const CSS = [
   '  flex:none;',
   '}',
   '.dshWmBarGroup{display:flex;align-items:center;gap:6px;min-width:0;flex:none;}',
+  /* C6 顶栏分组之间的分隔线（根/视图/保存/退出四段） */
+  '.dshWmBarSep{flex:none;width:1px;height:20px;background:var(--dsw-alias-border-l2);}',
   '.dshWmBarSpacer{flex:1;min-width:16px;}',
   '.dshWmSelect{',
   '  font:inherit;font-size:var(--wm-text-sm);padding:6px 10px;border-radius:var(--wm-radius-m);',
@@ -89,7 +93,8 @@ export const CSS = [
   '}',
   '.dshWmBtn.is-ghost{border-color:transparent;padding-left:8px;padding-right:8px;}',
   '.dshWmBtn.is-danger{color:var(--wm-err);}',
-  '.dshWmBtn.is-on{',
+  /* 选中态只有一份声明源：显式 is-on 与 aria-pressed 走同一组规则（左栏三视图切换用的是后者） */
+  '.dshWmBtn.is-on,.dshWmBtn[aria-pressed="true"]{',
   '  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);',
   '  border-color:var(--dsw-alias-brand-primary);',
   '  color:var(--dsw-alias-label-primary);',
@@ -117,10 +122,12 @@ export const CSS = [
   '.dshWmActivity{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:var(--wm-text-sm);line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}',
   '.dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);font-size:var(--wm-text-sm);display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);padding:10px 0;}',
   '.dshWmCompanionError{padding:10px;font-size:var(--wm-text-sm);line-height:1.6;color:var(--wm-err);overflow-wrap:anywhere;max-height:120px;overflow:auto;}',
-  /* 内核能力缺口：连不上=警示底色常驻条，受限=一行 Quiet 灰字，都不该是「按钮自己灰掉」 */
-  '.dshWmCapability{flex:none;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:var(--wm-radius-m);font-size:var(--wm-text-sm);line-height:1.6;overflow-wrap:anywhere;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}',
-  '.dshWmCapability.is-blocked{color:var(--wm-err);border-color:color-mix(in srgb,var(--wm-err) 45%,var(--dsw-alias-border-l2));}',
-  '.dshWmCapability strong{font-weight:var(--wm-weight-medium);}',
+  /* 内核能力缺口：常驻状态条，不是主角——密度压低、红色收进左侧竖条与标题，
+     正文保持 muted（空态欢迎语才是右栏开场白）。受限=一行 Quiet 灰字。 */
+  '.dshWmCapability{flex:none;display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-radius:var(--wm-radius-s);font-size:var(--wm-text-sm);line-height:1.55;overflow-wrap:anywhere;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmCapability.is-blocked{border-left:3px solid var(--wm-err);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmCapability.is-blocked strong{color:var(--wm-err);}',
+  '.dshWmCapability strong{font-size:inherit;font-weight:var(--wm-weight-medium);}',
   '.dshWmCapabilityNote{opacity:.8;}',
   '.dshWmMemory{border-bottom:1px solid var(--dsw-alias-border-l2);max-height:220px;display:flex;flex-direction:column;}',
   '.dshWmMemoryList{overflow:auto;flex:1;padding:0 10px 8px;}',
@@ -196,8 +203,8 @@ export const CSS = [
   '.dshWmProjChev{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);transition:transform .12s;flex:none;}',
   '.dshWmProjChev.is-open{transform:rotate(90deg);}',
   '.dshWmFolder{',
-  '  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;',
-  '  color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;',
+  '  font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;',
+  '  color:var(--dsw-alias-label-secondary);padding:8px 8px 3px;',
   '}',
   '.dshWmSearch{',
   '  width:100%;margin:0 0 8px;padding:7px 10px;border-radius:var(--wm-radius-m);',
@@ -289,15 +296,15 @@ export const CSS = [
   '.dshWmFindHint{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);opacity:.7;margin-left:auto;white-space:nowrap;}',
   '.dshWmFindBar .dshWmBtn{flex:none;}',
 
-  /* 状态条里的今日码字芯片 */
-  '.dshWmStatus [data-wm-stats-today]{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}',
+  /* 状态条里的今日码字芯片：与字数/格式同属「元信息」，让位给门禁摘要 */
+  '.dshWmStatus [data-wm-stats-today]{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}',
 
   '.dshWmAiBody{',
   '  flex:1;display:flex;flex-direction:column;min-height:0;',
   '  padding:8px 12px 20px;gap:8px;overflow:auto;',
   '}',
   '.dshWmAiSection{display:flex;flex-direction:column;gap:8px;}',
-  '.dshWmAiSectionTitle{font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}',
+  '.dshWmAiSectionTitle{font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);}',
   '.dshWmAiMain{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;}',
   '.dshWmAiActions{display:flex;flex-wrap:wrap;gap:6px;}',
   '.dshWmAiOut{',
@@ -327,9 +334,9 @@ export const CSS = [
   '  display:flex;gap:8px;align-items:baseline;font-size:var(--wm-text-sm);line-height:1.45;',
   '  padding:5px 8px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);',
   '}',
-  '.dshWmGateRow .ok{color:var(--wm-ok);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:34px;}',
-  '.dshWmGateRow .bad{color:var(--wm-err);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:34px;}',
-  '.dshWmGateLabel{color:var(--dsw-alias-label-primary);flex:none;min-width:5em;}',
+  '.dshWmGateRow .ok{color:var(--wm-ok);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:auto;}',
+  '.dshWmGateRow .bad{color:var(--wm-err);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:auto;}',
+  '.dshWmGateLabel{color:var(--dsw-alias-label-primary);flex:none;}',
   '.dshWmGateDetail{color:var(--dsw-alias-label-tertiary);flex:1;word-break:break-word;font-size:var(--wm-text-xs);}',
   '.dshWmLedger{',
   '  display:flex;flex-direction:column;gap:6px;font-size:var(--wm-text-sm);line-height:1.55;',
@@ -481,7 +488,7 @@ export const CSS = [
   '.dshWmWikiScroll{flex:1;min-height:0;overflow:auto;width:100%;max-width:960px;margin:0 auto;padding:22px 24px 48px;display:flex;flex-direction:column;gap:26px;}',
   '.dshWmWikiSection{display:flex;flex-direction:column;gap:10px;}',
   '.dshWmWikiSectionHead{display:flex;align-items:baseline;gap:8px;}',
-  '.dshWmWikiSectionHead h3{margin:0;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}',
+  '.dshWmWikiSectionHead h3{margin:0;font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);}',
   '.dshWmWikiSectionMeta{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}',
   '.dshWmWikiSectionError{display:flex;align-items:center;gap:8px;margin:0;font-size:var(--wm-text-sm);color:var(--wm-err);}',
   '.dshWmWikiCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;}',
@@ -546,10 +553,12 @@ export const CSS = [
   '.dshWmFolder.is-clickable{cursor:pointer;text-transform:none;}',
   /* 外壳侧边栏 footer 的入口钮：外观仍由 .dshWmBtn 负责，这里只负责撑满与文字居中 */
   '.dshWmBtn.dshWmEntryBtn{width:100%;justify-content:center;}',
-  /* 状态条门禁芯片：颜色随 gate.pass 变（类修饰，不再走内联） */
-  '.dshWmGateState{font-weight:var(--wm-weight-medium);}',
+  /* 状态条门禁芯片：状态条里唯一「要作者看一眼」的信息，字号与字重都压过元信息 */
+  '.dshWmGateState{font-size:var(--wm-text-md);font-weight:var(--wm-weight-bold);}',
   '.dshWmGateState.is-pass{color:var(--wm-ok);}',
   '.dshWmGateState.is-fail{color:var(--wm-err);}',
+  /* 状态条元信息（字数/格式/今日净增）：降权，不与门禁摘要抢读 */
+  '.dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}',
 
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
   '.dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}',
@@ -578,6 +587,24 @@ export const CSS = [
   '.dshWmSetRootPath{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWmSetAddRow{display:flex;gap:var(--wm-space-2);}',
   '.dshWmSetSectionHead{margin-top:var(--wm-space-3);padding-top:var(--wm-space-3);border-top:1px solid var(--dsw-alias-border-l2);font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-tertiary);letter-spacing:.06em;}',
+
+  /* C2 「＋ 添加人物、设定或规划…」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
+     并允许在窄侧栏里省略号收尾（.dshWmSearch 那套是输入框外观，0,2,0 复合选择器确保压得住它） */
+  '.dshWmSearch.dshWmAddRes{max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-style:dashed;color:var(--dsw-alias-label-secondary);}',
+
+  /* C3 原生 checkbox 收编品牌色：作用域覆盖工作台根与设置页（设置页在 .dshWmRoot 之外） */
+  '.dshWmRoot input[type="checkbox"],.dshWmSettings input[type="checkbox"]{accent-color:var(--dsw-alias-brand-primary,#2b5fd9);}',
+
+  /* C4 文稿名里的版本号降权（textContent 不变）：版本信息的主展示位是下方版本条 chips */
+  '.dshWmDocVer{font-size:var(--wm-text-sm);font-weight:var(--wm-weight-normal);color:var(--dsw-alias-label-tertiary);}',
+
+  /* C11 补齐三个「JSX 里有、样式表里没有」的既有类 */
+  '.dshWmMemoryStatus{flex:none;color:var(--dsw-alias-label-secondary);}',
+  '.dshWmMemoryStatus[data-status="confirmed"]{color:var(--wm-ok);}',
+  '.dshWmMemoryStatus[data-status="retracted"]{color:var(--dsw-alias-label-tertiary);}',
+  '.dshWmMemoryStatus[data-status="resolved"]{color:var(--dsw-alias-brand-primary);}',
+  '.dshWmWikiLedger{display:flex;flex-direction:column;gap:6px;}',
+  '.dshWmWorldProjection{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);}',
 ].join('\n')
 
 const TAG = 'dsh-writing-mode-css'
