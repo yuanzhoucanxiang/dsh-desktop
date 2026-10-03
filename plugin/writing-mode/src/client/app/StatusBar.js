@@ -64,12 +64,7 @@ export const StatusBar = react.memo(function StatusBar({
           : null,
         gate
           ? jsx.jsx('span', {
-              style: {
-                color: gate.pass
-                  ? 'var(--dsw-alias-state-success-primary)'
-                  : 'var(--dsw-alias-state-error-primary)',
-                fontWeight: 600,
-              },
+              className: 'dshWmGateState ' + (gate.pass ? 'is-pass' : 'is-fail'),
               children: gate.pass
                 ? T.gateShort + ' ✓'
                 : T.gateShort + ' ' + gate.fail,

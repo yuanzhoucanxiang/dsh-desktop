@@ -86,8 +86,7 @@ export const TopBar = react.memo(function TopBar({
                     children: [jsx.jsx('option', { value: 'library', children: '作品库（包含多个项目）' }), jsx.jsx('option', { value: 'project', children: '已有项目（保留原目录）' })],
                   }),
                   jsx.jsx('input', {
-                    className: 'dshWmSearch',
-                    style: { width: 180, margin: 0 },
+                    className: 'dshWmSearch is-compact',
                     value: addRootPath,
                     placeholder: addRootKind === 'project' ? '已有作品文件夹完整路径' : 'E:\\剧本',
                     'aria-label': '文件夹路径',

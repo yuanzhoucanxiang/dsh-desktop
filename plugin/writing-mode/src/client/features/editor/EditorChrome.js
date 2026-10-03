@@ -76,7 +76,7 @@ export const EditorChrome = react.memo(function EditorChrome({
                   jsx.jsx('span', {
                     children: T.isHistory + ' · ' + T.isLatest + ' v' + latestVer.v,
                   }, 'h'),
-                  jsx.jsx('span', { style: { flex: 1 } }),
+                  jsx.jsx('span', { className: 'dshWmSpacer' }),
                   jsx.jsx('button', {
                     type: 'button',
                     className: 'dshWmBtn',

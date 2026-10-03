@@ -933,7 +933,7 @@ export function WritingModeApp() {
                         'data-wm-doc-alert': saveState,
                         children: [
                           jsx.jsx('span', { children: documentState.error }, 'm'),
-                          jsx.jsx('span', { style: { flex: 1 } }, 's'),
+                          jsx.jsx('span', { className: 'dshWmSpacer' }, 's'),
                           dirty && filePath
                             ? jsx.jsx('button', {
                                 type: 'button',

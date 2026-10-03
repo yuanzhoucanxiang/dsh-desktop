@@ -96,7 +96,7 @@ export function ExportBookPanel({ proj, onClose, onDone }) {
               className: 'dshWmExportHead',
               children: [
                 jsx.jsx('span', { className: 'dshWmExportTitle', children: `导出成书 · ${proj.name}` }, 't'),
-                jsx.jsx('span', { style: { flex: 1 } }, 'sp'),
+                jsx.jsx('span', { className: 'dshWmSpacer' }, 'sp'),
                 jsx.jsx(
                   'button',
                   { type: 'button', className: 'dshWmBtn is-ghost', onClick: onClose, children: '返回写作（Esc）' },
@@ -122,8 +122,7 @@ export function ExportBookPanel({ proj, onClose, onDone }) {
                 jsx.jsx('label', { className: 'dshWmExportLabel', htmlFor: 'dshWmExportName', children: '书名' }, 'l'),
                 jsx.jsx('input', {
                   id: 'dshWmExportName',
-                  className: 'dshWmSearch',
-                  style: { margin: 0 },
+                  className: 'dshWmSearch is-flat',
                   value: title,
                   onChange: (e) => setTitle(e.target.value),
                 }, 'i'),
@@ -190,7 +189,7 @@ export function ExportBookPanel({ proj, onClose, onDone }) {
               className: 'dshWmExportFoot',
               children: [
                 jsx.jsx('span', { children: `共 ${totalChars} 字` }, 'n'),
-                jsx.jsx('span', { style: { flex: 1 } }, 'sp'),
+                jsx.jsx('span', { className: 'dshWmSpacer' }, 'sp'),
                 jsx.jsx('button', { type: 'button', className: 'dshWmBtn', onClick: onClose, disabled: busy, children: '取消' }, 'cancel'),
                 jsx.jsx('button', {
                   type: 'button',

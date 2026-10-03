@@ -172,7 +172,7 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
   // V9：配额用量常驻显示，并给三个归档出口。撞墙之前就能看见，不是等报错才知道。
   const q = state.quota
   const quotaRow = q
-    ? jsx.jsxs('div', { className: 'dshWmMemoryNote', 'data-wm-memory-quota': '', style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }, children: [
+    ? jsx.jsxs('div', { className: 'dshWmMemoryNote is-quota', 'data-wm-memory-quota': '', children: [
         jsx.jsx('span', { children: `用量：备忘 ${q.items}/${q.maxItems} · 历史 ${q.changes}/${q.maxChanges} · 操作收据 ${q.operations}/${q.maxOperations}` }),
         jsx.jsx('button', { className: 'dshWmQuiet', disabled: busy || q.changes <= 0, 'data-wm-memory-archive': 'history', onClick: () => void post('archive-history', {}), children: MAINTENANCE_LABEL['archive-history'] }),
         jsx.jsx('button', { className: 'dshWmQuiet', disabled: busy || q.operations <= 0, 'data-wm-memory-archive': 'operations', onClick: () => void post('prune-operations', {}), children: MAINTENANCE_LABEL['prune-operations'] }),
@@ -192,14 +192,13 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
 
   return jsx.jsxs('div', { className: 'dshWmMemory', children: [
     jsx.jsx('div', {
-      className: 'dshWmCompanionEmpty',
-      style: { padding: '8px 10px', textAlign: 'left', lineHeight: 1.5 },
+      className: 'dshWmCompanionEmpty is-inline',
       children: '只有作者确认过的设定/偏好会被自动带入对话。助手建议默认是候选，不会当成事实；待定问题即便确认也仍是问题，不混进默认事实。',
     }),
 
     // ── 新增 / 候选编辑 ───────────────────────────────────────────
     jsx.jsxs('div', { className: 'dshWmMemoryCompose', children: [
-      jsx.jsxs('div', { className: 'dshWmAiActions', style: { padding: '0 10px 6px' }, children: [
+      jsx.jsxs('div', { className: 'dshWmAiActions is-padded', children: [
         jsx.jsx('select', {
           className: 'dshWmMemoryKind',
           value: kind,
@@ -210,10 +209,9 @@ export function CompanionMemoryPanel({ path, candidate, onCandidateConsumed, onC
           ),
         }),
         jsx.jsx('textarea', {
-          className: 'dshWmSearch',
+          className: 'dshWmSearch is-compose',
           rows: 3,
           'aria-label': '项目备忘内容',
-          style: { margin: 0, flex: 1, minWidth: 0, resize: 'vertical', maxHeight: 140, font: 'inherit' },
           placeholder: asCandidate ? '候选内容（可删改）…' : '写下一条设定、偏好或待定问题…',
           value: text,
           disabled: busy,

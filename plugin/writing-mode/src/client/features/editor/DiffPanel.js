@@ -40,7 +40,7 @@ export const DiffPanel = react.memo(function DiffPanel({
               jsx.jsx('span', {
                 children: T.diffTitle + ' ' + diffLabel,
               }),
-              jsx.jsx('span', { style: { flex: 1 } }),
+              jsx.jsx('span', { className: 'dshWmSpacer' }),
               jsx.jsx('button', {
                 type: 'button',
                 className: 'dshWmBtn is-ghost',
@@ -81,7 +81,7 @@ export const RewritePanel = react.memo(function RewritePanel({
               jsx.jsx('span', {
                 children: T.rewriteTitle + (rewrite.label ? ' · ' + rewrite.label : ''),
               }),
-              jsx.jsx('span', { style: { flex: 1 } }),
+              jsx.jsx('span', { className: 'dshWmSpacer' }),
               jsx.jsx('button', {
                 type: 'button',
                 className: 'dshWmBtn',

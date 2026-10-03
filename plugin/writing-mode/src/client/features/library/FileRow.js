@@ -30,7 +30,6 @@ export const FileRow = react.memo(function FileRow({ file: f, maxVer, active, on
                 'span',
                 {
                   className: 'dshWmItemTitle',
-                  style: { flex: 1, minWidth: 0 },
                   children: stemWithExtOf(f.displayName || f.name),
                 },
                 't'

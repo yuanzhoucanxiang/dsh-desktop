@@ -280,7 +280,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, on
       jsx.jsxs('div', { className: 'dshWmWikiBar', children: [
         jsx.jsx('span', { className: 'dshWmWikiTitle', children: proj.name || '作品档案' }),
         jsx.jsx('span', { className: 'dshWmWikiSub', children: '只读档案：内容来自已确认设定与文稿本身，这里改动不了它们' }),
-        jsx.jsx('span', { style: { flex: 1 } }),
+        jsx.jsx('span', { className: 'dshWmSpacer' }),
         onOpenWindow
           ? jsx.jsx('button', {
               type: 'button',

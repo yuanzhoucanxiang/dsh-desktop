@@ -59,7 +59,7 @@ export const LibraryPane = react.memo(function LibraryPane({
             className: 'dshWmSideHead',
             children: [
               jsx.jsx('span', { children: T.docs }),
-              jsx.jsx('span', { style: { flex: 1 } }),
+              jsx.jsx('span', { className: 'dshWmSpacer' }),
               jsx.jsx('button', {
                 type: 'button',
                 className: 'dshWmBtn',
@@ -80,24 +80,17 @@ export const LibraryPane = react.memo(function LibraryPane({
           ? jsx.jsx(
               'div',
               {
-                style: {
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                  padding: '0 10px 10px',
-                },
+                className: 'dshWmProjForm',
                 children: [
                   jsx.jsx('input', {
-                    className: 'dshWmSearch',
-                    style: { margin: 0 },
+                    className: 'dshWmSearch is-flat',
                     value: projTitle,
                     autoFocus: true,
                     placeholder: T.projTitle,
                     onChange: (e) => setProjTitle(e.target.value),
                   }),
                   jsx.jsx('input', {
-                    className: 'dshWmSearch',
-                    style: { margin: 0 },
+                    className: 'dshWmSearch is-flat',
                     value: projPremise,
                     placeholder: T.projPremise,
                     onChange: (e) => setProjPremise(e.target.value),
@@ -105,8 +98,7 @@ export const LibraryPane = react.memo(function LibraryPane({
                   jsx.jsx(
                     'select',
                     {
-                      className: 'dshWmSearch',
-                      style: { margin: 0 },
+                      className: 'dshWmSearch is-flat',
                       value: projTemplate,
                       onChange: (e) => setProjTemplate(e.target.value),
                       children: (templates.length
@@ -130,7 +122,7 @@ export const LibraryPane = react.memo(function LibraryPane({
                   jsx.jsx(
                     'div',
                     {
-                      style: { display: 'flex', gap: 6 },
+                      className: 'dshWmProjFormActions',
                       children: [
                         jsx.jsx('button', {
                           type: 'button',
@@ -157,11 +149,10 @@ export const LibraryPane = react.memo(function LibraryPane({
           ? jsx.jsx(
               'div',
               {
-                style: { display: 'flex', gap: 6, padding: '0 10px 8px' },
+                className: 'dshWmNewDocRow',
                 children: [
                   jsx.jsx('input', {
-                    className: 'dshWmSearch',
-                    style: { margin: 0, flex: 1 },
+                    className: 'dshWmSearch is-flat is-grow',
                     value: newDocName,
                     autoFocus: true,
                     placeholder: T.untitled,
@@ -183,7 +174,7 @@ export const LibraryPane = react.memo(function LibraryPane({
             )
           : null,
         roots.length > 0 ? jsx.jsx('div', {
-          style: { padding: '8px', display: 'flex', gap: 6 },
+          className: 'dshWmLibViews',
           children: [['writing', '作品导航'], ['files', '文件视图'], ['outline', '大纲']].map(([value, label]) => jsx.jsx('button', {
             type: 'button', className: 'dshWmBtn', 'aria-pressed': libraryView === value,
             onClick: () => setLibraryView(value), children: label,
@@ -193,7 +184,7 @@ export const LibraryPane = react.memo(function LibraryPane({
           ? jsx.jsx(
               'div',
               {
-                style: { padding: '8px 8px 0' },
+                className: 'dshWmSearchWrap',
                 children: jsx.jsx('input', {
                   className: 'dshWmSearch',
                   value: libQuery,
@@ -326,8 +317,7 @@ export const LibraryPane = react.memo(function LibraryPane({
                                         jsx.jsx(
                                           'summary',
                                           {
-                                            className: 'dshWmFolder',
-                                            style: { cursor: 'pointer', textTransform: 'none' },
+                                            className: 'dshWmFolder is-clickable',
                                             children: g.key === '·' ? 'ROOT' : g.key,
                                           },
                                           'fh'

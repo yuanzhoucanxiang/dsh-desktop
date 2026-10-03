@@ -2465,6 +2465,20 @@ var T = pickLocale();
 
 // plugin/writing-mode/src/client/styles/writing-css.js
 var CSS = [
+  /* B1 语义令牌层：字号 / 间距 / 圆角 / 字重 + 状态色别名。
+     自带字面值，不依赖外壳 --dsw-* 是否注入。
+     作用域挂 :root 而非 .dshWmRoot：写作品牌不全在根内——入口浮钮（.dshWmFloat，挂 body）、
+     设置页（.dshWmSettings，走 settings.section 槽位挂在外壳设置弹层）、外壳里的入口钮
+     （.dshWmBtn，侧边栏 footer / 会话顶栏槽位）都在根外，挂 .dshWmRoot 会让它们解析不到
+     令牌（font-size 之类会退回 inherit）。
+     状态色别名里的字面回退取自外壳调色（preload.js），仅在外壳变量缺席时生效。 */
+  ":root{",
+  "  --wm-text-xs:11px;--wm-text-sm:12.5px;--wm-text-md:14px;--wm-text-lg:17px;--wm-text-xl:21px;",
+  "  --wm-space-1:4px;--wm-space-2:8px;--wm-space-3:12px;--wm-space-4:20px;--wm-space-5:32px;",
+  "  --wm-radius-s:6px;--wm-radius-m:10px;--wm-radius-l:14px;",
+  "  --wm-weight-normal:400;--wm-weight-medium:600;--wm-weight-bold:700;",
+  "  --wm-ok:var(--dsw-alias-state-success-primary,#a9c2b6);--wm-err:var(--dsw-alias-state-error-primary,#c9adad);--wm-warn:var(--dsw-alias-state-warning-primary,#c9a227);",
+  "}",
   /* 写作台打开：藏自有浮钮 + PALIS 浮钮/状态条，避免叠层 */
   'html[data-writing-mode="on"] #dsh-writing-mode-float{display:none !important;}',
   'html[data-writing-mode="on"] .ptp-float{display:none !important;}',
@@ -2482,7 +2496,7 @@ var CSS = [
   "  border:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-3);",
   "  color:var(--dsw-alias-label-secondary);",
-  "  font:inherit;font-size:12px;line-height:1;",
+  "  font:inherit;font-size:var(--wm-text-sm);line-height:1;",
   "  box-shadow:0 4px 16px rgba(0,0,0,.16);",
   "}",
   ".dshWmFloat:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary);}",
@@ -2505,7 +2519,7 @@ var CSS = [
   "  box-sizing:border-box;",
   "}",
   ".dshWmBrand{",
-  "  font-size:13px;font-weight:650;color:var(--dsw-alias-label-primary);",
+  "  font-size:var(--wm-text-sm);font-weight:650;color:var(--dsw-alias-label-primary);",
   "  padding-right:10px;margin-right:2px;",
   "  border-right:1px solid var(--dsw-alias-border-l2);",
   "  flex:none;",
@@ -2513,13 +2527,13 @@ var CSS = [
   ".dshWmBarGroup{display:flex;align-items:center;gap:6px;min-width:0;flex:none;}",
   ".dshWmBarSpacer{flex:1;min-width:16px;}",
   ".dshWmSelect{",
-  "  font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;",
+  "  font:inherit;font-size:var(--wm-text-sm);padding:6px 10px;border-radius:var(--wm-radius-m);",
   "  border:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);",
   "  max-width:160px;",
   "}",
   ".dshWmBtn{",
-  "  font:inherit;font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;",
+  "  font:inherit;font-size:var(--wm-text-sm);padding:6px 12px;border-radius:var(--wm-radius-m);cursor:pointer;",
   "  background:transparent;color:var(--dsw-alias-label-secondary);",
   "  border:1px solid var(--dsw-alias-border-l2);",
   "  white-space:nowrap;flex:none;",
@@ -2531,7 +2545,7 @@ var CSS = [
   "  color:var(--dsw-alias-label-primary-foreground);border-color:transparent;",
   "}",
   ".dshWmBtn.is-ghost{border-color:transparent;padding-left:8px;padding-right:8px;}",
-  ".dshWmBtn.is-danger{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmBtn.is-danger{color:var(--wm-err);}",
   ".dshWmBtn.is-on{",
   "  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);",
   "  border-color:var(--dsw-alias-brand-primary);",
@@ -2545,113 +2559,113 @@ var CSS = [
   "}",
   ".dshWmSide.is-ai{width:clamp(360px,34vw,560px);border-right:none;border-left:1px solid var(--dsw-alias-border-l2);}",
   ".dshWmCompanion{display:flex;flex-direction:column;flex:1;min-height:0;padding:0 16px 16px;gap:12px;}",
-  ".dshWmConversationHead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-alias-label-tertiary);}.dshWmConversationHead>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmQuiet{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;padding:5px 2px;cursor:pointer;white-space:nowrap;}.dshWmQuiet:hover{color:var(--dsw-alias-label-primary);}.dshWmQuiet:disabled{opacity:.4;cursor:default;}",
+  ".dshWmConversationHead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-tertiary);}.dshWmConversationHead>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmQuiet{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--wm-text-sm);padding:5px 2px;cursor:pointer;white-space:nowrap;}.dshWmQuiet:hover{color:var(--dsw-alias-label-primary);}.dshWmQuiet:disabled{opacity:.4;cursor:default;}",
   ".dshWmConversation{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 2px;scrollbar-width:thin;}",
-  ".dshWmCompanionEmpty{padding:clamp(30px,12vh,130px) 16px 30px;color:var(--dsw-alias-label-secondary);line-height:1.9;white-space:pre-line;}.dshWmCompanionEmpty h3{font-size:21px;font-weight:500;margin:16px 0 8px;color:var(--dsw-alias-label-primary);}.dshWmCompanionEmpty p{font-size:13px;margin:0;}.dshWmCompanionMark{font-size:24px;opacity:.6;}",
-  ".dshWmMessage{margin:0 0 26px;}.dshWmMessageWho{display:block;font-size:11px;color:var(--dsw-alias-label-tertiary);margin-bottom:8px;}.dshWmMessageText{font-size:14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;}.dshWmMessage.is-user{padding:12px 14px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);}.dshWmMessage.is-error{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmCompanionEmpty{padding:clamp(30px,12vh,130px) 16px 30px;color:var(--dsw-alias-label-secondary);line-height:1.9;white-space:pre-line;}.dshWmCompanionEmpty h3{font-size:var(--wm-text-xl);font-weight:500;margin:16px 0 8px;color:var(--dsw-alias-label-primary);}.dshWmCompanionEmpty p{font-size:var(--wm-text-sm);margin:0;}.dshWmCompanionMark{font-size:var(--wm-text-xl);opacity:.6;}",
+  ".dshWmMessage{margin:0 0 26px;}.dshWmMessageWho{display:block;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);margin-bottom:8px;}.dshWmMessageText{font-size:var(--wm-text-md);line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;}.dshWmMessage.is-user{padding:12px 14px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);}.dshWmMessage.is-error{color:var(--wm-err);}",
   ".dshWmMarkdown{white-space:normal;min-width:0;}.dshWmMarkdown>:first-child{margin-top:0;}.dshWmMarkdown>:last-child{margin-bottom:0;}",
-  ".dshWmMarkdown p{margin:0 0 .85em;white-space:pre-wrap;}.dshWmMarkdown h1,.dshWmMarkdown h2,.dshWmMarkdown h3,.dshWmMarkdown h4,.dshWmMarkdown h5,.dshWmMarkdown h6{font-size:1.08em;line-height:1.6;margin:1.3em 0 .55em;font-weight:600;}",
+  ".dshWmMarkdown p{margin:0 0 .85em;white-space:pre-wrap;}.dshWmMarkdown h1,.dshWmMarkdown h2,.dshWmMarkdown h3,.dshWmMarkdown h4,.dshWmMarkdown h5,.dshWmMarkdown h6{font-size:1.08em;line-height:1.6;margin:1.3em 0 .55em;font-weight:var(--wm-weight-medium);}",
   ".dshWmMarkdown ul,.dshWmMarkdown ol{padding-left:1.5em;margin:.6em 0 1em;}.dshWmMarkdown li{margin:.3em 0;}.dshWmMarkdown li>p{margin:.3em 0;}.dshWmMarkdown blockquote{margin:.8em 0;padding:.15em 0 .15em 1em;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);}",
   ".dshWmMarkdown a{color:inherit;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;}.dshWmMarkdown a:focus-visible,.dshWmMarkdownTable:focus-visible{outline:2px solid currentColor;outline-offset:3px;}",
-  ".dshWmMarkdown code{font-size:.9em;font-family:ui-monospace,Consolas,monospace;background:var(--dsw-alias-bg-layer-2);border-radius:4px;padding:.1em .3em;}.dshWmMarkdown pre{max-width:100%;overflow:auto;white-space:pre;tab-size:2;padding:12px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);line-height:1.6;}.dshWmMarkdown pre code{padding:0;background:none;}",
+  ".dshWmMarkdown code{font-size:.9em;font-family:ui-monospace,Consolas,monospace;background:var(--dsw-alias-bg-layer-2);border-radius:var(--wm-radius-s);padding:.1em .3em;}.dshWmMarkdown pre{max-width:100%;overflow:auto;white-space:pre;tab-size:2;padding:12px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);line-height:1.6;}.dshWmMarkdown pre code{padding:0;background:none;}",
   ".dshWmMarkdownTable{max-width:100%;overflow:auto;margin:.8em 0;}.dshWmMarkdown table{border-collapse:collapse;font-size:.92em;min-width:100%;}.dshWmMarkdown th,.dshWmMarkdown td{padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);text-align:left;vertical-align:top;}.dshWmMarkdown hr{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:1.2em 0;}",
-  ".dshWmActivity{font-size:12px;color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:12px;line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}",
-  ".dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-size:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:12px;color:var(--dsw-alias-label-secondary);padding:10px 0;}",
-  ".dshWmCompanionError{padding:10px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;max-height:120px;overflow:auto;}",
+  ".dshWmActivity{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:var(--wm-text-sm);line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}",
+  ".dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);font-size:var(--wm-text-sm);display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);padding:10px 0;}",
+  ".dshWmCompanionError{padding:10px;font-size:var(--wm-text-sm);line-height:1.6;color:var(--wm-err);overflow-wrap:anywhere;max-height:120px;overflow:auto;}",
   /* 内核能力缺口：连不上=警示底色常驻条，受限=一行 Quiet 灰字，都不该是「按钮自己灰掉」 */
-  ".dshWmCapability{flex:none;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.6;overflow-wrap:anywhere;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
-  ".dshWmCapability.is-blocked{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,var(--dsw-alias-border-l2));}",
-  ".dshWmCapability strong{font-weight:600;}",
+  ".dshWmCapability{flex:none;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:var(--wm-radius-m);font-size:var(--wm-text-sm);line-height:1.6;overflow-wrap:anywhere;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmCapability.is-blocked{color:var(--wm-err);border-color:color-mix(in srgb,var(--wm-err) 45%,var(--dsw-alias-border-l2));}",
+  ".dshWmCapability strong{font-weight:var(--wm-weight-medium);}",
   ".dshWmCapabilityNote{opacity:.8;}",
   ".dshWmMemory{border-bottom:1px solid var(--dsw-alias-border-l2);max-height:220px;display:flex;flex-direction:column;}",
   ".dshWmMemoryList{overflow:auto;flex:1;padding:0 10px 8px;}",
-  ".dshWmMemoryItem{padding:6px 8px;margin-bottom:6px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);font-size:12px;}",
+  ".dshWmMemoryItem{padding:6px 8px;margin-bottom:6px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);font-size:var(--wm-text-sm);}",
   ".dshWmMemoryItem.is-retracted{opacity:.55;}",
   ".dshWmMemoryItem.is-resolved{opacity:.75;}",
-  ".dshWmMemoryMeta{display:flex;gap:6px;margin-bottom:2px;font-size:10px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmMemoryKind{font-weight:700;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmMemoryMeta{display:flex;gap:6px;margin-bottom:2px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmMemoryKind{font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-secondary);}",
   ".dshWmMemoryText{line-height:1.45;color:var(--dsw-alias-label-primary);}",
   ".dshWmMemoryActions{display:flex;gap:6px;margin-top:4px;}",
   // P3：备忘完整操作（候选/编辑/历史/审计）与当轮参考面板
   ".dshWmMemoryCompose{flex-shrink:0;}",
-  ".dshWmMemoryKind{background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;color:var(--dsw-alias-label-secondary);font-size:11px;padding:2px 4px;}",
+  ".dshWmMemoryKind{background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);color:var(--dsw-alias-label-secondary);font-size:var(--wm-text-xs);padding:2px 4px;}",
   ".dshWmMemorySource{color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmMemoryNote{font-size:10px;line-height:1.5;color:var(--dsw-alias-label-tertiary);padding:2px 10px 4px;}",
+  ".dshWmMemoryNote{font-size:var(--wm-text-xs);line-height:1.5;color:var(--dsw-alias-label-tertiary);padding:2px 10px 4px;}",
   ".dshWmMemoryEdit{display:flex;align-items:center;gap:6px;}",
   ".dshWmMemoryHistory{margin-top:6px;border-top:1px dashed var(--dsw-alias-border-l2);padding-top:6px;}",
   ".dshWmMemoryHistoryRow{margin-bottom:6px;}.dshWmMemoryHistoryRow:last-child{margin-bottom:0;}",
-  ".dshWmMemoryDiff{font-size:11px;line-height:1.5;}.dshWmMemoryDiff .is-del{color:var(--dsw-alias-state-error-primary);}.dshWmMemoryDiff .is-add{color:var(--dsw-alias-state-success-primary);}",
+  ".dshWmMemoryDiff{font-size:var(--wm-text-xs);line-height:1.5;}.dshWmMemoryDiff .is-del{color:var(--wm-err);}.dshWmMemoryDiff .is-add{color:var(--wm-ok);}",
   ".dshWmMemoryWorkspace{flex:0 1 auto;min-height:0;max-height:45vh;overflow:auto;overscroll-behavior:contain;}",
   ".dshWmMemoryWorkspace .dshWmMemory{max-height:180px;}",
-  ".dshWmWorldPanel{border-bottom:1px solid var(--dsw-alias-border-l2);padding:8px 10px 12px;display:flex;flex-direction:column;gap:6px;font-size:12px;min-height:120px;flex-shrink:0;overscroll-behavior:contain;}",
+  ".dshWmWorldPanel{border-bottom:1px solid var(--dsw-alias-border-l2);padding:8px 10px 12px;display:flex;flex-direction:column;gap:6px;font-size:var(--wm-text-sm);min-height:120px;flex-shrink:0;overscroll-behavior:contain;}",
   ".dshWmWorldPanel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:6px 0;}",
   ".dshWmWorldPanel button{margin:3px 4px 3px 0;white-space:normal;}",
-  ".dshWmWorldHead{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary);}",
-  ".dshWmWorldSub{font-weight:400;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWorldHead{display:flex;align-items:center;gap:8px;font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);}",
+  ".dshWmWorldSub{font-weight:var(--wm-weight-normal);font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWorldScope{max-height:96px;overflow:auto;display:flex;flex-direction:column;gap:4px;}",
-  ".dshWmWorldMsg{font-size:11px;line-height:1.4;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 6px;}",
-  ".dshWmWorldPanel input,.dshWmWorldPanel textarea{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:4px 6px;}",
-  ".dshWmWorldPanel label{font-size:11px;color:var(--dsw-alias-label-tertiary);margin-top:4px;}",
-  ".dshWmWorldCard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:8px;background:var(--dsw-alias-bg-layer-2);display:flex;flex-direction:column;gap:4px;}",
-  ".dshWmWorldCardTitle{font-weight:600;}",
+  ".dshWmWorldMsg{font-size:var(--wm-text-xs);line-height:1.4;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);padding:4px 6px;}",
+  ".dshWmWorldPanel input,.dshWmWorldPanel textarea{width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);padding:4px 6px;}",
+  ".dshWmWorldPanel label{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);margin-top:4px;}",
+  ".dshWmWorldCard{border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);padding:8px;background:var(--dsw-alias-bg-layer-2);display:flex;flex-direction:column;gap:4px;}",
+  ".dshWmWorldCardTitle{font-weight:var(--wm-weight-medium);}",
   ".dshWmWorldOps{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}",
-  ".dshWmWorldNotice{font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5;}",
-  ".dshWmWorldSrc{font-size:10px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWorldRaw{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;padding:6px;}",
+  ".dshWmWorldNotice{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-secondary);line-height:1.5;}",
+  ".dshWmWorldSrc{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWorldRaw{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:var(--wm-text-xs);border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);padding:6px;}",
   ".dshWmWorldList{max-height:140px;overflow:auto;}",
-  ".dshWmWorldItem{padding:4px 6px;border-radius:6px;margin-bottom:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmWorldItem{padding:4px 6px;border-radius:var(--wm-radius-s);margin-bottom:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);}",
   ".dshWmWorldItem.proposed{opacity:.85;}",
   ".dshWmWorldItem.retracted{opacity:.5;}",
   ".dshWmMessage.is-world-selected{outline:1px dashed var(--dsw-alias-label-tertiary);outline-offset:2px;}",
-  ".dshWmMessageAction.is-on{color:var(--dsw-alias-state-success-primary);}",
-  ".dshWmMessageAction{margin-top:4px;font-size:11px;}",
+  ".dshWmMessageAction.is-on{color:var(--wm-ok);}",
+  ".dshWmMessageAction{margin-top:4px;font-size:var(--wm-text-xs);}",
   ".dshWmDraftCandidates{display:flex;flex-direction:column;gap:4px;border-bottom:1px dashed var(--dsw-alias-border-l2);padding-bottom:8px;margin-bottom:8px;}",
   ".dshWmDraftCandidate{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}",
-  ".dshWmDraftPreview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;font-family:inherit;font-size:12px;line-height:1.6;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmDraftPreview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;font-family:inherit;font-size:var(--wm-text-sm);line-height:1.6;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);padding:6px 8px;background:var(--dsw-alias-bg-layer-2);}",
   ".dshWmContext{display:flex;flex-direction:column;gap:4px;padding:6px 0 2px;}",
-  ".dshWmContextSwitch{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmContextPanel{max-height:200px;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-2);}",
-  ".dshWmContextItem{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.5;padding:3px 0;}",
+  ".dshWmContextSwitch{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmContextPanel{max-height:200px;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);padding:6px 8px;background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmContextItem{display:flex;align-items:flex-start;gap:6px;font-size:var(--wm-text-xs);line-height:1.5;padding:3px 0;}",
   ".dshWmContextText{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}",
-  ".dshWmContextState{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}",
+  ".dshWmContextState{margin-left:auto;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);white-space:nowrap;}",
   ".dshWmContextQuestions{margin-top:4px;border-top:1px dashed var(--dsw-alias-border-l2);padding-top:4px;}",
-  ".dshWmCompose{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:12px;}.dshWmCompose:focus-within{border-color:var(--dsw-alias-label-tertiary);}.dshWmChatInput{display:block;box-sizing:border-box;width:100%;min-height:88px;max-height:200px;resize:vertical;border:0;outline:none;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:14px;line-height:1.7;}.dshWmChatInput::placeholder{color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmComposeFoot{display:flex;align-items:center;gap:8px;margin-top:8px;}.dshWmInputHint{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary);}.dshWmSend{margin-left:auto;flex-shrink:0;width:30px;height:30px;border:0;border-radius:8px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-size:21px;cursor:pointer;}.dshWmSend:disabled{opacity:.25;cursor:default;}",
-  ".dshWmReference{display:flex;align-items:start;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l2);padding-bottom:10px;margin-bottom:10px;font-size:12px;color:var(--dsw-alias-label-secondary);}.dshWmReference details{flex:1;min-width:0;}",
-  ".dshWmSide.is-ai>.dshWmSideHead{gap:22px;padding:14px 18px 10px;}.dshWmTab{font:inherit;font-size:13px;padding:4px 0 8px;background:none;border:0;border-bottom:2px solid transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;}.dshWmTab.is-on{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-label-primary);}",
+  ".dshWmCompose{border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-l);background:var(--dsw-alias-bg-layer-1);padding:12px;}.dshWmCompose:focus-within{border-color:var(--dsw-alias-label-tertiary);}.dshWmChatInput{display:block;box-sizing:border-box;width:100%;min-height:88px;max-height:200px;resize:vertical;border:0;outline:none;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:var(--wm-text-md);line-height:1.7;}.dshWmChatInput::placeholder{color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmComposeFoot{display:flex;align-items:center;gap:8px;margin-top:8px;}.dshWmInputHint{margin-left:auto;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}.dshWmSend{margin-left:auto;flex-shrink:0;width:30px;height:30px;border:0;border-radius:var(--wm-radius-m);background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-size:var(--wm-text-xl);cursor:pointer;}.dshWmSend:disabled{opacity:.25;cursor:default;}",
+  ".dshWmReference{display:flex;align-items:start;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l2);padding-bottom:10px;margin-bottom:10px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);}.dshWmReference details{flex:1;min-width:0;}",
+  ".dshWmSide.is-ai>.dshWmSideHead{gap:22px;padding:14px 18px 10px;}.dshWmTab{font:inherit;font-size:var(--wm-text-sm);padding:4px 0 8px;background:none;border:0;border-bottom:2px solid transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;}.dshWmTab.is-on{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-label-primary);}",
   "@media(max-width:1250px){.dshWmInputHint{display:none;}}",
   ".dshWmSideHead{",
   "  display:flex;align-items:center;gap:6px;padding:12px 12px 8px;flex:none;",
-  "  font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);",
+  "  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);",
   "}",
   ".dshWmList{flex:1;overflow:auto;padding:4px 10px 20px;}",
   ".dshWmProj{margin-bottom:12px;}",
   ".dshWmProjToggle{",
   "  display:flex;align-items:center;gap:6px;width:100%;",
   "  padding:8px 8px 4px;border:none;background:transparent;cursor:pointer;",
-  "  font:inherit;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);",
+  "  font:inherit;font-size:var(--wm-text-sm);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);",
   "  text-align:left;",
   "}",
   ".dshWmProjToggle:hover{color:var(--dsw-alias-brand-primary);}",
-  ".dshWmProjChev{font-size:10px;color:var(--dsw-alias-label-tertiary);transition:transform .12s;flex:none;}",
+  ".dshWmProjChev{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);transition:transform .12s;flex:none;}",
   ".dshWmProjChev.is-open{transform:rotate(90deg);}",
   ".dshWmFolder{",
-  "  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;",
+  "  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;",
   "  color:var(--dsw-alias-label-tertiary);padding:8px 8px 3px;",
   "}",
   ".dshWmSearch{",
-  "  width:100%;margin:0 0 8px;padding:7px 10px;border-radius:8px;",
+  "  width:100%;margin:0 0 8px;padding:7px 10px;border-radius:var(--wm-radius-m);",
   "  border:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);",
-  "  font:inherit;font-size:12px;outline:none;box-sizing:border-box;",
+  "  font:inherit;font-size:var(--wm-text-sm);outline:none;box-sizing:border-box;",
   "}",
   ".dshWmSearch:focus{border-color:var(--dsw-alias-brand-primary);}",
   ".dshWmItem{",
   "  display:block;width:100%;text-align:left;cursor:pointer;",
-  "  padding:7px 8px;margin-bottom:2px;border-radius:8px;border:1px solid transparent;",
+  "  padding:7px 8px;margin-bottom:2px;border-radius:var(--wm-radius-m);border:1px solid transparent;",
   "  background:transparent;color:var(--dsw-alias-label-primary);",
-  "  font:inherit;font-size:12.5px;line-height:1.35;box-sizing:border-box;",
+  "  font:inherit;font-size:var(--wm-text-sm);line-height:1.35;box-sizing:border-box;",
   "}",
   ".dshWmItem:hover{background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmItem.is-on{",
@@ -2660,30 +2674,30 @@ var CSS = [
   "}",
   ".dshWmItemRow{display:flex;align-items:baseline;gap:4px;}",
   ".dshWmItemTitle{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}",
-  ".dshWmItemMeta{display:block;font-size:10px;color:var(--dsw-alias-label-tertiary);margin-top:2px;}",
+  ".dshWmItemMeta{display:block;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);margin-top:2px;}",
   ".dshWmVer{",
-  "  display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;flex:none;",
-  "  font-size:10px;font-weight:700;line-height:16px;",
+  "  display:inline-block;margin-left:6px;padding:0 5px;border-radius:var(--wm-radius-s);flex:none;",
+  "  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);line-height:16px;",
   "  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);",
   "  color:var(--dsw-alias-brand-primary);",
   "}",
   ".dshWmVer.is-hist{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmMain{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;}",
   ".dshWmDocChrome{flex:none;padding:24px 32px 0;max-width:820px;margin:0 auto;width:100%;box-sizing:border-box;}",
-  ".dshWmPathRow{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;}",
+  ".dshWmPathRow{display:flex;align-items:center;gap:8px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;}",
   ".dshWmPathText{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmDocName{margin:10px 0 4px;font-size:22px;font-weight:650;line-height:1.3;}",
+  ".dshWmDocName{margin:10px 0 4px;font-size:var(--wm-text-xl);font-weight:650;line-height:1.3;}",
   ".dshWmDocRule{height:1px;margin:12px 0 0;background:var(--dsw-alias-border-l2);}",
   ".dshWmHistBanner{",
   "  display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 12px;",
-  "  border-radius:8px;border:1px solid var(--dsw-alias-border-l2);",
-  "  background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#c9a227) 12%,transparent);",
-  "  font-size:12px;",
+  "  border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);",
+  "  background:color-mix(in srgb,var(--wm-warn) 12%,transparent);",
+  "  font-size:var(--wm-text-sm);",
   "}",
   ".dshWmVerBar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;}",
-  ".dshWmVerBarLabel{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmVerBarLabel{font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.06em;color:var(--dsw-alias-label-tertiary);}",
   ".dshWmVerChip{",
-  "  font:inherit;font-size:11px;padding:3px 8px;border-radius:999px;cursor:pointer;",
+  "  font:inherit;font-size:var(--wm-text-xs);padding:3px 8px;border-radius:999px;cursor:pointer;",
   "  border:1px solid var(--dsw-alias-border-l2);background:transparent;",
   "  color:var(--dsw-alias-label-secondary);",
   "}",
@@ -2691,7 +2705,7 @@ var CSS = [
   ".dshWmVerChip.is-on{",
   "  border-color:var(--dsw-alias-brand-primary);",
   "  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);",
-  "  color:var(--dsw-alias-label-primary);font-weight:600;",
+  "  color:var(--dsw-alias-label-primary);font-weight:var(--wm-weight-medium);",
   "}",
   ".dshWmEditorWrap{flex:1;min-height:0;display:flex;justify-content:center;}",
   ".dshWmEditor{",
@@ -2707,25 +2721,25 @@ var CSS = [
   "  flex:none;height:32px;display:flex;align-items:center;gap:10px;padding:0 16px;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-1);",
-  "  font-size:11px;color:var(--dsw-alias-label-tertiary);",
+  "  font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);",
   "}",
   ".dshWmStatus .dot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary);}",
-  ".dshWmStatus .dot.is-dirty{background:var(--dsw-alias-state-warning-primary,#c9a227);}",
-  ".dshWmStatus .dot.is-saved{background:var(--dsw-alias-state-success-primary);}",
+  ".dshWmStatus .dot.is-dirty{background:var(--wm-warn);}",
+  ".dshWmStatus .dot.is-saved{background:var(--wm-ok);}",
   ".dshWmStatusSep{opacity:.35;}",
-  ".dshWmStatus .dot.is-error{background:var(--dsw-alias-state-error-primary);}",
-  ".dshWmStatusError{color:var(--dsw-alias-state-error-primary);font-weight:600;}",
+  ".dshWmStatus .dot.is-error{background:var(--wm-err);}",
+  ".dshWmStatusError{color:var(--wm-err);font-weight:var(--wm-weight-medium);}",
   /* 保存/读取失败的常驻行：压在状态条上方，带得出路的按钮（重试、另存新版） */
-  ".dshWmDocAlert{flex:none;display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);border-top:1px solid var(--dsw-alias-border-l2);overflow-wrap:anywhere;}",
+  ".dshWmDocAlert{flex:none;display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:var(--wm-text-sm);line-height:1.6;color:var(--wm-err);background:color-mix(in srgb,var(--wm-err) 8%,transparent);border-top:1px solid var(--dsw-alias-border-l2);overflow-wrap:anywhere;}",
   ".dshWmDocAlert>span:first-child{min-width:0;}",
   ".dshWmDocAlert .dshWmBtn{flex:none;}",
   /* 编辑器查找/替换栏：压在版本条与稿面之间 */
   ".dshWmFindBar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 16px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);flex-wrap:wrap;}",
-  ".dshWmFindInput{flex:0 1 180px;min-width:110px;height:26px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;}",
+  ".dshWmFindInput{flex:0 1 180px;min-width:110px;height:26px;padding:0 8px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);outline:none;}",
   ".dshWmFindInput.is-replace{flex:0 1 160px;}",
   ".dshWmFindInput:focus{border-color:var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));}",
-  ".dshWmFindCount{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:44px;text-align:center;}",
-  ".dshWmFindHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.7;margin-left:auto;white-space:nowrap;}",
+  ".dshWmFindCount{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);min-width:44px;text-align:center;}",
+  ".dshWmFindHint{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);opacity:.7;margin-left:auto;white-space:nowrap;}",
   ".dshWmFindBar .dshWmBtn{flex:none;}",
   /* 状态条里的今日码字芯片 */
   ".dshWmStatus [data-wm-stats-today]{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}",
@@ -2734,122 +2748,122 @@ var CSS = [
   "  padding:8px 12px 20px;gap:8px;overflow:auto;",
   "}",
   ".dshWmAiSection{display:flex;flex-direction:column;gap:8px;}",
-  ".dshWmAiSectionTitle{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmAiSectionTitle{font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
   ".dshWmAiMain{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;}",
   ".dshWmAiActions{display:flex;flex-wrap:wrap;gap:6px;}",
   ".dshWmAiOut{",
-  "  flex:1;min-height:140px;overflow:auto;padding:12px;border-radius:10px;",
+  "  flex:1;min-height:140px;overflow:auto;padding:12px;border-radius:var(--wm-radius-m);",
   "  border:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-2);",
-  "  font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;",
+  "  font-size:var(--wm-text-sm);line-height:1.7;white-space:pre-wrap;word-break:break-word;",
   "}",
-  ".dshWmAiHint{font-size:11px;color:var(--dsw-alias-label-tertiary);line-height:1.5;}",
+  ".dshWmAiHint{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);line-height:1.5;}",
   ".dshWmSec{display:flex;flex-direction:column;gap:6px;}",
   ".dshWmSecToggle{",
   "  display:flex;align-items:center;gap:6px;width:100%;",
   "  padding:6px 0;border:none;background:transparent;cursor:pointer;",
-  "  font:inherit;font-size:11px;font-weight:700;letter-spacing:.06em;",
+  "  font:inherit;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.06em;",
   "  text-transform:uppercase;color:var(--dsw-alias-label-tertiary);text-align:left;",
   "}",
   ".dshWmSecToggle:hover{color:var(--dsw-alias-label-primary);}",
   ".dshWmSecBadge{",
-  "  margin-left:auto;font-size:10px;font-weight:600;letter-spacing:0;text-transform:none;",
+  "  margin-left:auto;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:0;text-transform:none;",
   "  padding:1px 6px;border-radius:999px;",
   "  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);",
   "}",
-  ".dshWmSecBadge.is-pass{color:var(--dsw-alias-state-success-primary);}",
-  ".dshWmSecBadge.is-fail{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmSecBadge.is-pass{color:var(--wm-ok);}",
+  ".dshWmSecBadge.is-fail{color:var(--wm-err);}",
   ".dshWmGateList{display:flex;flex-direction:column;gap:3px;}",
   ".dshWmGateRow{",
-  "  display:flex;gap:8px;align-items:baseline;font-size:12px;line-height:1.45;",
-  "  padding:5px 8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);",
+  "  display:flex;gap:8px;align-items:baseline;font-size:var(--wm-text-sm);line-height:1.45;",
+  "  padding:5px 8px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);",
   "}",
-  ".dshWmGateRow .ok{color:var(--dsw-alias-state-success-primary);font-weight:700;font-size:10px;flex:none;width:34px;}",
-  ".dshWmGateRow .bad{color:var(--dsw-alias-state-error-primary);font-weight:700;font-size:10px;flex:none;width:34px;}",
+  ".dshWmGateRow .ok{color:var(--wm-ok);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:34px;}",
+  ".dshWmGateRow .bad{color:var(--wm-err);font-weight:var(--wm-weight-bold);font-size:var(--wm-text-xs);flex:none;width:34px;}",
   ".dshWmGateLabel{color:var(--dsw-alias-label-primary);flex:none;min-width:5em;}",
-  ".dshWmGateDetail{color:var(--dsw-alias-label-tertiary);flex:1;word-break:break-word;font-size:11px;}",
+  ".dshWmGateDetail{color:var(--dsw-alias-label-tertiary);flex:1;word-break:break-word;font-size:var(--wm-text-xs);}",
   ".dshWmLedger{",
-  "  display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:1.55;",
-  "  padding:8px 10px;border-radius:10px;",
+  "  display:flex;flex-direction:column;gap:6px;font-size:var(--wm-text-sm);line-height:1.55;",
+  "  padding:8px 10px;border-radius:var(--wm-radius-m);",
   "  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);",
   "  color:var(--dsw-alias-label-secondary);",
   "}",
   ".dshWmLedgerRow{display:flex;gap:8px;}",
-  ".dshWmLedgerK{flex:none;min-width:4.5em;color:var(--dsw-alias-label-tertiary);font-size:11px;}",
+  ".dshWmLedgerK{flex:none;min-width:4.5em;color:var(--dsw-alias-label-tertiary);font-size:var(--wm-text-xs);}",
   ".dshWmLedgerV{flex:1;word-break:break-word;color:var(--dsw-alias-label-primary);}",
   /* 码字统计（检查页）：今日大数 + 连击 + 近 14 天柱条 + 日更目标 */
-  ".dshWmStats{display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmStats{display:flex;flex-direction:column;gap:8px;font-size:var(--wm-text-sm);line-height:1.55;padding:8px 10px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
   ".dshWmStatsHead{display:flex;align-items:baseline;gap:10px;}",
-  ".dshWmStatsToday{font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}",
-  ".dshWmStatsToday b{font-size:16px;color:var(--dsw-alias-label-primary);font-weight:700;}",
-  ".dshWmStatsToday .is-hit{color:var(--dsw-alias-state-success-primary);}",
-  ".dshWmStatsStreak{font-size:11px;color:var(--dsw-alias-state-warning-primary,#c9a227);font-variant-numeric:tabular-nums;}",
+  ".dshWmStatsToday{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;}",
+  ".dshWmStatsToday b{font-size:var(--wm-text-lg);color:var(--dsw-alias-label-primary);font-weight:var(--wm-weight-bold);}",
+  ".dshWmStatsToday .is-hit{color:var(--wm-ok);}",
+  ".dshWmStatsStreak{font-size:var(--wm-text-xs);color:var(--wm-warn);font-variant-numeric:tabular-nums;}",
   ".dshWmStatsBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:2px 0;}",
   ".dshWmStatsBarCol{flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%;}",
-  ".dshWmStatsBar{width:70%;min-height:1px;border-radius:2px 2px 0 0;background:var(--dsw-alias-border-l2);}",
-  ".dshWmStatsBar.is-on{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 65%,var(--dsw-alias-bg-layer-1));}",
+  ".dshWmStatsBar{width:70%;min-height:1px;border-radius:var(--wm-radius-s) var(--wm-radius-s) 0 0;background:var(--dsw-alias-border-l2);}",
+  ".dshWmStatsBar.is-on{background:color-mix(in srgb,var(--wm-ok) 65%,var(--dsw-alias-bg-layer-1));}",
   ".dshWmStatsBar.is-today{outline:1px solid var(--dsw-alias-border-l3,var(--dsw-alias-border-l2));outline-offset:1px;}",
   ".dshWmGoalRow{display:flex;align-items:center;gap:6px;}",
-  ".dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;outline:none;font-variant-numeric:tabular-nums;}",
-  ".dshWmGoalUnit{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmGoalInput{flex:0 1 90px;min-width:56px;height:24px;padding:0 8px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);outline:none;font-variant-numeric:tabular-nums;}",
+  ".dshWmGoalUnit{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmGoalRow .dshWmBtn{flex:none;margin-left:auto;}",
   /* 改稿预览（选区改稿 diff 回路）：与版本 diff 同骨架，加一条建议色左边线区分 */
   ".dshWmRewrite{border-left:3px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);}",
   ".dshWmRewrite .dshWmBtn{flex:none;}",
   /* 伙伴回复里的 [[文稿名]] 跳转 chip */
-  ".dshWmJumpRef{display:inline-block;margin:0 2px;padding:0 8px;height:22px;line-height:20px;font-size:12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer;}",
+  ".dshWmJumpRef{display:inline-block;margin:0 2px;padding:0 8px;height:22px;line-height:20px;font-size:var(--wm-text-sm);border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer;}",
   ".dshWmJumpRef:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);}",
   /* 参考预览行的「正文提及」徽标 */
-  ".dshWmMention{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);}",
+  ".dshWmMention{flex:none;padding:0 6px;border-radius:999px;font-size:var(--wm-text-xs);line-height:18px;color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);}",
   /* 大纲视图（只读投影） */
   ".dshWmOutline{padding:4px 8px 16px;display:flex;flex-direction:column;gap:10px;}",
   ".dshWmOutlineProj{display:flex;flex-direction:column;gap:4px;}",
-  ".dshWmOutlineTitle{font-size:12px;font-weight:700;color:var(--dsw-alias-label-secondary);padding:4px 2px;}",
-  ".dshWmOutlineStructure{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:2px 4px;}",
+  ".dshWmOutlineTitle{font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-secondary);padding:4px 2px;}",
+  ".dshWmOutlineStructure{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);padding:2px 4px;}",
   ".dshWmOutlineStructure summary{cursor:pointer;}",
   ".dshWmOutlineStructLine{padding:1px 0 1px 14px;}",
-  ".dshWmOutlineRow{display:flex;align-items:baseline;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap;}",
-  ".dshWmOutlineName{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:13px;color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}",
+  ".dshWmOutlineRow{display:flex;align-items:baseline;gap:8px;padding:6px 8px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap;}",
+  ".dshWmOutlineName{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}",
   ".dshWmOutlineName:hover{text-decoration:underline;}",
-  ".dshWmOutlineChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}",
-  ".dshWmOutlineGate{flex:none;padding:0 6px;border-radius:999px;font-size:10px;line-height:18px;font-variant-numeric:tabular-nums;}",
-  ".dshWmOutlineGate.is-pass{color:var(--dsw-alias-state-success-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 40%,transparent);}",
-  ".dshWmOutlineGate.is-fail{color:var(--dsw-alias-state-error-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);}",
-  ".dshWmOutlineHook{flex-basis:100%;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmOutlineChars{flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}",
+  ".dshWmOutlineGate{flex:none;padding:0 6px;border-radius:999px;font-size:var(--wm-text-xs);line-height:18px;font-variant-numeric:tabular-nums;}",
+  ".dshWmOutlineGate.is-pass{color:var(--wm-ok);border:1px solid color-mix(in srgb,var(--wm-ok) 40%,transparent);}",
+  ".dshWmOutlineGate.is-fail{color:var(--wm-err);border:1px solid color-mix(in srgb,var(--wm-err) 40%,transparent);}",
+  ".dshWmOutlineHook{flex-basis:100%;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   /* 卡片态（大纲视图的 corkboard）：网格卡片，可拖拽重排 */
-  ".dshWmOutlineHint{font-size:10px;color:var(--dsw-alias-label-tertiary);opacity:.75;}",
+  ".dshWmOutlineHint{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);opacity:.75;}",
   ".dshWmCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}",
-  ".dshWmCard{position:relative;display:flex;flex-direction:column;gap:4px;min-height:84px;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);cursor:grab;}",
+  ".dshWmCard{position:relative;display:flex;flex-direction:column;gap:4px;min-height:84px;padding:8px 10px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);cursor:grab;}",
   ".dshWmCard:active{cursor:grabbing;}",
-  ".dshWmCardName{flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}",
+  ".dshWmCardName{flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:var(--wm-text-sm);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);background:none;border:none;cursor:pointer;padding:0;}",
   ".dshWmCardName:hover{text-decoration:underline;}",
-  ".dshWmCardDrag{position:absolute;top:6px;right:8px;font-size:10px;color:var(--dsw-alias-label-tertiary);letter-spacing:-1px;}",
+  ".dshWmCardDrag{position:absolute;top:6px;right:8px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);letter-spacing:-1px;}",
   ".dshWmDiff{",
   "  flex:none;max-height:36%;overflow:auto;",
   "  border-top:1px solid var(--dsw-alias-border-l2);",
   "  background:var(--dsw-alias-bg-layer-1);padding:8px 12px;",
   "}",
-  ".dshWmDiffHead{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmDiffHead{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmDiffLine{",
-  "  font-family:var(--ds-font-family-code,monospace);font-size:11px;line-height:1.55;",
-  "  white-space:pre-wrap;word-break:break-word;padding:1px 6px;border-radius:3px;",
+  "  font-family:var(--ds-font-family-code,monospace);font-size:var(--wm-text-xs);line-height:1.55;",
+  "  white-space:pre-wrap;word-break:break-word;padding:1px 6px;border-radius:var(--wm-radius-s);",
   "}",
-  ".dshWmDiffLine.add{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent);}",
-  ".dshWmDiffLine.del{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);text-decoration:line-through;}",
+  ".dshWmDiffLine.add{background:color-mix(in srgb,var(--wm-ok) 14%,transparent);}",
+  ".dshWmDiffLine.del{background:color-mix(in srgb,var(--wm-err) 12%,transparent);text-decoration:line-through;}",
   ".dshWmDiffLine.ctx{color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWelcome{",
   "  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;",
   "  gap:14px;padding:40px;text-align:center;color:var(--dsw-alias-label-secondary);",
   "}",
-  ".dshWmWelcomeTitle{font-size:22px;font-weight:650;color:var(--dsw-alias-label-primary);}",
-  ".dshWmWelcomeBody{font-size:13px;line-height:1.7;max-width:420px;}",
-  ".dshWmEmpty{padding:16px;color:var(--dsw-alias-label-tertiary);font-size:12.5px;line-height:1.6;}",
+  ".dshWmWelcomeTitle{font-size:var(--wm-text-xl);font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWelcomeBody{font-size:var(--wm-text-sm);line-height:1.7;max-width:420px;}",
+  ".dshWmEmpty{padding:16px;color:var(--dsw-alias-label-tertiary);font-size:var(--wm-text-sm);line-height:1.6;}",
   ".dshWmFlash{",
   "  position:absolute;left:50%;transform:translateX(-50%);top:60px;z-index:20;",
-  "  max-width:70%;padding:8px 14px;border-radius:8px;",
+  "  max-width:70%;padding:8px 14px;border-radius:var(--wm-radius-m);",
   "  background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 95%,transparent);",
   "  border:1px solid var(--dsw-alias-border-l2);",
-  "  color:var(--dsw-alias-label-primary);font-size:12px;",
+  "  color:var(--dsw-alias-label-primary);font-size:var(--wm-text-sm);",
   "  box-shadow:0 4px 16px rgba(0,0,0,.2);",
   "}",
   'body[data-writing-focus="1"] .dshWmSide{display:none;}',
@@ -2870,98 +2884,138 @@ var CSS = [
   ".dshWmExportScroll{flex:1;overflow:auto;padding:24px 32px 40px;}",
   ".dshWmExportInner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}",
   ".dshWmExportHead{display:flex;align-items:center;gap:10px;}",
-  ".dshWmExportTitle{font-size:18px;font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmExportTitle{font-size:var(--wm-text-lg);font-weight:650;color:var(--dsw-alias-label-primary);}",
   ".dshWmExportField{display:flex;align-items:center;gap:10px;}",
   ".dshWmExportField .dshWmSearch{flex:1;}",
-  ".dshWmExportLabel{flex:none;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmExportCheck{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary);cursor:pointer;}",
+  ".dshWmExportLabel{flex:none;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportCheck{display:flex;align-items:baseline;gap:8px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);cursor:pointer;}",
   ".dshWmExportCheck input{flex:none;align-self:center;}",
   ".dshWmExportList{",
   "  display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto;",
-  "  padding:6px;border-radius:10px;",
+  "  padding:6px;border-radius:var(--wm-radius-m);",
   "  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);",
   "}",
   ".dshWmExportRow{",
-  "  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;",
-  "  font-size:12.5px;color:var(--dsw-alias-label-primary);",
+  "  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--wm-radius-m);cursor:pointer;",
+  "  font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);",
   "}",
   ".dshWmExportRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmExportRow.is-off .dshWmExportRowName{color:var(--dsw-alias-label-tertiary);}",
   ".dshWmExportRowName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmExportRowMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportRowMeta{flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   /* 会话列表区（伙伴 tab 顶部折叠区） */
   ".dshWmCompanionWrap{display:flex;flex-direction:column;flex:1;min-height:0;}",
   ".dshWmSessList{flex:none;padding:10px 16px 0;display:flex;flex-direction:column;gap:4px;}",
   ".dshWmSessRows{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px;}",
-  ".dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;border:0;background:none;font:inherit;font-size:12.5px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
+  ".dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--wm-radius-m);border:0;background:none;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
   ".dshWmSessRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmSessRow.is-on{background:var(--dsw-alias-bg-layer-2);}",
   ".dshWmSessDot{flex:none;width:14px;text-align:center;color:var(--dsw-alias-label-tertiary);}",
   ".dshWmSessDot.is-live{color:var(--dsw-alias-brand-primary);}",
   ".dshWmSessName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmSessMeta{flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmSessMeta{flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   /* 作品档案：覆盖中央编辑区的只读汇总页（与「成书」同层级手法，z-index 高一层便于两面板互斥切换） */
   ".dshWmWiki{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;min-height:0;background:var(--dsw-alias-bg-base);}",
   ".dshWmWikiBar{flex:none;display:flex;align-items:center;gap:10px;padding:12px 24px;border-bottom:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmWikiTitle{font-size:16px;font-weight:650;color:var(--dsw-alias-label-primary);}",
-  ".dshWmWikiSub{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiTitle{font-size:var(--wm-text-lg);font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiSub{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWikiScroll{flex:1;min-height:0;overflow:auto;width:100%;max-width:960px;margin:0 auto;padding:22px 24px 48px;display:flex;flex-direction:column;gap:26px;}",
   ".dshWmWikiSection{display:flex;flex-direction:column;gap:10px;}",
   ".dshWmWikiSectionHead{display:flex;align-items:baseline;gap:8px;}",
-  ".dshWmWikiSectionHead h3{margin:0;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiSectionMeta{font-size:11px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiSectionError{display:flex;align-items:center;gap:8px;margin:0;font-size:12px;color:var(--dsw-alias-state-error-primary);}",
+  ".dshWmWikiSectionHead h3{margin:0;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiSectionMeta{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiSectionError{display:flex;align-items:center;gap:8px;margin:0;font-size:var(--wm-text-sm);color:var(--wm-err);}",
   ".dshWmWikiCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;}",
-  ".dshWmWikiCard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);}",
-  ".dshWmWikiCard.has-boundary{border-left:3px solid var(--dsw-alias-state-warning-primary,#c9a227);}",
+  ".dshWmWikiCard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--wm-radius-l);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);}",
+  ".dshWmWikiCard.has-boundary{border-left:3px solid var(--wm-warn);}",
   ".dshWmWikiCardHead{display:flex;align-items:baseline;gap:8px;}",
-  ".dshWmWikiCardHead h4{margin:0;font-size:13.5px;font-weight:600;color:var(--dsw-alias-label-primary);}",
-  ".dshWmWikiCardFrom{margin-left:auto;flex:none;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiConclusion{margin:0;font-size:14px;line-height:1.75;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}",
-  ".dshWmWikiBoundary{margin:0;font-size:12px;line-height:1.65;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;}",
-  ".dshWmWikiMore{font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiMore summary{cursor:pointer;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiCardHead h4{margin:0;font-size:var(--wm-text-md);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiCardFrom{margin-left:auto;flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiConclusion{margin:0;font-size:var(--wm-text-md);line-height:1.75;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}",
+  ".dshWmWikiBoundary{margin:0;font-size:var(--wm-text-sm);line-height:1.65;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;}",
+  ".dshWmWikiMore{font-size:var(--wm-text-sm);line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiMore summary{cursor:pointer;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWikiPlain{margin:.5em 0 0;}",
   ".dshWmWikiExcerpt{margin:8px 0 0;padding-left:10px;border-left:2px solid var(--dsw-alias-border-l2);}",
-  ".dshWmWikiExcerptWho{font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiExcerptWho{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWikiExcerpt p{margin:2px 0 0;}",
   ".dshWmWikiTags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}",
-  ".dshWmWikiTag{font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiTag{font-size:var(--wm-text-xs);padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
   ".dshWmWikiPlainList{display:flex;flex-direction:column;gap:4px;}",
-  ".dshWmWikiPlainRow{display:flex;gap:8px;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiPlainKind{flex:none;min-width:32px;font-size:10.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiNote{margin:0;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiStats{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiStats b{font-size:15px;font-weight:650;color:var(--dsw-alias-label-primary);}",
+  ".dshWmWikiPlainRow{display:flex;gap:8px;font-size:var(--wm-text-sm);line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiPlainKind{flex:none;min-width:32px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiNote{margin:0;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiStats{display:flex;flex-wrap:wrap;gap:14px;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiStats b{font-size:var(--wm-text-md);font-weight:650;color:var(--dsw-alias-label-primary);}",
   ".dshWmWikiBars{display:flex;align-items:flex-end;gap:3px;height:46px;padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmWikiDayBar{flex:1;min-width:5px;max-width:22px;border-radius:3px 3px 0 0;background:var(--dsw-alias-brand-primary);opacity:.5;}",
+  ".dshWmWikiDayBar{flex:1;min-width:5px;max-width:22px;border-radius:var(--wm-radius-s) var(--wm-radius-s) 0 0;background:var(--dsw-alias-brand-primary);opacity:.5;}",
   ".dshWmWikiDayBar.is-hit{opacity:1;}",
-  ".dshWmWikiChapters{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:3px;font-size:12.5px;}",
+  ".dshWmWikiChapters{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:3px;font-size:var(--wm-text-sm);}",
   ".dshWmWikiChapters li{display:flex;align-items:baseline;gap:8px;min-width:0;}",
   ".dshWmWikiChapterName{border:0;background:none;padding:0;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
   ".dshWmWikiChapterName:hover{text-decoration:underline;}",
-  ".dshWmWikiChapterChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiChapterGate{flex:none;font-size:10.5px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);}",
-  ".dshWmWikiChapterGate.is-pass{color:var(--dsw-alias-state-success-primary);}",
-  ".dshWmWikiChapterGate.is-fail{color:var(--dsw-alias-state-error-primary);}",
-  ".dshWmWikiChapterHook{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiStructure{font-size:12.5px;color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiStructure summary{cursor:pointer;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiTimeline{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiLedgerFoot{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiLedgerFoot b{font-weight:600;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiChapterChars{flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiChapterGate{flex:none;font-size:var(--wm-text-xs);padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmWikiChapterGate.is-pass{color:var(--wm-ok);}",
+  ".dshWmWikiChapterGate.is-fail{color:var(--wm-err);}",
+  ".dshWmWikiChapterHook{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiStructure{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiStructure summary{cursor:pointer;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiTimeline{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px;font-size:var(--wm-text-sm);line-height:1.7;color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiLedgerFoot{display:flex;flex-wrap:wrap;gap:14px;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiLedgerFoot b{font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-secondary);}",
   ".dshWmWikiHook{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWmWikiDocGroup{display:flex;flex-direction:column;gap:4px;}",
-  ".dshWmWikiSubHead{margin-top:6px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWmWikiDoc{border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);}",
+  ".dshWmWikiSubHead{margin-top:6px;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiDoc{border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-1);}",
   ".dshWmWikiDocHead{display:flex;align-items:center;gap:8px;padding:6px 10px;}",
-  ".dshWmWikiDocToggle{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWmWikiDocChars{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmWikiDocToggle{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmWikiDocChars{flex:none;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
   ".dshWmWikiDocBody{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmWikiBarNote{flex:none;display:flex;align-items:center;gap:10px;padding:8px 24px;font-size:12px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);}",
-  ".dshWmWikiBarNote.is-error{color:var(--dsw-alias-state-error-primary);}",
-  ".dshWmWikiExportPath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);}"
+  ".dshWmWikiBarNote{flex:none;display:flex;align-items:center;gap:10px;padding:8px 24px;font-size:var(--wm-text-sm);border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmWikiBarNote.is-error{color:var(--wm-err);}",
+  ".dshWmWikiExportPath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-tertiary);}",
+  /* B3 内联样式收编：原 style={{…}} 字面量 → 具名类（值优先用 B1 令牌）。
+     运行时算出的高度/宽度等动态值仍留内联（见对应调用点注释）。 */
+  ".dshWmSpacer{flex:1;}",
+  /* 搜索框变体：flat=去掉独立摆放时的下外边距；grow=行内撑满；compact=顶栏固定宽；compose=备忘输入框 */
+  ".dshWmSearch.is-flat{margin:0;}",
+  ".dshWmSearch.is-grow{flex:1;}",
+  ".dshWmSearch.is-compact{width:180px;margin:0;}",
+  ".dshWmSearch.is-compose{margin:0;flex:1;min-width:0;resize:vertical;max-height:140px;font:inherit;}",
+  ".dshWmFolder.is-clickable{cursor:pointer;text-transform:none;}",
+  /* 外壳侧边栏 footer 的入口钮：外观仍由 .dshWmBtn 负责，这里只负责撑满与文字居中 */
+  ".dshWmBtn.dshWmEntryBtn{width:100%;justify-content:center;}",
+  /* 状态条门禁芯片：颜色随 gate.pass 变（类修饰，不再走内联） */
+  ".dshWmGateState{font-weight:var(--wm-weight-medium);}",
+  ".dshWmGateState.is-pass{color:var(--wm-ok);}",
+  ".dshWmGateState.is-fail{color:var(--wm-err);}",
+  /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
+  ".dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}",
+  ".dshWmProjFormActions{display:flex;gap:6px;}",
+  ".dshWmNewDocRow{display:flex;gap:6px;padding:0 10px 8px;}",
+  ".dshWmLibViews{padding:var(--wm-space-2);display:flex;gap:6px;}",
+  ".dshWmSearchWrap{padding:var(--wm-space-2) var(--wm-space-2) 0;}",
+  /* 备忘：配额行 / 说明行 / 编写区 */
+  ".dshWmMemoryNote.is-quota{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}",
+  ".dshWmCompanionEmpty.is-inline{padding:8px 10px;text-align:left;line-height:1.5;}",
+  ".dshWmAiActions.is-padded{padding:0 10px 6px;}",
+  /* 设置页（settings.section 槽位，挂在外壳设置弹层、不在 .dshWmRoot 内；令牌由 :root 的 B1 层提供） */
+  ".dshWmSettings{width:100%;max-width:640px;display:flex;flex-direction:column;gap:var(--wm-space-1);color:var(--dsw-alias-label-primary);}",
+  ".dshWmSetIntro{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-tertiary);margin-bottom:var(--wm-space-2);}",
+  ".dshWmSetRow{display:flex;align-items:center;gap:var(--wm-space-3);padding:var(--wm-space-2) 0;}",
+  ".dshWmSetRow.is-top{align-items:flex-start;}",
+  ".dshWmLabel{width:120px;flex:none;color:var(--dsw-alias-label-secondary);font-size:var(--wm-text-sm);}",
+  ".dshWmSetHint{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-tertiary);line-height:1.5;}",
+  ".dshWmField{padding:6px 10px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);}",
+  ".dshWmField.is-grow{flex:1;}",
+  ".dshWmField.is-num{width:90px;padding:6px 8px;}",
+  ".dshWmSetColumn{flex:1;display:flex;flex-direction:column;gap:6px;}",
+  ".dshWmSetRootRow{display:flex;align-items:center;gap:var(--wm-space-2);font-size:var(--wm-text-sm);}",
+  ".dshWmSetRootPath{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmSetAddRow{display:flex;gap:var(--wm-space-2);}",
+  ".dshWmSetSectionHead{margin-top:var(--wm-space-3);padding-top:var(--wm-space-3);border-top:1px solid var(--dsw-alias-border-l2);font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-tertiary);letter-spacing:.06em;}"
 ].join("\n");
 var TAG = "dsh-writing-mode-css";
 function ensureWritingCss() {
@@ -3149,8 +3203,7 @@ var TopBar = react.memo(function TopBar2({
                 children: [jsx.jsx("option", { value: "library", children: "作品库（包含多个项目）" }), jsx.jsx("option", { value: "project", children: "已有项目（保留原目录）" })]
               }),
               jsx.jsx("input", {
-                className: "dshWmSearch",
-                style: { width: 180, margin: 0 },
+                className: "dshWmSearch is-compact",
                 value: addRootPath,
                 placeholder: addRootKind === "project" ? "已有作品文件夹完整路径" : "E:\\剧本",
                 "aria-label": "文件夹路径",
@@ -3304,10 +3357,7 @@ var StatusBar = react2.memo(function StatusBar2({
           children: "·"
         }) : null,
         gate ? jsx3.jsx("span", {
-          style: {
-            color: gate.pass ? "var(--dsw-alias-state-success-primary)" : "var(--dsw-alias-state-error-primary)",
-            fontWeight: 600
-          },
+          className: "dshWmGateState " + (gate.pass ? "is-pass" : "is-fail"),
           children: gate.pass ? T.gateShort + " ✓" : T.gateShort + " " + gate.fail
         }) : null
       ]
@@ -4377,7 +4427,6 @@ var FileRow = react3.memo(function FileRow2({ file: f, maxVer, active, onPick, l
                 "span",
                 {
                   className: "dshWmItemTitle",
-                  style: { flex: 1, minWidth: 0 },
                   children: stemWithExtOf(f.displayName || f.name)
                 },
                 "t"
@@ -4590,7 +4639,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
             className: "dshWmSideHead",
             children: [
               jsx9.jsx("span", { children: T.docs }),
-              jsx9.jsx("span", { style: { flex: 1 } }),
+              jsx9.jsx("span", { className: "dshWmSpacer" }),
               jsx9.jsx("button", {
                 type: "button",
                 className: "dshWmBtn",
@@ -4610,24 +4659,17 @@ var LibraryPane = react5.memo(function LibraryPane2({
         projMode ? jsx9.jsx(
           "div",
           {
-            style: {
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              padding: "0 10px 10px"
-            },
+            className: "dshWmProjForm",
             children: [
               jsx9.jsx("input", {
-                className: "dshWmSearch",
-                style: { margin: 0 },
+                className: "dshWmSearch is-flat",
                 value: projTitle,
                 autoFocus: true,
                 placeholder: T.projTitle,
                 onChange: (e) => setProjTitle(e.target.value)
               }),
               jsx9.jsx("input", {
-                className: "dshWmSearch",
-                style: { margin: 0 },
+                className: "dshWmSearch is-flat",
                 value: projPremise,
                 placeholder: T.projPremise,
                 onChange: (e) => setProjPremise(e.target.value)
@@ -4635,8 +4677,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
               jsx9.jsx(
                 "select",
                 {
-                  className: "dshWmSearch",
-                  style: { margin: 0 },
+                  className: "dshWmSearch is-flat",
                   value: projTemplate,
                   onChange: (e) => setProjTemplate(e.target.value),
                   children: (templates.length ? templates : [
@@ -4657,7 +4698,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
               jsx9.jsx(
                 "div",
                 {
-                  style: { display: "flex", gap: 6 },
+                  className: "dshWmProjFormActions",
                   children: [
                     jsx9.jsx("button", {
                       type: "button",
@@ -4682,11 +4723,10 @@ var LibraryPane = react5.memo(function LibraryPane2({
         newDocMode ? jsx9.jsx(
           "div",
           {
-            style: { display: "flex", gap: 6, padding: "0 10px 8px" },
+            className: "dshWmNewDocRow",
             children: [
               jsx9.jsx("input", {
-                className: "dshWmSearch",
-                style: { margin: 0, flex: 1 },
+                className: "dshWmSearch is-flat is-grow",
                 value: newDocName,
                 autoFocus: true,
                 placeholder: T.untitled,
@@ -4707,7 +4747,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
           "new-doc"
         ) : null,
         roots.length > 0 ? jsx9.jsx("div", {
-          style: { padding: "8px", display: "flex", gap: 6 },
+          className: "dshWmLibViews",
           children: [["writing", "作品导航"], ["files", "文件视图"], ["outline", "大纲"]].map(([value, label]) => jsx9.jsx("button", {
             type: "button",
             className: "dshWmBtn",
@@ -4719,7 +4759,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
         roots.length > 0 ? jsx9.jsx(
           "div",
           {
-            style: { padding: "8px 8px 0" },
+            className: "dshWmSearchWrap",
             children: jsx9.jsx("input", {
               className: "dshWmSearch",
               value: libQuery,
@@ -4846,8 +4886,7 @@ var LibraryPane = react5.memo(function LibraryPane2({
                             jsx9.jsx(
                               "summary",
                               {
-                                className: "dshWmFolder",
-                                style: { cursor: "pointer", textTransform: "none" },
+                                className: "dshWmFolder is-clickable",
                                 children: g.key === "·" ? "ROOT" : g.key
                               },
                               "fh"
@@ -4966,7 +5005,7 @@ var EditorChrome = react6.memo(function EditorChrome2({
               jsx11.jsx("span", {
                 children: T.isHistory + " · " + T.isLatest + " v" + latestVer.v
               }, "h"),
-              jsx11.jsx("span", { style: { flex: 1 } }),
+              jsx11.jsx("span", { className: "dshWmSpacer" }),
               jsx11.jsx("button", {
                 type: "button",
                 className: "dshWmBtn",
@@ -5160,7 +5199,7 @@ var DiffPanel = react8.memo(function DiffPanel2({
               jsx15.jsx("span", {
                 children: T.diffTitle + " " + diffLabel
               }),
-              jsx15.jsx("span", { style: { flex: 1 } }),
+              jsx15.jsx("span", { className: "dshWmSpacer" }),
               jsx15.jsx("button", {
                 type: "button",
                 className: "dshWmBtn is-ghost",
@@ -5196,7 +5235,7 @@ var RewritePanel = react8.memo(function RewritePanel2({
               jsx15.jsx("span", {
                 children: T.rewriteTitle + (rewrite.label ? " · " + rewrite.label : "")
               }),
-              jsx15.jsx("span", { style: { flex: 1 } }),
+              jsx15.jsx("span", { className: "dshWmSpacer" }),
               jsx15.jsx("button", {
                 type: "button",
                 className: "dshWmBtn",
@@ -5430,7 +5469,7 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
   }
   const items = state.items.filter((it) => !it.setting).slice().reverse();
   const q = state.quota;
-  const quotaRow = q ? jsx17.jsxs("div", { className: "dshWmMemoryNote", "data-wm-memory-quota": "", style: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }, children: [
+  const quotaRow = q ? jsx17.jsxs("div", { className: "dshWmMemoryNote is-quota", "data-wm-memory-quota": "", children: [
     jsx17.jsx("span", { children: `用量：备忘 ${q.items}/${q.maxItems} · 历史 ${q.changes}/${q.maxChanges} · 操作收据 ${q.operations}/${q.maxOperations}` }),
     jsx17.jsx("button", { className: "dshWmQuiet", disabled: busy || q.changes <= 0, "data-wm-memory-archive": "history", onClick: () => void post2("archive-history", {}), children: MAINTENANCE_LABEL["archive-history"] }),
     jsx17.jsx("button", { className: "dshWmQuiet", disabled: busy || q.operations <= 0, "data-wm-memory-archive": "operations", onClick: () => void post2("prune-operations", {}), children: MAINTENANCE_LABEL["prune-operations"] }),
@@ -5448,13 +5487,12 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
   ] }) : null;
   return jsx17.jsxs("div", { className: "dshWmMemory", children: [
     jsx17.jsx("div", {
-      className: "dshWmCompanionEmpty",
-      style: { padding: "8px 10px", textAlign: "left", lineHeight: 1.5 },
+      className: "dshWmCompanionEmpty is-inline",
       children: "只有作者确认过的设定/偏好会被自动带入对话。助手建议默认是候选，不会当成事实；待定问题即便确认也仍是问题，不混进默认事实。"
     }),
     // ── 新增 / 候选编辑 ───────────────────────────────────────────
     jsx17.jsxs("div", { className: "dshWmMemoryCompose", children: [
-      jsx17.jsxs("div", { className: "dshWmAiActions", style: { padding: "0 10px 6px" }, children: [
+      jsx17.jsxs("div", { className: "dshWmAiActions is-padded", children: [
         jsx17.jsx("select", {
           className: "dshWmMemoryKind",
           value: kind,
@@ -5465,10 +5503,9 @@ function CompanionMemoryPanel({ path: path2, candidate, onCandidateConsumed, onC
           )
         }),
         jsx17.jsx("textarea", {
-          className: "dshWmSearch",
+          className: "dshWmSearch is-compose",
           rows: 3,
           "aria-label": "项目备忘内容",
-          style: { margin: 0, flex: 1, minWidth: 0, resize: "vertical", maxHeight: 140, font: "inherit" },
           placeholder: asCandidate ? "候选内容（可删改）…" : "写下一条设定、偏好或待定问题…",
           value: text7,
           disabled: busy,
@@ -20579,7 +20616,7 @@ function ExportBookPanel({ proj, onClose, onDone }) {
               className: "dshWmExportHead",
               children: [
                 jsx28.jsx("span", { className: "dshWmExportTitle", children: `导出成书 · ${proj.name}` }, "t"),
-                jsx28.jsx("span", { style: { flex: 1 } }, "sp"),
+                jsx28.jsx("span", { className: "dshWmSpacer" }, "sp"),
                 jsx28.jsx(
                   "button",
                   { type: "button", className: "dshWmBtn is-ghost", onClick: onClose, children: "返回写作（Esc）" },
@@ -20605,8 +20642,7 @@ function ExportBookPanel({ proj, onClose, onDone }) {
                 jsx28.jsx("label", { className: "dshWmExportLabel", htmlFor: "dshWmExportName", children: "书名" }, "l"),
                 jsx28.jsx("input", {
                   id: "dshWmExportName",
-                  className: "dshWmSearch",
-                  style: { margin: 0 },
+                  className: "dshWmSearch is-flat",
                   value: title,
                   onChange: (e) => setTitle(e.target.value)
                 }, "i")
@@ -20669,7 +20705,7 @@ function ExportBookPanel({ proj, onClose, onDone }) {
               className: "dshWmExportFoot",
               children: [
                 jsx28.jsx("span", { children: `共 ${totalChars} 字` }, "n"),
-                jsx28.jsx("span", { style: { flex: 1 } }, "sp"),
+                jsx28.jsx("span", { className: "dshWmSpacer" }, "sp"),
                 jsx28.jsx("button", { type: "button", className: "dshWmBtn", onClick: onClose, disabled: busy, children: "取消" }, "cancel"),
                 jsx28.jsx("button", {
                   type: "button",
@@ -20926,7 +20962,7 @@ function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, onExporte
       jsx30.jsxs("div", { className: "dshWmWikiBar", children: [
         jsx30.jsx("span", { className: "dshWmWikiTitle", children: proj.name || "作品档案" }),
         jsx30.jsx("span", { className: "dshWmWikiSub", children: "只读档案：内容来自已确认设定与文稿本身，这里改动不了它们" }),
-        jsx30.jsx("span", { style: { flex: 1 } }),
+        jsx30.jsx("span", { className: "dshWmSpacer" }),
         onOpenWindow ? jsx30.jsx("button", {
           type: "button",
           className: "dshWmBtn",
@@ -22220,7 +22256,7 @@ function WritingModeApp() {
                     "data-wm-doc-alert": saveState,
                     children: [
                       jsx34.jsx("span", { children: documentState.error }, "m"),
-                      jsx34.jsx("span", { style: { flex: 1 } }, "s"),
+                      jsx34.jsx("span", { className: "dshWmSpacer" }, "s"),
                       dirty && filePath ? jsx34.jsx("button", {
                         type: "button",
                         className: "dshWmBtn",
@@ -22486,26 +22522,14 @@ function WritingModeSettings() {
     void loadPrefs();
     void refreshLibrary();
   }, []);
-  const row = { display: "flex", alignItems: "center", gap: 12, padding: "8px 0" };
-  const label = { width: 120, flex: "none", color: "var(--dsw-alias-label-secondary)", fontSize: 13 };
-  const hint = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.5 };
   function numInput(key, min, max, step) {
     return jsx36.jsx("input", {
       type: "number",
+      className: "dshWmField is-num",
       min: String(min),
       max: String(max),
       step: String(step),
       value: String(prefs[key]),
-      style: {
-        width: 90,
-        padding: "6px 8px",
-        borderRadius: 8,
-        border: "1px solid var(--dsw-alias-border-l2)",
-        background: "var(--dsw-alias-bg-layer-2)",
-        color: "var(--dsw-alias-label-primary)",
-        font: "inherit",
-        fontSize: 13
-      },
       onChange: (e) => void savePrefs({ [key]: Number(e.target.value) })
     });
   }
@@ -22532,19 +22556,12 @@ function WritingModeSettings() {
   return jsx36.jsx(
     "div",
     {
-      style: {
-        width: "100%",
-        maxWidth: 640,
-        display: "flex",
-        flexDirection: "column",
-        gap: 4,
-        color: "var(--dsw-alias-label-primary)"
-      },
+      className: "dshWmSettings",
       children: [
         jsx36.jsx(
           "div",
           {
-            style: { fontSize: 13, color: "var(--dsw-alias-label-tertiary)", marginBottom: 8 },
+            className: "dshWmSetIntro",
             children: "写作工作台（Ctrl+Shift+W 或右下角进入）。设置即时生效并写入 ~/.dsh/writing-mode.json。"
           },
           "intro"
@@ -22552,32 +22569,22 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "库根目录" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "库根目录" }),
               jsx36.jsx(
                 "div",
                 {
-                  style: { flex: 1, display: "flex", flexDirection: "column", gap: 6 },
+                  className: "dshWmSetColumn",
                   children: [
                     ...(roots || []).map(
                       (r) => jsx36.jsx(
                         "div",
                         {
-                          style: {
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            fontSize: 13
-                          },
+                          className: "dshWmSetRootRow",
                           children: [
                             jsx36.jsx("span", {
-                              style: {
-                                flex: 1,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap"
-                              },
+                              className: "dshWmSetRootPath",
                               children: (r.missing ? "⚠ " : "") + r.path
                             }),
                             jsx36.jsx("button", {
@@ -22594,19 +22601,10 @@ function WritingModeSettings() {
                     jsx36.jsx(
                       "div",
                       {
-                        style: { display: "flex", gap: 8 },
+                        className: "dshWmSetAddRow",
                         children: [
                           jsx36.jsx("input", {
-                            style: {
-                              flex: 1,
-                              padding: "6px 10px",
-                              borderRadius: 8,
-                              border: "1px solid var(--dsw-alias-border-l2)",
-                              background: "var(--dsw-alias-bg-layer-2)",
-                              color: "var(--dsw-alias-label-primary)",
-                              font: "inherit",
-                              fontSize: 13
-                            },
+                            className: "dshWmField is-grow",
                             placeholder: "例如 E:\\剧本",
                             value: pathDraft,
                             onChange: (e) => setPathDraft(e.target.value),
@@ -22634,11 +22632,11 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "正文字号" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "正文字号" }),
               numInput("fontSize", 12, 28, 1),
-              jsx36.jsx("span", { style: hint, children: "px" })
+              jsx36.jsx("span", { className: "dshWmSetHint", children: "px" })
             ]
           },
           "fs"
@@ -22646,9 +22644,9 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "行距" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "行距" }),
               numInput("lineHeight", 1.4, 2.6, 0.05)
             ]
           },
@@ -22657,11 +22655,11 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "自动保存" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "自动保存" }),
               numInput("autoSaveMs", 200, 5e3, 100),
-              jsx36.jsx("span", { style: hint, children: "ms（防抖）" })
+              jsx36.jsx("span", { className: "dshWmSetHint", children: "ms（防抖）" })
             ]
           },
           "as"
@@ -22669,15 +22667,15 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "保存后门禁" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "保存后门禁" }),
               jsx36.jsx("input", {
                 type: "checkbox",
                 checked: Boolean(prefs.autoGate),
                 onChange: (e) => void savePrefs({ autoGate: e.target.checked })
               }),
-              jsx36.jsx("span", { style: hint, children: "md / fountain 存盘后自动跑一次" })
+              jsx36.jsx("span", { className: "dshWmSetHint", children: "md / fountain 存盘后自动跑一次" })
             ]
           },
           "ag"
@@ -22685,15 +22683,7 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: {
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: "1px solid var(--dsw-alias-border-l2)",
-              fontSize: 12,
-              fontWeight: 700,
-              color: "var(--dsw-alias-label-tertiary)",
-              letterSpacing: "0.06em"
-            },
+            className: "dshWmSetSectionHead",
             children: "AI 模型"
           },
           "ai-head"
@@ -22701,22 +22691,14 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "来源" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "来源" }),
               jsx36.jsx(
                 "select",
                 {
+                  className: "dshWmField",
                   value: prefs.aiMode === "custom" ? "custom" : "harness",
-                  style: {
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    border: "1px solid var(--dsw-alias-border-l2)",
-                    background: "var(--dsw-alias-bg-layer-2)",
-                    color: "var(--dsw-alias-label-primary)",
-                    font: "inherit",
-                    fontSize: 13
-                  },
                   onChange: (e) => void savePrefs({ aiMode: e.target.value === "custom" ? "custom" : "harness" }),
                   children: [
                     jsx36.jsx("option", { value: "harness", children: "Harness 全局默认（文字工具）" }, "h"),
@@ -22725,7 +22707,7 @@ function WritingModeSettings() {
                 }
               ),
               jsx36.jsx("span", {
-                style: hint,
+                className: "dshWmSetHint",
                 children: prefs.aiMode === "custom" ? "润色/续写/找资料走下面配置的模型" : "文字工具使用 Harness 全局默认模型；写作伙伴使用其原生会话模型"
               })
             ]
@@ -22735,20 +22717,11 @@ function WritingModeSettings() {
         prefs.aiMode === "custom" ? jsx36.jsx(
           "div",
           {
-            style: { ...row, alignItems: "flex-start" },
+            className: "dshWmSetRow is-top",
             children: [
-              jsx36.jsx("span", { style: label, children: "Provider" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "Provider" }),
               jsx36.jsx("input", {
-                style: {
-                  flex: 1,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--dsw-alias-border-l2)",
-                  background: "var(--dsw-alias-bg-layer-2)",
-                  color: "var(--dsw-alias-label-primary)",
-                  font: "inherit",
-                  fontSize: 13
-                },
+                className: "dshWmField is-grow",
                 value: prefs.aiProvider,
                 placeholder: "deepseek-official",
                 onChange: (e) => void savePrefs({ aiProvider: e.target.value })
@@ -22760,20 +22733,11 @@ function WritingModeSettings() {
         prefs.aiMode === "custom" ? jsx36.jsx(
           "div",
           {
-            style: { ...row, alignItems: "flex-start" },
+            className: "dshWmSetRow is-top",
             children: [
-              jsx36.jsx("span", { style: label, children: "Model" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "Model" }),
               jsx36.jsx("input", {
-                style: {
-                  flex: 1,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--dsw-alias-border-l2)",
-                  background: "var(--dsw-alias-bg-layer-2)",
-                  color: "var(--dsw-alias-label-primary)",
-                  font: "inherit",
-                  fontSize: 13
-                },
+                className: "dshWmField is-grow",
                 value: prefs.aiModel,
                 placeholder: "deepseek-v4-flash",
                 onChange: (e) => void savePrefs({ aiModel: e.target.value })
@@ -22785,21 +22749,12 @@ function WritingModeSettings() {
         prefs.aiMode === "custom" ? jsx36.jsx(
           "div",
           {
-            style: { ...row, alignItems: "flex-start" },
+            className: "dshWmSetRow is-top",
             children: [
-              jsx36.jsx("span", { style: label, children: "API Key" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "API Key" }),
               jsx36.jsx("input", {
                 type: "password",
-                style: {
-                  flex: 1,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--dsw-alias-border-l2)",
-                  background: "var(--dsw-alias-bg-layer-2)",
-                  color: "var(--dsw-alias-label-primary)",
-                  font: "inherit",
-                  fontSize: 13
-                },
+                className: "dshWmField is-grow",
                 value: prefs.aiApiKey,
                 placeholder: "可选；仅本机配置文件",
                 onChange: (e) => void savePrefs({ aiApiKey: e.target.value })
@@ -22811,16 +22766,16 @@ function WritingModeSettings() {
         jsx36.jsx(
           "div",
           {
-            style: row,
+            className: "dshWmSetRow",
             children: [
-              jsx36.jsx("span", { style: label, children: "进入工作台" }),
+              jsx36.jsx("span", { className: "dshWmLabel", children: "进入工作台" }),
               jsx36.jsx("button", {
                 type: "button",
                 className: "dshWmBtn is-primary",
                 onClick: () => setModeActive(true),
                 children: "打开写作模式"
               }),
-              jsx36.jsx("span", { style: hint, children: "快捷键 Ctrl+Shift+W" })
+              jsx36.jsx("span", { className: "dshWmSetHint", children: "快捷键 Ctrl+Shift+W" })
             ]
           },
           "open"
@@ -22838,9 +22793,8 @@ function WritingModeFooterEntry() {
   react18.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
   return jsx38.jsx("button", {
     type: "button",
-    className: on ? "dshWmBtn is-primary" : "dshWmBtn",
+    className: (on ? "dshWmBtn is-primary" : "dshWmBtn") + " dshWmEntryBtn",
     title: on ? T.exit : T.toggle,
-    style: { width: "100%", justifyContent: "center" },
     onClick: () => setModeActive(!on),
     children: on ? T.exit : T.toggle
   });

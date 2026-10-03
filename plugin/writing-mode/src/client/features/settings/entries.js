@@ -11,9 +11,8 @@ export function WritingModeFooterEntry() {
   react.useEffect(() => subscribeMode(() => setOn(getModeActive())), [])
   return jsx.jsx('button', {
     type: 'button',
-    className: on ? 'dshWmBtn is-primary' : 'dshWmBtn',
+    className: (on ? 'dshWmBtn is-primary' : 'dshWmBtn') + ' dshWmEntryBtn',
     title: on ? T.exit : T.toggle,
-    style: { width: '100%', justifyContent: 'center' },
     onClick: () => setModeActive(!on),
     children: on ? T.exit : T.toggle,
   })
