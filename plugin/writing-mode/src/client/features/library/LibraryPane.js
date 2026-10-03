@@ -44,38 +44,119 @@ export const LibraryPane = react.memo(function LibraryPane({
   addProjectResource,
   setAddRootMode,
   setAddRootPath,
+  setAddRootKind,
+  addRootMode,
+  addRootPath,
+  addRootKind,
+  commitAddRoot,
   KEY_HINT,
   onOpenArchive,
   onExportBook,
 }) {
+  // F1 「＋」入口菜单：四个「加东西」入口收在一处；内容常挂载（门禁按文本点击不看可见性），
+  // 关闭时由 .dshWmMenu 规则 display:none；Esc 或点菜单外关闭。
+  const [menuOpen, setMenuOpen] = react.useState(false)
+  const menuRef = react.useRef(null)
+  react.useEffect(() => {
+    if (!menuOpen) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setMenuOpen(false) }
+    const onDown = (e) => { if (!menuRef.current?.contains(e.target)) setMenuOpen(false) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [menuOpen])
   return jsx.jsx(
     'aside',
     {
       className: 'dshWmSide',
       children: [
-        jsx.jsx(
+        jsx.jsxs(
           'div',
           {
             className: 'dshWmSideHead',
             children: [
               jsx.jsx('span', { children: T.docs }),
               jsx.jsx('span', { className: 'dshWmSpacer' }),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn',
-                onClick: openProjectMode,
-                children: T.newProject,
-              }),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn',
-                onClick: createDocInRoot,
-                children: T.newDoc,
-              }),
+              jsx.jsxs('div', { className: 'dshWmAux', ref: menuRef, children: [
+                jsx.jsx('button', {
+                  type: 'button',
+                  className: 'dshWmBtn is-ghost',
+                  onClick: () => setMenuOpen((v) => !v),
+                  'aria-expanded': menuOpen,
+                  title: '新建 / 添加',
+                  children: '＋',
+                }, 'add-btn'),
+                jsx.jsxs('div', { className: 'dshWmMenu' + (menuOpen ? ' is-open' : ''), children: [
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow',
+                    onClick: () => { setMenuOpen(false); createDocInRoot() },
+                    children: '新建文稿',
+                  }, 'new-doc'),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow',
+                    onClick: () => { setMenuOpen(false); openProjectMode() },
+                    children: T.newProject,
+                  }, 'new-proj'),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow',
+                    title: T.addRoot,
+                    onClick: () => { setMenuOpen(false); setAddRootKind('library'); setAddRootMode(true) },
+                    children: '添加作品库',
+                  }, 'add-lib'),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn dshWmMenuRow',
+                    title: '读取原有目录，不搬动资料、不自动确认设定',
+                    onClick: () => { setMenuOpen(false); setAddRootKind('project'); setAddRootPath(''); setAddRootMode(true) },
+                    children: '打开已有',
+                  }, 'open-existing'),
+                ] }, 'add-menu'),
+              ] }, 'add'),
             ],
           },
           'dh'
         ),
+        addRootMode
+          ? jsx.jsx(
+              'span',
+              {
+                className: 'dshWmBarGroup',
+                children: [
+                  jsx.jsx('select', {
+                    'aria-label': '文件夹用途', value: addRootKind,
+                    onChange: e => setAddRootKind(e.target.value),
+                    children: [jsx.jsx('option', { value: 'library', children: '作品库（包含多个项目）' }), jsx.jsx('option', { value: 'project', children: '已有项目（保留原目录）' })],
+                  }),
+                  jsx.jsx('input', {
+                    className: 'dshWmSearch is-compact',
+                    value: addRootPath,
+                    placeholder: addRootKind === 'project' ? '已有作品文件夹完整路径' : 'E:\\剧本',
+                    'aria-label': '文件夹路径',
+                    autoFocus: true,
+                    onChange: (e) => setAddRootPath(e.target.value),
+                    onKeyDown: (e) => {
+                      if (e.nativeEvent?.isComposing || e.keyCode === 229) return
+                      if (e.key === 'Enter') void commitAddRoot()
+                      if (e.key === 'Escape') setAddRootMode(false)
+                    },
+                  }),
+                  jsx.jsx('button', {
+                    type: 'button',
+                    className: 'dshWmBtn is-primary',
+                    onClick: () => void commitAddRoot(),
+                    children: addRootKind === 'project' ? '打开项目' : '添加库',
+                  }),
+                ],
+              },
+              'add-root'
+            )
+          : null,
         projMode
           ? jsx.jsx(
               'div',

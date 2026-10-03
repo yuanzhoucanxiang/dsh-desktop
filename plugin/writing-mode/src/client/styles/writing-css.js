@@ -98,8 +98,9 @@ export const CSS = [
   '}',
   '.dshWmBtn.is-ghost{border-color:transparent;padding-left:8px;padding-right:8px;}',
   '.dshWmBtn.is-danger{color:var(--wm-err);}',
-  /* 选中态只有一份声明源：显式 is-on 与 aria-pressed 走同一组规则（左栏三视图切换用的是后者） */
-  '.dshWmBtn.is-on,.dshWmBtn[aria-pressed="true"]{',
+  /* 选中态只有一份声明源：显式 is-on、aria-pressed、ghost+is-on（F2 后顶栏次级键多为 ghost，
+     与 .dshWmBtn.is-ghost 同为 0,2,0，加进选择器列表避免靠样式表顺序决定高亮是否可见） */
+  '.dshWmBtn.is-on,.dshWmBtn[aria-pressed="true"],.dshWmBtn.is-ghost.is-on{',
   '  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);',
   '  border-color:var(--dsw-alias-brand-primary);',
   '  color:var(--dsw-alias-label-primary);',
@@ -196,6 +197,10 @@ export const CSS = [
   '  display:flex;align-items:center;gap:6px;padding:12px 12px 8px;flex:none;',
   '  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);',
   '}',
+  /* F1 「添加库 / 打开项目」内联条从顶栏搬进左栏（JSX 一字未改，仍带 .dshWmBarGroup）：
+     侧栏只有 248px，顶栏那套横排会溢出，这里按上下文改成竖排撑满。 */
+  '.dshWmSide .dshWmBarGroup{flex-direction:column;align-items:stretch;gap:var(--wm-space-2);padding:0 10px 10px;}',
+  '.dshWmSide .dshWmBarGroup .dshWmSearch{width:100%;margin:0;}',
   '.dshWmList{flex:1;overflow:auto;padding:4px 10px 20px;}',
   '.dshWmProj{margin-bottom:12px;}',
   '.dshWmProjToggle{',

@@ -12,13 +12,6 @@ export const TopBar = react.memo(function TopBar({
   roots,
   activeRoot,
   activateRoot,
-  setAddRootMode,
-  setAddRootPath,
-  setAddRootKind,
-  addRootMode,
-  addRootPath,
-  addRootKind,
-  commitAddRoot,
   libOpen,
   setLibOpen,
   focus,
@@ -75,55 +68,6 @@ export const TopBar = react.memo(function TopBar({
               'roots'
             )
           : null,
-        jsx.jsx('button', {
-          type: 'button',
-          className: 'dshWmBtn is-ghost',
-          onClick: () => { setAddRootKind('library'); setAddRootMode(true) },
-          title: T.addRoot,
-          children: '+',
-        }),
-        jsx.jsx('button', {
-          type: 'button',
-          className: 'dshWmBtn is-ghost',
-          onClick: () => { setAddRootKind('project'); setAddRootPath(''); setAddRootMode(true) },
-          children: '打开已有',
-          title: '读取原有目录，不搬动资料、不自动确认设定',
-        }),
-        addRootMode
-          ? jsx.jsx(
-              'span',
-              {
-                className: 'dshWmBarGroup',
-                children: [
-                  jsx.jsx('select', {
-                    'aria-label': '文件夹用途', value: addRootKind,
-                    onChange: e => setAddRootKind(e.target.value),
-                    children: [jsx.jsx('option', { value: 'library', children: '作品库（包含多个项目）' }), jsx.jsx('option', { value: 'project', children: '已有项目（保留原目录）' })],
-                  }),
-                  jsx.jsx('input', {
-                    className: 'dshWmSearch is-compact',
-                    value: addRootPath,
-                    placeholder: addRootKind === 'project' ? '已有作品文件夹完整路径' : 'E:\\剧本',
-                    'aria-label': '文件夹路径',
-                    autoFocus: true,
-                    onChange: (e) => setAddRootPath(e.target.value),
-                    onKeyDown: (e) => {
-                      if (e.nativeEvent?.isComposing || e.keyCode === 229) return
-                      if (e.key === 'Enter') void commitAddRoot()
-                      if (e.key === 'Escape') setAddRootMode(false)
-                    },
-                  }),
-                  jsx.jsx('button', {
-                    type: 'button',
-                    className: 'dshWmBtn is-primary',
-                    onClick: () => void commitAddRoot(),
-                    children: addRootKind === 'project' ? '打开项目' : '添加库',
-                  }),
-                ],
-              },
-              'add-root'
-            )
-          : null,
         jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-roots'),
         jsx.jsx('span', { className: 'dshWmBarSpacer' }),
         jsx.jsx(
@@ -140,7 +84,7 @@ export const TopBar = react.memo(function TopBar({
               }),
               jsx.jsx('button', {
                 type: 'button',
-                className: 'dshWmBtn' + (focus ? ' is-on' : ''),
+                className: 'dshWmBtn is-ghost' + (focus ? ' is-on' : ''),
                 onClick: () => setFocus((v) => !v),
                 'aria-pressed': focus,
                 title: '专注：只留稿纸，收起文档库与右栏',
@@ -149,7 +93,7 @@ export const TopBar = react.memo(function TopBar({
               jsx.jsxs('div', { className: 'dshWmAux', ref: auxRef, children: [
                 jsx.jsx('button', {
                   type: 'button',
-                  className: 'dshWmBtn' + (prefs.hemingway || prefs.typewriter ? ' is-on' : ''),
+                  className: 'dshWmBtn is-ghost' + (prefs.hemingway || prefs.typewriter ? ' is-on' : ''),
                   onClick: () => setAuxOpen((v) => !v),
                   'aria-expanded': auxOpen,
                   title: '写作辅助开关',
@@ -178,7 +122,7 @@ export const TopBar = react.memo(function TopBar({
               ] }, 'aux'),
               jsx.jsx('button', {
                 type: 'button',
-                className: 'dshWmBtn' + (aiOpen && !focus ? ' is-on' : ''),
+                className: 'dshWmBtn is-ghost' + (aiOpen && !focus ? ' is-on' : ''),
                 // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
                 // 否则就是一只按了没反应的按钮（专注中的用户最不需要这个）。
                 onClick: () => {
@@ -212,7 +156,7 @@ export const TopBar = react.memo(function TopBar({
         jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-exit'),
         jsx.jsx('button', {
           type: 'button',
-          className: 'dshWmBtn',
+          className: 'dshWmBtn is-ghost',
           onClick: close,
           children: T.exit,
         }),
