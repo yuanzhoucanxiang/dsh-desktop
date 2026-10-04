@@ -576,3 +576,14 @@ v0.1.42 于 2026-09-22 公开，代码 ac00c15，Release ID 393502728；五项�
 **验收**：`verify:writing-quick` 全链 26 套件 **QUICK_EXIT=0**（10-03 两轮复跑一致：Qoder 报 566 段 PASS，Kimi 收账复跑 592 行 PASS/OK 记录、0 非零退出）；`shell-hardening-test` **SHELL_HARDENING_OK**；`test:writing-archive-html` 23 项；`verify:writing-archive` 15 段（含切换条死链逐一实测 200、库根 400 `no-project`、真导航换作品）。**以上全部未随版本发布**，随下个版本走；正式版仍由用户自行「检查更新」。
 
 署名：Kimi（收口补记；实现为 Qoder），2026-10-03
+
+## 23. 作品档案 wiki 站点化（2026-10-04）
+
+用户设想：档案应像内置 wiki 网站，每个人物和内容都有对应页面。`route=wiki` 从单页长滚动改为**多页站点**；导出 HTML 出口保持单文件快照不动——两个出口分工自此明确：**导出 = 打印/分享快照，wiki 窗口 = 翻阅站点**。
+
+- **页面结构**（`page` 参数，页 id 白名单 `index|settings|progress|ledger|docs|doc-N|doc-N-sK|ch-N`）：首页 = 入口（前提 + 统计/14 天柱 + 四区入口卡 + 设定标题速览 + 人物速览 + 章节导读，不堆全部内容）；设定/进度/时间与伏笔各一页（复用 archive-html 的三个 section，导出页输出逐字节不变）；资料索引按组列篇目卡；篇目页 `doc-N` 对 `##`/`###` 小节 ≥2 的篇目给导语 + 节卡（「每个人物一页」落地为节页 `doc-N-sK`：面包屑 + 节正文 + 节间上下页 + 返回篇目）；章页 `ch-N` 为当版正文一页（按需现读注入，散文分段渲染不走资料的空标签过滤——「他说：」这种行不能吞；读不到如实说明）。非法 page 回首页；越界逐层回落（节→篇→资料索引，章→进度）。
+- **工程口径**：`assembleArchiveModel` 拆出 `buildArchiveModel`（两个出口共用 model）；新增 `lib/archive-site.js`（零 IO，只做页面组装，已进 runtime-manifest）；`[[文稿名]]` 解析口径不变、目标换成站内页链接（`inlineMarks` 新增只收 host 形态的 SAFE_PAGE 白名单，导出页为惰性兜底）；全站零脚本（CSP 不动）、链接全部同源相对 GET、站内 `<a>` 一律 class 在 href 前（门禁用 `<a href="?route=wiki` 精确匹配切换条）。
+- **验收**：纯函数 23 → 32 项（E01–E09）；`verify:writing-archive` 11/11b/13 段改写为站点形态（子页内容断言、末段真点导航：顶条换区→资料索引→篇目→节页→章页→切换条换作品）14 段 PASS；`verify:writing-quick` 全链 QUICK_EXIT=0（600 行 PASS/OK，0 非零）。**未随版本发布**，随下个版本走。
+
+署名：Kimi
+

@@ -23,6 +23,7 @@ import {
   buildRefResolver,
   ARCHIVE_HTML_VERSION,
 } from '../lib/archive-html.js'
+import { renderWikiSite, parseWikiPage } from '../lib/archive-site.js'
 import { PROJECT_RESOURCES } from '../lib/templates.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -319,6 +320,120 @@ ok('D03 导出页不带切换器；作品路径与名字里的引号逃不出属
   assert.ok(!link[1].includes('"'), 'href 里不该有裸引号（会被提前闭合）：' + link[1])
   assert.ok(!/<script[\s>]/.test(hostile), '作品名里的脚本标签只能以文字出现')
   assert.ok(hostile.includes('&quot;&gt;&lt;script&gt;'), '作品名以转义文字保留')
+})
+
+/* ---- 第五刀：wiki 多页站点（lib/archive-site.js） ---- */
+
+const siteModel = {
+  title: '雾港',
+  premise: '一封信决定所有人的去向。',
+  generatedAt: '2026-10-04 10:00:00',
+  settings: [{ title: '夜行禁令', conclusion: '入夜封港。' }],
+  proposedCount: 1,
+  plainItems: [],
+  chapters: [{ name: '第1章', chars: 100 }, { name: '第2章', chars: 200 }],
+  stats: { today: 50, streak: 2, days: [{ day: '2026-10-03', total: 10 }, { day: '2026-10-04', total: 50 }] },
+  dailyGoal: 500,
+  ledger: { timeline: ['第一夜'], foreshadowOpen: 2 },
+  docs: [
+    { rel: 'project.md', label: '作品概览', group: '作品概览', markdown: true, content: '# 雾港\n\n一句话。' },
+    { rel: 'bible/characters.md', label: '人物档案', group: '人物', markdown: true,
+      content: '# 人物\n\n总述一句。\n\n## 林晚\n\n送信人，见过 [[world.md]] 的灯塔。\n\n## 关渡\n\n拦信人。' + '铺陈'.repeat(40) + '节尾暗号。\n' },
+    { rel: 'bible/world.md', label: '世界观', group: '世界与设定', markdown: true,
+      content: '# 世界\n\n## 港口\n\n雾季封港。\n\n| 势力 | 立场 |\n| --- | --- |\n' },
+  ],
+  currentPath: 'E:/x/雾港',
+}
+const site = (page, extra) => renderWikiSite(siteModel, { page, projectPath: 'E:/x/雾港', ...(extra || {}) })
+
+ok('E01 页 id 白名单：合法形状照收，非法一律回首页', () => {
+  assert.equal(parseWikiPage(''), 'index')
+  assert.equal(parseWikiPage('settings'), 'settings')
+  assert.equal(parseWikiPage('doc-12'), 'doc-12')
+  assert.equal(parseWikiPage('doc-12-s3'), 'doc-12-s3')
+  assert.equal(parseWikiPage('ch-2'), 'ch-2')
+  assert.equal(parseWikiPage('INDEX'), 'index', '大小写不迁就')
+  assert.equal(parseWikiPage('doc-1;drop'), 'index')
+  assert.equal(parseWikiPage('";<script>alert(1)</script>'), 'index')
+})
+
+ok('E02 首页是入口不是堆叠：导航/前提/入口卡/速览在位，正文结论不进首页', () => {
+  const html = site('index')
+  assert.ok(html.includes('class="sitebar"'), '站点顶条')
+  assert.ok(/&amp;page=settings/.test(html) && /&amp;page=docs/.test(html), '分区导航链接')
+  assert.ok(html.includes('一封信决定所有人的去向'), '前提进首页')
+  assert.ok(html.includes('page=doc-2-s1') && html.includes('page=doc-2-s2'), '人物速览直达节页：' + html.match(/page=doc-2[^"]*/g))
+  assert.ok(html.includes('page=ch-1'), '章节导读链到章页')
+  assert.ok(html.includes('夜行禁令'), '设定标题速览')
+  assert.ok(!html.includes('入夜封港'), '设定结论不进首页（只列标题）')
+  assert.ok(!html.includes('送信人') && !html.includes('节尾暗号'), '资料正文不进首页')
+  assert.ok(!/<script[\s>]/i.test(html), '整站无脚本')
+  assert.ok(html.includes('class="bars"'), '近 14 天柱条进首页')
+})
+
+ok('E03 节页：[[名]] 解析成站内页链接，只装自己这一节，带上下节', () => {
+  const html = site('doc-2-s1')
+  assert.ok(/<a class="ref" href="\?route=wiki&amp;path=E%3A%2Fx%2F[^"]*&amp;page=doc-3">world\.md<\/a>/.test(html), '[[world.md]] 应链到它的篇目页：' + html.match(/class="ref"[^>]*>/g))
+  assert.ok(html.includes('送信人'), '本节正文')
+  assert.ok(!html.includes('节尾暗号'), '别节正文不进本节页')
+  assert.ok(html.includes('page=doc-2-s2'), '下一节链接')
+  assert.ok(html.includes('关渡'), '下一节标题可出现在导航里')
+  assert.ok(/class="crumb"/.test(html) && html.includes('人物档案'), '面包屑回篇目')
+})
+
+ok('E04 篇目页：小节 ≥2 → 导语 + 节卡（不堆正文）；不足两节 → 整篇铺开', () => {
+  const doc2 = site('doc-2')
+  assert.ok(doc2.includes('总述一句'), '导语留在篇目页')
+  assert.ok(doc2.includes('data-section="1"') && doc2.includes('data-section="2"'), '节卡齐')
+  assert.ok(!doc2.includes('节尾暗号'), '节正文不在篇目页堆叠（卡片只带截断摘录）')
+  const doc3 = site('doc-3')
+  assert.ok(doc3.includes('雾季封港'), '不足两节的篇整篇铺开')
+  assert.ok(doc3.includes('（表格待填：势力 / 立场）') && !doc3.includes('<td>'), '空骨架表在站点同样过滤')
+})
+
+ok('E05 章页：散文渲染不吞「他说：」行，读不到如实说，上下章齐全', () => {
+  const ch1 = site('ch-1', { chapterText: '他说：\n\n雾很大。' })
+  assert.ok(ch1.includes('他说：'), '手稿里的空标签行必须保住（资料那套过滤不适用正文）')
+  assert.ok(ch1.includes('雾很大'))
+  assert.ok(ch1.includes('page=ch-2'), '下一章链接')
+  assert.ok(!/page=ch-0/.test(ch1), '第一章没有上一章')
+  const ch2 = site('ch-2', { chapterText: '第二章。' })
+  assert.ok(ch2.includes('page=ch-1'), '第二章有上一章')
+  const lost = site('ch-1', { chapterText: null })
+  assert.ok(lost.includes('读不到'), '文件读不到要如实说明')
+})
+
+ok('E06 越界逐层回落：节不在→篇目页，篇不在→资料索引，章不在→进度页', () => {
+  assert.ok(site('doc-2-s9').includes('data-section="1"'), '节号越界回篇目页')
+  assert.ok(site('doc-99').includes('grouptitle'), '篇号越界回资料索引')
+  assert.ok(site('ch-99').includes('id="sec-progress"'), '章号越界回进度页')
+  assert.ok(site('乱写的').includes('一封信决定所有人的去向'), '非法形状回首页')
+})
+
+ok('E07 站内页链接白名单：只收 host 形态（转义过的 &amp; + 白名单 page），其余退回标注', () => {
+  const good = inlineMarks(escapeHtml('见 [[x]]'), () => '?route=wiki&amp;path=E%3A%2Fx&amp;page=doc-2')
+  assert.ok(good.includes('<a class="ref" href="?route=wiki&amp;path=E%3A%2Fx&amp;page=doc-2">'), good)
+  const rawAmp = inlineMarks(escapeHtml('见 [[x]]'), () => '?route=wiki&path=E%3A%2Fx')
+  assert.ok(!rawAmp.includes('<a'), '没转义的 & 不收（href 里必须是 &amp;）：' + rawAmp)
+  const js = inlineMarks(escapeHtml('见 [[x]]'), () => 'javascript:alert(1)')
+  assert.ok(!js.includes('<a'), 'javascript: 仍然不收')
+  const breakout = inlineMarks(escapeHtml('见 [[x]]'), () => '?route=wiki&amp;path=x" onclick="x')
+  assert.ok(!breakout.includes('<a'), '带裸引号的一律不收：' + breakout)
+})
+
+ok('E08 作品路径里的引号逃不出 href 属性（全站链接都经 encodeURIComponent+转义）', () => {
+  const html = renderWikiSite(siteModel, { page: 'docs', projectPath: 'E:/x/" onload="x' })
+  const tags = html.match(/<[^>]+>/g) || []
+  assert.ok(!tags.some((t) => /\sonload\s*=/.test(t)), '路径里的引号不该把属性顶出来：' + tags.find((t) => /\sonload\s*=/.test(t)))
+})
+
+ok('E09 站点页同样守住转义：稿件脚本只以文字出现', () => {
+  const html = renderWikiSite({ title: 'T', currentPath: 'E:/x/T', settings: [], plainItems: [], chapters: [], stats: null, ledger: null,
+    docs: [{ rel: 'bible/a.md', label: 'a', group: '世界与设定', markdown: true,
+      content: '# a\n\n<script>alert(1)</script>\n\n<img src=x onerror=1>\n' }] }, { page: 'doc-1', projectPath: 'E:/x/T' })
+  assert.ok(!/<script\s*>/i.test(html.replace(/<script><\/script>/g, '')), '不该有真 script 标签')
+  assert.ok(html.includes('&lt;script&gt;'), '脚本以字面文字保留')
+  assert.ok(!/<img\s/i.test(html), '不该有真 img 标签')
 })
 
 console.log(`\n作品档案导出: ${pass} 项通过`)

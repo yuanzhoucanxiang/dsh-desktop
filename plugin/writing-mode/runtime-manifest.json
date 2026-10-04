@@ -8,6 +8,7 @@
   ],
   "files": [
     "plugin/writing-mode/lib/archive-html.js",
+    "plugin/writing-mode/lib/archive-site.js",
     "plugin/writing-mode/lib/companion.cordis.yml",
     "plugin/writing-mode/lib/companion-preset.js",
     "plugin/writing-mode/lib/compile.js",

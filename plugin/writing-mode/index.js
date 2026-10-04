@@ -35,6 +35,7 @@ import { COMPANION_PRESET } from './lib/companion-preset.js'
 import { assist, recommend, runGates, ledgerSummary, outlineSummary } from './lib/domain.js'
 import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileBook } from './lib/compile.js'
 import { renderArchiveHtml, docGroupOf, docGroupRank, docLabelOf, premiseOf } from './lib/archive-html.js'
+import { renderWikiSite, parseWikiPage } from './lib/archive-site.js'
 import { seedBaseline, recordSave, projectStatsFor } from './lib/writing-stats.js'
 import { reorderDraftSeries } from './lib/reorder.js'
 import {
@@ -162,11 +163,11 @@ function writeJson(res, status, obj) {
 }
 
 /**
- * 档案页的数据组装：`archive-export`（落盘）与 `wiki`（当页面看）共用同一份口径，
+ * 档案页的数据组装：`archive-export`（落盘成单文件快照）与 `wiki`（多页站点）共用同一份口径，
  * 免得两个出口对「什么算已确认设定」「哪篇算当前版」各说各话。
  * 抛出的错误带 status/code，由调用方原样回给客户端——这里不决定「是文件还是页面」。
  */
-function assembleArchiveModel(projectReal, prefs, titleOverride, extra) {
+function buildArchiveModel(projectReal, prefs, titleOverride, extra) {
   const mem = readMemory(projectReal)
   if (mem?.error) throw storeError('memory-' + mem.error, 409)
   const items = mem?.memory?.items || []
@@ -206,7 +207,7 @@ function assembleArchiveModel(projectReal, prefs, titleOverride, extra) {
   const bookTitle = safeBookTitle(String(titleOverride || '').trim() || path.basename(projectReal))
   if (!bookTitle) throw storeError('invalid-title', 400)
   const projectDoc = docs.find((d) => String(d.rel).toLowerCase() === 'project.md')
-  const html = renderArchiveHtml({
+  const model = {
     title: bookTitle,
     premise: premiseOf(projectDoc?.content || ''),
     generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
@@ -219,8 +220,14 @@ function assembleArchiveModel(projectReal, prefs, titleOverride, extra) {
     ledger: ledgerSummary(projectReal, outline.rows[0]?.abs),
     docs,
     ...(extra || {}),
-  })
-  return { html, bookTitle, counts: { settings: settings.length, docs: docs.length, chapters: outline.rows.length } }
+  }
+  return { model, bookTitle, counts: { settings: settings.length, docs: docs.length, chapters: outline.rows.length } }
+}
+
+/** 导出口：同一份 model 渲染成单文件自包含 HTML（打印/分享快照，渲染层保持不动）。 */
+function assembleArchiveModel(projectReal, prefs, titleOverride, extra) {
+  const { model, bookTitle, counts } = buildArchiveModel(projectReal, prefs, titleOverride, extra)
+  return { html: renderArchiveHtml(model), bookTitle, counts }
 }
 
 /**
@@ -768,10 +775,13 @@ export function apply(ctx) {
         }
 
         /**
-         * 作品档案页（HTML 文档，只读）：与 archive-export 同一份组装口径，但**不落盘**。
+         * 作品档案页（HTML 文档，只读）：与 archive-export 同一份组装口径（buildArchiveModel），但**不落盘**。
          * 它是「档案作为一个页面」的地址——独立窗口（shell:open-wiki）或浏览器直接打开都走这里。
+         * 形态是**多页站点**（lib/archive-site.js）：query 的 page 参数是白名单页 id
+         * （index 首页 / settings / progress / ledger / docs / doc-N 篇目 / doc-N-sK 节 / ch-N 章），
+         * 缺省首页、非法形状回首页、越界页逐层回落（节→篇→资料，章→进度）。
          * 每次请求现算、明确不缓存（缓存里的设定是过期的，比没有更糟）；CSP 关掉脚本/图片/连接，
-         * 作者稿子里的东西只能当文字看。query: path（项目内任意路径）
+         * 作者稿子里的东西只能当文字看。query: path（项目内任意路径）, page?（页 id）
          */
         if (req.method === 'GET' && route === 'wiki') {
           const roots = effectiveRoots(cfg)
@@ -807,7 +817,18 @@ export function apply(ctx) {
                 projects.push({ path: resolved, name: p.name, rootLabel: r.label || '' })
               }
             }
-            const { html } = assembleArchiveModel(projectReal, cfg.prefs, '', { projects, currentPath: projectReal })
+            const { model } = buildArchiveModel(projectReal, cfg.prefs, '', { projects, currentPath: projectReal })
+            const page = parseWikiPage(url.searchParams.get('page'))
+            // 章页正文按需现读（档案是此刻的投影：读不到就如实说，不拿旧稿冒充）
+            let chapterText = null
+            const chm = /^ch-(\d+)$/.exec(page)
+            if (chm) {
+              const ch = (model.chapters || [])[Number(chm[1]) - 1]
+              if (ch?.abs) {
+                try { chapterText = fs.readFileSync(ch.abs, 'utf8') } catch { chapterText = null }
+              }
+            }
+            const html = renderWikiSite(model, { page, projectPath: projectReal, chapterText })
             res.statusCode = 200
             res.setHeader('content-type', 'text/html; charset=utf-8')
             res.setHeader('content-security-policy', WIKI_CSP)

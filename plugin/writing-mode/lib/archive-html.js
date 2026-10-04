@@ -59,6 +59,9 @@ export function buildRefResolver(model = {}) {
 
 // 锚点 id 只由 host 生成（doc-N / ch-N / set-N / sec-*），作者文字进不了 href。
 const SAFE_ANCHOR = /^#[a-z0-9-]{1,80}$/
+// 站内翻页链接（wiki 站点模式）同样只由 host 生成：path 经 encodeURIComponent+转义、page 是白名单页 id，
+// 引号/尖括号进不了属性。导出页的解析器不产出这种链接，这条白名单对它是惰性兜底。
+const SAFE_PAGE = /^\?route=wiki&amp;path=[^"\\<>]{1,800}(?:&amp;page=[a-z0-9-]{1,80})?$/
 
 /**
  * 行内标记。入参必须是**已转义**的文字；行内码、链接与 [[标注]] 先摘出来占位，
@@ -74,7 +77,7 @@ export function inlineMarks(escaped, resolveRef) {
   s = s.replace(/`([^`\n]+)`/g, (m, code) => keep('<code>' + code + '</code>'))
   s = s.replace(/\[\[([^\]\n]{1,80})\]\]/g, (m, name) => {
     const href = typeof resolveRef === 'function' ? String(resolveRef(name) || '') : ''
-    return keep(SAFE_ANCHOR.test(href)
+    return keep(SAFE_ANCHOR.test(href) || SAFE_PAGE.test(href)
       ? '<a class="ref" href="' + href + '">' + name + '</a>'
       : '<span class="ref">' + name + '</span>')
   })
@@ -100,8 +103,9 @@ const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(String(l))
 const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(String(l))
 const cellsOf = (l) => String(l).trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
 // 光有标签没有内容的行：`题材类型：` / `金手指名称：`。标签限 15 字以内、冒号后即行尾。
-const isLabelOnly = (l) => /^[^：:]{1,15}[：:]\s*$/.test(String(l).trim())
-const inline = (text, refs) => inlineMarks(escapeHtml(text), refs)
+// wiki 站点的卡片摘录也用同一口径（archive-site.js 的 excerptOf），不在两处各写一份。
+export const isLabelOnly = (l) => /^[^：:]{1,15}[：:]\s*$/.test(String(l).trim())
+export const inline = (text, refs) => inlineMarks(escapeHtml(text), refs)
 
 /**
  * 资料正文的 Markdown 子集渲染（块级）：标题 / 分隔线 / 表格 / 引用 / 有序无序列表 / 段落。
@@ -181,8 +185,8 @@ export function renderMarkdown(text, refs, opts) {
   return out.join('\n')
 }
 
-/** 自包含样式：屏幕上是稿纸色的档案页，打印时去底色、留分页。 */
-const CSS = `
+/** 自包含样式：屏幕上是稿纸色的档案页，打印时去底色、留分页。wiki 站点（archive-site.js）在这份基础上追加自己的站点样式。 */
+export const CSS = `
 :root{--ink:#292a26;--ink2:#52554b;--ink3:#777b6c;--line:#cfcec4;--paper:#f7f5ef;--layer:#efede7;--brand:#526d51;--warn:#c9a227;--bad:#b34636}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.85 "Source Han Serif SC","Noto Serif SC","Songti SC","SimSun",Georgia,serif}
@@ -271,7 +275,7 @@ a.ref:hover{color:var(--brand)}
 const FROM_LABEL = { assistant: '来自讨论', host: '内核', author: '作者记录' }
 const KIND_LABEL = { preference: '偏好', 'open-question': '待定', fact: '设定' }
 
-function settingsSection(m, refs) {
+export function settingsSection(m, refs) {
   const list = m.settings || []
   const cards = list.map((it, i) => {
     const excerpts = (it.sources || []).filter((x) => x && x.excerpt).slice(0, 2)
@@ -298,26 +302,35 @@ function settingsSection(m, refs) {
     + '</section>'
 }
 
-function progressSection(m, refs) {
+/** 近 N 天柱条（与写作台检查页同一数据来源 stats.days）：纯 CSS，无脚本。进度区与 wiki 首页共用。 */
+export function dayBars(s) {
+  const days = Array.isArray(s?.days) ? s.days : []
+  if (!days.length) return ''
+  const maxDay = Math.max(0, ...days.map((d) => Number(d.total) || 0))
+  return '<div class="bars">' + days.map((d) => {
+    const v = Number(d.total) || 0
+    const h = v <= 0 ? 2 : Math.max(4, Math.round((v / maxDay) * 28))
+    return '<span class="bar' + (v > 0 ? ' on' : '') + '" style="height:' + h + 'px" title="'
+      + escapeHtml(d.day) + ' · ' + v + ' 字"></span>'
+  }).join('') + '</div>'
+}
+
+export function progressSection(m, refs, nav) {
   const rows = m.chapters || []
   const s = m.stats || {}
   const goal = Number(m.dailyGoal) || 0
   const total = rows.reduce((n, r) => n + (Number(r.chars) || 0), 0)
-  // 近 N 天柱条（与写作台检查页同一数据来源 stats.days）：纯 CSS，无脚本
-  const days = Array.isArray(s.days) ? s.days : []
-  const maxDay = Math.max(0, ...days.map((d) => Number(d.total) || 0))
-  const bars = days.length
-    ? '<div class="bars">' + days.map((d) => {
-      const v = Number(d.total) || 0
-      const h = v <= 0 ? 2 : Math.max(4, Math.round((v / maxDay) * 28))
-      return '<span class="bar' + (v > 0 ? ' on' : '') + '" style="height:' + h + 'px" title="'
-        + escapeHtml(d.day) + ' · ' + v + ' 字"></span>'
-    }).join('') + '</div>'
-    : ''
+  const bars = dayBars(s)
   const gate = (r) => (r.gate
     ? '<span class="gate ' + (r.gate.pass ? 'pass' : 'fail') + '">'
       + inline(r.gate.pass ? '门禁 ✓' : '门禁 ' + (r.gate.fail ?? '?')) + '</span>'
     : '')
+  // wiki 站点模式传 nav.chapterHref(1 起序号)：章节名成为通往该章正文页的链接；导出页不传，保持纯文字
+  const nameHtml = (r, i) => {
+    const label = inline(r.name, refs)
+    const href = nav && typeof nav.chapterHref === 'function' ? String(nav.chapterHref(i + 1) || '') : ''
+    return href ? '<a class="pg" href="' + href + '">' + label + '</a>' : label
+  }
   return '<section id="sec-progress"><h2>进度<span class="meta">' + inline(rows.length + ' 篇 · ' + total + ' 字') + '</span></h2>'
     + '<p class="stats"><span><b>' + inline(Number(s.today) || 0) + '</b> 字 · 今天</span>'
     + '<span><b>' + inline(Number(s.streak) || 0) + '</b> 天连更</span>'
@@ -325,7 +338,7 @@ function progressSection(m, refs) {
     + '</p>'
     + bars
     + (rows.length
-      ? '<ol class="chapters">' + rows.map((r, i) => '<li id="ch-' + (i + 1) + '"><span class="ch-name">' + inline(r.name, refs) + '</span>'
+      ? '<ol class="chapters">' + rows.map((r, i) => '<li id="ch-' + (i + 1) + '"><span class="ch-name">' + nameHtml(r, i) + '</span>'
         + '<span class="ch-meta">' + inline((Number(r.chars) || 0) + ' 字') + '</span>' + gate(r)
         + (r.hook ? '<span class="ch-hook">' + inline(r.hook, refs) + '</span>' : '') + '</li>').join('') + '</ol>'
       : '<p class="note">draft/ 下还没有正文。</p>')
@@ -333,7 +346,7 @@ function progressSection(m, refs) {
     + '</section>'
 }
 
-function ledgerSection(m, refs) {
+export function ledgerSection(m, refs) {
   const l = m.ledger || {}
   const timeline = (l.timeline || []).map((x) => '<li>' + inline(x, refs) + '</li>')
   return '<section id="sec-ledger"><h2>时间与伏笔</h2>'
@@ -379,6 +392,21 @@ function tocSection(m) {
   return '<nav class="toc" aria-label="目录"><h2>目录</h2><ul>' + items.join('') + '</ul></nav>'
 }
 
+/** 单篇资料的渲染（篇内小目录 + 正文）：导出页的资料区与 wiki 站点的篇目页共用同一形态。 */
+export function docArticle(d, i, refs) {
+  // 篇内小目录：标题 ≥2 才给（一篇只有一个标题时，目录纯属噪音）
+  const headings = []
+  const body = d.markdown === false
+    ? '<pre>' + escapeHtml(d.content) + '</pre>'
+    : renderMarkdown(d.content, refs, { anchorPrefix: 'doc-' + (i + 1), headings })
+  return '<article class="doc" id="doc-' + (i + 1) + '"><div class="rel">' + inline(d.rel) + '</div>'
+    + (headings.length >= 2
+      ? '<nav class="docToc" aria-label="本篇目录">' + headings.map((x) =>
+        '<a class="lv' + x.level + '" href="' + x.anchor + '">' + escapeHtml(x.title) + '</a>').join('') + '</nav>'
+      : '')
+    + '<div class="body">' + body + '</div></article>'
+}
+
 function docsSection(m, refs) {
   const docs = m.docs || []
   if (!docs.length) return '<section id="sec-docs"><h2>资料</h2><p class="note">这个项目还没有设定集、大纲或状态资料。</p></section>'
@@ -391,17 +419,7 @@ function docsSection(m, refs) {
       group = d.group
       out += '<div class="docgroup"><h3>' + inline(group) + '</h3>'
     }
-    // 篇内小目录：标题 ≥2 才给（一篇只有一个标题时，目录纯属噪音）
-    const headings = []
-    const body = d.markdown === false
-      ? '<pre>' + escapeHtml(d.content) + '</pre>'
-      : renderMarkdown(d.content, refs, { anchorPrefix: 'doc-' + (i + 1), headings })
-    out += '<article class="doc" id="doc-' + (i + 1) + '"><div class="rel">' + inline(d.rel) + '</div>'
-      + (headings.length >= 2
-        ? '<nav class="docToc" aria-label="本篇目录">' + headings.map((x) =>
-          '<a class="lv' + x.level + '" href="' + x.anchor + '">' + escapeHtml(x.title) + '</a>').join('') + '</nav>'
-        : '')
-      + '<div class="body">' + body + '</div></article>'
+    out += docArticle(d, i, refs)
   }
   return out + '</div></section>'
 }

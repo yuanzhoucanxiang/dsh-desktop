@@ -232,7 +232,8 @@ app.whenReady().then(async () => {
   assert.equal(fs.readFileSync(exported, 'utf8'), page, '再导出不得覆盖上一份')
   console.log('PASS 导出 HTML：独占命名、候选不入、转义守住、原稿与文档库不动')
 
-  // 11) wiki 文档路由：与导出同一份口径，但它是「一个页面」——禁脚本、不缓存、越界要拒
+  // 11) wiki 多页站点：与导出同一份口径，但它是「一个站点」——禁脚本、不缓存、越界要拒，
+  //     首页是入口（前提 + 导航 + 入口卡），内容断言落到各子页上
   //     （必须在切到 file:// 之前跑：那时相对 fetch 会打到 file:///api/…）
   // 库根下的散稿让 scanTree 把库根自己也列成一条"作品"（独立文稿）：它渲染不出档案，
   // 既不该凑成"两部作品"，也不该作为切换链接出现（曾指到进程 cwd 去）。
@@ -242,13 +243,40 @@ app.whenReady().then(async () => {
   assert.match(wiki.type, /text\/html/, 'wiki 应返回 HTML：' + wiki.type)
   assert.ok(wiki.csp.includes("script-src 'none'"), 'wiki 页必须禁脚本：' + wiki.csp)
   assert.equal(wiki.cache, 'no-store', '档案是此刻的投影，不许缓存')
-  assert.ok(wiki.text.includes('夜行禁令') && wiki.text.includes('港口与禁令'), '与导出页同一份内容口径')
-  assert.ok(!wiki.text.includes('钥匙能开旧电报室'), '候选不入 wiki 页')
+  // 首页形态：导航 + 前提 + 入口卡；不再堆全部内容（章节正文/设定结论只在子页）
+  assert.ok(wiki.text.includes('class="sitebar"'), '首页要有站点导航')
+  assert.ok(wiki.text.includes('class="premise"'), '首页要有作品前提块（premiseOf 口径）')
+  assert.ok(/&amp;page=settings/.test(wiki.text) && /&amp;page=docs/.test(wiki.text), '首页要有通往子页的导航链接')
+  assert.ok(!wiki.text.includes('雾从海面压过来'), '首页不该堆章节正文')
+  assert.ok(!wiki.text.includes('钥匙能开旧电报室'), '候选不入 wiki 站任何页')
+  // 设定子页：已确认设定与边界同现
+  const wikiSettings = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page=settings');return await r.text()})()`)
+  assert.ok(wikiSettings.includes('夜行禁令') && wikiSettings.includes('救援船获得许可后可以出航'), '设定页要有已确认设定与边界')
+  assert.ok(!wikiSettings.includes('钥匙能开旧电报室'), '候选不入设定页')
+  // 资料索引 → 篇目页 → 节页：「每个内容都有对应的页面」
+  const wikiDocs = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page=docs');return await r.text()})()`)
+  const worldDoc = /data-rel="bible\/world\.md" href="\?route=wiki&amp;path=[^"]*?&amp;page=(doc-\d+)"/.exec(wikiDocs)
+  assert.ok(worldDoc, '资料索引里要能找到 world.md 的篇目页：' + wikiDocs.slice(0, 300))
+  const wikiDoc = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page=${worldDoc[1]}');return await r.text()})()`)
+  const worldSec = /data-section="\d+" href="\?route=wiki&amp;path=[^"]*?&amp;page=(doc-\d+-s\d+)"><h3>港口与禁令<\/h3>/.exec(wikiDoc)
+  assert.ok(worldSec, 'world.md 应按小节拆出节卡（港口与禁令）：' + wikiDoc.slice(0, 400))
+  const wikiSec = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page=${worldSec[1]}');return await r.text()})()`)
+  assert.ok(wikiSec.includes('雾季入夜封港'), '节页要有该节正文')
+  assert.ok(!wikiSec.includes('港务所自行执法'), '节页只装自己这一节')
+  // 章页：当前版正文 + 下一章链接；历史版不出现
+  const wikiCh = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page=ch-1');return await r.text()})()`)
+  assert.ok(wikiCh.includes('雾从海面压过来'), '章页要有当前版正文')
+  assert.ok(!wikiCh.includes('第一章旧稿'), '章页只放当前版')
+  assert.ok(/&amp;page=ch-2/.test(wikiCh), '章页要有下一章链接')
+  // 非法 page 回首页，且作者文字不成为标签
+  const wikiBad = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(project)})+'&page='+encodeURIComponent('";<script>alert(1)</script>'));return await r.text()})()`)
+  assert.ok(wikiBad.includes('class="sitebar"') && !wikiBad.includes('<script>alert'), '非法 page 回首页且文字不成为标签')
+  assert.ok(!wikiBad.includes('undefined'), '回落页不该漏 undefined')
   const outside = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(temp)}));return {s:r.status,b:(await r.text()).slice(0,120)}})()`)
   assert.equal(outside.s, 400, '库外路径应被拒，实得 ' + outside.s)
   assert.match(outside.b, /path-outside-roots|no-project/, outside.b)
   assert.ok(!wiki.text.includes('class="switcher"'), '库根散稿不算第二部作品，只有一部时不该给切换器')
-  console.log('PASS wiki 路由：HTML + CSP 禁脚本 + 不缓存 + 库外拒绝')
+  console.log('PASS wiki 路由：多页站点（首页/设定/资料/篇目/节/章）+ CSP 禁脚本 + 不缓存 + 库外拒绝')
 
   // 11b) 作品切换器：文库里出现第二部作品后给下拉，提交能换到另一部的档案
   const second = path.join(root, '第二部')
@@ -264,7 +292,9 @@ app.whenReady().then(async () => {
   assert.ok(switched.includes('另一部作品的开头'), '切过去应是另一部的前提')
   assert.ok(!switched.includes('夜行禁令'), '切过去不该还带着上一部的设定')
   // 切换器里不许有死链：每个链接的目标都必须真能渲染（库根这类"不是作品"的条目不该出现）
-  const links = [...wiki2.matchAll(/<a href="\?route=wiki&amp;path=([^"]+)"/g)].map((m) => decodeURIComponent(m[1]))
+  // （站内翻页链接一律 class 在 href 前，这里 `<a href="?route=wiki` 只匹配切换条自己的链接；
+  //   path 抓到 & 或引号为止，免得将来切换条带别的参数时把整串当路径）
+  const links = [...wiki2.matchAll(/<a href="\?route=wiki&amp;path=([^&"]+)"/g)].map((m) => decodeURIComponent(m[1]))
   assert.ok(links.length >= 1, '应有至少一条切换链接')
   for (const target of links) {
     const status = await evaluate(`(async()=>{const r=await fetch('/api/writing-mode?route=wiki&path='+encodeURIComponent(${JSON.stringify(target)}));return r.status})()`)
@@ -297,16 +327,31 @@ app.whenReady().then(async () => {
   await shoot('archive-export.png')
   console.log('PASS 导出页自包含：单文件打开即渲染，脚本不执行')
 
-  // 13) 当独立页面打开：目录可用、稿件脚本不执行
-  await win.loadURL(`http://127.0.0.1:${server.address().port}/api/writing-mode?route=wiki&path=${encodeURIComponent(project)}`)
+  // 13) 当独立站点打开：导航可点、子页渲染、稿件脚本不执行
+  const wikiBase = `http://127.0.0.1:${server.address().port}/api/writing-mode?route=wiki&path=${encodeURIComponent(project)}`
+  await win.loadURL(wikiBase)
   await waitFor(`document.title.includes('演示项目')`)
   assert.equal(await evaluate(`window.__pwned===undefined`), true, 'wiki 页里稿件脚本不得执行')
-  assert.ok(await evaluate(`!!document.querySelector('.toc a[href^="#doc-"]')`), 'wiki 页应带目录')
-  const wikiHash = await evaluate(`(document.querySelector('.toc a[href^="#sec-"]')||{getAttribute:()=>''}).getAttribute('href')`)
-  await evaluate(`document.querySelector('.toc a[href="${wikiHash}"]').click()`)
-  await waitFor(`location.hash===${JSON.stringify(wikiHash)}`)
+  // 点导航进设定页（真点链接真导航，不只是 fetch 200）
+  assert.ok(await evaluate(`!!document.querySelector('.sitebar a[href*="page=settings"]')`), '站点导航应有设定页入口')
+  await evaluate(`document.querySelector('.sitebar a[href*="page=settings"]').click()`)
+  await waitFor(`document.body.innerText.includes('夜行禁令') && location.search.includes('page=settings')`)
+  // 资料索引 → 篇目页 → 节页（每个人物/小节一页）
+  await evaluate(`document.querySelector('.sitebar a[href*="page=docs"]').click()`)
+  await waitFor(`!!document.querySelector('[data-rel="bible/world.md"]')`)
+  await evaluate(`document.querySelector('[data-rel="bible/world.md"]').click()`)
+  await waitFor(`document.body.innerText.includes('港口与禁令') && location.search.includes('page=doc-')`)
+  await evaluate(`Array.from(document.querySelectorAll('a.pgcard')).find(e=>e.textContent.includes('港口与禁令')).click()`)
+  await waitFor(`document.body.innerText.includes('雾季入夜封港') && /page=doc-\\d+-s\\d+/.test(location.search)`)
+  assert.ok(!(await evaluate(`document.body.innerText`)).includes('港务所自行执法'), '节页只装自己这一节')
+  await shoot('archive-wiki-section.png')
+  // 章页：与切换条同为 GET 链接，直接按页 id 打开也该能到
+  await win.loadURL(wikiBase + '&page=ch-1')
+  await waitFor(`document.body.innerText.includes('雾从海面压过来')`)
+  assert.ok(await evaluate(`!!document.querySelector('.pager a[href*="page=ch-2"]')`), '章页应有下一章')
   // 切换条在**真页面**里点了要能换页（fetch 200 只证明服务端渲染得出，不证明浏览器会导航）
-  assert.ok(await evaluate(`!!document.querySelector('.switcher a')`), '此时库里已有第二部，该给切换链接')
+  await win.loadURL(wikiBase)
+  await waitFor(`!!document.querySelector('.switcher a')`)
   assert.ok(await evaluate(`!!document.querySelector('.switcher .is-current')`), '当前这部应显示为不可点')
   await evaluate(`document.querySelector('.switcher a').click()`)
   await waitFor(`document.title.includes('第二部')`)
@@ -314,9 +359,7 @@ app.whenReady().then(async () => {
   assert.ok(switchedBody.includes('另一部作品的开头'), '点切换条后页面应是另一部作品的档案')
   assert.ok(!switchedBody.includes('夜行禁令'), '换到另一部后不该还带着上一部的已确认设定')
   await shoot('archive-wiki-switched.png')
-  console.log('PASS 档案页里真点切换条：换到另一部作品的档案')
-  await shoot('wiki-page.png')
-  console.log('PASS wiki 页作为独立文档打开：目录跳转可用')
+  console.log('PASS wiki 站真点导航：顶条换区 / 篇目 / 节页 / 章页 / 切换条全链可用')
 
   assert.equal(errors.length, 0, errors.join('\n'))
   console.log('WRITING_ARCHIVE_UI_OK', temp)
