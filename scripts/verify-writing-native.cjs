@@ -83,6 +83,7 @@ app.whenReady().then(async () => {
   await waitFor(`!!document.querySelector('.dshWmItem')`)
   await evaluate(`document.querySelector('.dshWmItem').click()`)
   await waitFor(`document.querySelector('.dshWmEditor')?.value.includes('灯塔的影子')`)
+  await button('AI') // 纯写作默认收起右栏：先展开再走伙伴断言
   await waitFor(`!!document.querySelector('.dshWmChatInput')`)
   assert.equal(await evaluate(`!!document.querySelector('[data-writing-companion]')`), false)
   assert.equal(await evaluate(`document.querySelector('.dshWmCompanion').innerText.includes('探索未至之境')`), false)

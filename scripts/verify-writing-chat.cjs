@@ -79,6 +79,7 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
   await clickFile('第1章-v1.md')
   await waitFor(`document.querySelector('.dshWmEditor')?.value==='第一章原文'`)
+  await button('AI') // 纯写作默认收起右栏：先展开再走伙伴断言
   await waitFor(`!!document.querySelector('.dshWmChatInput')`)
   await input('.dshWmChatInput', '她为什么不拆信？')
   await evaluate(`document.querySelector('.dshWmEditor').setSelectionRange(0,3)`)

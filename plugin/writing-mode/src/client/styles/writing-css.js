@@ -441,6 +441,12 @@ export const CSS = [
   '.dshWmWelcomeTitle{font-size:var(--wm-text-xl);font-weight:650;color:var(--dsw-alias-label-primary);}',
   '.dshWmWelcomeBody{font-size:var(--wm-text-sm);line-height:1.7;max-width:420px;}',
   '.dshWmEmpty{padding:16px;color:var(--wm-text-dim);font-size:var(--wm-text-sm);line-height:1.6;}',
+  /* 空页（无文件时的第一屏）：纯写作默认态的主角——一句标题 + 两个文字级动作。
+     类名避开 LibraryPane 已占用的 .dshWmEmpty/.dshWmWelcome。 */
+  '.dshWmEmptyPage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--wm-space-4);padding:40px;text-align:center;}',
+  '.dshWmEmptyTitle{font-size:var(--wm-text-xl);font-weight:var(--wm-weight-medium);letter-spacing:.06em;color:var(--dsw-alias-label-secondary,#52554b);}',
+  '.dshWmEmptyActs{display:flex;align-items:center;gap:var(--wm-space-3);font-size:var(--wm-text-sm);color:var(--wm-text-dim);}',
+  '.dshWmEmptyDot{opacity:.5;}',
   '.dshWmFlash{',
   '  position:absolute;left:50%;transform:translateX(-50%);top:60px;z-index:20;',
   '  max-width:70%;padding:8px 14px;border-radius:var(--wm-radius-m);',

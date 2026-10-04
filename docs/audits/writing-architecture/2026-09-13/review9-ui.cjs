@@ -26,6 +26,7 @@ fixture=fixture.replace('const plugin=entry.factory(name=>name===', 'const plugi
 const cut=fixture.indexOf("  await input('.dshWmChatInput', '她为什么不拆信？')")
 if(cut<0)throw Error('fixture start missing')
 fixture=fixture.slice(0,cut)+String.raw`
+  const reload=async()=>{await win.reload();await waitFor("!!document.querySelector('.dshWmBar')");await button('AI')} // 纯写作默认收起右栏：重载后先展开再断言伙伴面板
   const results=[],record=(name,result,evidence)=>{results.push({name,result,evidence});console.log(result,name,JSON.stringify(evidence))}
   const draftHost=await import(pathToFileURL(path.join(repo,'plugin/writing-mode/lib/draft-checkpoints.js')))
   const windowId=await evaluate("sessionStorage.getItem('dsh-writing-window')")
@@ -48,7 +49,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   assert.equal(draftHost.readCheckpoint(project,windowId).text,'LATEST_KEYSTROKES')
   assert.equal(await evaluate("document.querySelector('.dshWmChatInput').value"),'LATEST_KEYSTROKES')
   record('W02 queued latest input uses confirmed server revision','PASS',{baseRevs:writes.map(w=>w.baseRev),statuses:responses.map(r=>r.status),disk:draftHost.readCheckpoint(project,windowId).text})
-  await win.reload()
+  await reload()
   await waitFor("document.querySelector('.dshWmChatInput')?.value==='LATEST_KEYSTROKES'")
   await evaluate("document.querySelector('.dshWmSend').click()")
   await waitFor('testChat.calls.length===1')
@@ -64,7 +65,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   store.writeConfig({...store.readConfig(),companions:{}})
   draftHost.writeCheckpoint(project,windowId,{text:'OLD_CHECKPOINT',baseRev:draftHost.readCheckpoint(project,windowId).rev})
   await evaluate("sessionStorage.setItem('review-hold-draft','1')")
-  await win.reload()
+  await reload()
   await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
   await input('.dshWmChatInput','NEW_DURING_RECOVERY')
   assert.equal(await evaluate('testChat.posts.length'),0)
@@ -80,7 +81,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('W02 recovery defers writes and flushes latest edits','PASS',{baseRevs:late.posts.map(p=>p.baseRev),statuses:late.responses.map(r=>r.status),disk:draftHost.readCheckpoint(project,windowId).text})
   // Restore without editing during GET: visible recovered content must also become cache state.
   await evaluate("sessionStorage.removeItem('review-hold-draft')")
-  await win.reload()
+  await reload()
   await waitFor("document.querySelector('.dshWmChatInput')?.value==='NEW_DURING_RECOVERY'&&!!document.querySelector('.dshWmReference')")
   await evaluate("document.querySelector('[aria-label=\"移除稿件引用\"]').click()")
   await waitFor('testChat.responses.length===1')
@@ -92,11 +93,11 @@ fixture=fixture.slice(0,cut)+String.raw`
   await button('＋ 引用稿件 / 选区');await waitFor('testChat.responses.length===2')
   await input('.dshWmChatInput','EDIT_RESTORED_WITH_REFERENCE');await waitFor('testChat.responses.length===3')
   assert.ok(draftHost.readCheckpoint(project,windowId).reference)
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='EDIT_RESTORED_WITH_REFERENCE'&&!!document.querySelector('.dshWmReference')")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='EDIT_RESTORED_WITH_REFERENCE'&&!!document.querySelector('.dshWmReference')")
   record('R01 changing text preserves recovered reference across reload','PASS',{})
   store.writeConfig({...store.readConfig(),companions:{[project.toLowerCase()]:'fixture'}})
   await evaluate("sessionStorage.setItem('review-native-draft','NATIVE_AUTHORITATIVE')")
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='NATIVE_AUTHORITATIVE'&&!!document.querySelector('.dshWmReference')")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='NATIVE_AUTHORITATIVE'&&!!document.querySelector('.dshWmReference')")
   await evaluate("document.querySelector('[aria-label=\"移除稿件引用\"]').click()")
   await waitFor('testChat.responses.length===1')
   assert.equal(draftHost.readCheckpoint(project,windowId).text,'NATIVE_AUTHORITATIVE')
@@ -106,7 +107,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   // An explicit empty edit during recovery is a mutation and must be checkpointed too.
   draftHost.writeCheckpoint(project,windowId,{text:'OLD_TO_REMOVE',baseRev:draftHost.readCheckpoint(project,windowId).rev})
   await evaluate("sessionStorage.setItem('review-hold-draft','1')")
-  await win.reload()
+  await reload()
   await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
   await input('.dshWmChatInput','TEMP_THOUGHT')
   await input('.dshWmChatInput','')
@@ -116,7 +117,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   assert.equal(await evaluate('testChat.posts.length'),1)
   assert.equal(draftHost.readCheckpoint(project,windowId).text,'')
   await evaluate("sessionStorage.removeItem('review-hold-draft')")
-  await win.reload()
+  await reload()
   await waitFor("document.querySelector('.dshWmChatInput')?.value===''");await sleep(150)
   record('R02 empty recovery edit persists across reload','PASS',{afterReload:await evaluate("document.querySelector('.dshWmChatInput').value")})
   // A second writer updates the same checkpoint bucket after both local edits.
@@ -141,7 +142,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('Explicit local resolution saves latest local input','PASS',{disk:draftHost.readCheckpoint(project,windowId).text})
   // Binding is explicit here: input value is backed by the native draft store.
   store.writeConfig({...store.readConfig(),companions:{[project.toLowerCase()]:'fixture'}})
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='LOCAL_EDIT_WHILE_PAUSED'")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='LOCAL_EDIT_WHILE_PAUSED'")
   await evaluate('testChat.holdNextWrite=true')
   await input('.dshWmChatInput','BOUND_LOCAL')
   await waitFor('!!testChat.releaseWrite')
@@ -163,7 +164,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   store.writeConfig({...store.readConfig(),companions:{}})
   draftHost.writeCheckpoint(project,windowId,{text:'BEFORE_PENDING',baseRev:draftHost.readCheckpoint(project,windowId).rev})
   await evaluate("sessionStorage.setItem('review-hold-draft','1')")
-  await win.reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
+  await reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
   await input('.dshWmChatInput','LOCAL_PENDING')
   draftHost.writeCheckpoint(project,windowId,{text:'REMOTE_AFTER_GET',baseRev:draftHost.readCheckpoint(project,windowId).rev})
   await evaluate("sessionStorage.removeItem('review-hold-draft');testChat.releaseDraft()")
@@ -174,7 +175,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('S02 recovery-flush conflict presents recovery actions','PASS',{hasConflictAction:pendingBody.includes('采用远端'),visible:await evaluate("document.querySelector('.dshWmChatInput').value"),disk:draftHost.readCheckpoint(project,windowId).text})
 
   // Fresh unbound page: failed remote fetch must not be interpreted as an empty remote draft.
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='REMOTE_AFTER_GET'")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='REMOTE_AFTER_GET'")
   await evaluate('testChat.holdNextWrite=true')
   await input('.dshWmChatInput','LOCAL_MUST_SURVIVE_FAILED_READ')
   await waitFor('!!testChat.releaseWrite')
@@ -195,7 +196,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('Editing after remote adoption saves with correct revision','PASS',{})
   // Actual production 413 from the recovery flush, with no regular input callback.
   await evaluate("sessionStorage.setItem('review-hold-draft','1')")
-  await win.reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
+  await reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
   await input('.dshWmChatInput','X'.repeat(draftHost.MAX_TEXT+1))
   await evaluate("sessionStorage.removeItem('review-hold-draft');testChat.releaseDraft()")
   await waitFor('testChat.responses.length===1');await sleep(150)
@@ -210,7 +211,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('Shorter draft saves after 413 and clears error','PASS',{})
 
   // Repeated conflict while resolving keeps both available and pauses again.
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='SHORT_AFTER_413'")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='SHORT_AFTER_413'")
   await evaluate('testChat.holdNextWrite=true')
   await input('.dshWmChatInput','LOCAL_RESOLVE')
   await waitFor('!!testChat.releaseWrite')
@@ -241,7 +242,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   record('Input remains editable and can save after resolution 503','PASS',{})
   // Remote empty tombstone is a valid choice; adoption must clear native input and ref.
   store.writeConfig({...store.readConfig(),companions:{[project.toLowerCase()]:'fixture'}})
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='AFTER_RESOLVE_FAILURE'")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='AFTER_RESOLVE_FAILURE'")
   await evaluate('testChat.holdNextWrite=true')
   await input('.dshWmChatInput','BEFORE_REMOTE_TOMBSTONE')
   await waitFor('!!testChat.releaseWrite')
@@ -256,7 +257,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   // Reject fetch itself, not an HTTP error response, during recovery flush.
   store.writeConfig({...store.readConfig(),companions:{}})
   await evaluate("sessionStorage.setItem('review-hold-draft','1')")
-  await win.reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
+  await reload();await waitFor("!!document.querySelector('.dshWmChatInput')&&!!testChat.releaseDraft")
   await input('.dshWmChatInput','NETWORK_UNSAVED')
   await evaluate("testChat.rejectNextWrite=true;sessionStorage.removeItem('review-hold-draft');testChat.releaseDraft()")
   await waitFor('testChat.networkFailures===1');await sleep(150)
@@ -282,7 +283,7 @@ fixture=fixture.slice(0,cut)+String.raw`
 
   // A real session failure must not disappear on unrelated successful draft save.
   store.writeConfig({...store.readConfig(),companions:{[project.toLowerCase()]:'fixture'}})
-  await win.reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='NORMAL_NETWORK_UNSAVED'")
+  await reload();await waitFor("document.querySelector('.dshWmChatInput')?.value==='NORMAL_NETWORK_UNSAVED'")
   await evaluate("document.querySelector('.dshWmSend').click()")
   await waitFor('testChat.calls.length===1')
   await evaluate("testChat.resolve({ok:false,error:{message:'BUSINESS_SEND_FAILED'}})")

@@ -19,6 +19,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   await eval2("if(!document.querySelector('.dshWmRoot'))document.getElementById('dsh-writing-mode-float').click()")
   await wait2("!!document.querySelector('.dshWmItem')")
   await eval2("document.querySelector('.dshWmItem').click()")
+  await eval2("Array.from(document.querySelectorAll('.dshWmRoot button')).find(e=>e.textContent==='AI')?.click()") // 纯写作默认收起右栏
   await wait2("!!document.querySelector('.dshWmChatInput')")
 
   const memoryFile=path.join(project,'state/writing-memory.json');
@@ -30,7 +31,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   await button('项目备忘');await waitFor('!!document.querySelector("[data-world-panel]")');await click(evaluate,'手动新建设定');await field(evaluate,'title','未决的钟声规则');await field(evaluate,'conclusion','钟声含义还待讨论');
   await waitFor('document.querySelector("[data-world-journal]").innerText.includes("已保留")');
   await evaluate('(()=>{const k=Object.keys(sessionStorage).find(k=>k.startsWith("dsh-world-drafts-v1:"));const d=JSON.parse(sessionStorage.getItem(k));d.drafts[0].modelMark="open";d.drafts[0].pending=true;sessionStorage.setItem(k,JSON.stringify(d));})()');
-  await win.webContents.reload();await waitFor('!!document.getElementById("dsh-writing-mode-float")');await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('document.querySelector(".dshWmItem").click()');await waitFor('!!document.querySelector(".dshWmChatInput")');await button('项目备忘');await waitFor('!!document.querySelector("[data-world-field=title]")');
+  await win.webContents.reload();await waitFor('!!document.getElementById("dsh-writing-mode-float")');await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('document.querySelector(".dshWmItem").click()');await button('AI');await waitFor('!!document.querySelector(".dshWmChatInput")');await button('项目备忘');await waitFor('!!document.querySelector("[data-world-field=title]")');
   assert.ok(await evaluate('document.querySelector("[data-world-panel]").innerText.includes("仍待讨论")'));
   await click(evaluate,'存为候选');await waitFor('!!document.querySelector("[data-world-item]")');
   await eval2('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="项目备忘").click()');await wait2('!!document.querySelector("[data-world-item]")');await click(eval2,'打开候选');await wait2('!!document.querySelector("[data-world-field=title]")');
@@ -39,7 +40,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   await waitFor('document.querySelector("[data-world-journal]").innerText.includes("已保留")');
   await evaluate('localStorage.clear();sessionStorage.clear()'); // simulate losing browser origin storage: host recovery must suffice
   let prevented=false;win.webContents.on('will-prevent-unload',()=>{prevented=true});win.close();await sleep(150);assert.ok(win.isDestroyed());
-  win=new BrowserWindow({width:1500,height:1000,show:false,webPreferences:{backgroundThrottling:false}});await win.loadURL('http://127.0.0.1:'+port);await button('稍后配置');await sleep(500);await button('稍后配置');await waitFor('!!document.getElementById("dsh-writing-mode-float")');await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('document.querySelector(".dshWmItem").click()');await waitFor('!!document.querySelector(".dshWmChatInput")');await sleep(500);await button('项目备忘');await waitFor('!!document.querySelector("[data-world-item]")');
+  win=new BrowserWindow({width:1500,height:1000,show:false,webPreferences:{backgroundThrottling:false}});await win.loadURL('http://127.0.0.1:'+port);await button('稍后配置');await sleep(500);await button('稍后配置');await waitFor('!!document.getElementById("dsh-writing-mode-float")');await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('document.querySelector(".dshWmItem").click()');await button('AI');await waitFor('!!document.querySelector(".dshWmChatInput")');await sleep(500);await button('项目备忘');await waitFor('!!document.querySelector("[data-world-item]")');
   const returned=await evaluate('({editor:document.querySelector("[data-world-field=title]")?.value||null,cache:Object.keys(sessionStorage).filter(k=>k.startsWith("dsh-world-drafts-v1:"))})');assert.equal(returned.editor,null);assert.equal(prevented,false);assert.equal(memory().items.length,1);
   await waitFor('Array.from(document.querySelectorAll("[data-world-panel] button")).some(b=>b.textContent==="恢复这份编辑")');
   await click(evaluate,'恢复这份编辑');await waitFor('document.querySelector("[data-world-panel]").innerText.includes("关闭前唯一的新编辑")');
@@ -107,7 +108,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   const oldMemory=memory();oldMemory.projectKey=strongOld;fs.writeFileSync(path.join(strongOld,'state/writing-memory.json'),JSON.stringify(oldMemory));
   draftHost.writeCheckpoint(strongOld,'old-strong-window',{baseRev:0,text:'真实迁移未发送文字'});fs.renameSync(strongOld,migrated);
   await win.webContents.reload();await waitFor('!!document.getElementById("dsh-writing-mode-float")');await button('稍后配置');await sleep(300);await button('稍后配置');
-  await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('Array.from(document.querySelectorAll(".dshWmItem")).find(e=>e.title==="draft/novel/迁移验证.md").click()');await waitFor('!!document.querySelector(".dshWmChatInput")');await sleep(300);await button('项目备忘');await waitFor('!!document.querySelector("[data-world-panel]")');
+  await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');await waitFor('!!document.querySelector(".dshWmItem")');await evaluate('Array.from(document.querySelectorAll(".dshWmItem")).find(e=>e.title==="draft/novel/迁移验证.md").click()');await button('AI');await waitFor('!!document.querySelector(".dshWmChatInput")');await sleep(300);await button('项目备忘');await waitFor('!!document.querySelector("[data-world-panel]")');
   await waitFor('!!document.querySelector("[data-relocation-candidate=memory-project-key]")');
   await evaluate('(()=>{window.__confirmation="";window.confirm=t=>{window.__confirmation=t;return true};return true})()');
   await evaluate('document.querySelector("[data-relocation-candidate=memory-project-key] button").click()');

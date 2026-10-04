@@ -73,9 +73,21 @@ app.whenReady().then(async () => {
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(e=>e.textContent===${JSON.stringify(text)}).click()`)
   const input = (selector, text) => evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});const setter=Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(el,${JSON.stringify(text)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`)
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
+  // 纯写作第一屏契约：右栏不渲染、文库收起、空页在场；走完空页动作再进正题
+  await waitFor(`document.querySelector('.dshWmRoot')!==null`)
+  assert.equal(await evaluate(`document.querySelector('.dshWmSide.is-ai')`), null, '第一屏不应渲染右栏')
+  assert.equal(await evaluate(`document.body.getAttribute('data-writing-lib')`), '0', '第一屏文库应收起')
+  await waitFor(`document.querySelector('[data-wm-empty]')!==null`)
+  await button('从库里打开')
+  await waitFor(`document.body.getAttribute('data-writing-lib')==='1'`)
   await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
   await clickFile('第1章-v1.md')
   await waitFor(`document.querySelector('.dshWmEditor')?.value==='第一章原文'`)
+  assert.equal(await evaluate(`document.querySelector('[data-wm-empty]')`), null, '打开文稿后空页应让位')
+  await waitFor(`document.body.getAttribute('data-writing-lib')==='0'`)
+  console.log('PASS UI 纯写作第一屏：面板默认收起、空页借库、开稿自动归还')
+  await button('AI')
+  await waitFor(`document.querySelector('.dshWmSide.is-ai')!==null`)
   // 顶栏 v+1 已归拢进版本条（唯一「存新版」入口）
   assert.ok(!(await evaluate(`Array.from(document.querySelectorAll('button')).some(e=>e.textContent==='v+1')`)), '顶栏不应再有 v+1 按钮')
   // 版本条：单版本文档也渲染，条尾有「另存为新版」

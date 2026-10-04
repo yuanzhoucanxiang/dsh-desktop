@@ -39,6 +39,7 @@ fixture=fixture.slice(0,cut)+String.raw`
   await field('explanation','刷新前未保存\n仍在本窗口');
   await waitFor('document.querySelector("[data-world-journal]").innerText.includes("已保留")');
   await win.webContents.reload();
+  await waitFor('!!document.querySelector(".dshWmBar")');await button('AI'); // 纯写作默认收起右栏：重载后先展开
   await waitFor('!!document.querySelector(".dshWmChatInput")');await button('项目备忘');
   await waitFor('document.querySelector("[data-world-field=explanation]")?.value.includes("刷新前未保存")');
   evidence.push('Unsaved multiline editor restored across reload');

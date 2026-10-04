@@ -10,6 +10,7 @@ import * as jsx from 'react/jsx-runtime'
 import { T } from '../copy.js'
 import { TopBar } from './TopBar.js'
 import { StatusBar } from './StatusBar.js'
+import { EmptyState } from './EmptyState.js'
 import { api } from '../services/writing-api.js'
 import { harnessSessions } from '../adapters/harness/runtime.js'
 import { harnessAdapter } from '../adapters/harness/runtime.js'
@@ -86,7 +87,8 @@ export function WritingModeApp() {
   const { path: filePath, content, dirty, status: saveState } = documentState
   const setContent = value => editor.change(value)
   const setFilePath = path => { void editor.open(path) }
-  const [aiOpen, setAiOpen] = react.useState(true)
+  // 纯写作第一屏：右栏默认收起，作者点顶栏「AI」才召唤
+  const [aiOpen, setAiOpen] = react.useState(false)
   const [aiTab, setAiTab] = react.useState('companion')
   const [aiOut, setAiOut] = react.useState('')
   const [aiBusy, setAiBusy] = react.useState(false)
@@ -95,7 +97,11 @@ export function WritingModeApp() {
   const [gateBusy, setGateBusy] = react.useState(false)
   const [gateErr, setGateErr] = react.useState('')
   const [focus, setFocus] = react.useState(false)
-  const [libOpen, setLibOpen] = react.useState(true)
+  // 纯写作第一屏：文库默认收起；空页动作「借」开的文库在文件打开后自动归还
+  const [libOpen, setLibOpen] = react.useState(false)
+  const libAutoRef = react.useRef(false)
+  const openLibraryAuto = react.useCallback(() => { libAutoRef.current = true; setLibOpen(true) }, [])
+  const setLibOpenManual = react.useCallback((v) => { libAutoRef.current = false; setLibOpen(v) }, [])
   const [libQuery, setLibQuery] = react.useState('')
   const [libraryView, setLibraryView] = react.useState('writing')
   const [collapsed, setCollapsed] = react.useState(() => new Set())
@@ -191,6 +197,11 @@ export function WritingModeApp() {
       document.body.setAttribute('data-writing-lib', libOpen ? '1' : '0')
     } catch {}
   }, [libOpen])
+
+  // 空页「借」开的文库：文件一打开就自动收起，回到纯稿纸（作者手动开的不动）
+  react.useEffect(() => {
+    if (filePath && libAutoRef.current) { libAutoRef.current = false; setLibOpen(false) }
+  }, [filePath])
 
   // 取数与失效广播都收进 library-store（失败保留旧缓存 + 并发合并）。
   // 这里保留调用点沿用的名字：语义 = 触发一次刷新。
@@ -771,6 +782,10 @@ export function WritingModeApp() {
     await fillComposer(prompt)
   }
 
+  // 无文件且不在打开中：第一屏只给一张空页——页头/稿纸都不渲染，
+  // 免得挂出「— / 未命名」垃圾页头；查找栏同藏（无文件时 Ctrl+F 本来就是无效操作）。
+  const showEmpty = !filePath && !documentState.loading
+
   return jsx.jsx('div', {
     className: 'dshWmRoot',
     role: 'dialog',
@@ -784,7 +799,7 @@ export function WritingModeApp() {
         activeRoot,
         activateRoot,
         libOpen,
-        setLibOpen,
+        setLibOpen: setLibOpenManual,
         focus,
         setFocus,
         prefs,
@@ -850,7 +865,14 @@ export function WritingModeApp() {
               {
                 className: 'dshWmMain',
                 children: [
-                  jsx.jsx(EditorChrome, {
+                  showEmpty
+                    ? jsx.jsx(EmptyState, {
+                        onNew: () => { openLibraryAuto(); createDocInRoot() },
+                        onBrowse: openLibraryAuto,
+                      }, 'empty')
+                    : null,
+                  !showEmpty
+                    ? jsx.jsx(EditorChrome, {
                     filePath,
                     docFolder,
                     docBasename,
@@ -865,8 +887,9 @@ export function WritingModeApp() {
                     setFilePath,
                     comparePrev,
                     saveAsNewVersion,
-                  }, 'chrome'),
-                  findOpen
+                    }, 'chrome')
+                    : null,
+                  !showEmpty && findOpen
                     ? jsx.jsx(FindBar, {
                       findQuery,
                       setFindQuery,
@@ -883,7 +906,8 @@ export function WritingModeApp() {
                       setFindOpen,
                     }, 'findbar')
                     : null,
-                  jsx.jsx(
+                  !showEmpty
+                    ? jsx.jsx(
                     'div',
                     {
                       className: 'dshWmEditorWrap',
@@ -909,7 +933,8 @@ export function WritingModeApp() {
                       }),
                     },
                     'ew'
-                  ),
+                    )
+                    : null,
                   diffLines
                     ? jsx.jsx(DiffPanel, {
                       diffLines,

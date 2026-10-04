@@ -98,6 +98,9 @@ const zh = {
   rewriteDiscard: '丢弃',
   rewriteApplied: '改稿已采纳，可用 Ctrl+Z 撤销',
   rewriteLost: '原选区已变化且无法定位，请重新选区生成',
+  emptyTitle: '一张空页。',
+  emptyNew: '新建一篇',
+  emptyBrowse: '从库里打开',
 }
 const en = {
   toggle: 'Writing',
@@ -195,6 +198,9 @@ const en = {
   rewriteApplied: 'Rewrite applied — Ctrl+Z to undo',
   rewriteLost: 'The original selection moved and cannot be located; select and generate again',
   copied: 'Copied',
+  emptyTitle: 'A blank page.',
+  emptyNew: 'Start a new piece',
+  emptyBrowse: 'Open from library',
 }
 
 
