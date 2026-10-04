@@ -1054,9 +1054,9 @@ export function WritingModeApp() {
                                         'button',
                                         {
                                           type: 'button',
-                                          className:
-                                            'dshWmBtn' +
-                                            (a === 'research' || a === 'spark' ? ' is-on' : ''),
+                                          // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
+                                          // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
+                                          className: 'dshWmBtn',
                                           disabled: aiBusy,
                                           onClick: () => void runAssist(a),
                                           children: T[a] || a,

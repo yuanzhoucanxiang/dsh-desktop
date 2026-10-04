@@ -101,8 +101,20 @@ export const EditorChrome = react.memo(function EditorChrome({
                     { className: 'dshWmVerBarLabel', children: T.versions },
                     'vl'
                   ),
-                  ...versionSeries.map((s) =>
-                    jsx.jsx(
+                  /* 版本一多 chips 会铺满整行：>8 版时只留 v1、当前版与最近 6 版，中间收成 … */
+                  ...(() => {
+                    const MAX_CHIPS = 8
+                    let shown = versionSeries
+                    let ellipsisAt = -1
+                    if (versionSeries.length > MAX_CHIPS) {
+                      const tail = versionSeries.slice(-6)
+                      const cur = versionSeries.find((s) => s.abs === filePath)
+                      const head = [versionSeries[0]]
+                      if (cur && !tail.includes(cur) && cur !== versionSeries[0]) head.push(cur)
+                      shown = [...head, ...tail]
+                      ellipsisAt = head.length
+                    }
+                    const chip = (s) => jsx.jsx(
                       'button',
                       {
                         type: 'button',
@@ -114,7 +126,15 @@ export const EditorChrome = react.memo(function EditorChrome({
                       },
                       'v' + s.v
                     )
-                  ),
+                    const out = []
+                    shown.forEach((s, idx) => {
+                      if (idx === ellipsisAt) {
+                        out.push(jsx.jsx('span', { className: 'dshWmVerMore', children: '…' }, 'more'))
+                      }
+                      out.push(chip(s))
+                    })
+                    return out
+                  })(),
                   versionSeries.length >= 2
                     ? jsx.jsx(
                         'button',

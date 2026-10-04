@@ -2726,6 +2726,7 @@ var CSS = [
   "  border:1px solid var(--dsw-alias-border-l2);background:transparent;",
   "  color:var(--dsw-alias-label-secondary);",
   "}",
+  ".dshWmVerMore{align-self:center;color:var(--wm-text-dim);font-size:var(--wm-text-xs);padding:0 2px;}",
   ".dshWmVerChip:hover{border-color:var(--dsw-alias-brand-primary);}",
   ".dshWmVerChip.is-on{",
   "  border-color:var(--dsw-alias-brand-primary);",
@@ -2907,7 +2908,7 @@ var CSS = [
   "  background:var(--dsw-alias-bg-base);",
   "}",
   ".dshWmExportScroll{flex:1;overflow:auto;padding:24px 32px 40px;}",
-  ".dshWmExportInner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}",
+  ".dshWmExportInner{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}",
   ".dshWmExportHead{display:flex;align-items:center;gap:10px;}",
   ".dshWmExportTitle{font-size:var(--wm-text-lg);font-weight:650;color:var(--dsw-alias-label-primary);}",
   ".dshWmExportField{display:flex;align-items:center;gap:10px;}",
@@ -3391,8 +3392,7 @@ var StatusBar = react2.memo(function StatusBar2({
           title: T.statsToday + "（" + T.stats + "）",
           children: T.statsToday + " +" + stats.today + (dailyGoal > 0 ? " / " + dailyGoal + T.statsGoalUnit : "") + (stats.streak > 1 ? " · " + T.statsStreak + stats.streak + T.statsStreakUnit : "")
         }, "stv") : null,
-        /* G4 分组：码字统计与门禁摘要是两个心智模型，中间放无文本分隔线（复用顶栏那条） */
-        gate ? jsx3.jsx("span", { className: "dshWmBarSep" }, "sep-gate") : null,
+        /* 分组只靠 · 分隔符：顶栏那条 20px 竖线在 32px 状态条里是双重分隔（竖线+中点并存） */
         gate ? jsx3.jsx("span", {
           className: "dshWmStatusSep",
           children: "·"
@@ -5142,8 +5142,20 @@ var EditorChrome = react6.memo(function EditorChrome2({
                 { className: "dshWmVerBarLabel", children: T.versions },
                 "vl"
               ),
-              ...versionSeries.map(
-                (s) => jsx11.jsx(
+              /* 版本一多 chips 会铺满整行：>8 版时只留 v1、当前版与最近 6 版，中间收成 … */
+              ...(() => {
+                const MAX_CHIPS = 8;
+                let shown = versionSeries;
+                let ellipsisAt = -1;
+                if (versionSeries.length > MAX_CHIPS) {
+                  const tail = versionSeries.slice(-6);
+                  const cur = versionSeries.find((s) => s.abs === filePath);
+                  const head = [versionSeries[0]];
+                  if (cur && !tail.includes(cur) && cur !== versionSeries[0]) head.push(cur);
+                  shown = [...head, ...tail];
+                  ellipsisAt = head.length;
+                }
+                const chip = (s) => jsx11.jsx(
                   "button",
                   {
                     type: "button",
@@ -5152,8 +5164,16 @@ var EditorChrome = react6.memo(function EditorChrome2({
                     children: "v" + s.v
                   },
                   "v" + s.v
-                )
-              ),
+                );
+                const out = [];
+                shown.forEach((s, idx) => {
+                  if (idx === ellipsisAt) {
+                    out.push(jsx11.jsx("span", { className: "dshWmVerMore", children: "…" }, "more"));
+                  }
+                  out.push(chip(s));
+                });
+                return out;
+              })(),
               versionSeries.length >= 2 ? jsx11.jsx(
                 "button",
                 {
@@ -22491,7 +22511,9 @@ function WritingModeApp() {
                                     "button",
                                     {
                                       type: "button",
-                                      className: "dshWmBtn" + (a === "research" || a === "spark" ? " is-on" : ""),
+                                      // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
+                                      // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
+                                      className: "dshWmBtn",
                                       disabled: aiBusy,
                                       onClick: () => void runAssist(a),
                                       children: T[a] || a

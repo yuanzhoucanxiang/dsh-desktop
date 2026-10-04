@@ -99,6 +99,8 @@ const quoteOf = (l) => /^\s*>\s?(.*)$/.exec(String(l))
 const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(String(l))
 const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(String(l))
 const cellsOf = (l) => String(l).trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+// 光有标签没有内容的行：`题材类型：` / `金手指名称：`。标签限 15 字以内、冒号后即行尾。
+const isLabelOnly = (l) => /^[^：:]{1,15}[：:]\s*$/.test(String(l).trim())
 const inline = (text, refs) => inlineMarks(escapeHtml(text), refs)
 
 /**
@@ -135,6 +137,13 @@ export function renderMarkdown(text, refs, opts) {
       i += 2
       const body = []
       while (i < lines.length && isTableRow(lines[i])) { body.push(cellsOf(lines[i])); i += 1 }
+      // 模板骨架表（没有数据行，或数据行每个单元格都空）：摆一张空表纯属噪音，
+      // 收成一行占位说明，作者填了内容自然会恢复成表。
+      const filled = body.length > 0 && body.some((r) => r.some((c) => c))
+      if (!filled) {
+        out.push('<p class="note">（表格待填：' + head.map((c) => inline(c, refs)).join(' / ') + '）</p>')
+        continue
+      }
       const thead = '<thead><tr>' + head.map((c) => '<th>' + inline(c, refs) + '</th>').join('') + '</tr></thead>'
       const tbody = '<tbody>' + body.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c, refs) + '</td>').join('') + '</tr>').join('') + '</tbody>'
       out.push('<div class="tablewrap"><table>' + thead + tbody + '</table></div>')
@@ -164,7 +173,10 @@ export function renderMarkdown(text, refs, opts) {
       && !isBlank(lines[i]) && !headingOf(lines[i]) && !isHr(lines[i])
       && !bulletOf(lines[i]) && !orderedOf(lines[i]) && !quoteOf(lines[i]) && !isTableRow(lines[i])
     ) { para.push(lines[i]); i += 1 }
-    out.push('<p>' + inline(para.join('\n'), refs).replace(/\n/g, '<br>') + '</p>')
+    // 模板里"光有标签还没填"的行（`题材类型：` 这种）在档案页只是占位噪音，剔除；
+    // 与 premiseOf 的半成品行守卫同一口径。标签限 15 字，正文里真正的句子（一般更长）不受影响。
+    const kept = para.filter((l) => !isLabelOnly(l))
+    if (kept.length) out.push('<p>' + inline(kept.join('\n'), refs).replace(/\n/g, '<br>') + '</p>')
   }
   return out.join('\n')
 }
@@ -198,6 +210,9 @@ ul.plain li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--l
 .kind{flex:none;min-width:34px;font-size:11px;color:var(--ink3);font-family:system-ui,sans-serif}
 .stats{display:flex;flex-wrap:wrap;gap:18px;font-family:system-ui,sans-serif;font-size:13px;color:var(--ink2);margin:0 0 10px}
 .stats b{font-size:19px;color:var(--ink)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:30px;margin:0 0 12px}
+.bars .bar{flex:1;max-width:14px;background:var(--line);border-radius:2px 2px 0 0}
+.bars .bar.on{background:var(--brand)}
 ol.chapters{margin:0;padding-left:26px}
 ol.chapters li{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:3px 0}
 .ch-name{font-weight:600}
@@ -220,7 +235,7 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:.9em;background:var(-
 a{color:inherit}
 footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink3);font-family:system-ui,sans-serif}
 [id]{scroll-margin-top:14px}
-.toc{margin:28px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--layer)}
+.toc{margin:28px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--layer);position:sticky;top:10px;z-index:2;box-shadow:0 8px 24px rgba(41,42,38,.08)}
 .switcher{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:22px 0 0;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--layer);font-family:system-ui,sans-serif;font-size:12.5px}
 .switcherLabel{color:var(--ink3);margin-right:2px}
 .switcher a{color:var(--ink2);text-decoration:none;border-bottom:1px dotted var(--ink3)}
@@ -288,6 +303,17 @@ function progressSection(m, refs) {
   const s = m.stats || {}
   const goal = Number(m.dailyGoal) || 0
   const total = rows.reduce((n, r) => n + (Number(r.chars) || 0), 0)
+  // 近 N 天柱条（与写作台检查页同一数据来源 stats.days）：纯 CSS，无脚本
+  const days = Array.isArray(s.days) ? s.days : []
+  const maxDay = Math.max(0, ...days.map((d) => Number(d.total) || 0))
+  const bars = days.length
+    ? '<div class="bars">' + days.map((d) => {
+      const v = Number(d.total) || 0
+      const h = v <= 0 ? 2 : Math.max(4, Math.round((v / maxDay) * 28))
+      return '<span class="bar' + (v > 0 ? ' on' : '') + '" style="height:' + h + 'px" title="'
+        + escapeHtml(d.day) + ' · ' + v + ' 字"></span>'
+    }).join('') + '</div>'
+    : ''
   const gate = (r) => (r.gate
     ? '<span class="gate ' + (r.gate.pass ? 'pass' : 'fail') + '">'
       + inline(r.gate.pass ? '门禁 ✓' : '门禁 ' + (r.gate.fail ?? '?')) + '</span>'
@@ -297,6 +323,7 @@ function progressSection(m, refs) {
     + '<span><b>' + inline(Number(s.streak) || 0) + '</b> 天连更</span>'
     + (goal ? '<span>日目标 <b>' + inline(goal) + '</b></span>' : '')
     + '</p>'
+    + bars
     + (rows.length
       ? '<ol class="chapters">' + rows.map((r, i) => '<li id="ch-' + (i + 1) + '"><span class="ch-name">' + inline(r.name, refs) + '</span>'
         + '<span class="ch-meta">' + inline((Number(r.chars) || 0) + ' 字') + '</span>' + gate(r)
@@ -396,7 +423,7 @@ export function renderArchiveHtml(model = {}) {
     + '<style>' + CSS + '</style></head><body><div class="wrap">'
     + '<header><h1>' + escapeHtml(title) + '</h1>'
     + '<p class="sub">作品档案 · 生成于 ' + escapeHtml(model.generatedAt || '')
-    + ' · 只读投影：改设定请回写作台的项目备忘，这份文件删掉可随时重生成</p>'
+    + ' · 只读投影 · 改设定请回写作台的项目备忘</p>'
     + (model.premise ? '<p class="premise">' + inline(model.premise, refs) + '</p>' : '')
     + '</header>'
     + switcherSection(model)
@@ -459,5 +486,9 @@ export function premiseOf(projectMarkdown) {
     const t = block.trim()
     return t && !/^\s*#/.test(t) && !/[:：]\s*$/.test(t.split('\n')[0]) && t.length >= 6
   }) || '').trim()
-  return para.slice(0, 300)
+  // 段落里仍可能混着"光有标签没内容"的模板行（作品概览就是一串字段），
+  // 只取真正有内容的行，最多前三行，免得把整张字段表当前提。
+  const meaningful = para.split('\n').map((l) => l.trim())
+    .filter((l) => l && !isLabelOnly(l))
+  return meaningful.slice(0, 3).join('；').slice(0, 300)
 }
