@@ -1,6 +1,7 @@
 /**
  * 文档与测量域路由（get / save / version / delete / gate / ledger / stats / outline / reorder）。
- * 从 index.js 原样搬出，行为不变；ctx = { req, res, url, route, cfg }。
+ * 从 index.js 原样搬出（2026-10-05 阶段二：样板守卫收敛到 helpers.js，错误码/状态码不变）；
+ * ctx = { req, res, url, route, cfg }。
  */
 import path from 'node:path'
 import {
@@ -11,15 +12,13 @@ import { withFileLock } from '../file-lock.js'
 import { runGates, ledgerSummary, outlineSummary } from '../domain.js'
 import { seedBaseline, recordSave, projectStatsFor } from '../writing-stats.js'
 import { reorderDraftSeries } from '../reorder.js'
-import { writeJson, readJsonBody } from '../http.js'
+import { writeJson } from '../http.js'
+import { readParsed, targetUnder, projectUnder } from './helpers.js'
 
 /** GET get：打开稿件；打开即播种码字基线（首见只记字数不计增量）。 */
 export async function getDoc({ req, res, url, cfg }) {
-  const target = resolveUnderRoots(url.searchParams.get('path') || '', effectiveRoots(cfg))
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, url.searchParams.get('path') || '')
+  if (target === null) return
   try {
     const doc = readDoc(target)
     // 打开即播种码字基线：首见稿件只记当前字数、不计增量（防老项目首存虚增）。
@@ -35,11 +34,8 @@ export async function getDoc({ req, res, url, cfg }) {
 
 /** POST save / version：写稿与另存新版；成功后 host 侧码字记账。 */
 export async function saveDoc({ req, res, route, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   const roots = effectiveRoots(cfg)
   let targetPath = parsed?.path
   if (!targetPath && route === 'save') {
@@ -53,11 +49,8 @@ export async function saveDoc({ req, res, route, cfg }) {
     }
     targetPath = newDraftPath(rootPath, parsed?.title)
   }
-  const target = resolveUnderRoots(targetPath, roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, targetPath)
+  if (target === null) return
   try {
     const doc = route === 'version'
       ? createVersion(target, parsed.content)
@@ -76,16 +69,10 @@ export async function saveDoc({ req, res, route, cfg }) {
 
 /** POST delete：删稿（带 revision 协议）。 */
 export async function deleteDocRoute({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
-  const target = resolveUnderRoots(parsed?.path || '', effectiveRoots(cfg))
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
+  const target = targetUnder({ res, cfg }, parsed?.path || '')
+  if (target === null) return
   try {
     deleteDoc(target, parsed.revision)
     writeJson(res, 200, { ok: true })
@@ -96,11 +83,8 @@ export async function deleteDocRoute({ req, res, cfg }) {
 
 /** POST gate：门禁（content 直给或按 path 现读）。 */
 export async function postGate({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   let content = parsed?.content
   let filePath = parsed?.path || ''
   if (typeof content !== 'string') {
@@ -108,11 +92,8 @@ export async function postGate({ req, res, cfg }) {
       writeJson(res, 400, { ok: false, error: 'need-content-or-path' })
       return
     }
-    const target = resolveUnderRoots(filePath, effectiveRoots(cfg))
-    if (target === null) {
-      writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-      return
-    }
+    const target = targetUnder({ res, cfg }, filePath)
+    if (target === null) return
     try {
       const doc = readDoc(target)
       content = doc.content
@@ -127,17 +108,11 @@ export async function postGate({ req, res, cfg }) {
 
 /** POST ledger：台账速览（按稿件路径解析作品）。 */
 export async function postLedger({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   const roots = effectiveRoots(cfg)
-  const target = resolveUnderRoots(parsed?.path || '', roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, parsed?.path || '')
+  if (target === null) return
   const proj = findProjectRoot(target.abs)
   if (!proj) {
     writeJson(res, 200, { ok: true, ledger: null })
@@ -153,11 +128,8 @@ export async function postLedger({ req, res, cfg }) {
 /** GET stats：码字统计（今日净增/连击/近 14 天 + 目标）。只读不记账；记账只在 save/version 成功后发生。 */
 export async function getStats({ req, res, url, cfg }) {
   const roots = effectiveRoots(cfg)
-  const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, url.searchParams.get('path') || '')
+  if (target === null) return
   const found = projectStatsFor(target.abs, { spanDays: 14 })
   if (!found) {
     writeJson(res, 200, { ok: true, stats: null })
@@ -172,12 +144,8 @@ export async function getStats({ req, res, url, cfg }) {
 
 /** GET outline：大纲视图批量口径（只读）：每章当前版字数/钩子/门禁 + structure.md 标题行 */
 export async function getOutline({ req, res, url, cfg }) {
-  const roots = effectiveRoots(cfg)
-  const project = resolveProjectDir(url.searchParams.get('project') || '', roots)
-  if (!project) {
-    writeJson(res, 400, { ok: false, error: 'invalid-project' })
-    return
-  }
+  const project = projectUnder({ res, cfg }, url.searchParams.get('project') || '')
+  if (project === null) return
   writeJson(res, 200, { ok: true, outline: outlineSummary(project) })
 }
 
@@ -186,17 +154,10 @@ export async function getOutline({ req, res, url, cfg }) {
  * 项目级锁互斥；期望顺序与现有系列一一对应才受理；绝不覆盖既有文件。
  */
 export async function postReorder({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
-  const roots = effectiveRoots(cfg)
-  const project = resolveProjectDir(parsed?.project || '', roots)
-  if (!project) {
-    writeJson(res, 400, { ok: false, error: 'invalid-project' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
+  const project = projectUnder({ res, cfg }, parsed?.project || '')
+  if (project === null) return
   if (!Array.isArray(parsed?.order)) {
     writeJson(res, 400, { ok: false, error: 'order-required' })
     return

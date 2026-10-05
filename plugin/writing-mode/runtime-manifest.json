@@ -10,6 +10,7 @@
     "plugin/writing-mode/lib/http.js",
     "plugin/writing-mode/lib/archive-model.js",
     "plugin/writing-mode/lib/routes/index.js",
+    "plugin/writing-mode/lib/routes/helpers.js",
     "plugin/writing-mode/lib/routes/config.js",
     "plugin/writing-mode/lib/routes/docs.js",
     "plugin/writing-mode/lib/routes/project.js",

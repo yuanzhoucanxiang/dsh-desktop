@@ -14,6 +14,7 @@ import { latestOfSeries, naturalSortFiles, chapterTitle, safeBookTitle, compileB
 import { parseWikiPage, renderWikiSite } from '../archive-site.js'
 import { assembleArchiveModel, buildArchiveModel, WIKI_CSP } from '../archive-model.js'
 import { writeJson, readJsonBody } from '../http.js'
+import { readParsed, targetUnder } from './helpers.js'
 
 /** GET templates：可用项目模板。 */
 export async function getTemplates({ res }) {
@@ -41,11 +42,8 @@ export async function postProjectResource({ req, res, cfg }) {
 
 /** POST create-project：轻量建项（默认 project.md + 首篇正文）。 */
 export async function postCreateProject({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   const title = String(parsed.title || '').trim() || '未命名项目'
   const premise = String(parsed.premise || '').trim()
   const tmpl = (parsed.fullTemplate === true ? renderTemplate : renderStarter)(parsed.templateId || 'novel', title, premise)
@@ -102,17 +100,11 @@ export async function postCreateProject({ req, res, cfg }) {
  * include 省略时默认收 draft/ 下的文本文件，并按系列只取最新版。
  */
 export async function postCompile({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   const roots = effectiveRoots(cfg)
-  const target = resolveUnderRoots(parsed?.path || '', roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, parsed?.path || '')
+  if (target === null) return
   const found = resolveProjectDir(target.abs, roots)
   const projectReal = found && realOrNull(found)
   if (!projectReal) {
@@ -207,17 +199,11 @@ export async function postCompile({ req, res, cfg }) {
  * body: { path（项目内任意路径）, title?（书名，默认取目录名） }
  */
 export async function postArchiveExport({ req, res, cfg }) {
-  const parsed = await readJsonBody(req)
-  if (parsed === null) {
-    writeJson(res, 400, { ok: false, error: 'invalid-json' })
-    return
-  }
+  const parsed = await readParsed({ req, res })
+  if (parsed === null) return
   const roots = effectiveRoots(cfg)
-  const target = resolveUnderRoots(parsed?.path || '', roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, parsed?.path || '')
+  if (target === null) return
   const found = resolveProjectDir(target.abs, roots)
   const projectReal = found && realOrNull(found)
   if (!projectReal) {
@@ -265,11 +251,8 @@ export async function postArchiveExport({ req, res, cfg }) {
  */
 export async function getWiki({ req, res, url, cfg }) {
   const roots = effectiveRoots(cfg)
-  const target = resolveUnderRoots(url.searchParams.get('path') || '', roots)
-  if (target === null) {
-    writeJson(res, 400, { ok: false, error: 'path-outside-roots' })
-    return
-  }
+  const target = targetUnder({ res, cfg }, url.searchParams.get('path') || '')
+  if (target === null) return
   const found = resolveProjectDir(target.abs, roots)
   const projectReal = found && realOrNull(found)
   if (!projectReal) {
