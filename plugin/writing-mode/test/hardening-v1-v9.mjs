@@ -32,7 +32,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
 
 // ── V1 · readBody 必须按字节收集后一次解码（原缺陷：大体积中文正文出现 U+FFFD） ──
 {
-  const { readBody, MAX_BODY_BYTES } = await import('../index.js')
+  const { readBody, MAX_BODY_BYTES } = await import('../lib/http.js')
   const server = http.createServer(async (req, res) => {
     const raw = await readBody(req)
     res.setHeader('content-type', 'application/json; charset=utf-8')
@@ -53,7 +53,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
   ok('V1 body 上限按字节计且与 CONTRACT 的 1 MiB 一致', MAX_BODY_BYTES === 1024 * 1024, String(MAX_BODY_BYTES))
   // 不断言「旧字串不在」：源码注释里会原文引用旧写法，纯文本扫描会误报。
   // 改成断言正向代码形状：按字节收集 + 最后一次性解码。
-  const readBodySrc = srcOf('../index.js')
+  const readBodySrc = srcOf('../lib/http.js')
   ok('V1 readBody 按 Buffer 收集并最后一次性 utf8 解码',
     /chunks\.push\(buf\)/.test(readBodySrc) && /Buffer\.concat\(chunks\)\.toString\('utf8'\)/.test(readBodySrc))
 }
@@ -186,7 +186,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
     quarantineStaleLock(bucketFile, { offline: true }) === null && fs.existsSync(bucketFile + '.lock'))
   fs.rmSync(bucketFile + '.lock')
 
-  const indexSrc = srcOf('../index.js')
+  const indexSrc = srcOf('../index.js') + srcOf('../lib/routes/memory.js')
   ok('CXR01 index.js 里再无任何在线清扫（启动与维护入口都只读/拒绝）',
     !/sweepStale/.test(indexSrc) && /listStaleDraftLocks\(\)/.test(indexSrc) && /stale-lock-clear-refused-online/.test(indexSrc))
 
@@ -371,7 +371,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
   ok('V6 旧口径桶可只读回退（升级不失联）', viaFallback?.text === '旧桶内容' && viaFallback.legacyBucket === true, JSON.stringify(viaFallback))
   const migrated = writeCheckpoint(trailing, 'legacyWin', { baseRev: 4, text: '迁移后' })
   ok('V6 回退读到的 rev 可作写入基线，写入落新桶', migrated.ok === true && readCheckpoint(trailing, 'legacyWin').text === '迁移后')
-  const srcIdx = srcOf('../index.js')
+  const srcIdx = srcOf('../lib/routes/sessions.js')
   ok('V6 草稿路由用规范路径而不是客户端原始串', /const resolved = draftBucket\(/.test(srcIdx) && !/readCheckpoint\(project \+/.test(srcIdx))
 }
 
@@ -385,7 +385,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
     JSON.stringify(Object.keys(meta)))
   const wm = checkpointMeta({ windowId: 'w2', rev: 1, updatedAt: 'x', text: JSON.stringify({ version: 1, drafts: [{ title: '甲' }, { title: '乙' }] }) }, { world: true })
   ok('V7 世界观桶给标题汇总，列表无需全文即可渲染', wm.summary?.draftCount === 2 && wm.summary.titles.join(',') === '甲,乙', JSON.stringify(wm.summary))
-  const srcIdx = srcOf('../index.js')
+  const srcIdx = srcOf('../lib/routes/sessions.js')
   ok('V7 路由列表有上限且回传 total/truncated', srcIdx.includes('.slice(0, MAX_DRAFT_LIST)') && srcIdx.includes('truncated: all.length > MAX_DRAFT_LIST'))
   ok('V7 上限是有限常量', Number.isInteger(MAX_DRAFT_LIST) && MAX_DRAFT_LIST > 0 && MAX_DRAFT_LIST <= 100, String(MAX_DRAFT_LIST))
   const many = path.join(temp, 'v7-many')
@@ -395,8 +395,11 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
 
 // ── V8 · 路由 × 方法白名单覆盖全部业务路由 ──
 {
-  const { ROUTE_METHODS } = await import('../index.js')
-  const src = srcOf('../index.js')
+  const { ROUTE_METHODS } = await import('../lib/http.js')
+  // 后端整治（2026-10-05）后路由体在 lib/routes/ 里：扫全部路由模块，而不是入口文件
+  const routesDir = new URL('../lib/routes/', import.meta.url)
+  const src = fs.readdirSync(routesDir).filter((f) => f.endsWith('.js'))
+    .map((f) => fs.readFileSync(new URL('../lib/routes/' + f, import.meta.url), 'utf8')).join('\n')
   const referenced = new Set([...src.matchAll(/route === '([a-z-]+)'/g)].map((m) => m[1]))
   const missing = [...referenced].filter((r) => !Object.prototype.hasOwnProperty.call(ROUTE_METHODS, r))
   ok('V8 所有被处理的 route 都在方法白名单里', missing.length === 0, JSON.stringify(missing))
@@ -404,7 +407,8 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
     Object.values(ROUTE_METHODS).every((ms) => ms.every((m) => m === 'GET' || m === 'POST')))
   ok('V8 project-recovery / coordination 受白名单约束',
     ROUTE_METHODS['project-recovery'].join() === 'GET,POST' && ROUTE_METHODS.coordination.join() === 'GET,POST')
-  ok('V8 content-type 门禁不再只判 POST', /req\.method !== 'GET' && !\/\^application/.test(src))
+  // content-type 门禁留在入口中间件（index.js），不在 routes/ 里
+  ok('V8 content-type 门禁不再只判 POST', /req\.method !== 'GET' && !\/\^application/.test(srcOf('../index.js')))
 }
 
 // ── V9 · 配额天花板必须有出口：先归档备份再裁，撤回不白占配额，迟到重试不重复建 ──

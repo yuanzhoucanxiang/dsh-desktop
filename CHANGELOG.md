@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- 写作模式 host 结构收口（后端整治阶段一，行为保持）：`index.js` 1407 行 god module 拆分——HTTP 公共层（环回/可信判定、路由×方法白名单、body 字节收集、JSON 响应）抽到 `lib/http.js`；档案数据组装抽到 `lib/archive-model.js`（archive-export 与 wiki 两出口共用口径不变）；31 条路由按域拆进 `lib/routes/`（config / docs / project / memory / sessions + 分发表），`index.js` 降到 134 行，只留插件生命周期（preset 自举注册、残留锁诊断）+ 中间件（可信判定/方法白名单/长度与 JSON 门禁/损坏配置守卫）+ 分发。顺带清掉 coordination 路由里逐请求打 stderr 的遗留调试输出。**打包 filter 补 `lib/routes/*`**——`verify-writing-package` 的「清单↔filter」断言当场抓住漏配，不改就是下个版本漏发整个路由层；hardening 的 V1/V6/V7/V8 源码形状探针同步改指向新模块（断言内容不变，只换文件路径）。全链 `verify:writing-quick` 592 项 0 非零。— 署名：ZCode
+
 ## [0.1.49] - 2026-10-05
 
 - 写作台第一屏改为**纯写作**：右栏（写作伙伴 / 文字工具 / 检查）与左侧文库默认收起，需要时点顶栏「库 ⟩」「AI」召唤；没有打开文稿时中栏不再挂「— / 未命名」空页头，而是一张真正的空页——「一张空页。」+「新建一篇 / 从库里打开」两个文字级动作。空页动作唤起的文库是「借来的」：文稿一打开就自动收起回到稿纸，作者自己开的文库不动；退出再进写作台，面板开合状态保留。门禁适配：`verify-writing-ui` 新增第一屏契约段（面板默认收起、空页借库、开稿自动归还）；chat / native 两个共享夹具改为「先展开右栏再断言伙伴面板」，reading / world-ui / v2-review ui-probes / review9→baseline 四处下游裁切自动继承；review9 体 15 处 `win.reload()` 收口为一个会重新展开右栏的 `reload()` 助手；`repair-integrated-ui` 四处新挂载各补一次开栏。— 署名：Kimi

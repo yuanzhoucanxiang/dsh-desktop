@@ -149,6 +149,7 @@
           "runtime-manifest.json",
           "CONTRACT.md",
           "lib/*",
+          "lib/routes/*",
           "!lib/editor-session.js"
         ]
       },

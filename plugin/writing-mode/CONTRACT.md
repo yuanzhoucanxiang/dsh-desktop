@@ -205,7 +205,10 @@
 | `lib/store.js` | 配置、库根、扫描、读写、路径安全 | llm、业务门禁语义 |
 | `lib/compile.js` | 成书候选/版本归并/排序/拼接（纯函数） | IO、HTTP |
 | `lib/domain.js` | 门禁、台账、版本、AI 路由与补全 | HTTP、cordis |
-| `index.js` | cordis 注入 + HTTP 分发 | 业务算法 |
+| `lib/http.js` | HTTP 公共层：环回/可信判定、路由×方法白名单、body 字节收集、JSON 响应 | 业务语义 |
+| `lib/archive-model.js` | 档案数据组装（archive-export 与 wiki 两出口共用口径） | 决定「是文件还是页面」 |
+| `lib/routes/*` | 按域拆分的路由处理函数（config/docs/project/memory/sessions + `index.js` 分发表） | 生命周期、preset 注册（归 index.js） |
+| `index.js` | cordis 注入 + 中间件（可信/白名单/长度/JSON/损坏配置守卫）+ 分发 + preset 自举注册与回收 | 业务算法、具体路由体 |
 | `lib/file-lock.js` | 跨进程锁（owner token，不抢活锁不盲删） | 业务语义 |
 | `lib/coordination.js` | 会话创建协调记录（阶段机 + token 语义） | 内核调用、长事务 |
 | `lib/project-memory.js` | 备忘 schema1/2、revision/etag、setting、幂等收据、投影元数据 | HTTP、内核会话 |
