@@ -155,8 +155,12 @@ export function buildPreparedTurn(input) {
   const includeMemory = input?.includeMemory !== false
   const reference = buildReference(input?.reference)
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : []
+  // mention 自动注入（2026-10-06）：匹配 hay = 作者消息 + 引用的稿件/选区全文。
+  // 稿子才是设定名词最密集的地方——作者引用整章问「这段节奏对不对」，
+  // 章里提到的已确认设定就该自动排到注入最前面，而不是只看聊天框那几个字。
+  const turnHay = message + (reference ? '\n' + reference.text : '')
   const { selected, omissions, charsUsed } = includeMemory
-    ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, message)
+    ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, turnHay)
     : { selected: [], omissions: [], charsUsed: 0 }
 
   const parts = []

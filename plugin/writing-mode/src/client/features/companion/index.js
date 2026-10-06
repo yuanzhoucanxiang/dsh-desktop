@@ -409,9 +409,9 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     const recoverable = snapshot.status === 'missing' || snapshot.status === 'uncertain' || snapshot.status === 'waiting'
     // C02：面板显示**实际会采用什么**——用与发送完全相同的选择函数算一遍，作者能逐条核对来源与省略原因
     const injectables = memoryItems.filter(isPinnable)
-    // mention 感知可见化：与 send 完全同口径（turnText=作者这一轮的消息草稿），
-    // 正文里提到标题/标签的 world 设定在预览行上标「正文提及」。
-    const turnHay = localDraft || ''
+    // mention 自动注入：与 send 完全同口径（turnText = 消息草稿 + 引用稿件全文），
+    // 正文里提到标题/标签的 world 设定在预览行上标「正文提及」并排到注入最前。
+    const turnHay = (localDraft || '') + (reference?.text ? '\n' + reference.text : '')
     const memoryPreview = react.useMemo(
       () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded, turnHay),
       [memoryItems, pinned, excluded, turnHay]

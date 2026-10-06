@@ -28,6 +28,7 @@
     "plugin/writing-mode/lib/knowledge.js",
     "plugin/writing-mode/lib/project-memory.js",
     "plugin/writing-mode/lib/setting-projection.js",
+    "plugin/writing-mode/lib/snapshot.js",
     "plugin/writing-mode/lib/store.js",
     "plugin/writing-mode/lib/templates.js",
     "plugin/writing-mode/lib/writing-stats.js",

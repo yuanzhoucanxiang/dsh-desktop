@@ -6994,7 +6994,8 @@ function buildPreparedTurn(input) {
   const includeMemory = input?.includeMemory !== false;
   const reference = buildReference(input?.reference);
   const items = Array.isArray(input?.memoryItems) ? input.memoryItems : [];
-  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, message) : { selected: [], omissions: [], charsUsed: 0 };
+  const turnHay = message + (reference ? "\n" + reference.text : "");
+  const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, turnHay) : { selected: [], omissions: [], charsUsed: 0 };
   const parts = [];
   if (selected.length) {
     const body = selected.map((s) => s.line || `- [${s.label}] ${s.text}`).join("\n");
@@ -20370,7 +20371,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   const statusNote = !handle2 || snapshot.status === "ready" ? "" : snapshot.status === "waiting" ? "正在关联这个作品的写作伙伴…（另一个窗口可能正在创建，等它完成即可）" : snapshot.status === "uncertain" ? "上一次关联没有确认完成。已知的会话/工作区标识都保留着，不会被当作没有发生过。" : snapshot.status === "missing" ? "原本关联的会话已不存在（可能被删除了）。" : snapshot.status === "error" ? `关联失败：${snapshot.error || "未知原因"}` : "";
   const recoverable = snapshot.status === "missing" || snapshot.status === "uncertain" || snapshot.status === "waiting";
   const injectables = memoryItems.filter(isPinnable);
-  const turnHay = localDraft || "";
+  const turnHay = (localDraft || "") + (reference?.text ? "\n" + reference.text : "");
   const memoryPreview = react13.useMemo(
     () => selectMemory(memoryItems, pinned, DEFAULT_MEMORY_BUDGET, excluded, turnHay),
     [memoryItems, pinned, excluded, turnHay]

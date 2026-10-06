@@ -12,6 +12,7 @@ import { withFileLock } from '../file-lock.js'
 import { runGates, ledgerSummary, outlineSummary } from '../domain.js'
 import { seedBaseline, recordSave, projectStatsFor } from '../writing-stats.js'
 import { reorderDraftSeries } from '../reorder.js'
+import { scheduleDailySnapshot } from '../snapshot.js'
 import { writeJson } from '../http.js'
 import { readParsed, targetUnder, projectUnder } from './helpers.js'
 
@@ -59,7 +60,11 @@ export async function saveDoc({ req, res, route, cfg }) {
     // 新路径首见自动按播种处理，不会把整章存量算成今日净增。
     try {
       const proj = findProjectRoot(doc.path || target)
-      if (proj) recordSave(proj, doc.path || target, doc.content ?? parsed.content)
+      if (proj) {
+        recordSave(proj, doc.path || target, doc.content ?? parsed.content)
+        // 每日快照（安全网）：每作品每天一份，fire-and-forget，绝不影响保存主链路。
+        scheduleDailySnapshot(proj)
+      }
     } catch {}
     writeJson(res, 200, { ok: true, doc })
   } catch (err) {
