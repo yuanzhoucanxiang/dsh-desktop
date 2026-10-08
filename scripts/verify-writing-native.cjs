@@ -30,7 +30,10 @@ app.whenReady().then(async () => {
   await new Promise(r => probe.listen(0, '127.0.0.1', r))
   const port = probe.address().port
   await new Promise(r => probe.close(r))
-  kernel = spawn(path.join(repo, 'runtime/node.exe'), [path.join(repo, 'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js'), '--profile', 'web', '--patch', patch, '--port', String(port), '--no-open'], { cwd: project, env: { ...process.env, DSH_HOME: home }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  // WM_RUNTIME_DIR：内核版本适格验收用——指向候选运行时（如 %TEMP%\dsh-candidate-0.2.0-rc.2）
+  // 即可让整套原生链路跑在候选内核上；缺省仍是仓库锁定的 runtime（常规回归口径不变）。
+  const runtimeDir = process.env.WM_RUNTIME_DIR || path.join(repo, 'runtime')
+  kernel = spawn(path.join(runtimeDir, 'node.exe'), [path.join(runtimeDir, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), '--profile', 'web', '--patch', patch, '--port', String(port), '--no-open'], { cwd: project, env: { ...process.env, DSH_HOME: home }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   kernel.stdout.on('data', d => { kernelOutput += d })
   kernel.stderr.on('data', d => { kernelOutput += d })
   // 0.1.2 起内核 Web 启用 token 鉴权：裸访 / 返回 401，stdout 报带一次性 token 的完整 URL。

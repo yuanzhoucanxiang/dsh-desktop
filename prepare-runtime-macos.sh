@@ -5,7 +5,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME="$HERE/runtime"
-DSH_VERSION="${DSH_VERSION:-0.1.7-rc.2}"
+DSH_VERSION="${DSH_VERSION:-0.2.0-rc.2}"
 
 echo "==> installing dsh (hoisted) into runtime..."
 rm -rf "$RUNTIME"
