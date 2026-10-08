@@ -1448,6 +1448,29 @@ function injectWebSocketShim(html, kernelWsOrigin) {
   return tag + html
 }
 
+/**
+ * 页面侧「传输事实」注入：内核客户端以 `__DSH_TRANSPORT__.ownsHost` 判定「宿主归外壳所有」
+ * （dsh-client-connection: `isLoopback = transport?.ownsHost === true || !pageLocation || isLoopbackHostname(location.hostname)`）。
+ * 我们的架构正是外壳拥有内核进程并代持传输，但页面跑在自定义协议下（`dsh-app://app`，
+ * hostname 是 "app"），既非 loopback 又从不设这个标志 → 内核客户端把页面当「远程浏览器」：
+ * 设置持久化降级为 memory，共享设置镜像（configForms.describe）的 load()/ensure() 变成
+ * 空操作、永不加载 → 内核「设置 → 模型」页恒报
+ * 「加载提供商目录失败: settings are unavailable in this browser」，点重试也无效。
+ * 只设 ownsHost、**不设** dshDesktopBoot / streamBaseUrl：前端不走桌面引导分支（那要求外壳
+ * 自建 stream 端点，属另一量级），流仍回落 document.baseURI（已被下面的 WS 兜底改写到内核），
+ * `__DSH_TRANSPORT__` 的其余消费方（loadBundle 可选读、账号登录 origin 选择）与现状一致。
+ */
+function makeTransportFactShim() {
+  return `<script>(function(){try{
+if(!window.__DSH_TRANSPORT__){window.__DSH_TRANSPORT__={ownsHost:true}}
+}catch(e){}})()</script>`
+}
+
+/** 页面注入总入口：传输事实 + WS 兜底，都必须在应用脚本之前。 */
+function injectPageShims(html, kernelWsOrigin) {
+  return injectWebSocketShim(makeTransportFactShim() + html, kernelWsOrigin)
+}
+
 /** 本地直出命中：dist 内真实存在的文件才本地返回；越界或未命中一律交回转发。 */
 function localDistFile(pathname) {
   try {
@@ -1498,7 +1521,7 @@ async function handleAppRequest(req) {
       if (indexHtmlCache === null) {
         const res = await kernelApiFetch('/', { redirect: 'manual' })
         if (!res.ok) throw new Error(`内核对 / 返回 ${res.status}`)
-        indexHtmlCache = injectWebSocketShim(await res.text(), state.url.replace(/^http:/, 'ws:'))
+        indexHtmlCache = injectPageShims(await res.text(), state.url.replace(/^http:/, 'ws:'))
       }
       return new Response(indexHtmlCache, {
         status: 200,
@@ -3196,6 +3219,59 @@ function prepareUiSmokeRepo() {
   }
 }
 
+/**
+ * 页内驱动脚本：开设置 → 关「内测声明」→（如出现）略过凭据引导 → 进「模型」→ 回传面板诊断。
+ * 为什么要一步串在页内：每步都必须等 React 提交，跨进程来回写等待易 flake；
+ * 而声明/引导是内核在"非官方桌面端"环境（我们外壳不冒充 dshDesktop）下的既有行为，
+ * 探针要先按作者真实路径关掉它们，才谈得上验"模型页能打开"。
+ */
+const SETTINGS_MODELS_UI_PROBE = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }
+  const dialogs = () => Array.from(document.querySelectorAll('[role="dialog"]'))
+  const top = () => { const d = dialogs(); return d.length ? d[d.length - 1] : null }
+  const textOf = (el) => (el ? el.innerText || '' : '')
+  const clickScoped = (root, re) => {
+    if (!root) return 'no-root'
+    const t = Array.from(root.querySelectorAll('button,[role="button"],a,li,span'))
+      .filter((e) => re.test((e.textContent || '').trim()) && vis(e))[0]
+    if (!t) return 'not-found'
+    const btn = t.closest('button,[role="button"],li') || t
+    const disabled = btn.disabled === true || btn.getAttribute('aria-disabled') === 'true'
+    btn.click()
+    return disabled ? 'clicked(disabled)' : 'clicked'
+  }
+  const log = []
+  // 打开设置：左下角「设置」
+  {
+    const t = Array.from(document.querySelectorAll('button,[role="button"],a,li,span'))
+      .filter((e) => /^(设置|Settings)$/.test((e.textContent || '').trim()) && vis(e))
+      .sort((a, b) => b.getBoundingClientRect().y - a.getBoundingClientRect().y)[0]
+    log.push('open=' + (t ? (t.closest('button,[role="button"],li') || t).click() || 'clicked' : 'not-found'))
+  }
+  await sleep(1800)
+  log.push('dialogs=' + dialogs().length)
+  // 「内测声明」：点它自己的「继续」（作用域限定在该模态内）
+  for (let i = 0; i < 3 && /内测声明/.test(textOf(top())); i += 1) {
+    const r = clickScoped(top(), /^(继续|Continue)$/)
+    log.push('notice=' + r)
+    await sleep(1600)
+  }
+  if (/内测声明/.test(textOf(top()))) {
+    const holder = top()
+    const btn = holder && Array.from(holder.querySelectorAll('button')).find((b) => /继续|Continue/.test(b.textContent || ''))
+    log.push('notice-stuck disabled=' + Boolean(btn && btn.disabled) + ' alert=' + (/暂时无法保存|retry/i.test(textOf(holder))))
+  }
+  // 凭据引导（如出现）→ 稍后配置
+  if (/开始使用|API Key/.test(textOf(top()))) { log.push('cred=' + clickScoped(top(), /^(稍后配置|Configure later|Later|Skip)$/)); await sleep(1500) }
+  // 设置本体（含左侧导航的那个对话框）→ 点「模型」
+  const shell = dialogs().find((d) => /通用设置|General/.test(textOf(d))) || top()
+  log.push('models=' + clickScoped(shell, /^(模型|Models)$/))
+  await sleep(2500)
+  const text = textOf(shell)
+  return { log, chars: text.length, text: text.slice(0, 300), hasProvider: /提供商|Providers/.test(text), hasUnavailable: /settings are unavailable|加载提供商目录失败|Loading the provider directory failed/.test(text) }
+})()`
+
 /** 在真实内核页面上跑侧边栏交互检查，返回 [名称, 通过] 列表。 */
 async function runUiSmoke(win) {
   const js = (code) => win.webContents.executeJavaScript(code, true)
@@ -3248,6 +3324,33 @@ async function runUiSmoke(win) {
   check('kernel theme clears cleanly', await js(`!document.documentElement.hasAttribute('data-palis-theme')`))
   const cssOff = await palisCss()
   check('palis stylesheet removed on disable', cssOff.length === 0 || cssOff !== cssOn, `${cssOn.length} → ${cssOff.length} 字符`)
+
+  /* 内核设置页在 dsh-app 外壳下的可用性回归（2026-10-08：用户报「设置 → 模型」恒显
+   * 「加载提供商目录失败: settings are unavailable in this browser」，点重试也无效）。
+   * 根因：页面 hostname 是 "app"，内核客户端 isLoopback 判定为假 → 设置持久化降级 memory →
+   * 共享设置镜像永不加载。修复 = 注入 __DSH_TRANSPORT__={ownsHost:true}（见 makeTransportFactShim）。
+   * 本段是该 bug 在真实 scheme 路径上的 FAIL→PASS 探针：
+   *   1) 根因标志：页面确实带着 ownsHost 的传输事实（旧版此处为 undefined）；
+   *   2) 用户可见行为：打开设置 → 模型，提供商目录渲染出来且无「settings are unavailable」。
+   * 注意：既有探针（verify-writing-native 等）都直连内核 http 口加载页面（loopback），
+   * **测不到这条路径**——这正是该 bug 一直没被门禁抓住的原因，所以断言必须留在真实窗口里。 */
+  check('page carries transport fact (ownsHost) under dsh-app', await js(`globalThis.__DSH_TRANSPORT__?.ownsHost === true`),
+    await js(`JSON.stringify(globalThis.__DSH_TRANSPORT__ ?? null)`))
+  {
+    /* 页内单脚本驱动：开设置 → 关内测声明 →（如出现）略过凭据引导 → 进「模型」→ 取面板文本。
+     * 为什么要在页内串起来：每一步都等 React 提交，跨进程往返写等待易 flake；
+     * 而安全声明/引导是内核在"非官方桌面端"环境下的既有行为（我们外壳不冒充 dshDesktop），
+     * 探针必须先按作者真实路径关掉它们，才谈得上"模型页可打开"。 */
+    const safeJs = async (code) => { try { return { ok: true, value: await js(code) } } catch (err) { return { ok: false, error: String((err && err.message) || err).slice(0, 140) } } }
+    const ui = await safeJs(SETTINGS_MODELS_UI_PROBE)
+    const v = ui.value || {}
+    check('settings -> models renders provider directory',
+      ui.ok && v.hasProvider === true && v.hasUnavailable === false,
+      ui.ok ? `log=${(v.log || []).join(',')} chars=${v.chars} hasProvider=${v.hasProvider} hasUnavailable=${v.hasUnavailable} text=${String(v.text || '').replace(/\n/g, ' / ').slice(0, 200)}` : `page error: ${ui.error}`)
+    // 收场：Esc 关设置，别影响后续断言与退出
+    try { await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`) } catch {}
+    await wait(400)
+  }
   return results
 }
 
