@@ -1,10 +1,14 @@
 ## [Unreleased]
 
+## [0.1.50] - 2026-10-06
+
 - 写作伙伴 **mention 自动注入**：注入相关性的匹配范围从「聊天框那几个字」扩大到「消息 + 引用的稿件/选区全文」——作者引用整章问问题时，章里提到的已确认设定自动排到注入最前（预算内优先带入）；检查页参考预览的「正文提及」徽标同步按新口径计算，面板与发送永远同一把尺子。— 署名：ZCode
 
 - 写作模式新增**每日快照（安全网）**：每次保存成功后自动给作品拍一份当日快照（zip，纯 JS 生成、System32 tar 可直接解包验证），存到 ~/.dsh/writing-backups/<作品名>-<日期>.zip，每作品每天一份、自动清理只留最近 14 份。只读项目、只写项目外的备份目录、失败绝不影响保存——「一年心血在一个目录里」从此有兜底。12 项测试（crc32 标准向量 / tar 真解包回读 / 同日去重 / 保留清理 / save 触发端到端 / 项目目录零污染）。— 署名：ZCode
 
 - 写作模式 host 结构收口（后端整治阶段一，行为保持）：`index.js` 1407 行 god module 拆分——HTTP 公共层（环回/可信判定、路由×方法白名单、body 字节收集、JSON 响应）抽到 `lib/http.js`；档案数据组装抽到 `lib/archive-model.js`（archive-export 与 wiki 两出口共用口径不变）；31 条路由按域拆进 `lib/routes/`（config / docs / project / memory / sessions + 分发表），`index.js` 降到 134 行，只留插件生命周期（preset 自举注册、残留锁诊断）+ 中间件（可信判定/方法白名单/长度与 JSON 门禁/损坏配置守卫）+ 分发。顺带清掉 coordination 路由里逐请求打 stderr 的遗留调试输出。**打包 filter 补 `lib/routes/*`**——`verify-writing-package` 的「清单↔filter」断言当场抓住漏配，不改就是下个版本漏发整个路由层；hardening 的 V1/V6/V7/V8 源码形状探针同步改指向新模块（断言内容不变，只换文件路径）。全链 `verify:writing-quick` 592 项 0 非零。— 署名：ZCode
+
+- 写作模式 host 守卫收敛（阶段二，内部重构行为保持）：三类重复守卫（invalid-json / path-outside-roots / invalid-project）收进 `lib/routes/helpers.js`，docs/project 两域路由样板归一；runtime-manifest 补登记被「清单↔filter」断言抓住。— 署名：ZCode
 
 ## [0.1.49] - 2026-10-05
 
