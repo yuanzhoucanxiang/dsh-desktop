@@ -47,6 +47,7 @@ V1–V9 / G1–G4 hunt 与逐一修复完成：**13 项缺陷全部实锤复现�
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
+| 2026-10-08 | [`logs/2026-10-08.md`](logs/2026-10-08.md) | ZCode：**发布 v0.1.51**（修复内核「设置→模型」恒报 settings unavailable 的根因——dsh-app 下补页面传输事实 __DSH_TRANSPORT__={ownsHost:true}；profile 内核包链接幂等修复）；真包 9/9（含新增真实 scheme 断言）+ 冷启动 12/12、五件资产齐、Latest；mac CI 首跑遇 GitHub 瞬时 500、重跑成功 | ZCode |
 | 2026-10-08 | [`logs/2026-10-08.md`](logs/2026-10-08.md) | ZCode：**发布 v0.1.50**（mention 自动注入 + 每日快照安全网 + host 结构治理两阶段；真包 9/9 + 冷启动 12/12、五件资产齐、Latest、远端 sha256 `ceee42bd…` 一致）；CHANGELOG 版本日期校准为发布日；追加：「加载提供商目录失败」诊断（文案源自内核设置→模型页，只读探针实测现网该页正常，触发窗口=更新重启期，页面自带重试）+ **修复 profile 内核包迁移对框架包的每次启动重指噪声**（运行时树内/同版本即保留；15 项测试含 FAIL→PASS 实证）；追加：**真根因修复**——dsh-app 下补页面传输事实 __DSH_TRANSPORT__={ownsHost:true}，根治内核「设置→模型」恒报「加载提供商目录失败: settings are unavailable in this browser」（isLoopback=false → 设置镜像降级 memory 永不加载；重试无效是必然）；--ui-smoke 新增真实 scheme 路径断言 + 负向对照逐字复现（FAIL→PASS） | ZCode |
 | 2026-10-06 | [`logs/2026-10-06.md`](logs/2026-10-06.md) | ZCode：写作模式补课（二）——mention 自动注入（注入匹配 hay 纳入引用稿件全文，面板预览同口径）、每日快照安全网（`lib/snapshot.js` 纯 JS zip、System32 tar 可解包验证、同作品每天一份保留 14 份、save 触发、项目目录零污染，测试 12 项）；②A 流式显示调查（投影层无缺陷，缺口需真实模型采样验证，已立卡）；③D 稳定作品 ID 设计草稿立卡。全链 604 项 0 非零 | ZCode |
 | 2026-10-05 | [`logs/2026-10-05.md`](logs/2026-10-05.md) | ZCode：**发布 v0.1.49**（纯写作第一屏 + 降噪 + 档案 wiki 站点化；真包 9/9 + 冷启动 12/12、五件资产齐）；写作模式 host 结构收口（index.js 1407→134 行、路由按域进 `lib/routes/`、打包 filter 漏配被门禁当场抓住）+ 守卫收敛（`helpers.js`）。Kimi：纯写作第一屏预览交付（隔离实例保持运行、实机验证第一屏只有稿纸）。Qoder/Kimi（10-03/04 前端重做与档案三连）见顶部条目 | ZCode / Kimi / Qoder |
