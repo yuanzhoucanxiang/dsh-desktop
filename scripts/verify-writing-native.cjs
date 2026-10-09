@@ -111,7 +111,15 @@ app.whenReady().then(async () => {
   assert.ok(!reference.includes('她没有拆开那封信。'))
   const draft = await evaluate(`document.querySelector('.dshWmChatInput').value`)
   assert.equal(draft, '想听听你对她为什么不拆信的看法。')
-  for (const label of ['文字工具', '写作伙伴', '专注', '专注']) await button(label)
+  // ✦ 工具菜单开 → 选中「润色」进入待运行 → × 解除（不按 Enter：native 是真内核，跑了就真调模型）；
+  // 再切 tab 与专注开关，草稿和引用都应原样保留
+  await button('✦')
+  await waitFor(`document.querySelector('.dshWmToolsMenu').className.includes('is-open')`)
+  await button('润色')
+  await waitFor(`document.querySelector('[data-wm-tool-armed]')!==null`)
+  await evaluate(`document.querySelector('[data-wm-tool-disarm]').click()`)
+  await waitFor(`!document.querySelector('[data-wm-tool-armed]')`)
+  for (const label of ['写作伙伴', '专注', '专注']) await button(label)
   await waitFor(`!!document.querySelector('.dshWmChatInput')`)
   assert.equal(await evaluate(`document.querySelector('.dshWmChatInput').value`), draft)
   assert.ok(await evaluate(`!!document.querySelector('.dshWmReference')`))

@@ -2,8 +2,8 @@
  * 写作台外壳（overlay 根组件）。
  * P1 从 entry.js 搬迁；P1-② 把顶栏 / 状态条 / 左栏 / 稿纸页头 / 查找栏 / 版本对比与改稿预览
  * 拆成 app/ 与 features/ 下的纯 props 子组件——**全部 hooks、editor session 编排、快捷键与
- * 自动保存 effect、assist/gate/ledger/stats 取数、覆盖层状态、右栏（伙伴+文字工具抽屉 / 检查）
- * 与边缘收展 rail、flashMsg 仍在本文件**。
+ * 自动保存 effect、assist/gate/ledger/stats 取数、覆盖层状态、右栏（伙伴 / 检查）
+ * 与边缘收展 rail、文字工具执行与落稿回路、flashMsg 仍在本文件**。
  * 行为保持：DOM、类名、data-*、key 与事件语义逐字不变。
  */
 import * as react from 'react'
@@ -88,12 +88,9 @@ export function WritingModeApp() {
   const { path: filePath, content, dirty, status: saveState } = documentState
   const setContent = value => editor.change(value)
   const setFilePath = path => { void editor.open(path) }
-  // 纯写作第一屏：右栏默认收起，作者点顶栏「AI」或右缘 rail 才召唤
+  // 纯写作第一屏：右栏默认收起，作者点右缘 rail「AI」才召唤
   const [aiOpen, setAiOpen] = react.useState(false)
   const [aiTab, setAiTab] = react.useState('companion')
-  // 文字工具抽屉：伙伴页内的选项性功能（默认收起）。抽屉体常挂载、收起时 CSS 隐藏，
-  // 与「辅助 ▾」菜单同一模式——门禁脚本用 .click() 程序化点击动作按钮，不看可见性。
-  const [toolsOpen, setToolsOpen] = react.useState(false)
   const [aiOut, setAiOut] = react.useState('')
   const [aiBusy, setAiBusy] = react.useState(false)
   const [aiErr, setAiErr] = react.useState('')
@@ -573,7 +570,7 @@ export function WritingModeApp() {
   }
 
 
-  async function runAssist(action) {
+  async function runAssist(action, hint) {
     const snapshot = editor.get()
     const selection = taRef.current ? { start: taRef.current.selectionStart, end: taRef.current.selectionEnd } : { start: 0, end: 0 }
     const isRec = action === 'research' || action === 'spark'
@@ -594,6 +591,8 @@ export function WritingModeApp() {
           action,
           text: text || content.slice(0, 4000),
           path: filePath,
+          // 工具菜单里作者随提示词补的要求（空串不落字段，host 用纯默认指令）
+          hint: String(hint || '').trim() || undefined,
           style: action === 'spark' ? 'spark' : 'research',
         }),
       })
@@ -612,7 +611,8 @@ export function WritingModeApp() {
           T.aiUnavailable +
           '\n\n【可直接发送到会话】\n请作为写作助手，对下列文本做「' +
           (T[action] || action) +
-          '」：\n\n' +
+          (hint && String(hint).trim() ? '」（补充要求：' + String(hint).trim() + '）：' : '」：') +
+          '\n\n' +
           (text || content).slice(0, 2000)
         setAiOut(tip)
         setAiErr(T.aiUnavailable)
@@ -802,13 +802,9 @@ export function WritingModeApp() {
         roots,
         activeRoot,
         activateRoot,
-        libOpen,
-        setLibOpen: setLibOpenManual,
         focus,
         setFocus,
         prefs,
-        aiOpen,
-        setAiOpen,
         filePath,
         saveState,
         dirty,
@@ -1063,78 +1059,9 @@ export function WritingModeApp() {
                           children: '⟩',
                         }, 'fold'),
                       ] }, 'ah'),
-                      // 文字工具不再是独立 tab：收进伙伴页顶部作选项性抽屉（2026-10-09 右栏整合）。
-                      // 抽屉体常挂载、收起时由 .dshWmTools 规则 display:none（门禁 .click() 不看可见性）；
-                      // 开关钮 textContent 逐字「文字工具」，箭头走 CSS 伪元素，免得破坏按文本精确点击的断言。
-                      aiTab === 'companion' ? jsx.jsxs('div', { className: 'dshWmTools' + (toolsOpen ? ' is-open' : ''), 'data-wm-tools': '1', children: [
-                        jsx.jsx('button', {
-                          type: 'button',
-                          className: 'dshWmToolsToggle',
-                          'aria-expanded': toolsOpen,
-                          onClick: () => setToolsOpen((v) => !v),
-                          children: '文字工具',
-                        }, 'tt'),
-                        jsx.jsxs('div', { className: 'dshWmToolsBody', children: [
-                          jsx.jsx(
-                            'div',
-                            {
-                              className: 'dshWmAiActions',
-                              children: ['polish', 'continue', 'outline', 'compress', 'expand', 'research', 'spark'].map((a) =>
-                                jsx.jsx(
-                                  'button',
-                                  {
-                                    type: 'button',
-                                    // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
-                                    // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
-                                    className: 'dshWmBtn',
-                                    disabled: aiBusy,
-                                    onClick: () => void runAssist(a),
-                                    children: T[a] || a,
-                                  },
-                                  a
-                                )
-                              ),
-                            },
-                            'acts'
-                          ),
-                          aiBusy
-                            ? jsx.jsx('div', { className: 'dshWmAiHint', children: T.applying }, 'busy')
-                            : null,
-                          aiErr
-                            ? jsx.jsx('div', { className: 'dshWmAiHint', children: aiErr }, 'err')
-                            : null,
-                          jsx.jsx('div', { className: 'dshWmAiOut', children: aiOut || ' ' }, 'out'),
-                          jsx.jsx(
-                            'div',
-                            {
-                              className: 'dshWmAiActions',
-                              children: [
-                                jsx.jsx('button', {
-                                  type: 'button',
-                                  className: 'dshWmBtn',
-                                  disabled: !aiOut,
-                                  onClick: applyInsert,
-                                  children: T.insert,
-                                }),
-                                jsx.jsx('button', {
-                                  type: 'button',
-                                  className: 'dshWmBtn',
-                                  disabled: !aiOut,
-                                  onClick: applyReplace,
-                                  children: T.replaceSel,
-                                }),
-                                jsx.jsx('button', {
-                                  type: 'button',
-                                  className: 'dshWmBtn is-primary',
-                                  onClick: sendToChat,
-                                  children: T.sendChat,
-                                }),
-                              ],
-                            },
-                            'apply'
-                          ),
-                        ] }, 'tb'),
-                      ] }, 'tools') : null,
+                      // 文字工具不再是独立 tab / 抽屉：收进伙伴输入框旁的 ✦ 图标菜单
+                      // （2026-10-09 第二轮整合），选中工具后在输入框补提示词、Enter 运行；
+                      // 产出面板（插入文末/替换选区/发送到会话）随之挪到作曲区上方，见 companion/index.js。
                       // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
                       // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
                       aiTab === 'companion' ? jsx.jsx(WritingCompanion, {
@@ -1169,6 +1096,17 @@ export function WritingModeApp() {
                         },
                         // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
                         onJumpToFile: jumpToFile,
+                        // 文字工具束：✦ 菜单 / arm chip / 产出面板都在 CompanionChat 里渲染，
+                        // 状态（aiOut/aiBusy/aiErr）与落稿回路（applyInsert/applyReplace）仍在本文件。
+                        tools: {
+                          busy: aiBusy,
+                          err: aiErr,
+                          out: aiOut,
+                          onRun: (action, hint) => void runAssist(action, hint),
+                          onInsert: applyInsert,
+                          onReplace: applyReplace,
+                          onSendChat: () => void sendToChat(),
+                        },
                       }, 'companion') : null,
                       aiTab === 'check' ? jsx.jsx(InspectionPanel, {
                         T,

@@ -253,24 +253,28 @@ export const CSS = [
   '.dshWmSide .dshWmBarGroup{flex-direction:column;align-items:stretch;gap:var(--wm-space-2);padding:0 10px 10px;}',
   '.dshWmSide .dshWmBarGroup .dshWmSearch{width:100%;margin:0;}',
   '.dshWmList{flex:1;overflow:auto;padding:4px 10px 20px;}',
-  '.dshWmProj{margin-bottom:12px;}',
-  /* 左栏层级（2026-10-09）：项目名是锚点；分组（正文/人物/设定…）与操作行收进项目
-     缩进带，左侧一条引导线——此前与项目名同一平级，读起来像一堆并列栏目。 */
+  '.dshWmProj{margin-bottom:18px;}',
+  /* 左栏层级（2026-10-09 定结构，2026-10-10 定视觉比重）：主=章节正文（14px 正文色，
+     唯一大号字）；次=项目名（14px 中黑锚点，靠字重不靠字号压过章节）；再次=分组文件夹
+     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=档案/成书/添加资料
+     （xs 灰字弱钮，不与内容抢读）。缩进仍表达归属，比重表达主次。 */
   '.dshWmProj>.dshWmProjOps{margin-left:18px;}',
+  '.dshWmProj>.dshWmItem{margin-left:18px;width:calc(100% - 18px);font-size:var(--wm-text-md);padding:6px 8px;}',
   '.dshWmProj>details{margin-left:9px;padding-left:9px;border-left:1px solid var(--dsw-alias-border-l2);}',
-  '.dshWmProj>details>summary.dshWmFolder{padding-left:2px;font-size:var(--wm-text-xs);letter-spacing:.06em;color:var(--wm-text-dim);}',
+  '.dshWmProj>details>summary.dshWmFolder{padding-left:2px;}',
+  '.dshWmProjAssets>details{margin-left:4px;padding-left:8px;}',
   '.dshWmProjToggle{',
   '  display:flex;align-items:center;gap:6px;width:100%;',
-  '  padding:8px 8px 4px;border:none;background:transparent;cursor:pointer;',
-  '  font:inherit;font-size:var(--wm-text-sm);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);',
+  '  padding:10px 8px 6px;border:none;background:transparent;cursor:pointer;',
+  '  font:inherit;font-size:var(--wm-text-md);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);',
   '  text-align:left;',
   '}',
   '.dshWmProjToggle:hover{color:var(--dsw-alias-brand-primary);}',
   '.dshWmProjChev{font-size:var(--wm-text-xs);color:var(--wm-text-dim);transition:transform .12s;flex:none;}',
   '.dshWmProjChev.is-open{transform:rotate(90deg);}',
   '.dshWmFolder{',
-  '  font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;',
-  '  color:var(--dsw-alias-label-secondary);padding:8px 8px 3px;',
+  '  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:.05em;',
+  '  color:var(--wm-text-dim);padding:8px 8px 3px;',
   '}',
   '.dshWmSearch{',
   '  width:100%;margin:0 0 8px;padding:7px 10px;border-radius:var(--wm-radius-m);',
@@ -531,9 +535,12 @@ export const CSS = [
   '.dshWmSideFold:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
 
   /* 导出成书面板：覆盖中央编辑区（编辑器不卸载），项目操作行 */
-  '.dshWmProjOps{display:flex;align-items:center;gap:6px;margin:0 0 8px;}',
-  '.dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;}',
-  '.dshWmProjOps .dshWmBtn{flex:none;}',
+  /* 操作行降权（2026-10-10）：档案/成书/添加资料是三级动作——xs 灰字、按钮去边框，
+     不再与章节行同量级。 */
+  '.dshWmProjOps{display:flex;align-items:center;gap:2px;margin:0 0 6px;}',
+  '.dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;font-size:var(--wm-text-xs);padding:4px 8px;}',
+  '.dshWmProjOps .dshWmBtn{flex:none;font-size:var(--wm-text-xs);padding:3px 7px;border-color:transparent;color:var(--wm-text-dim);}',
+  '.dshWmProjOps .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;background:var(--dsw-alias-interactive-bg-hover);}',
   '.dshWmExport{',
   '  position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;min-height:0;',
   '  background:var(--dsw-alias-bg-base);',
@@ -563,17 +570,25 @@ export const CSS = [
   '.dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
   /* 会话列表区（伙伴 tab 顶部折叠区） */
   '.dshWmCompanionWrap{display:flex;flex-direction:column;flex:1;min-height:0;}',
-  /* 文字工具抽屉（2026-10-09 右栏整合）：收进伙伴页顶部的选项性抽屉，不再是独立 tab。
-     抽屉体常挂载、收起时 display:none——与「辅助 ▾」菜单同一模式（门禁 .click() 不看可见性）。
-     开关钮箭头走伪元素：textContent 保持逐字「文字工具」，按文本精确点击的断言不受影响。 */
-  '.dshWmTools{flex:none;padding:4px 16px 0;display:flex;flex-direction:column;gap:6px;}',
-  '.dshWmToolsToggle{display:flex;align-items:center;width:100%;padding:6px 0;border:0;background:transparent;cursor:pointer;font:inherit;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.06em;color:var(--wm-text-dim);text-align:left;}',
-  '.dshWmToolsToggle::before{content:"▸";margin-right:6px;font-size:10px;}',
-  '.dshWmTools.is-open>.dshWmToolsToggle::before{content:"▾";}',
-  '.dshWmToolsToggle:hover{color:var(--dsw-alias-label-primary);}',
-  '.dshWmTools:not(.is-open)>.dshWmToolsBody{display:none;}',
-  '.dshWmToolsBody{display:flex;flex-direction:column;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--dsw-alias-border-l2);}',
-  '.dshWmTools .dshWmAiOut{flex:none;min-height:96px;max-height:220px;}',
+  /* 文字工具 ✦ 图标菜单（2026-10-09 第二轮，取代同日的右栏抽屉）：输入框旁小图标，
+     上弹菜单选中工具 → armed chip 压在输入框上方，Enter/发送键运行；产出区在输入框正上方。
+     菜单常挂载、关闭时 display:none——与「辅助 ▾」同一模式（门禁 .click() 不看可见性）；
+     菜单行可见文本逐字等于工具名，说明在 title（按文本精确点击的断言不受影响）。 */
+  '.dshWmToolsAnchor{position:relative;flex:none;display:inline-flex;}',
+  '.dshWmToolsBtn{width:30px;height:30px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:transparent;color:var(--wm-text-dim);font:inherit;font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}',
+  '.dshWmToolsBtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-tertiary);}',
+  '.dshWmToolsBtn.is-on{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}',
+  '.dshWmToolsMenu:not(.is-open){display:none;}',
+  '.dshWmToolsMenu{position:absolute;bottom:calc(100% + 6px);left:0;z-index:8;display:flex;flex-direction:column;min-width:132px;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-3);box-shadow:0 8px 24px rgba(0,0,0,.14);}',
+  '.dshWmToolsMenuRow{display:block;width:100%;padding:6px 10px;border:0;border-radius:var(--wm-radius-s);background:transparent;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;}',
+  '.dshWmToolsMenuRow:hover{background:var(--dsw-alias-interactive-bg-hover);}',
+  '.dshWmToolsMenuRow.is-on{background:var(--dsw-alias-bg-layer-2);}',
+  '.dshWmToolsMenuRow:disabled{opacity:.4;cursor:default;}',
+  '.dshWmToolChip{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;padding:2px 4px 2px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);font-size:var(--wm-text-xs);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmToolChipX{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--wm-text-dim);font:inherit;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}',
+  '.dshWmToolChipX:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover);}',
+  '.dshWmToolOut{display:flex;flex-direction:column;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--dsw-alias-border-l2);}',
+  '.dshWmToolOut .dshWmAiOut{flex:none;min-height:96px;max-height:220px;}',
   '.dshWmSessList{flex:none;padding:10px 16px 0;display:flex;flex-direction:column;gap:4px;}',
   '.dshWmSessRows{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px;}',
   '.dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--wm-radius-m);border:0;background:none;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}',
@@ -654,7 +669,7 @@ export const CSS = [
   '.dshWmSearch.is-grow{flex:1;}',
   '.dshWmSearch.is-compact{width:180px;margin:0;}',
   '.dshWmSearch.is-compose{margin:0;flex:1;min-width:0;resize:vertical;max-height:140px;font:inherit;}',
-  '.dshWmFolder.is-clickable{cursor:pointer;text-transform:none;}',
+  '.dshWmFolder.is-clickable{cursor:pointer;}',
   /* 外壳侧边栏 footer 的入口钮：外观仍由 .dshWmBtn 负责，这里只负责撑满与文字居中 */
   '.dshWmBtn.dshWmEntryBtn{width:100%;justify-content:center;}',
   /* 状态条检查芯片：状态条里唯一「要作者看一眼」的信息，字号与字重都压过元信息 */
@@ -668,8 +683,15 @@ export const CSS = [
   '.dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}',
   '.dshWmProjFormActions{display:flex;gap:6px;}',
   '.dshWmNewDocRow{display:flex;gap:6px;padding:0 10px 8px;}',
-  '.dshWmLibViews{padding:var(--wm-space-2);display:flex;gap:6px;}',
+  /* 视图切换与搜索降权（2026-10-10）：它们是 chrome 不是内容——去边框小灰字 tab、
+     透明底细边搜索框，把视觉重量让给项目与章节。 */
+  '.dshWmLibViews{padding:var(--wm-space-2);display:flex;gap:2px;}',
+  '.dshWmLibViews .dshWmBtn{border-color:transparent;color:var(--wm-text-dim);font-size:var(--wm-text-xs);padding:4px 10px;}',
+  '.dshWmLibViews .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;}',
+  '.dshWmLibViews .dshWmBtn[aria-pressed="true"]{color:var(--dsw-alias-label-primary);font-weight:var(--wm-weight-medium);background:var(--dsw-alias-bg-layer-2);border-color:transparent;}',
   '.dshWmSearchWrap{padding:var(--wm-space-2) var(--wm-space-2) 0;}',
+  '.dshWmSearchWrap .dshWmSearch{background:transparent;border-color:var(--dsw-alias-border-l3);}',
+  '.dshWmSearchWrap .dshWmSearch:focus{border-color:var(--dsw-alias-brand-primary);}',
 
   /* 备忘：配额行 / 说明行 / 编写区 */
   '.dshWmMemoryNote.is-quota{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}',
@@ -721,7 +743,7 @@ export const CSS = [
   '.dshWmPickEmpty{padding:8px 10px;color:var(--wm-text-dim);font-size:var(--wm-text-xs);}',
   '.dshWmPickFoot{display:flex;align-items:center;gap:8px;}',
 
-  /* C2 「＋ 添加人物、设定或规划…」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
+  /* C2 「＋ 添加资料」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
      并允许在窄侧栏里省略号收尾（.dshWmSearch 那套是输入框外观，0,2,0 复合选择器确保压得住它） */
   '.dshWmSearch.dshWmAddRes{max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-style:dashed;color:var(--dsw-alias-label-secondary);}',
 

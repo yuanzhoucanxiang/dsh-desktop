@@ -391,41 +391,73 @@ export const LibraryPane = react.memo(function LibraryPane({
                                 jsx.jsx('select', {
                                   className: 'dshWmSearch dshWmAddRes', 'aria-label': '按需添加资料', value: '',
                                   onChange: e => void addProjectResource(proj, e.target.value),
-                                  children: [jsx.jsx('option', { value: '', children: '＋ 添加人物、设定或规划…' }, 'placeholder'),
+                                  children: [jsx.jsx('option', { value: '', children: '＋ 添加资料' }, 'placeholder'),
                                     ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
                                 }, 'add-resource'),
                               ],
                             }, 'proj-ops') : null,
                             proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
                             openP
-                              ? groups.map((g) =>
-                                  jsx.jsx(
-                                    'details',
-                                    {
-                                      open: libraryView === 'files' || Boolean(libQuery) || ['正文', '作品概览'].includes(g.key) || g.files.some(f => f.abs === filePath),
-                                      children: [
-                                        jsx.jsx(
-                                          'summary',
-                                          {
-                                            className: 'dshWmFolder is-clickable',
-                                            children: g.key === '·' ? 'ROOT' : g.key,
-                                          },
-                                          'fh'
-                                        ),
-                                        ...g.files.map((f) =>
-                                          jsx.jsx(FileRow, {
-                                            file: f,
-                                            maxVer: String(f.rel).startsWith('draft/') ? maxDraft : 0,
-                                            active: Boolean(filePath) && f.abs === filePath,
-                                            onPick: setFilePath,
-                                            labels: T,
-                                          }, f.abs)
-                                        ),
-                                      ],
-                                    },
-                                    'g-' + g.key
-                                  )
-                                )
+                              ? (() => {
+                                  // 章节优先（2026-10-09 第二轮）：作品导航视图里「正文」直列在项目操作行下，
+                                  // 概览/人物/设定/规划等收进一个「资料与设定」次级容器（默认关闭，常挂载可点）。
+                                  const renderGroup = (g) =>
+                                    jsx.jsx(
+                                      'details',
+                                      {
+                                        open: libraryView === 'files' || Boolean(libQuery) || ['正文', '作品概览'].includes(g.key) || g.files.some(f => f.abs === filePath),
+                                        children: [
+                                          jsx.jsx(
+                                            'summary',
+                                            {
+                                              className: 'dshWmFolder is-clickable',
+                                              children: g.key === '·' ? 'ROOT' : g.key,
+                                            },
+                                            'fh'
+                                          ),
+                                          ...g.files.map((f) =>
+                                            jsx.jsx(FileRow, {
+                                              file: f,
+                                              maxVer: String(f.rel).startsWith('draft/') ? maxDraft : 0,
+                                              active: Boolean(filePath) && f.abs === filePath,
+                                              onPick: setFilePath,
+                                              labels: T,
+                                            }, f.abs)
+                                          ),
+                                        ],
+                                      },
+                                      'g-' + g.key
+                                    )
+                                  const draftGroup = libraryView === 'writing' ? groups.find((g) => g.key === '正文') : null
+                                  if (!draftGroup) return groups.map(renderGroup)
+                                  const assetGroups = groups.filter((g) => g.key !== '正文')
+                                  const assetCount = assetGroups.reduce((n, g) => n + g.files.length, 0)
+                                  const assetsOpen = Boolean(libQuery) || assetGroups.some((g) => g.files.some((f) => f.abs === filePath))
+                                  return [
+                                    draftGroup.files.map((f) =>
+                                      jsx.jsx(FileRow, {
+                                        file: f,
+                                        maxVer: maxDraft,
+                                        active: Boolean(filePath) && f.abs === filePath,
+                                        onPick: setFilePath,
+                                        labels: T,
+                                      }, f.abs)
+                                    ),
+                                    assetGroups.length
+                                      ? jsx.jsxs('details', {
+                                          className: 'dshWmProjAssets',
+                                          open: assetsOpen,
+                                          children: [
+                                            jsx.jsx('summary', {
+                                              className: 'dshWmFolder is-clickable',
+                                              children: '资料与设定 · ' + assetCount,
+                                            }, 'ah'),
+                                            ...assetGroups.map(renderGroup),
+                                          ],
+                                        }, 'assets')
+                                      : null,
+                                  ]
+                                })()
                               : null,
                           ],
                         },

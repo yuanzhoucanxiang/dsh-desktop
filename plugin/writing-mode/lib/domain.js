@@ -445,15 +445,18 @@ export async function recommend(ctx, body, prefs) {
 export async function assist(ctx, body, prefs) {
   const action = String(body.action || 'polish')
   const text = String(body.text || '').slice(0, 12000)
+  // hint：作者在工具图标菜单里选中工具后随提示词补的要求（2026-10-09 输入框旁工具菜单），
+  // 附加在默认指令之后，不替代默认约束；instruction 仍是完整覆盖（老调用方不变）。
+  const hint = String(body.hint || '').trim().slice(0, 2000)
   const instruction =
     body.instruction ||
-    ({
+    (({
       polish: '润色下列文本：保持原意与篇幅量级，提升可读性与节奏，不要编造事实。',
       continue: '续写下列文本：风格一致，自然衔接，续写 150–300 字，不要重复已有句子。',
       outline: '为下列文本生成简洁大纲（Markdown 列表，层级不超过三级）。',
       compress: '压缩下列文本到约一半长度，保留关键论点与结论。',
       expand: '扩写下列文本：补足论证与例子，篇幅约 1.5–2 倍，保持语气。',
-    }[action] || '改进下列文本。')
+    }[action] || '改进下列文本。') + (hint ? `\n作者补充要求：${hint}` : ''))
   const prompt = `${instruction}\n\n---\n${text}\n---\n\n只输出处理后的正文，不要解释。`
   const route = resolveAiRoute(ctx, prefs)
   const r = await chatComplete(ctx, {

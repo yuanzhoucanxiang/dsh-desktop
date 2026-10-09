@@ -18,6 +18,12 @@ import { worldSettingMentioned } from '../../../shared/world-setting.js'
 import { CompanionMessage } from './CompanionMessage.js'
 import { SessionListSection } from './SessionListSection.js'
 import { companionCapability } from './capability-notice.js'
+import { T } from '../../copy.js'
+
+// 文字工具 ✦ 菜单的动作清单与说明（2026-10-09 第二轮：从右栏抽屉收进输入框旁图标菜单）。
+// 菜单行可见文本必须逐字等于工具名（T[a]）——门禁脚本按 textContent=== 精确点击，说明放 title。
+const TOOL_ACTIONS = ['polish', 'continue', 'outline', 'compress', 'expand', 'research', 'spark']
+const toolTitleOf = (a) => T['toolTitle' + a[0].toUpperCase() + a.slice(1)] || ''
 
 export const emptyCompanionSnapshot = Object.freeze({})
 export const noSubscribe = () => () => {}
@@ -79,7 +85,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
     snapshot.running ? jsx.jsx('div', { className: 'dshWmThinking', role: 'status', children: '正在回应…' }) : null,
   ] })
 }
-export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit, onJumpToFile }) {
+export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit, onJumpToFile, tools }) {
   const adapter = harnessAdapter()
   // 能力缺口要能说话：只有灰按钮而不解释原因，作者无法区分「内核没挂上」和「这个作品没会话」。
   const capability = companionCapability(adapter.capabilities())
@@ -98,6 +104,23 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
   const [draftCandidates, setDraftCandidates] = react.useState([])
   const [previewCandidate, setPreviewCandidate] = react.useState(null)
   const [contextOpen, setContextOpen] = react.useState(false)
+  // 文字工具（2026-10-09 第二轮前端整合）：✦ 图标菜单选中工具后进入 armed 状态，
+  // 输入框里可补提示词，Enter / 发送键运行（单次性）；运行与落稿回路的 state 在 App 侧（tools 束）。
+  const [armed, setArmed] = react.useState(null)
+  const [toolsMenuOpen, setToolsMenuOpen] = react.useState(false)
+  const toolsMenuRef = react.useRef(null)
+  const chatInputRef = react.useRef(null)
+  react.useEffect(() => {
+    if (!toolsMenuOpen) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setToolsMenuOpen(false) }
+    const onDown = (e) => { if (!toolsMenuRef.current?.contains(e.target)) setToolsMenuOpen(false) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [toolsMenuOpen])
   const [includeMemory, setIncludeMemory] = react.useState(true) // 默认开启本次参考
   const [pinned, setPinned] = react.useState([]) // 「固定优先」的条目 id（顺序即作者顺序）
   const [excluded, setExcluded] = react.useState([]) // 作者明确「不带」的条目 id（排除优先于固定/自动）
@@ -289,6 +312,21 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     companionDraftDirty.set(project, true)
     if (companionRecoveryState.get(project) === 'pending') return
     persistCompanionDraft(project)
+  }
+  /** ✦ 菜单选中工具：进入 armed 状态并聚焦输入框，等作者补提示词。 */
+  function armTool(action) {
+    setToolsMenuOpen(false)
+    setArmed(action)
+    window.setTimeout(() => chatInputRef.current?.focus(), 0)
+  }
+  /** armed 状态下 Enter / 发送键：以输入框内容为补充要求运行工具（单次性，运行后解除并清空）。 */
+  function runArmedTool() {
+    if (!armed || !tools) return
+    const action = armed
+    const hint = draft
+    setArmed(null)
+    updateDraft('')
+    tools.onRun(action, hint)
   }
   async function fullConversation() {
     if (sending.current) return
@@ -699,8 +737,39 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           : null,
         jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '移除稿件引用', onClick: () => updateReference(null), children: '×' }),
       ] }) : null,
-      jsx.jsx('textarea', { className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: capability.canSend ? '说说你正在想的…' : '先记下来，伙伴恢复后再发…', value: draft, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send() }
+      // 文字工具产出区：✦ 菜单运行的结果显示在输入框正上方，三个落稿键跟着结果走
+      // （原右栏抽屉的 .dshWmAiOut / apply 回路原样搬来，类名与 data 语义不变）。
+      tools && (tools.busy || tools.err || tools.out)
+        ? jsx.jsxs('div', { className: 'dshWmToolOut', 'data-wm-tools-out': '1', children: [
+            tools.busy ? jsx.jsx('div', { className: 'dshWmAiHint', role: 'status', children: T.applying }, 'busy') : null,
+            tools.err ? jsx.jsx('div', { className: 'dshWmAiHint', role: 'alert', children: tools.err }, 'err') : null,
+            jsx.jsx('div', { className: 'dshWmAiOut', children: tools.out || ' ' }, 'out'),
+            jsx.jsxs('div', { className: 'dshWmAiActions', children: [
+              jsx.jsx('button', { type: 'button', className: 'dshWmBtn', disabled: !tools.out, onClick: tools.onInsert, children: T.insert }, 'ins'),
+              jsx.jsx('button', { type: 'button', className: 'dshWmBtn', disabled: !tools.out, onClick: tools.onReplace, children: T.replaceSel }, 'rep'),
+              jsx.jsx('button', { type: 'button', className: 'dshWmBtn is-primary', onClick: tools.onSendChat, children: T.sendChat }, 'chat'),
+            ] }, 'apply'),
+          ] })
+        : null,
+      // armed chip：选中工具后压在输入框上方，× 取消（placeholder 同步换成提示词引导）
+      armed
+        ? jsx.jsxs('span', { className: 'dshWmToolChip', 'data-wm-tool-armed': armed, children: [
+            '✦ ' + (T[armed] || armed),
+            jsx.jsx('button', {
+              type: 'button',
+              className: 'dshWmToolChipX',
+              'data-wm-tool-disarm': '1',
+              'aria-label': '取消' + (T[armed] || armed),
+              onClick: () => setArmed(null),
+              children: '×',
+            }),
+          ] })
+        : null,
+      jsx.jsx('textarea', { ref: chatInputRef, className: 'dshWmChatInput', 'aria-label': '和写作伙伴聊聊', placeholder: armed ? T.toolsArmedHint : capability.canSend ? '说说你正在想的…' : '先记下来，伙伴恢复后再发…', value: draft, onChange: e => updateDraft(e.target.value), onKeyDown: e => {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return
+        // armed 时 Esc 只取消工具，不关面板、不发会话
+        if (e.key === 'Escape' && armed) { e.preventDefault(); setArmed(null); return }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (armed) { runArmedTool(); return } void send() }
       } }),
       jsx.jsxs('div', { className: 'dshWmContext', children: [
         jsx.jsx('button', {
@@ -765,15 +834,48 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
           : null,
       ] }),
       jsx.jsxs('div', { className: 'dshWmComposeFoot', children: [
+        // 文字工具入口（Codex「+」式）：输入框旁小图标，菜单常挂载、关闭时 display:none
+        tools ? jsx.jsxs('span', { className: 'dshWmToolsAnchor', ref: toolsMenuRef, children: [
+          jsx.jsx('button', {
+            type: 'button',
+            className: 'dshWmToolsBtn' + (armed ? ' is-on' : ''),
+            title: T.toolsMenu,
+            'aria-label': T.toolsMenu,
+            'aria-expanded': toolsMenuOpen,
+            onClick: () => setToolsMenuOpen((v) => !v),
+            children: '✦',
+          }),
+          jsx.jsx('div', {
+            className: 'dshWmToolsMenu' + (toolsMenuOpen ? ' is-open' : ''),
+            role: 'menu',
+            children: TOOL_ACTIONS.map((a) => jsx.jsx('button', {
+              type: 'button',
+              role: 'menuitem',
+              className: 'dshWmToolsMenuRow' + (armed === a ? ' is-on' : ''),
+              disabled: Boolean(tools.busy),
+              title: toolTitleOf(a),
+              onClick: () => armTool(a),
+              children: T[a] || a,
+            }, a)),
+          }),
+        ] }) : null,
         jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => { const value = contextText(); if (value?.text) updateReference(value) }, children: '＋ 引用稿件 / 选区' }),
         jsx.jsx('span', { className: 'dshWmInputHint', children: 'Shift + Enter 换行' }),
         snapshot.running ? jsx.jsx('button', { className: 'dshWmQuiet', 'aria-label': '停止回复', onClick: () => void (handle ? handle.cancel().catch(err => setError(err.message)) : setError('会话尚未就绪')), children: '停止' }) : null,
-        jsx.jsx('button', { className: 'dshWmSend', disabled: !capability.canSend || busy || !draft.trim(), onClick: () => void send(), 'aria-label': snapshot.running ? '排队发送' : '发送', title: capability.canSend ? (snapshot.running ? '在本次回复后发送' : '发送') : capabilityText, children: busy ? '…' : '↑' }),
+        // armed 时发送键改作「运行工具」：不依赖内核会话能力（assist 走插件自有路由），空提示词也可直接跑
+        jsx.jsx('button', {
+          className: 'dshWmSend',
+          disabled: armed ? Boolean(tools?.busy) : (!capability.canSend || busy || !draft.trim()),
+          onClick: () => { if (armed) { runArmedTool(); return } void send() },
+          'aria-label': armed ? '运行' + (T[armed] || armed) : snapshot.running ? '排队发送' : '发送',
+          title: armed ? '运行' + (T[armed] || armed) + '（可在上方补充要求）' : capability.canSend ? (snapshot.running ? '在本次回复后发送' : '发送') : capabilityText,
+          children: busy || tools?.busy ? '…' : '↑',
+        }),
       ] }),
     ] }),
   ] })
 }
-export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile }) {
+export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools }) {
   const [result, setResult] = react.useState(null)
   const [retry, setRetry] = react.useState(0)
   react.useEffect(() => {
@@ -790,5 +892,5 @@ export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx.jsx(SessionListSection, { currentPath: path || null, onOpenProject: onOpenProject || null }, 'wsl')
   if (!path || result?.path !== path) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' }, 'empty')] })
   if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] }, 'err')] })
-  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit, onJumpToFile }, result.project)] })
+  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit, onJumpToFile, tools }, result.project)] })
 }

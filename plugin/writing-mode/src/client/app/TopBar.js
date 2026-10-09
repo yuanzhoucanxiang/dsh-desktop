@@ -12,13 +12,9 @@ export const TopBar = react.memo(function TopBar({
   roots,
   activeRoot,
   activateRoot,
-  libOpen,
-  setLibOpen,
   focus,
   setFocus,
   prefs,
-  aiOpen,
-  setAiOpen,
   filePath,
   saveState,
   dirty,
@@ -92,13 +88,6 @@ export const TopBar = react.memo(function TopBar({
             children: [
               jsx.jsx('button', {
                 type: 'button',
-                className: 'dshWmBtn is-ghost',
-                onClick: () => setLibOpen((v) => !v),
-                title: libOpen ? T.hideLib : T.showLib,
-                children: libOpen ? '⟨ 库' : '库 ⟩',
-              }),
-              jsx.jsx('button', {
-                type: 'button',
                 className: 'dshWmBtn is-ghost' + (focus ? ' is-on' : ''),
                 onClick: () => setFocus((v) => !v),
                 'aria-pressed': focus,
@@ -137,18 +126,6 @@ export const TopBar = react.memo(function TopBar({
                   }, 'typewriter'),
                 ] }, 'aux-menu'),
               ] }, 'aux'),
-              jsx.jsx('button', {
-                type: 'button',
-                className: 'dshWmBtn is-ghost' + (aiOpen && !focus ? ' is-on' : ''),
-                // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
-                // 否则就是一只按了没反应的按钮（专注中的用户最不需要这个）。
-                onClick: () => {
-                  if (focus) { setFocus(false); setAiOpen(true) }
-                  else setAiOpen((v) => !v)
-                },
-                'aria-pressed': focus ? false : aiOpen,
-                children: aiOpen && !focus ? T.closeAi : T.openAi,
-              }),
             ],
           },
           'views'

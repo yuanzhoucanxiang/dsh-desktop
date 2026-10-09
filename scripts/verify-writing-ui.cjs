@@ -25,9 +25,12 @@ app.whenReady().then(async () => {
   const host = await import(pathToFileURL(path.join(repo, 'plugin/writing-mode/index.js')))
   store.writeConfig({ roots: [{ path: root, default: true }], activeRoot: root, prefs: { ...store.DEFAULT_PREFS, autoSaveMs: 5000 } })
   let handler
-  // 假 llm：让「文字工具」在 fixture 里确定性地产出改稿建议，从而端到端测改稿 diff 回路
+  // 假 llm：让「文字工具」在 fixture 里确定性地产出改稿建议，从而端到端测改稿 diff 回路；
+  // lastPrompt 记录最近一次 prompt，用来断言输入框里的补充要求（hint）确实拼进了指令
+  let lastPrompt = ''
   const fakeLlm = {
-    stream: async function* () {
+    stream: async function* (options) {
+      lastPrompt = String(options?.messages?.[0]?.content?.[0]?.text || '')
       yield { type: 'text-delta', index: 0, text: '改写后的句子' }
       yield { type: 'finish', reason: { kind: 'stop' } }
     },
@@ -93,16 +96,22 @@ app.whenReady().then(async () => {
   // 版本条：单版本文档也渲染，条尾有「另存为新版」
   await waitFor(`document.querySelector('.dshWmVerBar')!==null`)
   assert.ok(await evaluate(`Array.from(document.querySelectorAll('.dshWmVerBar button')).some(e=>e.textContent==='另存为新版')`), '版本条缺「另存为新版」')
-  // 右栏两区：写作伙伴 / 检查；文字工具收进伙伴页顶部抽屉（2026-10-09 右栏整合）
+  // 右栏两区：写作伙伴 / 检查；文字工具收进伙伴输入框旁的 ✦ 图标菜单（2026-10-09 第二轮整合）
   await waitFor(`Array.from(document.querySelectorAll('.dshWmTab')).map(e=>e.textContent).join('|')==='写作伙伴|检查'`)
   await button('检查')
   await waitFor(`Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('成稿检查'))&&Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('伏笔与线索'))`)
   console.log('PASS UI 右栏两区：检查 tab 承载成稿检查与伏笔线索，版本入口归拢')
   await button('写作伙伴')
-  await button('文字工具')
-  await waitFor(`document.querySelector('[data-wm-tools]').className.includes('is-open')`)
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(e=>e.textContent==='✦')`)
+  await button('✦')
+  await waitFor(`document.querySelector('.dshWmToolsMenu').className.includes('is-open')`)
+  await button('润色')
+  await waitFor(`document.querySelector('[data-wm-tool-armed]')?.getAttribute('data-wm-tool-armed')==='polish'`)
   await waitFor(`!Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('成稿检查'))`)
-  console.log('PASS UI 文字工具收进伙伴页抽屉，不混入检查区块')
+  // armed 是单次状态：× 解除后输入框还原，不残留工具
+  await evaluate(`document.querySelector('[data-wm-tool-disarm]').click()`)
+  await waitFor(`!document.querySelector('[data-wm-tool-armed]')`)
+  console.log('PASS UI 文字工具收进输入框旁 ✦ 菜单：选中即待运行，可取消，不混入检查区块')
   // 能力缺口必须说话：本 fixture 没注入内核 sessions，伙伴面板要讲清「缺什么、还能不能写、会不会丢」，
   // 而不是让作者对着一只灰掉的按钮猜（0.1.7 适配遗留的 UX 空档）。
   await button('写作伙伴')
@@ -171,15 +180,16 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('.dshWmDocName')?.textContent.includes('v2')`)
   assert.equal(fs.readFileSync(path.join(project, 'draft/novel/第1章-v2.md'), 'utf8'), '发生冲突的编辑器稿')
   console.log('PASS UI 冲突提示、保全外部稿、另存恢复')
-  // 专注模式把右栏整体收起，此时「AI」按钮不能是按了没反应的死键：点它应退出专注并唤回右栏
+  // 专注模式把右栏整体收起（顶栏已无库/AI 开关，收展全走边缘 rail；专注中 rail 也隐藏），
+  // 退出专注就再点一次「专注」，右栏与伙伴面板必须原样回来
   await button('专注')
   await waitFor(`document.body.getAttribute('data-writing-focus')==='1'`)
   await waitFor(`getComputedStyle(document.querySelector('.dshWmSide.is-ai')).display==='none'`)
-  await button('AI')
+  await button('专注')
   await waitFor(`document.body.getAttribute('data-writing-focus')===null`)
   await waitFor(`getComputedStyle(document.querySelector('.dshWmSide.is-ai')).display!=='none'`)
   await waitFor(`document.querySelector('[data-wm-capability="blocked"]')!==null`, '退出专注后伙伴面板应回来')
-  console.log('PASS UI 专注模式下 AI 按钮退出专注并唤回右栏')
+  console.log('PASS UI 专注收起右栏，再点「专注」退出并唤回')
   // 查找/替换：Ctrl+F 开栏、计数、替换、全部替换；Esc 只关栏、不退写作台
   await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true}))`)
   await waitFor(`document.querySelector('[data-wm-findbar]')!==null`)
@@ -208,9 +218,15 @@ app.whenReady().then(async () => {
   // 选区改稿 diff 回路：替换选区先出预览（原文 vs 建议稿），采纳才落稿（fixture 假 llm 输出确定）
   await input('.dshWmEditor', '挑选出来的句子要改稿')
   await evaluate(`(()=>{const ta=document.querySelector('.dshWmEditor');ta.focus();ta.setSelectionRange(5,7)})()`)
-  await button('文字工具')
+  await button('✦')
   await button('润色')
+  // armed 后在输入框补提示词，Enter 运行；提示词要一路拼进 host 的 assist 指令
+  await input('.dshWmChatInput', '语气再轻一点')
+  await evaluate(`document.querySelector('.dshWmChatInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
   await waitFor(`document.querySelector('.dshWmAiOut')?.textContent.includes('改写后的句子')`)
+  assert.ok(lastPrompt.includes('语气再轻一点'), '输入框里的补充要求应拼进 assist 指令：' + lastPrompt.slice(0, 120))
+  await waitFor(`!document.querySelector('[data-wm-tool-armed]')`)
+  assert.equal(await evaluate(`document.querySelector('.dshWmChatInput').value`), '', '运行后输入框应清空')
   await button('替换选区')
   await waitFor(`document.querySelector('[data-wm-rewrite]')!==null`)
   assert.match(await evaluate(`document.querySelector('[data-wm-rewrite]').textContent`), /改稿预览 · 润色/, '预览头应带动作名')
@@ -219,9 +235,11 @@ app.whenReady().then(async () => {
   await button('采纳改稿')
   await waitFor(`document.querySelector('.dshWmEditor').value==='挑选出来的改写后的句子要改稿'`)
   assert.equal(await evaluate(`document.querySelector('[data-wm-rewrite]')`), null, '采纳后预览应收起')
-  // 丢弃路径：再生成一次，丢弃后稿面原样
+  // 丢弃路径：再生成一次（这次不补提示词，arm 后直接 Enter），丢弃后稿面原样
   await evaluate(`(()=>{const ta=document.querySelector('.dshWmEditor');ta.focus();ta.setSelectionRange(0,2)})()`)
+  await button('✦')
   await button('润色')
+  await evaluate(`document.querySelector('.dshWmChatInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
   await waitFor(`document.querySelector('.dshWmAiOut')?.textContent.includes('改写后的句子')`)
   await button('替换选区')
   await waitFor(`document.querySelector('[data-wm-rewrite]')!==null`)

@@ -2283,6 +2283,15 @@ var zh = {
   insert: "插入文末",
   replaceSel: "替换选区",
   sendChat: "发送到会话",
+  toolsMenu: "文字工具",
+  toolsArmedHint: "可补充要求，Enter 运行 · Esc 取消",
+  toolTitlePolish: "保持原意，提升可读性与节奏",
+  toolTitleContinue: "顺着现有风格往下写一段",
+  toolTitleOutline: "为这段文字生成简洁大纲",
+  toolTitleCompress: "压到约一半长度，保留要点",
+  toolTitleExpand: "补足论证与例子，篇幅约翻倍",
+  toolTitleResearch: "围绕这段文字联网查公开资料",
+  toolTitleSpark: "来几个可以写的新点子",
   applying: "处理中…",
   noText: "先选中或写点内容",
   aiUnavailable: "未连接模型服务。可先「发送到会话」，由主对话处理。",
@@ -2383,6 +2392,15 @@ var en = {
   insert: "Append",
   replaceSel: "Replace selection",
   sendChat: "Send to chat",
+  toolsMenu: "Writing tools",
+  toolsArmedHint: "Add a note, Enter to run · Esc to cancel",
+  toolTitlePolish: "Keep meaning, improve readability and rhythm",
+  toolTitleContinue: "Continue in the same style",
+  toolTitleOutline: "Make a compact outline of this text",
+  toolTitleCompress: "Compress to about half, keep the key points",
+  toolTitleExpand: "Add arguments and examples, roughly double the length",
+  toolTitleResearch: "Search public sources about this text",
+  toolTitleSpark: "A few fresh ideas to write about",
   applying: "Working…",
   noText: "Select or write something first",
   aiUnavailable: "No model service. Use Send to chat for now.",
@@ -2711,24 +2729,28 @@ var CSS = [
   ".dshWmSide .dshWmBarGroup{flex-direction:column;align-items:stretch;gap:var(--wm-space-2);padding:0 10px 10px;}",
   ".dshWmSide .dshWmBarGroup .dshWmSearch{width:100%;margin:0;}",
   ".dshWmList{flex:1;overflow:auto;padding:4px 10px 20px;}",
-  ".dshWmProj{margin-bottom:12px;}",
-  /* 左栏层级（2026-10-09）：项目名是锚点；分组（正文/人物/设定…）与操作行收进项目
-     缩进带，左侧一条引导线——此前与项目名同一平级，读起来像一堆并列栏目。 */
+  ".dshWmProj{margin-bottom:18px;}",
+  /* 左栏层级（2026-10-09 定结构，2026-10-10 定视觉比重）：主=章节正文（14px 正文色，
+     唯一大号字）；次=项目名（14px 中黑锚点，靠字重不靠字号压过章节）；再次=分组文件夹
+     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=档案/成书/添加资料
+     （xs 灰字弱钮，不与内容抢读）。缩进仍表达归属，比重表达主次。 */
   ".dshWmProj>.dshWmProjOps{margin-left:18px;}",
+  ".dshWmProj>.dshWmItem{margin-left:18px;width:calc(100% - 18px);font-size:var(--wm-text-md);padding:6px 8px;}",
   ".dshWmProj>details{margin-left:9px;padding-left:9px;border-left:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmProj>details>summary.dshWmFolder{padding-left:2px;font-size:var(--wm-text-xs);letter-spacing:.06em;color:var(--wm-text-dim);}",
+  ".dshWmProj>details>summary.dshWmFolder{padding-left:2px;}",
+  ".dshWmProjAssets>details{margin-left:4px;padding-left:8px;}",
   ".dshWmProjToggle{",
   "  display:flex;align-items:center;gap:6px;width:100%;",
-  "  padding:8px 8px 4px;border:none;background:transparent;cursor:pointer;",
-  "  font:inherit;font-size:var(--wm-text-sm);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);",
+  "  padding:10px 8px 6px;border:none;background:transparent;cursor:pointer;",
+  "  font:inherit;font-size:var(--wm-text-md);font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);",
   "  text-align:left;",
   "}",
   ".dshWmProjToggle:hover{color:var(--dsw-alias-brand-primary);}",
   ".dshWmProjChev{font-size:var(--wm-text-xs);color:var(--wm-text-dim);transition:transform .12s;flex:none;}",
   ".dshWmProjChev.is-open{transform:rotate(90deg);}",
   ".dshWmFolder{",
-  "  font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);letter-spacing:.08em;text-transform:uppercase;",
-  "  color:var(--dsw-alias-label-secondary);padding:8px 8px 3px;",
+  "  font-size:var(--wm-text-xs);font-weight:var(--wm-weight-medium);letter-spacing:.05em;",
+  "  color:var(--wm-text-dim);padding:8px 8px 3px;",
   "}",
   ".dshWmSearch{",
   "  width:100%;margin:0 0 8px;padding:7px 10px;border-radius:var(--wm-radius-m);",
@@ -2977,9 +2999,12 @@ var CSS = [
   ".dshWmSideFold{flex:none;width:24px;height:24px;padding:0;border:0;border-radius:var(--wm-radius-s);background:transparent;color:var(--wm-text-dim);cursor:pointer;font:inherit;font-size:var(--wm-text-md);line-height:1;display:inline-flex;align-items:center;justify-content:center;}",
   ".dshWmSideFold:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   /* 导出成书面板：覆盖中央编辑区（编辑器不卸载），项目操作行 */
-  ".dshWmProjOps{display:flex;align-items:center;gap:6px;margin:0 0 8px;}",
-  ".dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;}",
-  ".dshWmProjOps .dshWmBtn{flex:none;}",
+  /* 操作行降权（2026-10-10）：档案/成书/添加资料是三级动作——xs 灰字、按钮去边框，
+     不再与章节行同量级。 */
+  ".dshWmProjOps{display:flex;align-items:center;gap:2px;margin:0 0 6px;}",
+  ".dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;font-size:var(--wm-text-xs);padding:4px 8px;}",
+  ".dshWmProjOps .dshWmBtn{flex:none;font-size:var(--wm-text-xs);padding:3px 7px;border-color:transparent;color:var(--wm-text-dim);}",
+  ".dshWmProjOps .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmExport{",
   "  position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;min-height:0;",
   "  background:var(--dsw-alias-bg-base);",
@@ -3009,17 +3034,25 @@ var CSS = [
   ".dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}",
   /* 会话列表区（伙伴 tab 顶部折叠区） */
   ".dshWmCompanionWrap{display:flex;flex-direction:column;flex:1;min-height:0;}",
-  /* 文字工具抽屉（2026-10-09 右栏整合）：收进伙伴页顶部的选项性抽屉，不再是独立 tab。
-     抽屉体常挂载、收起时 display:none——与「辅助 ▾」菜单同一模式（门禁 .click() 不看可见性）。
-     开关钮箭头走伪元素：textContent 保持逐字「文字工具」，按文本精确点击的断言不受影响。 */
-  ".dshWmTools{flex:none;padding:4px 16px 0;display:flex;flex-direction:column;gap:6px;}",
-  ".dshWmToolsToggle{display:flex;align-items:center;width:100%;padding:6px 0;border:0;background:transparent;cursor:pointer;font:inherit;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.06em;color:var(--wm-text-dim);text-align:left;}",
-  '.dshWmToolsToggle::before{content:"▸";margin-right:6px;font-size:10px;}',
-  '.dshWmTools.is-open>.dshWmToolsToggle::before{content:"▾";}',
-  ".dshWmToolsToggle:hover{color:var(--dsw-alias-label-primary);}",
-  ".dshWmTools:not(.is-open)>.dshWmToolsBody{display:none;}",
-  ".dshWmToolsBody{display:flex;flex-direction:column;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--dsw-alias-border-l2);}",
-  ".dshWmTools .dshWmAiOut{flex:none;min-height:96px;max-height:220px;}",
+  /* 文字工具 ✦ 图标菜单（2026-10-09 第二轮，取代同日的右栏抽屉）：输入框旁小图标，
+     上弹菜单选中工具 → armed chip 压在输入框上方，Enter/发送键运行；产出区在输入框正上方。
+     菜单常挂载、关闭时 display:none——与「辅助 ▾」同一模式（门禁 .click() 不看可见性）；
+     菜单行可见文本逐字等于工具名，说明在 title（按文本精确点击的断言不受影响）。 */
+  ".dshWmToolsAnchor{position:relative;flex:none;display:inline-flex;}",
+  ".dshWmToolsBtn{width:30px;height:30px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:transparent;color:var(--wm-text-dim);font:inherit;font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}",
+  ".dshWmToolsBtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-tertiary);}",
+  ".dshWmToolsBtn.is-on{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}",
+  ".dshWmToolsMenu:not(.is-open){display:none;}",
+  ".dshWmToolsMenu{position:absolute;bottom:calc(100% + 6px);left:0;z-index:8;display:flex;flex-direction:column;min-width:132px;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-3);box-shadow:0 8px 24px rgba(0,0,0,.14);}",
+  ".dshWmToolsMenuRow{display:block;width:100%;padding:6px 10px;border:0;border-radius:var(--wm-radius-s);background:transparent;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;}",
+  ".dshWmToolsMenuRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
+  ".dshWmToolsMenuRow.is-on{background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWmToolsMenuRow:disabled{opacity:.4;cursor:default;}",
+  ".dshWmToolChip{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;padding:2px 4px 2px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);font-size:var(--wm-text-xs);color:var(--dsw-alias-label-secondary);}",
+  ".dshWmToolChipX{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--wm-text-dim);font:inherit;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}",
+  ".dshWmToolChipX:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover);}",
+  ".dshWmToolOut{display:flex;flex-direction:column;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--dsw-alias-border-l2);}",
+  ".dshWmToolOut .dshWmAiOut{flex:none;min-height:96px;max-height:220px;}",
   ".dshWmSessList{flex:none;padding:10px 16px 0;display:flex;flex-direction:column;gap:4px;}",
   ".dshWmSessRows{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px;}",
   ".dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--wm-radius-m);border:0;background:none;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}",
@@ -3098,7 +3131,7 @@ var CSS = [
   ".dshWmSearch.is-grow{flex:1;}",
   ".dshWmSearch.is-compact{width:180px;margin:0;}",
   ".dshWmSearch.is-compose{margin:0;flex:1;min-width:0;resize:vertical;max-height:140px;font:inherit;}",
-  ".dshWmFolder.is-clickable{cursor:pointer;text-transform:none;}",
+  ".dshWmFolder.is-clickable{cursor:pointer;}",
   /* 外壳侧边栏 footer 的入口钮：外观仍由 .dshWmBtn 负责，这里只负责撑满与文字居中 */
   ".dshWmBtn.dshWmEntryBtn{width:100%;justify-content:center;}",
   /* 状态条检查芯片：状态条里唯一「要作者看一眼」的信息，字号与字重都压过元信息 */
@@ -3111,8 +3144,15 @@ var CSS = [
   ".dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}",
   ".dshWmProjFormActions{display:flex;gap:6px;}",
   ".dshWmNewDocRow{display:flex;gap:6px;padding:0 10px 8px;}",
-  ".dshWmLibViews{padding:var(--wm-space-2);display:flex;gap:6px;}",
+  /* 视图切换与搜索降权（2026-10-10）：它们是 chrome 不是内容——去边框小灰字 tab、
+     透明底细边搜索框，把视觉重量让给项目与章节。 */
+  ".dshWmLibViews{padding:var(--wm-space-2);display:flex;gap:2px;}",
+  ".dshWmLibViews .dshWmBtn{border-color:transparent;color:var(--wm-text-dim);font-size:var(--wm-text-xs);padding:4px 10px;}",
+  ".dshWmLibViews .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;}",
+  '.dshWmLibViews .dshWmBtn[aria-pressed="true"]{color:var(--dsw-alias-label-primary);font-weight:var(--wm-weight-medium);background:var(--dsw-alias-bg-layer-2);border-color:transparent;}',
   ".dshWmSearchWrap{padding:var(--wm-space-2) var(--wm-space-2) 0;}",
+  ".dshWmSearchWrap .dshWmSearch{background:transparent;border-color:var(--dsw-alias-border-l3);}",
+  ".dshWmSearchWrap .dshWmSearch:focus{border-color:var(--dsw-alias-brand-primary);}",
   /* 备忘：配额行 / 说明行 / 编写区 */
   ".dshWmMemoryNote.is-quota{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}",
   ".dshWmCompanionEmpty.is-inline{padding:8px 10px;text-align:left;line-height:1.5;}",
@@ -3160,7 +3200,7 @@ var CSS = [
   ".dshWmPickRowName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWmPickEmpty{padding:8px 10px;color:var(--wm-text-dim);font-size:var(--wm-text-xs);}",
   ".dshWmPickFoot{display:flex;align-items:center;gap:8px;}",
-  /* C2 「＋ 添加人物、设定或规划…」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
+  /* C2 「＋ 添加资料」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
      并允许在窄侧栏里省略号收尾（.dshWmSearch 那套是输入框外观，0,2,0 复合选择器确保压得住它） */
   ".dshWmSearch.dshWmAddRes{max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-style:dashed;color:var(--dsw-alias-label-secondary);}",
   /* C3 原生 checkbox 收编品牌色：作用域覆盖工作台根与设置页（设置页在 .dshWmRoot 之外） */
@@ -3307,13 +3347,9 @@ var TopBar = react.memo(function TopBar2({
   roots,
   activeRoot,
   activateRoot,
-  libOpen,
-  setLibOpen,
   focus,
   setFocus,
   prefs,
-  aiOpen,
-  setAiOpen,
   filePath,
   saveState,
   dirty,
@@ -3381,13 +3417,6 @@ var TopBar = react.memo(function TopBar2({
             children: [
               jsx.jsx("button", {
                 type: "button",
-                className: "dshWmBtn is-ghost",
-                onClick: () => setLibOpen((v) => !v),
-                title: libOpen ? T.hideLib : T.showLib,
-                children: libOpen ? "⟨ 库" : "库 ⟩"
-              }),
-              jsx.jsx("button", {
-                type: "button",
                 className: "dshWmBtn is-ghost" + (focus ? " is-on" : ""),
                 onClick: () => setFocus((v) => !v),
                 "aria-pressed": focus,
@@ -3431,21 +3460,7 @@ var TopBar = react.memo(function TopBar2({
                     children: T.typewriter
                   }, "typewriter")
                 ] }, "aux-menu")
-              ] }, "aux"),
-              jsx.jsx("button", {
-                type: "button",
-                className: "dshWmBtn is-ghost" + (aiOpen && !focus ? " is-on" : ""),
-                // 专注模式下右栏被整体收起，此时「AI」按钮必须真的能唤回右栏，
-                // 否则就是一只按了没反应的按钮（专注中的用户最不需要这个）。
-                onClick: () => {
-                  if (focus) {
-                    setFocus(false);
-                    setAiOpen(true);
-                  } else setAiOpen((v) => !v);
-                },
-                "aria-pressed": focus ? false : aiOpen,
-                children: aiOpen && !focus ? T.closeAi : T.openAi
-              })
+              ] }, "aux")
             ]
           },
           "views"
@@ -5275,15 +5290,15 @@ var LibraryPane = react6.memo(function LibraryPane2({
                           value: "",
                           onChange: (e) => void addProjectResource(proj, e.target.value),
                           children: [
-                            jsx11.jsx("option", { value: "", children: "＋ 添加人物、设定或规划…" }, "placeholder"),
+                            jsx11.jsx("option", { value: "", children: "＋ 添加资料" }, "placeholder"),
                             ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx11.jsx("option", { value: item.rel, children: item.label }, item.rel))
                           ]
                         }, "add-resource")
                       ]
                     }, "proj-ops") : null,
                     proj.scanWarning ? jsx11.jsx("p", { role: "status", children: proj.scanWarning }) : null,
-                    openP ? groups.map(
-                      (g) => jsx11.jsx(
+                    openP ? (() => {
+                      const renderGroup = (g) => jsx11.jsx(
                         "details",
                         {
                           open: libraryView === "files" || Boolean(libQuery) || ["正文", "作品概览"].includes(g.key) || g.files.some((f) => f.abs === filePath),
@@ -5308,8 +5323,35 @@ var LibraryPane = react6.memo(function LibraryPane2({
                           ]
                         },
                         "g-" + g.key
-                      )
-                    ) : null
+                      );
+                      const draftGroup = libraryView === "writing" ? groups.find((g) => g.key === "正文") : null;
+                      if (!draftGroup) return groups.map(renderGroup);
+                      const assetGroups = groups.filter((g) => g.key !== "正文");
+                      const assetCount = assetGroups.reduce((n, g) => n + g.files.length, 0);
+                      const assetsOpen = Boolean(libQuery) || assetGroups.some((g) => g.files.some((f) => f.abs === filePath));
+                      return [
+                        draftGroup.files.map(
+                          (f) => jsx11.jsx(FileRow, {
+                            file: f,
+                            maxVer: maxDraft,
+                            active: Boolean(filePath) && f.abs === filePath,
+                            onPick: setFilePath,
+                            labels: T
+                          }, f.abs)
+                        ),
+                        assetGroups.length ? jsx11.jsxs("details", {
+                          className: "dshWmProjAssets",
+                          open: assetsOpen,
+                          children: [
+                            jsx11.jsx("summary", {
+                              className: "dshWmFolder is-clickable",
+                              children: "资料与设定 · " + assetCount
+                            }, "ah"),
+                            ...assetGroups.map(renderGroup)
+                          ]
+                        }, "assets") : null
+                      ];
+                    })() : null
                   ]
                 },
                 proj.path
@@ -20248,6 +20290,8 @@ function companionCapability(caps) {
 }
 
 // plugin/writing-mode/src/client/features/companion/index.js
+var TOOL_ACTIONS = ["polish", "continue", "outline", "compress", "expand", "research", "spark"];
+var toolTitleOf = (a) => T["toolTitle" + a[0].toUpperCase() + a.slice(1)] || "";
 var emptyCompanionSnapshot = Object.freeze({});
 var noSubscribe = () => () => {
 };
@@ -20303,7 +20347,7 @@ function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, 
     snapshot.running ? jsx28.jsx("div", { className: "dshWmThinking", role: "status", children: "正在回应…" }) : null
   ] });
 }
-function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit, onJumpToFile }) {
+function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools }) {
   const adapter = harnessAdapter();
   const capability = companionCapability(adapter.capabilities());
   const capabilityText = capability.reasons.length ? capability.headline + "：" + capability.reasons.join("；") : capability.headline;
@@ -20319,6 +20363,25 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
   const [draftCandidates, setDraftCandidates] = react13.useState([]);
   const [previewCandidate, setPreviewCandidate] = react13.useState(null);
   const [contextOpen, setContextOpen] = react13.useState(false);
+  const [armed, setArmed] = react13.useState(null);
+  const [toolsMenuOpen, setToolsMenuOpen] = react13.useState(false);
+  const toolsMenuRef = react13.useRef(null);
+  const chatInputRef = react13.useRef(null);
+  react13.useEffect(() => {
+    if (!toolsMenuOpen) return void 0;
+    const onKey = (e) => {
+      if (e.key === "Escape") setToolsMenuOpen(false);
+    };
+    const onDown = (e) => {
+      if (!toolsMenuRef.current?.contains(e.target)) setToolsMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [toolsMenuOpen]);
   const [includeMemory, setIncludeMemory] = react13.useState(true);
   const [pinned, setPinned] = react13.useState([]);
   const [excluded, setExcluded] = react13.useState([]);
@@ -20513,6 +20576,19 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     companionDraftDirty.set(project, true);
     if (companionRecoveryState.get(project) === "pending") return;
     persistCompanionDraft(project);
+  }
+  function armTool(action) {
+    setToolsMenuOpen(false);
+    setArmed(action);
+    window.setTimeout(() => chatInputRef.current?.focus(), 0);
+  }
+  function runArmedTool() {
+    if (!armed || !tools) return;
+    const action = armed;
+    const hint = draft;
+    setArmed(null);
+    updateDraft("");
+    tools.onRun(action, hint);
   }
   async function fullConversation() {
     if (sending.current) return;
@@ -20886,9 +20962,43 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         }) : null,
         jsx28.jsx("button", { className: "dshWmQuiet", "aria-label": "移除稿件引用", onClick: () => updateReference(null), children: "×" })
       ] }) : null,
-      jsx28.jsx("textarea", { className: "dshWmChatInput", "aria-label": "和写作伙伴聊聊", placeholder: capability.canSend ? "说说你正在想的…" : "先记下来，伙伴恢复后再发…", value: draft, onChange: (e) => updateDraft(e.target.value), onKeyDown: (e) => {
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+      // 文字工具产出区：✦ 菜单运行的结果显示在输入框正上方，三个落稿键跟着结果走
+      // （原右栏抽屉的 .dshWmAiOut / apply 回路原样搬来，类名与 data 语义不变）。
+      tools && (tools.busy || tools.err || tools.out) ? jsx28.jsxs("div", { className: "dshWmToolOut", "data-wm-tools-out": "1", children: [
+        tools.busy ? jsx28.jsx("div", { className: "dshWmAiHint", role: "status", children: T.applying }, "busy") : null,
+        tools.err ? jsx28.jsx("div", { className: "dshWmAiHint", role: "alert", children: tools.err }, "err") : null,
+        jsx28.jsx("div", { className: "dshWmAiOut", children: tools.out || " " }, "out"),
+        jsx28.jsxs("div", { className: "dshWmAiActions", children: [
+          jsx28.jsx("button", { type: "button", className: "dshWmBtn", disabled: !tools.out, onClick: tools.onInsert, children: T.insert }, "ins"),
+          jsx28.jsx("button", { type: "button", className: "dshWmBtn", disabled: !tools.out, onClick: tools.onReplace, children: T.replaceSel }, "rep"),
+          jsx28.jsx("button", { type: "button", className: "dshWmBtn is-primary", onClick: tools.onSendChat, children: T.sendChat }, "chat")
+        ] }, "apply")
+      ] }) : null,
+      // armed chip：选中工具后压在输入框上方，× 取消（placeholder 同步换成提示词引导）
+      armed ? jsx28.jsxs("span", { className: "dshWmToolChip", "data-wm-tool-armed": armed, children: [
+        "✦ " + (T[armed] || armed),
+        jsx28.jsx("button", {
+          type: "button",
+          className: "dshWmToolChipX",
+          "data-wm-tool-disarm": "1",
+          "aria-label": "取消" + (T[armed] || armed),
+          onClick: () => setArmed(null),
+          children: "×"
+        })
+      ] }) : null,
+      jsx28.jsx("textarea", { ref: chatInputRef, className: "dshWmChatInput", "aria-label": "和写作伙伴聊聊", placeholder: armed ? T.toolsArmedHint : capability.canSend ? "说说你正在想的…" : "先记下来，伙伴恢复后再发…", value: draft, onChange: (e) => updateDraft(e.target.value), onKeyDown: (e) => {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+        if (e.key === "Escape" && armed) {
           e.preventDefault();
+          setArmed(null);
+          return;
+        }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          if (armed) {
+            runArmedTool();
+            return;
+          }
           void send();
         }
       } }),
@@ -20943,18 +21053,57 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         ] }) : null
       ] }),
       jsx28.jsxs("div", { className: "dshWmComposeFoot", children: [
+        // 文字工具入口（Codex「+」式）：输入框旁小图标，菜单常挂载、关闭时 display:none
+        tools ? jsx28.jsxs("span", { className: "dshWmToolsAnchor", ref: toolsMenuRef, children: [
+          jsx28.jsx("button", {
+            type: "button",
+            className: "dshWmToolsBtn" + (armed ? " is-on" : ""),
+            title: T.toolsMenu,
+            "aria-label": T.toolsMenu,
+            "aria-expanded": toolsMenuOpen,
+            onClick: () => setToolsMenuOpen((v) => !v),
+            children: "✦"
+          }),
+          jsx28.jsx("div", {
+            className: "dshWmToolsMenu" + (toolsMenuOpen ? " is-open" : ""),
+            role: "menu",
+            children: TOOL_ACTIONS.map((a) => jsx28.jsx("button", {
+              type: "button",
+              role: "menuitem",
+              className: "dshWmToolsMenuRow" + (armed === a ? " is-on" : ""),
+              disabled: Boolean(tools.busy),
+              title: toolTitleOf(a),
+              onClick: () => armTool(a),
+              children: T[a] || a
+            }, a))
+          })
+        ] }) : null,
         jsx28.jsx("button", { className: "dshWmQuiet", onClick: () => {
           const value = contextText();
           if (value?.text) updateReference(value);
         }, children: "＋ 引用稿件 / 选区" }),
         jsx28.jsx("span", { className: "dshWmInputHint", children: "Shift + Enter 换行" }),
         snapshot.running ? jsx28.jsx("button", { className: "dshWmQuiet", "aria-label": "停止回复", onClick: () => void (handle2 ? handle2.cancel().catch((err) => setError(err.message)) : setError("会话尚未就绪")), children: "停止" }) : null,
-        jsx28.jsx("button", { className: "dshWmSend", disabled: !capability.canSend || busy || !draft.trim(), onClick: () => void send(), "aria-label": snapshot.running ? "排队发送" : "发送", title: capability.canSend ? snapshot.running ? "在本次回复后发送" : "发送" : capabilityText, children: busy ? "…" : "↑" })
+        // armed 时发送键改作「运行工具」：不依赖内核会话能力（assist 走插件自有路由），空提示词也可直接跑
+        jsx28.jsx("button", {
+          className: "dshWmSend",
+          disabled: armed ? Boolean(tools?.busy) : !capability.canSend || busy || !draft.trim(),
+          onClick: () => {
+            if (armed) {
+              runArmedTool();
+              return;
+            }
+            void send();
+          },
+          "aria-label": armed ? "运行" + (T[armed] || armed) : snapshot.running ? "排队发送" : "发送",
+          title: armed ? "运行" + (T[armed] || armed) + "（可在上方补充要求）" : capability.canSend ? snapshot.running ? "在本次回复后发送" : "发送" : capabilityText,
+          children: busy || tools?.busy ? "…" : "↑"
+        })
       ] })
     ] })
   ] });
 }
-function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile }) {
+function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools }) {
   const [result, setResult] = react13.useState(null);
   const [retry, setRetry] = react13.useState(0);
   react13.useEffect(() => {
@@ -20975,7 +21124,7 @@ function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx28.jsx(SessionListSection, { currentPath: path2 || null, onOpenProject: onOpenProject || null }, "wsl");
   if (!path2 || result?.path !== path2) return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx("div", { className: "dshWmCompanionEmpty", children: path2 ? "正在打开对话…" : "打开一份稿件，从这里聊起。" }, "empty")] });
   if (!result.ok) return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [result.error, jsx28.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })] }, "err")] });
-  return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit, onJumpToFile }, result.project)] });
+  return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools }, result.project)] });
 }
 
 // plugin/writing-mode/src/client/features/export-book/index.js
@@ -21900,7 +22049,6 @@ function WritingModeApp() {
   };
   const [aiOpen, setAiOpen] = react17.useState(false);
   const [aiTab, setAiTab] = react17.useState("companion");
-  const [toolsOpen, setToolsOpen] = react17.useState(false);
   const [aiOut, setAiOut] = react17.useState("");
   const [aiBusy, setAiBusy] = react17.useState(false);
   const [aiErr, setAiErr] = react17.useState("");
@@ -22381,7 +22529,7 @@ function WritingModeApp() {
       taRef.current?.focus();
     }
   }
-  async function runAssist(action) {
+  async function runAssist(action, hint) {
     const snapshot = editor.get();
     const selection = taRef.current ? { start: taRef.current.selectionStart, end: taRef.current.selectionEnd } : { start: 0, end: 0 };
     const isRec = action === "research" || action === "spark";
@@ -22402,6 +22550,8 @@ function WritingModeApp() {
           action,
           text: text7 || content3.slice(0, 4e3),
           path: filePath,
+          // 工具菜单里作者随提示词补的要求（空串不落字段，host 用纯默认指令）
+          hint: String(hint || "").trim() || void 0,
           style: action === "spark" ? "spark" : "research"
         })
       });
@@ -22415,7 +22565,7 @@ function WritingModeApp() {
         return;
       }
       if (data.error === "llm-unavailable") {
-        const tip = T.aiUnavailable + "\n\n【可直接发送到会话】\n请作为写作助手，对下列文本做「" + (T[action] || action) + "」：\n\n" + (text7 || content3).slice(0, 2e3);
+        const tip = T.aiUnavailable + "\n\n【可直接发送到会话】\n请作为写作助手，对下列文本做「" + (T[action] || action) + (hint && String(hint).trim() ? "」（补充要求：" + String(hint).trim() + "）：" : "」：") + "\n\n" + (text7 || content3).slice(0, 2e3);
         setAiOut(tip);
         setAiErr(T.aiUnavailable);
         flashMsg(T.aiUnavailable);
@@ -22574,13 +22724,9 @@ function WritingModeApp() {
         roots,
         activeRoot,
         activateRoot,
-        libOpen,
-        setLibOpen: setLibOpenManual,
         focus,
         setFocus,
         prefs,
-        aiOpen,
-        setAiOpen,
         filePath,
         saveState,
         dirty,
@@ -22819,74 +22965,9 @@ function WritingModeApp() {
                       children: "⟩"
                     }, "fold")
                   ] }, "ah"),
-                  // 文字工具不再是独立 tab：收进伙伴页顶部作选项性抽屉（2026-10-09 右栏整合）。
-                  // 抽屉体常挂载、收起时由 .dshWmTools 规则 display:none（门禁 .click() 不看可见性）；
-                  // 开关钮 textContent 逐字「文字工具」，箭头走 CSS 伪元素，免得破坏按文本精确点击的断言。
-                  aiTab === "companion" ? jsx36.jsxs("div", { className: "dshWmTools" + (toolsOpen ? " is-open" : ""), "data-wm-tools": "1", children: [
-                    jsx36.jsx("button", {
-                      type: "button",
-                      className: "dshWmToolsToggle",
-                      "aria-expanded": toolsOpen,
-                      onClick: () => setToolsOpen((v) => !v),
-                      children: "文字工具"
-                    }, "tt"),
-                    jsx36.jsxs("div", { className: "dshWmToolsBody", children: [
-                      jsx36.jsx(
-                        "div",
-                        {
-                          className: "dshWmAiActions",
-                          children: ["polish", "continue", "outline", "compress", "expand", "research", "spark"].map(
-                            (a) => jsx36.jsx(
-                              "button",
-                              {
-                                type: "button",
-                                // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
-                                // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
-                                className: "dshWmBtn",
-                                disabled: aiBusy,
-                                onClick: () => void runAssist(a),
-                                children: T[a] || a
-                              },
-                              a
-                            )
-                          )
-                        },
-                        "acts"
-                      ),
-                      aiBusy ? jsx36.jsx("div", { className: "dshWmAiHint", children: T.applying }, "busy") : null,
-                      aiErr ? jsx36.jsx("div", { className: "dshWmAiHint", children: aiErr }, "err") : null,
-                      jsx36.jsx("div", { className: "dshWmAiOut", children: aiOut || " " }, "out"),
-                      jsx36.jsx(
-                        "div",
-                        {
-                          className: "dshWmAiActions",
-                          children: [
-                            jsx36.jsx("button", {
-                              type: "button",
-                              className: "dshWmBtn",
-                              disabled: !aiOut,
-                              onClick: applyInsert,
-                              children: T.insert
-                            }),
-                            jsx36.jsx("button", {
-                              type: "button",
-                              className: "dshWmBtn",
-                              disabled: !aiOut,
-                              onClick: applyReplace,
-                              children: T.replaceSel
-                            }),
-                            jsx36.jsx("button", {
-                              type: "button",
-                              className: "dshWmBtn is-primary",
-                              onClick: sendToChat,
-                              children: T.sendChat
-                            })
-                          ]
-                        },
-                        "apply"
-                      )
-                    ] }, "tb")
-                  ] }, "tools") : null,
+                  // 文字工具不再是独立 tab / 抽屉：收进伙伴输入框旁的 ✦ 图标菜单
+                  // （2026-10-09 第二轮整合），选中工具后在输入框补提示词、Enter 运行；
+                  // 产出面板（插入文末/替换选区/发送到会话）随之挪到作曲区上方，见 companion/index.js。
                   // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
                   // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
                   aiTab === "companion" ? jsx36.jsx(WritingCompanion, {
@@ -22920,7 +23001,18 @@ function WritingModeApp() {
                       setAiTab("companion");
                     },
                     // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
-                    onJumpToFile: jumpToFile
+                    onJumpToFile: jumpToFile,
+                    // 文字工具束：✦ 菜单 / arm chip / 产出面板都在 CompanionChat 里渲染，
+                    // 状态（aiOut/aiBusy/aiErr）与落稿回路（applyInsert/applyReplace）仍在本文件。
+                    tools: {
+                      busy: aiBusy,
+                      err: aiErr,
+                      out: aiOut,
+                      onRun: (action, hint) => void runAssist(action, hint),
+                      onInsert: applyInsert,
+                      onReplace: applyReplace,
+                      onSendChat: () => void sendToChat()
+                    }
                   }, "companion") : null,
                   aiTab === "check" ? jsx36.jsx(InspectionPanel, {
                     T,
