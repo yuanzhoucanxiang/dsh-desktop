@@ -4,6 +4,7 @@
  * 损坏配置守卫后，按这张表分发；同名多方法的路由在处理函数内按 req.method 分支。
  */
 import { getConfigList, getTree, postPrefs, postRoots } from './config.js'
+import { getDirs } from './fs.js'
 import { getDoc, saveDoc, deleteDocRoute, postGate, postLedger, getStats, getOutline, postReorder } from './docs.js'
 import { getTemplates, postProjectResource, postCreateProject, postCompile, postArchiveExport, getWiki } from './project.js'
 import { getMemory, postMemory, getMemoryOperation, settingProjectionRoute, maintenanceRoute, projectRecoveryRoute } from './memory.js'
@@ -24,6 +25,7 @@ export const ROUTE_HANDLERS = {
   config: getConfigList,
   list: getConfigList,
   tree: getTree,
+  dirs: getDirs,
   prefs: postPrefs,
   roots: postRoots,
   get: getDoc,

@@ -24,6 +24,7 @@ export const ROUTE_METHODS = {
   list: ['GET'],
   tree: ['GET'],
   templates: ['GET'],
+  dirs: ['GET'],
   get: ['GET'],
   'memory-operation': ['GET'],
   maintenance: ['GET', 'POST'],

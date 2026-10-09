@@ -1,6 +1,6 @@
 /**
  * 大纲视图（只读投影 + 卡片拖拽重排，见 docs/plans/writing-outline-card-view-research.md）：
- * - 列表态：每章当前版一行 = 文件名 + 字数 + 门禁摘要 + 章末钩子。
+ * - 列表态：每章当前版一行 = 文件名 + 字数 + 检查摘要 + 章末钩子。
  * - 卡片态：同数据的网格卡片；拖拽卡片 = 重排序，host 以 **重命名事务** 落实
  *   （POST reorder → lib/reorder.js：项目锁 + 两阶段改名 + 回滚 + 绝不覆盖）。
  * 数据走 GET outline；纯展示层，重排语义全部在 host。
@@ -79,8 +79,8 @@ export function OutlineSection({ proj, onOpen, onReorderDone, onFlash }) {
     ? jsx.jsx('span', {
         className: 'dshWmOutlineGate' + (row.gate.pass ? ' is-pass' : ' is-fail'),
         'data-wm-outline-gate': row.name,
-        title: row.gate.pass ? '门禁全部通过' : row.gate.fail + ' 项未达标（在「检查」页看明细）',
-        children: row.gate.pass ? '门禁 ✓' : '门禁 ' + row.gate.fail,
+        title: row.gate.pass ? '检查全部通过' : row.gate.fail + ' 项未达标（在「检查」页看明细）',
+        children: row.gate.pass ? '检查 ✓' : '检查 ' + row.gate.fail,
       })
     : null
 

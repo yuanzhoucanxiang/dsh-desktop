@@ -50,6 +50,7 @@ export const LibraryPane = react.memo(function LibraryPane({
   addRootKind,
   commitAddRoot,
   KEY_HINT,
+  onCollapse,
   onOpenArchive,
   onExportBook,
 }) {
@@ -118,6 +119,14 @@ export const LibraryPane = react.memo(function LibraryPane({
                   }, 'open-existing'),
                 ] }, 'add-menu'),
               ] }, 'add'),
+              jsx.jsx('button', {
+                type: 'button',
+                className: 'dshWmSideFold',
+                title: T.hideLib,
+                'aria-label': T.hideLib,
+                onClick: () => onCollapse?.(),
+                children: '⟨',
+              }, 'fold'),
             ],
           },
           'dh'

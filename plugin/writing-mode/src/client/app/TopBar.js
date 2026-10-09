@@ -29,17 +29,32 @@ export const TopBar = react.memo(function TopBar({
   // 「辅助 ▾」菜单：内容常挂载（门禁按文本点击不检查可见性），关闭时由 .dshWmMenu 规则 display:none
   const [auxOpen, setAuxOpen] = react.useState(false)
   const auxRef = react.useRef(null)
+  /** 打开/关闭时恢复菜单的命中能力（关闭后由 .dshWmMenu 的 display:none 兜底）。 */
+  const setAux = react.useCallback((next) => {
+    const menu = auxRef.current?.querySelector?.('.dshWmMenu')
+    if (menu) menu.style.pointerEvents = ''
+    setAuxOpen(next)
+  }, [])
   react.useEffect(() => {
     if (!auxOpen) return undefined
-    const onKey = (e) => { if (e.key === 'Escape') setAuxOpen(false) }
-    const onDown = (e) => { if (!auxRef.current?.contains(e.target)) setAuxOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setAux(false) }
+    const onDown = (e) => {
+      if (auxRef.current?.contains(e.target)) return
+      // 菜单是绝对定位挂在触发器下方，打开时会盖住右侧 AI 面板的顶部标签。
+      // 外点关闭时 React 的 setState 是异步的：DOM 里的菜单还在、pointer-events 仍是 auto，
+      // 于是这一次点击被菜单吃掉（观感就是"按了没反应"）。在 mousedown 当场让开命中，
+      // 让同一次点击落到下面真正的元素上；下次打开时恢复。
+      const menu = auxRef.current?.querySelector?.('.dshWmMenu')
+      if (menu) menu.style.pointerEvents = 'none'
+      setAuxOpen(false)
+    }
     document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('mousedown', onDown, true)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('mousedown', onDown, true)
     }
-  }, [auxOpen])
+  }, [auxOpen, setAux])
   return jsx.jsx(
     'div',
     {
@@ -94,7 +109,7 @@ export const TopBar = react.memo(function TopBar({
                 jsx.jsx('button', {
                   type: 'button',
                   className: 'dshWmBtn is-ghost' + (prefs.hemingway || prefs.typewriter ? ' is-on' : ''),
-                  onClick: () => setAuxOpen((v) => !v),
+                  onClick: () => setAux(!auxOpen),
                   'aria-expanded': auxOpen,
                   title: '写作辅助开关',
                   children: '辅助 ▾',
@@ -106,7 +121,9 @@ export const TopBar = react.memo(function TopBar({
                     'data-wm-hemingway': '1',
                     'aria-pressed': prefs.hemingway,
                     title: T.hemingwayHint,
-                    onClick: () => { void savePrefs({ hemingway: !prefs.hemingway }) },
+                    // 选完就收起菜单：菜单是绝对定位、会盖住右侧 AI 面板的顶部标签，
+                    // 留着不收既挡按钮又让人以为"点了没反应"（2026-10-09 实测）。
+                    onClick: () => { void savePrefs({ hemingway: !prefs.hemingway }); setAux(false) },
                     children: T.hemingway,
                   }, 'hemingway'),
                   jsx.jsx('button', {
@@ -115,7 +132,7 @@ export const TopBar = react.memo(function TopBar({
                     'data-wm-typewriter': '1',
                     'aria-pressed': prefs.typewriter,
                     title: T.typewriterHint,
-                    onClick: () => { void savePrefs({ typewriter: !prefs.typewriter }) },
+                    onClick: () => { void savePrefs({ typewriter: !prefs.typewriter }); setAux(false) },
                     children: T.typewriter,
                   }, 'typewriter'),
                 ] }, 'aux-menu'),

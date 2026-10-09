@@ -229,7 +229,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, on
       const d = await call('ledger', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: entry.abs }) })
       setLedger({ phase: 'ready', ledger: d.ledger })
     } catch (err) {
-      setLedger({ phase: 'error', error: '台账读不到：' + String(err?.message || err) })
+      setLedger({ phase: 'error', error: '伏笔记录读不到：' + String(err?.message || err) })
     }
   }, [proj])
 
@@ -388,7 +388,7 @@ export function ProjectArchivePanel({ proj, onClose, onOpenDoc, onJumpToFile, on
                   children: rows.map((r) => jsx.jsxs('li', { children: [
                     jsx.jsx('button', { type: 'button', className: 'dshWmWikiChapterName', title: '打开 ' + r.name, onClick: () => onOpenDoc(r.abs), children: chapterTitleOf(r.name) }),
                     jsx.jsx('span', { className: 'dshWmWikiChapterChars', children: (r.chars || 0) + ' 字' }),
-                    r.gate ? jsx.jsx('span', { className: 'dshWmWikiChapterGate' + (r.gate.pass ? ' is-pass' : ' is-fail'), title: r.gate.pass ? '门禁全部通过' : '在「检查」页看明细', children: r.gate.pass ? '门禁 ✓' : '门禁 ' + r.gate.fail }) : null,
+                    r.gate ? jsx.jsx('span', { className: 'dshWmWikiChapterGate' + (r.gate.pass ? ' is-pass' : ' is-fail'), title: r.gate.pass ? '检查全部通过' : '在「检查」页看明细', children: r.gate.pass ? '检查 ✓' : '检查 ' + r.gate.fail }) : null,
                     r.hook ? jsx.jsx('span', { className: 'dshWmWikiChapterHook', title: r.hook, children: r.hook }) : null,
                   ] }, r.abs)),
                 })

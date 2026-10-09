@@ -117,6 +117,18 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
   const opRef = react.useRef(null)
   const operationIdRef = react.useRef(null) // 每次发送一个 operationId，冻结进 preparedTurn
   const snapshot = useCompanionStore(handle)
+  // 临时诊断（2026-10-09 排查"绑定会话读不到历史"）：看 handle 是否建立、快照状态与消息数
+  if (typeof window !== 'undefined' && window.__wmDebugCompanion) {
+    console.info('companion-panel ' + JSON.stringify({
+      project: String(project || ''),
+      bindingSessionId: binding?.sessionId || null,
+      hasHandle: Boolean(handle),
+      handleStatus: handle ? handle.status() : null,
+      snapStatus: snapshot?.status || null,
+      snapSessionId: snapshot?.sessionId || null,
+      snapMsgs: Array.isArray(snapshot?.messages) ? snapshot.messages.length : null,
+    }))
+  }
   const draft = handle ? snapshot.draft || '' : localDraft
   const needsFullComposer = Boolean((snapshot.imageIds && snapshot.imageIds.length) || snapshot.claim || draft.trimStart().startsWith('/'))
   const recovery = handle && snapshot.status !== 'ready' ? snapshot.status : null

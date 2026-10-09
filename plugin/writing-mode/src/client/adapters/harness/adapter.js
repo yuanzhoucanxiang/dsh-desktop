@@ -432,6 +432,118 @@ export function createHarnessAdapter(deps = {}) {
           attachedInputId = state.sessionId
         }
       }
+      void reattachUnboundSession()
+    }
+
+    /**
+     * 悬空绑定自愈（2026-10-09）：记录是 bound、会话也在内核列表里，但**内核没给它 store**
+     * （`sessions.binding(id)` 为空）——这时伙伴面板只能显示空态，作者看到的就是"读不到历史"。
+     * 成因实测：记录里的 workspaceId 在 `storages/workspace.json` 里已经不存在（跨应用/并发
+     * 写同一份 storages 会让它被覆盖），而会话转录仍在磁盘上（实测 28KB）。
+     *
+     * 处理（用户拍板：先重挂、失败才重建）：
+     *   ① 按作品路径确保工作区存在（workspaces.create 按规范路径幂等）；
+     *   ② 用创建路径同一个入口 focusSession 让内核把这条**已有**会话挂回来；
+     *   ③ 挂上就把新 workspaceId 补确认进台账（保留原 history，不删记录）。
+     * 挂不上：什么都不改，交回既有恢复路径（missing/uncertain 的呈现与手动入口）。
+     * 每个 handle 只自动试一次；失败后允许下一次交互再试（内核可能稍后才就绪）。
+     */
+    let reattachTried = false
+    let loadingSince = 0
+    async function reattachUnboundSession() {
+      if (disposed || reattachTried) return
+      if (state.status !== 'ready' || !state.sessionId) return
+      // 触发条件（2026-10-09 实测口径）：会话**没有 store**，或者有 store 但 openState 一直卡在
+      // 'loading' 且没有 chat 图——后者就是"点开会话读不到历史"的真实现场（实测 26s 不动、无 openError）。
+      // 正常的快速加载不触发：loading 持续 3s 以上才认定卡住。
+      const session = currentSession()
+      const snap = session?.getSnapshot?.() || null
+      const stuckLoading = Boolean(snap && snap.openState === 'loading' && !snap.chat)
+      if (session && !stuckLoading) {
+        loadingSince = 0
+        return
+      }
+      if (stuckLoading) {
+        // 关键：本函数只从 getSnapshot/subscribe 进来，而 store 卡住时**不会再通知**，
+        // 于是"第一次记时间戳、等下一次进来再动手"永远不会发生（2026-07-09 实测：一次都没触发）。
+        // 改成自己排一个定时器再进来。
+        if (!loadingSince) {
+          loadingSince = Date.now()
+          setTimeout(() => { void reattachUnboundSession() }, 3000)
+          return
+        }
+        if (Date.now() - loadingSince < 3000) return
+      }
+      reattachTried = true
+      const trace = (step, extra) => {
+        if (typeof window !== 'undefined' && window.__wmDebugCompanion) {
+          console.info('companion-reattach ' + JSON.stringify({ step, sessionId: state.sessionId, workspaceId: state.workspaceId, ...(extra || {}) }))
+        }
+      }
+      trace('start', { hasWorkspacesCreate: has(workspaces, 'create') })
+      try {
+        let workspaceId = state.workspaceId || null
+        if (has(workspaces, 'create')) {
+          try {
+            const ws = await workspaces.create({ path: binding.project })
+            workspaceId = ws?.workspaceId || workspaceId
+            trace('workspace-ok', { newWorkspaceId: workspaceId })
+          } catch (err) {
+            trace('workspace-failed', { error: String(err?.message || err).slice(0, 200) })
+            log('reattach: workspace ensure failed: ' + (err?.message || err))
+          }
+        }
+        try {
+          focusSession(state.sessionId, focusHolder)
+          trace('focus-called')
+        } catch (err) {
+          trace('focus-failed', { error: String(err?.message || err).slice(0, 200) })
+          log('reattach: focus failed: ' + (err?.message || err))
+        }
+        // 0.2.0：会话 store 有明确的开合生命周期（cold → open / error，见
+        // @deepseek-ai/dsh-api-session-controller 的 Session.open()）。只 focus 不够——
+        // openState 停在 cold/loading 时 chat 图永远不会到达，面板就是"发了没反应"的空态。
+        // 这里显式调 open() 并限时等待（README：仅在 open() 拒绝/取消时以 openState:'error' 表示）。
+        try {
+          const sess = currentSession()
+          const before = sess?.getSnapshot?.()?.openState ?? null
+          if (sess && typeof sess.open === 'function' && before !== 'open') {
+            await Promise.race([Promise.resolve(sess.open()).catch((err) => { trace('open-rejected', { error: String(err?.message || err).slice(0, 160) }) }), wait(8000)])
+            trace('open-called', { before, after: currentSession()?.getSnapshot?.()?.openState ?? null, hasChat: Boolean(currentSession()?.getSnapshot?.()?.chat) })
+          } else {
+            trace('open-skipped', { before, hasOpen: typeof sess?.open === 'function' })
+          }
+        } catch (err) {
+          trace('open-failed', { error: String(err?.message || err).slice(0, 160) })
+        }
+        for (let i = 0; i < 12; i++) {
+          await wait(200)
+          if (disposed) return
+          if (!currentSession()) continue
+          state = { ...state, workspaceId }
+          if (workspaceId && state.record) {
+            try {
+              const conf = await coordination.confirm({
+                path,
+                operationToken: state.record.operationToken || operationId,
+                sessionId: state.sessionId,
+                workspaceId,
+              })
+              if (conf?.record) state = { ...state, record: conf.record }
+            } catch (err) {
+              log('reattach: confirm failed: ' + (err?.message || err))
+            }
+          }
+          notify()
+          trace('attached', { workspaceId })
+          return
+        }
+        trace('store-never-appeared')
+        reattachTried = false
+      } catch (err) {
+        reattachTried = false
+        log('reattach failed: ' + (err?.message || err))
+      }
     }
 
     function refreshStatus() {
@@ -464,6 +576,34 @@ export function createHarnessAdapter(deps = {}) {
         [chatSnap?.chat, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(','), caps.missing.join(','), caps.degraded.join(',')],
         () => {
         const { messages, hasUnknown } = projectChat(chatSnap?.chat)
+        // 临时诊断（2026-10-09 排查"绑定会话读不到历史"）：window.__wmDebugCompanion = true 时打印一次实况
+        if (typeof window !== 'undefined' && window.__wmDebugCompanion) {
+          const dbg = {
+            status: state.status,
+            sessionId: state.sessionId,
+            hasStore: Boolean(session),
+            chatType: Object.prototype.toString.call(chatSnap?.chat),
+            chatKeys: chatSnap?.chat && typeof chatSnap.chat === 'object' ? Object.keys(chatSnap.chat) : null,
+            orderLen: (chatSnap?.chat?.order || []).length,
+            nodesSize: chatSnap?.chat?.nodes?.size ?? null,
+            snapKeys: chatSnap && typeof chatSnap === 'object' ? Object.keys(chatSnap) : null,
+            msgs: messages.length,
+            hasMore: chatSnap?.hasMore ?? null,
+            running: chatSnap?.running ?? null,
+            hasInputShell: Boolean(inputSnap),
+            openState: chatSnap?.openState ?? null,
+            openError: chatSnap?.openError ? String(chatSnap.openError).slice(0, 200) : null,
+            snapKeysFull: chatSnap && typeof chatSnap === 'object' ? Object.keys(chatSnap) : null,
+            // 0.2.0 的会话 store 快照里没有 chat：找它到底挂在哪
+            sessionOwnKeys: session ? Object.keys(session) : null,
+            sessionProtoKeys: session ? Object.getOwnPropertyNames(Object.getPrototypeOf(session) || {}) : null,
+            sessionHasChatProp: session ? ('chat' in session) : null,
+            conversationSvcKeys: (() => { try { const c = typeof conversation === 'function' ? conversation() : null; return c ? Object.keys(c) : null } catch (e) { return 'err:' + (e && e.message ? e.message : e) } })(),
+          }
+          // 控制台消息会被截断（实测 ~180 字符），挂到 window 上让探针用 evaluate 直接读
+          window.__wmDebugLast = dbg
+          console.info('companion-debug ' + JSON.stringify(dbg))
+        }
         return Object.freeze({
           projectKey: key,
           projectPath: path,

@@ -1,6 +1,6 @@
 /**
  * 状态条（P1-② 从 app/WritingModeApp.js 抽出；DOM、类名与 data-* 逐字不变）。
- * 纯 props 渲染：保存态/字数/今日码字/门禁摘要全部由 WritingModeApp 传入。
+ * 纯 props 渲染：保存态/字数/今日码字/检查摘要全部由 WritingModeApp 传入。
  */
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'

@@ -1,5 +1,12 @@
 /**
- * 写作模式客户端模块（P1 从 entry.js 搬迁；行为不变）。
+ * 写作模式客户端模块（P1 从 entry.js 搬迁）。
+ *
+ * 2026-10-09 入口收敛：可见入口改为侧栏 footer 的图标钮（features/settings/entries.js）。
+ * 这里仍然常驻注入 `#dsh-writing-mode-float`，但样式默认 `display:none`（styles/writing-css.js）：
+ * - 既有验证/审计脚本依赖 `document.getElementById('dsh-writing-mode-float').click()` 程序化进入，
+ *   隐藏元素上的 `.click()` 照常派发事件，所以那些门禁不需要改动；
+ * - 需要恢复右下角浮钮时，给元素加 `.is-shown` 类即可（或改回 display）。
+ * 全局 Ctrl+Shift+W 与模式订阅保持不变。
  */
 import { T } from '../copy.js'
 import { modeListeners, setModeActive, getModeActive } from '../state/mode-store.js'

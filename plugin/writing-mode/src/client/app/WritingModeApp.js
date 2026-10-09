@@ -2,7 +2,8 @@
  * 写作台外壳（overlay 根组件）。
  * P1 从 entry.js 搬迁；P1-② 把顶栏 / 状态条 / 左栏 / 稿纸页头 / 查找栏 / 版本对比与改稿预览
  * 拆成 app/ 与 features/ 下的纯 props 子组件——**全部 hooks、editor session 编排、快捷键与
- * 自动保存 effect、assist/gate/ledger/stats 取数、覆盖层状态、右栏三区与 flashMsg 仍在本文件**。
+ * 自动保存 effect、assist/gate/ledger/stats 取数、覆盖层状态、右栏（伙伴+文字工具抽屉 / 检查）
+ * 与边缘收展 rail、flashMsg 仍在本文件**。
  * 行为保持：DOM、类名、data-*、key 与事件语义逐字不变。
  */
 import * as react from 'react'
@@ -87,9 +88,12 @@ export function WritingModeApp() {
   const { path: filePath, content, dirty, status: saveState } = documentState
   const setContent = value => editor.change(value)
   const setFilePath = path => { void editor.open(path) }
-  // 纯写作第一屏：右栏默认收起，作者点顶栏「AI」才召唤
+  // 纯写作第一屏：右栏默认收起，作者点顶栏「AI」或右缘 rail 才召唤
   const [aiOpen, setAiOpen] = react.useState(false)
   const [aiTab, setAiTab] = react.useState('companion')
+  // 文字工具抽屉：伙伴页内的选项性功能（默认收起）。抽屉体常挂载、收起时 CSS 隐藏，
+  // 与「辅助 ▾」菜单同一模式——门禁脚本用 .click() 程序化点击动作按钮，不看可见性。
+  const [toolsOpen, setToolsOpen] = react.useState(false)
   const [aiOut, setAiOut] = react.useState('')
   const [aiBusy, setAiBusy] = react.useState(false)
   const [aiErr, setAiErr] = react.useState('')
@@ -648,7 +652,7 @@ export function WritingModeApp() {
     }
   }, [filePath, content])
 
-  // 打开文件后自动跑一次门禁
+  // 打开文件后自动跑一遍成稿检查
   react.useEffect(() => {
     if (!active || !filePath || !prefs.autoGate) return
     const ext = String(filePath).toLowerCase().split('.').pop()
@@ -817,6 +821,19 @@ export function WritingModeApp() {
         {
           className: 'dshWmBody',
           children: [
+            // 就地收展（2026-10-09）：栏收起时在身体对应边缘留一条细长 rail，点开即恢复，
+            // 不必再绕到顶栏。rail 是面板的兄弟节点——左栏收起走 CSS display:none、
+            // 右栏收起时本就不渲染，两种机制下 rail 都能正常命中。
+            !libOpen
+              ? jsx.jsx('button', {
+                  type: 'button',
+                  className: 'dshWmRail is-lib',
+                  'data-wm-rail': 'lib',
+                  title: T.showLib,
+                  onClick: () => setLibOpenManual(true),
+                  children: T.docs,
+                }, 'rail-lib')
+              : null,
             jsx.jsx(LibraryPane, {
               roots,
               activeTree,
@@ -857,6 +874,7 @@ export function WritingModeApp() {
               addRootKind,
               commitAddRoot,
               KEY_HINT,
+              onCollapse: () => setLibOpenManual(false),
               onOpenArchive: (proj) => { setExportProj(null); openArchive(proj) },
               onExportBook: (proj) => { setArchiveProj(null); setExportProj(proj) },
             }, 'docs'),
@@ -1015,6 +1033,17 @@ export function WritingModeApp() {
               },
               'main'
             ),
+            !aiOpen
+              ? jsx.jsx('button', {
+                  type: 'button',
+                  className: 'dshWmRail is-ai',
+                  'data-wm-rail': 'ai',
+                  title: T.openAi,
+                  // 与顶栏「AI」同一语义：专注中点开 = 退出专注并唤回右栏
+                  onClick: () => { if (focus) setFocus(false); setAiOpen(true) },
+                  children: T.openAi,
+                }, 'rail-ai')
+              : null,
             aiOpen
               ? jsx.jsx(
                   'aside',
@@ -1023,9 +1052,89 @@ export function WritingModeApp() {
                     children: [
                       jsx.jsxs('div', { className: 'dshWmSideHead', children: [
                         jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'companion' ? ' is-on' : ''), onClick: () => setAiTab('companion'), children: T.ai }),
-                        jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'tools' ? ' is-on' : ''), onClick: () => setAiTab('tools'), children: '文字工具' }),
                         jsx.jsx('button', { className: 'dshWmTab' + (aiTab === 'check' ? ' is-on' : ''), onClick: () => setAiTab('check'), children: '检查' }),
+                        jsx.jsx('span', { className: 'dshWmSpacer' }, 'sp'),
+                        jsx.jsx('button', {
+                          type: 'button',
+                          className: 'dshWmSideFold',
+                          title: T.closeAi,
+                          'aria-label': T.closeAi,
+                          onClick: () => setAiOpen(false),
+                          children: '⟩',
+                        }, 'fold'),
                       ] }, 'ah'),
+                      // 文字工具不再是独立 tab：收进伙伴页顶部作选项性抽屉（2026-10-09 右栏整合）。
+                      // 抽屉体常挂载、收起时由 .dshWmTools 规则 display:none（门禁 .click() 不看可见性）；
+                      // 开关钮 textContent 逐字「文字工具」，箭头走 CSS 伪元素，免得破坏按文本精确点击的断言。
+                      aiTab === 'companion' ? jsx.jsxs('div', { className: 'dshWmTools' + (toolsOpen ? ' is-open' : ''), 'data-wm-tools': '1', children: [
+                        jsx.jsx('button', {
+                          type: 'button',
+                          className: 'dshWmToolsToggle',
+                          'aria-expanded': toolsOpen,
+                          onClick: () => setToolsOpen((v) => !v),
+                          children: '文字工具',
+                        }, 'tt'),
+                        jsx.jsxs('div', { className: 'dshWmToolsBody', children: [
+                          jsx.jsx(
+                            'div',
+                            {
+                              className: 'dshWmAiActions',
+                              children: ['polish', 'continue', 'outline', 'compress', 'expand', 'research', 'spark'].map((a) =>
+                                jsx.jsx(
+                                  'button',
+                                  {
+                                    type: 'button',
+                                    // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
+                                    // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
+                                    className: 'dshWmBtn',
+                                    disabled: aiBusy,
+                                    onClick: () => void runAssist(a),
+                                    children: T[a] || a,
+                                  },
+                                  a
+                                )
+                              ),
+                            },
+                            'acts'
+                          ),
+                          aiBusy
+                            ? jsx.jsx('div', { className: 'dshWmAiHint', children: T.applying }, 'busy')
+                            : null,
+                          aiErr
+                            ? jsx.jsx('div', { className: 'dshWmAiHint', children: aiErr }, 'err')
+                            : null,
+                          jsx.jsx('div', { className: 'dshWmAiOut', children: aiOut || ' ' }, 'out'),
+                          jsx.jsx(
+                            'div',
+                            {
+                              className: 'dshWmAiActions',
+                              children: [
+                                jsx.jsx('button', {
+                                  type: 'button',
+                                  className: 'dshWmBtn',
+                                  disabled: !aiOut,
+                                  onClick: applyInsert,
+                                  children: T.insert,
+                                }),
+                                jsx.jsx('button', {
+                                  type: 'button',
+                                  className: 'dshWmBtn',
+                                  disabled: !aiOut,
+                                  onClick: applyReplace,
+                                  children: T.replaceSel,
+                                }),
+                                jsx.jsx('button', {
+                                  type: 'button',
+                                  className: 'dshWmBtn is-primary',
+                                  onClick: sendToChat,
+                                  children: T.sendChat,
+                                }),
+                              ],
+                            },
+                            'apply'
+                          ),
+                        ] }, 'tb'),
+                      ] }, 'tools') : null,
                       // 专注模式由 CSS 收起右栏，组件保持挂载：卸载重挂会重新拉一次会话绑定，
                       // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
                       aiTab === 'companion' ? jsx.jsx(WritingCompanion, {
@@ -1061,91 +1170,6 @@ export function WritingModeApp() {
                         // 伙伴回复 [[文稿名]] chip 的点击跳回：只在作者自己的库内文件清单里解析
                         onJumpToFile: jumpToFile,
                       }, 'companion') : null,
-                      aiTab === 'tools' ? jsx.jsx(
-                        'div',
-                        {
-                          className: 'dshWmAiBody',
-                          children: [
-                            jsx.jsx(
-                              'div',
-                              { className: 'dshWmAiSection', children: [
-                                jsx.jsx('div', { className: 'dshWmAiSectionTitle', children: 'AI' }, 'at'),
-                                jsx.jsx(
-                                  'div',
-                                  {
-                                    className: 'dshWmAiActions',
-                                    children: ['polish', 'continue', 'outline', 'compress', 'expand', 'research', 'spark'].map((a) =>
-                                      jsx.jsx(
-                                        'button',
-                                        {
-                                          type: 'button',
-                                          // 动作按钮不是开关：谁也不常驻 is-on（此前 research/spark 恒高亮，
-                                          // 读起来像两个已开启的开关，是工具页"看着乱"的主因）
-                                          className: 'dshWmBtn',
-                                          disabled: aiBusy,
-                                          onClick: () => void runAssist(a),
-                                          children: T[a] || a,
-                                        },
-                                        a
-                                      )
-                                    ),
-                                  },
-                                  'acts'
-                                ),
-                              ]},
-                              'sec-ai'
-                            ),
-                            aiBusy
-                              ? jsx.jsx('div', { className: 'dshWmAiHint', children: T.applying })
-                              : null,
-                            aiErr
-                              ? jsx.jsx('div', { className: 'dshWmAiHint', children: aiErr })
-                              : null,
-                            jsx.jsx(
-                              'div',
-                              { className: 'dshWmAiMain', children: [
-                                jsx.jsx('div', { className: 'dshWmAiOut', children: aiOut || ' ' }, 'out'),
-                              ]},
-                              'aim'
-                            ),
-                            jsx.jsx(
-                              'div',
-                              {
-                                className: 'dshWmAiActions',
-                                children: [
-                                  jsx.jsx('button', {
-                                    type: 'button',
-                                    className: 'dshWmBtn',
-                                    disabled: !aiOut,
-                                    onClick: applyInsert,
-                                    children: T.insert,
-                                  }),
-                                  jsx.jsx('button', {
-                                    type: 'button',
-                                    className: 'dshWmBtn',
-                                    disabled: !aiOut,
-                                    onClick: applyReplace,
-                                    children: T.replaceSel,
-                                  }),
-                                  jsx.jsx('button', {
-                                    type: 'button',
-                                    className: 'dshWmBtn is-primary',
-                                    onClick: sendToChat,
-                                    children: T.sendChat,
-                                  }),
-                                ],
-                              },
-                              'apply'
-                            ),
-                            jsx.jsx(
-                              'div',
-                              { className: 'dshWmAiHint', children: KEY_HINT },
-                              'kbd'
-                            ),
-                          ],
-                        },
-                        'ab'
-                      ) : null,
                       aiTab === 'check' ? jsx.jsx(InspectionPanel, {
                         T,
                         filePath,

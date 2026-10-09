@@ -35,9 +35,14 @@ export const CSS = [
   'html[data-writing-mode="on"] [data-palis-status],',
   'html[data-writing-mode="on"] .palis-statusbar{display:none !important;}',
 
+  /* 入口收敛（2026-10-09）：可见入口只剩侧栏 footer 的一个图标钮。
+     右下角浮钮默认隐藏，但**保留元素与 id** —— 既有验证/审计脚本用
+     `document.getElementById('dsh-writing-mode-float').click()` 程序化进入，
+     仍然照常工作；需要旧行为时给元素加 .is-shown 即可。 */
   '.dshWmFloat{',
   '  position:fixed;right:18px;bottom:18px;z-index:95;',
-  '  display:inline-flex;align-items:center;gap:6px;',
+  '  display:none;',
+  '  align-items:center;gap:6px;',
   '  height:34px;padding:0 14px;border-radius:999px;cursor:pointer;',
   '  border:1px solid var(--dsw-alias-border-l2);',
   '  background:var(--dsw-alias-bg-layer-3);',
@@ -45,11 +50,38 @@ export const CSS = [
   '  font:inherit;font-size:var(--wm-text-sm);line-height:1;',
   '  box-shadow:0 4px 16px rgba(0,0,0,.16);',
   '}',
+  '.dshWmFloat.is-shown{display:inline-flex;}',
   '.dshWmFloat:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary);}',
 
+  /* 图标入口钮（侧栏 footer 动作行 / 会话顶栏共用）。
+     刻意做成「安静图标」而非整宽实底按钮：官方 footerActions 本就是一行居中动作，
+     整宽 + 品牌实底会显得又大又抢眼（用户反馈的原话）。 */
+  '.dshWmIconBtn{',
+  '  display:inline-flex;align-items:center;justify-content:center;flex:none;',
+  '  width:32px;height:32px;padding:0;border:0;border-radius:var(--wm-radius-s,8px);',
+  '  background:transparent;color:var(--dsw-alias-label-secondary);',
+  '  cursor:pointer;transition:background .15s ease,color .15s ease;',
+  '}',
+  '.dshWmIconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  '.dshWmIconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px;}',
+  '.dshWmIconBtn.is-on{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);}',
+  '.dshWmIconBtn svg{display:block;}',
+  /* 侧栏展开态：官方 footerActions 为整宽 flex（左起），给它留一点左内边距与 设置 行对齐观感 */
+  '.dshWmIconBtn.is-wide{margin-left:2px;}',
+
   /* 压住 PALIS 状态条 / 更高层 UI */
+  /* 顶栏避让（2026-10-08 官方桌面版适配）：官方 Electron 壳是 frameless，
+     在 Windows 上用 html[data-windows-titlebar] + --dsh-windows-titlebar-height:40px
+     划出一条页内标题栏（官方 AppFrame 靠 padding-top 留白），里面是
+     -webkit-app-region:drag 拖拽条、侧栏开关、preload 注入的「应用/编辑」菜单，
+     以及 titleBarOverlay 的原生窗口按钮（height:40）。
+     本工作台用 position:fixed 相对视口定位，会**逃出** AppFrame 的 padding，
+     于是把整条 40px 顶栏盖住；而拖拽区在命中测试里优先于网页内容，
+     导致写模式顶栏按钮（实测 y=10..41）点不动、点击变成拖窗口。
+     官方信号 --dsh-frame-top-clearance 在 darwin/Windows 桌面版分别为 48/40px，
+     自研壳未定义 → 回落 0px，行为不变。 */
   '.dshWmRoot{',
-  '  position:fixed;top:0;left:0;right:0;bottom:0;',
+  '  position:fixed;top:var(--dsh-frame-top-clearance,var(--dsh-windows-titlebar-height,0px));left:0;right:0;bottom:0;',
   '  z-index:2000 !important;',
   '  display:flex;flex-direction:column;',
   '  background:var(--dsw-alias-bg-base);',
@@ -58,7 +90,12 @@ export const CSS = [
   '  overflow:hidden;',
   '}',
 
-  /* 顶栏右侧让出系统窗口控件（Win 最小化/最大化/关闭约 120–140px） */
+  /* 顶栏右侧让出系统窗口控件（Win 最小化/最大化/关闭约 120–140px）
+     —— 这条只对**自研壳**成立（无边框窗口、控件画在内容区顶部）。
+     官方桌面版把原生窗口按钮放在 titleBarOverlay 的 40px 条内（main.js: titleBarOverlay.height=40），
+     而写模式顶栏已由上面的 --dsh-frame-top-clearance 下沉到该条之下，两者不再重叠，
+     因此官方版里这 148px 让位是白留的（还会把「保存/退出写作」挤到左边）。
+     用官方标记收窄，自研壳不受影响。 */
   '.dshWmBar{',
   '  display:flex;align-items:center;gap:8px;',
   '  height:52px;padding:0 148px 0 16px;flex:none;',
@@ -66,6 +103,7 @@ export const CSS = [
   '  background:var(--dsw-alias-bg-layer-1);',
   '  box-sizing:border-box;',
   '}',
+  'html[data-windows-titlebar] .dshWmBar,html[data-platform=darwin] .dshWmBar{padding-right:16px;}',
   '.dshWmBrand{',
   '  font-size:var(--wm-text-sm);font-weight:650;color:var(--dsw-alias-label-primary);',
   '  padding-right:10px;margin-right:2px;',
@@ -77,8 +115,12 @@ export const CSS = [
   '.dshWmBarSep{flex:none;width:1px;height:20px;background:var(--dsw-alias-border-l2);}',
   /* E1 「辅助 ▾」下拉：菜单内容常驻 DOM，关闭时 display:none（门禁按钮点击不看可见性，照旧命中） */
   '.dshWmAux{position:relative;flex:none;display:flex;align-items:center;}',
-  '.dshWmMenu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:190px;padding:var(--wm-space-1);flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 24px rgba(0,0,0,.24);}',
+  /* 菜单容器对命中透明：菜单是绝对定位挂在顶栏触发器下方，打开时会盖住右侧 AI 面板的
+     顶部标签（文字工具/检查/写作会话）。若容器本身吃点击，点在它的空白处既不触发菜单行、
+     也不触发外点关闭，那些被盖住的按钮就"按了没反应"（2026-10-09 实测复现）。 */
+  '.dshWmMenu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:190px;padding:var(--wm-space-1);flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 24px rgba(0,0,0,.24);pointer-events:none;}',
   '.dshWmMenu.is-open{display:flex;}',
+  '.dshWmMenu.is-open>*{pointer-events:auto;}',
   '.dshWmMenuRow{width:100%;text-align:left;border-color:transparent;background:transparent;}',
   '.dshWmBarSpacer{flex:1;min-width:16px;}',
   '.dshWmSelect{',
@@ -118,6 +160,10 @@ export const CSS = [
   '.dshWmSide.is-ai{width:clamp(360px,34vw,560px);border-right:none;border-left:1px solid var(--dsw-alias-border-l2);}',
   '.dshWmCompanion{display:flex;flex-direction:column;flex:1;min-height:0;padding:0 16px 16px;gap:12px;}',
   '.dshWmConversationHead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:var(--wm-text-sm);color:var(--wm-text-dim);}.dshWmConversationHead>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  /* 会话头降噪（2026-10-09）：作品名是唯一锚点（正文色+中黑），备忘/会话设置两个
+     次级动作收成 xs 灰字——不再三个元素同量级同时抢眼。 */
+  '.dshWmConversationHead>span:first-child{font-weight:var(--wm-weight-medium);color:var(--dsw-alias-label-primary);}',
+  '.dshWmConversationHead .dshWmQuiet{font-size:var(--wm-text-xs);color:var(--wm-text-dim);padding:3px 2px;}',
   '.dshWmQuiet{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--wm-text-sm);padding:5px 2px;cursor:pointer;white-space:nowrap;}.dshWmQuiet:hover{color:var(--dsw-alias-label-primary);}.dshWmQuiet:disabled{opacity:.4;cursor:default;}',
   '.dshWmConversation{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 2px;scrollbar-width:thin;}',
   '.dshWmCompanionEmpty{padding:clamp(30px,12vh,130px) 16px 30px;color:var(--dsw-alias-label-secondary);line-height:1.9;white-space:pre-line;}.dshWmCompanionEmpty h3{font-size:var(--wm-text-xl);font-weight:500;margin:16px 0 8px;color:var(--dsw-alias-label-primary);}.dshWmCompanionEmpty p{font-size:var(--wm-text-sm);margin:0;}.dshWmCompanionMark{font-size:var(--wm-text-xl);opacity:.6;}',
@@ -208,6 +254,11 @@ export const CSS = [
   '.dshWmSide .dshWmBarGroup .dshWmSearch{width:100%;margin:0;}',
   '.dshWmList{flex:1;overflow:auto;padding:4px 10px 20px;}',
   '.dshWmProj{margin-bottom:12px;}',
+  /* 左栏层级（2026-10-09）：项目名是锚点；分组（正文/人物/设定…）与操作行收进项目
+     缩进带，左侧一条引导线——此前与项目名同一平级，读起来像一堆并列栏目。 */
+  '.dshWmProj>.dshWmProjOps{margin-left:18px;}',
+  '.dshWmProj>details{margin-left:9px;padding-left:9px;border-left:1px solid var(--dsw-alias-border-l2);}',
+  '.dshWmProj>details>summary.dshWmFolder{padding-left:2px;font-size:var(--wm-text-xs);letter-spacing:.06em;color:var(--wm-text-dim);}',
   '.dshWmProjToggle{',
   '  display:flex;align-items:center;gap:6px;width:100%;',
   '  padding:8px 8px 4px;border:none;background:transparent;cursor:pointer;',
@@ -317,7 +368,7 @@ export const CSS = [
   '.dshWmFindHint{font-size:var(--wm-text-xs);color:var(--wm-text-dim);opacity:.7;margin-left:auto;white-space:nowrap;}',
   '.dshWmFindBar .dshWmBtn{flex:none;}',
 
-  /* 状态条里的今日码字芯片：与字数/格式同属「元信息」，让位给门禁摘要 */
+  /* 状态条里的今日码字芯片：与字数/格式同属「元信息」，让位给检查摘要 */
   '.dshWmStatus [data-wm-stats-today]{color:var(--wm-text-dim);font-variant-numeric:tabular-nums;}',
 
   '.dshWmAiBody{',
@@ -463,6 +514,21 @@ export const CSS = [
   '}',
   'body[data-writing-focus="1"] .dshWmDocChrome{max-width:720px;}',
   'html[data-writing-mode] body[data-writing-lib="0"] .dshWmSide:not(.is-ai){display:none;}',
+  /* 就地收展（2026-10-09）：收起态在身体边缘留 26px 竖排 rail（点开即恢复），
+     展开态由面板头里的 ⟨/⟩ 折钮收起；专注模式连 rail 一起藏。 */
+  '.dshWmRail{',
+  '  flex:none;width:26px;padding:14px 0;border:0;cursor:pointer;',
+  '  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);',
+  '  font:inherit;font-size:var(--wm-text-xs);letter-spacing:.2em;',
+  '  writing-mode:vertical-rl;text-align:center;',
+  '  display:flex;align-items:center;justify-content:center;',
+  '}',
+  '.dshWmRail:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover);}',
+  '.dshWmRail.is-lib{border-right:1px solid var(--dsw-alias-border-l2);}',
+  '.dshWmRail.is-ai{border-left:1px solid var(--dsw-alias-border-l2);}',
+  'body[data-writing-focus="1"] .dshWmRail{display:none;}',
+  '.dshWmSideFold{flex:none;width:24px;height:24px;padding:0;border:0;border-radius:var(--wm-radius-s);background:transparent;color:var(--wm-text-dim);cursor:pointer;font:inherit;font-size:var(--wm-text-md);line-height:1;display:inline-flex;align-items:center;justify-content:center;}',
+  '.dshWmSideFold:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
 
   /* 导出成书面板：覆盖中央编辑区（编辑器不卸载），项目操作行 */
   '.dshWmProjOps{display:flex;align-items:center;gap:6px;margin:0 0 8px;}',
@@ -497,6 +563,17 @@ export const CSS = [
   '.dshWmExportFoot{display:flex;align-items:center;gap:10px;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
   /* 会话列表区（伙伴 tab 顶部折叠区） */
   '.dshWmCompanionWrap{display:flex;flex-direction:column;flex:1;min-height:0;}',
+  /* 文字工具抽屉（2026-10-09 右栏整合）：收进伙伴页顶部的选项性抽屉，不再是独立 tab。
+     抽屉体常挂载、收起时 display:none——与「辅助 ▾」菜单同一模式（门禁 .click() 不看可见性）。
+     开关钮箭头走伪元素：textContent 保持逐字「文字工具」，按文本精确点击的断言不受影响。 */
+  '.dshWmTools{flex:none;padding:4px 16px 0;display:flex;flex-direction:column;gap:6px;}',
+  '.dshWmToolsToggle{display:flex;align-items:center;width:100%;padding:6px 0;border:0;background:transparent;cursor:pointer;font:inherit;font-size:var(--wm-text-xs);font-weight:var(--wm-weight-bold);letter-spacing:.06em;color:var(--wm-text-dim);text-align:left;}',
+  '.dshWmToolsToggle::before{content:"▸";margin-right:6px;font-size:10px;}',
+  '.dshWmTools.is-open>.dshWmToolsToggle::before{content:"▾";}',
+  '.dshWmToolsToggle:hover{color:var(--dsw-alias-label-primary);}',
+  '.dshWmTools:not(.is-open)>.dshWmToolsBody{display:none;}',
+  '.dshWmToolsBody{display:flex;flex-direction:column;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--dsw-alias-border-l2);}',
+  '.dshWmTools .dshWmAiOut{flex:none;min-height:96px;max-height:220px;}',
   '.dshWmSessList{flex:none;padding:10px 16px 0;display:flex;flex-direction:column;gap:4px;}',
   '.dshWmSessRows{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px;}',
   '.dshWmSessRow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--wm-radius-m);border:0;background:none;font:inherit;font-size:var(--wm-text-sm);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;}',
@@ -580,11 +657,11 @@ export const CSS = [
   '.dshWmFolder.is-clickable{cursor:pointer;text-transform:none;}',
   /* 外壳侧边栏 footer 的入口钮：外观仍由 .dshWmBtn 负责，这里只负责撑满与文字居中 */
   '.dshWmBtn.dshWmEntryBtn{width:100%;justify-content:center;}',
-  /* 状态条门禁芯片：状态条里唯一「要作者看一眼」的信息，字号与字重都压过元信息 */
+  /* 状态条检查芯片：状态条里唯一「要作者看一眼」的信息，字号与字重都压过元信息 */
   '.dshWmGateState{font-size:var(--wm-text-md);font-weight:var(--wm-weight-bold);}',
   '.dshWmGateState.is-pass{color:var(--wm-ok);}',
   '.dshWmGateState.is-fail{color:var(--wm-err);}',
-  /* 状态条元信息（字数/格式/今日净增）：降权，不与门禁摘要抢读 */
+  /* 状态条元信息（字数/格式/今日净增）：降权，不与检查摘要抢读 */
   '.dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
 
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
@@ -610,10 +687,39 @@ export const CSS = [
   '.dshWmField.is-grow{flex:1;}',
   '.dshWmField.is-num{width:90px;padding:6px 8px;}',
   '.dshWmSetColumn{flex:1;display:flex;flex-direction:column;gap:6px;}',
-  '.dshWmSetRootRow{display:flex;align-items:center;gap:var(--wm-space-2);font-size:var(--wm-text-sm);}',
-  '.dshWmSetRootPath{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  '.dshWmSetRootRow{display:flex;align-items:flex-start;gap:var(--wm-space-2);font-size:var(--wm-text-sm);padding:var(--wm-space-1) 0;border-top:1px solid var(--dsw-alias-border-l3);}',
+  '.dshWmSetRootMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}',
+  '.dshWmSetRootTitle{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}',
+  '.dshWmSetRootOps{display:flex;align-items:center;gap:6px;flex:none;}',
+  '.dshWmTag{font-size:var(--wm-text-xs,11px);line-height:1.6;padding:0 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--wm-text-dim);}',
+  '.dshWmTag.is-on{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}',
+  '.dshWmTag.is-warn{color:var(--wm-warn);border-color:var(--wm-warn);}',
+  '.dshWmSetRootPath{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wm-text-dim);font-size:var(--wm-text-xs,11px);}',
   '.dshWmSetAddRow{display:flex;gap:var(--wm-space-2);}',
   '.dshWmSetSectionHead{margin-top:var(--wm-space-3);padding-top:var(--wm-space-3);border-top:1px solid var(--dsw-alias-border-l2);font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--wm-text-dim);letter-spacing:.06em;}',
+
+  /* 选文件夹（2026-10-09）：设置页「浏览…」+ 内置文件夹浏览弹层。
+     设置页挂在官方设置弹层里、不在 .dshWmRoot 内，所以遮罩 z-index 必须高过官方弹层。 */
+  '.dshWmBrowseBtn{flex:none;white-space:nowrap;}',
+  '.dshWmSetHint.is-warn{color:var(--wm-warn);}',
+  '.dshWmPickMask{position:fixed;inset:0;z-index:4000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.42);padding:24px;}',
+  '.dshWmPickBox{width:min(640px,100%);max-height:min(78vh,720px);display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--wm-radius-l);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.32);font-size:var(--wm-text-sm);}',
+  '.dshWmPickHead{display:flex;align-items:center;gap:10px;}',
+  '.dshWmPickTitle{font-weight:var(--wm-weight-bold);}',
+  '.dshWmPickHint{flex:1;min-width:0;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
+  '.dshWmPickClose{flex:none;font-size:16px;line-height:1;padding:2px 8px;}',
+  '.dshWmPickPath{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 10px;border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);font-family:ui-monospace,Consolas,monospace;font-size:var(--wm-text-xs);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmPickQuick{display:flex;flex-wrap:wrap;gap:6px;}',
+  '.dshWmPickChip{border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--wm-text-xs);padding:2px 10px;cursor:pointer;}',
+  '.dshWmPickChip:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary);}',
+  '.dshWmPickError{padding:6px 10px;border-radius:var(--wm-radius-m);background:color-mix(in srgb,var(--wm-warn) 12%,transparent);color:var(--wm-warn);font-size:var(--wm-text-xs);}',
+  '.dshWmPickList{flex:1;min-height:180px;overflow:auto;display:flex;flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);padding:4px;}',
+  '.dshWmPickRow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;border-radius:var(--wm-radius-s);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);padding:6px 8px;cursor:pointer;}',
+  '.dshWmPickRow:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));}',
+  '.dshWmPickRow.is-up{color:var(--dsw-alias-label-secondary);}',
+  '.dshWmPickRowName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  '.dshWmPickEmpty{padding:8px 10px;color:var(--wm-text-dim);font-size:var(--wm-text-xs);}',
+  '.dshWmPickFoot{display:flex;align-items:center;gap:8px;}',
 
   /* C2 「＋ 添加人物、设定或规划…」下拉：它是选择器不是输入框，用虚线边 + muted 文案区分，
      并允许在窄侧栏里省略号收尾（.dshWmSearch 那套是输入框外观，0,2,0 复合选择器确保压得住它） */

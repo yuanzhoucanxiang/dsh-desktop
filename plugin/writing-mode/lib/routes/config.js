@@ -56,7 +56,7 @@ export async function postPrefs({ req, res }) {
   }
 }
 
-/** POST roots：库根增删/激活/整表替换。 */
+/** POST roots：库根增删/激活/设为默认/整表替换。 */
 export async function postRoots({ req, res }) {
   const parsed = await readJsonBody(req)
   if (parsed === null) {
@@ -64,7 +64,7 @@ export async function postRoots({ req, res }) {
     return
   }
   const mode = String(parsed?.mode || 'set')
-  if (!['set', 'add', 'remove', 'activate'].includes(mode)) {
+  if (!['set', 'add', 'remove', 'activate', 'default'].includes(mode)) {
     writeJson(res, 400, { ok: false, error: 'bad-mode' })
     return
   }
@@ -110,11 +110,24 @@ export async function postRoots({ req, res }) {
         if (next.activeRoot && path.resolve(next.activeRoot).toLowerCase() === p.toLowerCase()) {
           next.activeRoot = next.roots[0] ? next.roots[0].path : null
         }
-      } else {
+      } else if (mode === 'activate') {
         const p = path.resolve(String(parsed?.path || ''))
         if (!next.roots.some((r) => path.resolve(r.path).toLowerCase() === p.toLowerCase())) {
           throw storeError('unknown-root', 400)
         }
+        next.activeRoot = p
+      } else {
+        // default（2026-10-09）：设置「默认工作区」。原先只有 add 时对第一个库根自动置默认，
+        // 设置面板无法改——作者在有多个库根时改不了默认。设为默认同时切为 activeRoot，
+        // 与作者预期一致（默认就是打开工作台时用的那个）。
+        const p = path.resolve(String(parsed?.path || ''))
+        if (!next.roots.some((r) => path.resolve(r.path).toLowerCase() === p.toLowerCase())) {
+          throw storeError('unknown-root', 400)
+        }
+        next.roots = next.roots.map((r) => ({
+          ...r,
+          default: path.resolve(r.path).toLowerCase() === p.toLowerCase(),
+        }))
         next.activeRoot = p
       }
       return next

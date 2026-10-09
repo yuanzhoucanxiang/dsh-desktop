@@ -93,14 +93,16 @@ app.whenReady().then(async () => {
   // 版本条：单版本文档也渲染，条尾有「另存为新版」
   await waitFor(`document.querySelector('.dshWmVerBar')!==null`)
   assert.ok(await evaluate(`Array.from(document.querySelectorAll('.dshWmVerBar button')).some(e=>e.textContent==='另存为新版')`), '版本条缺「另存为新版」')
-  // 右栏三区：写作伙伴 / 文字工具 / 检查
-  await waitFor(`Array.from(document.querySelectorAll('.dshWmTab')).map(e=>e.textContent).join('|')==='写作伙伴|文字工具|检查'`)
+  // 右栏两区：写作伙伴 / 检查；文字工具收进伙伴页顶部抽屉（2026-10-09 右栏整合）
+  await waitFor(`Array.from(document.querySelectorAll('.dshWmTab')).map(e=>e.textContent).join('|')==='写作伙伴|检查'`)
   await button('检查')
-  await waitFor(`Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('门禁'))&&Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('台账速览'))`)
-  console.log('PASS UI 右栏三区：检查 tab 承载门禁与台账，版本入口归拢')
+  await waitFor(`Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('成稿检查'))&&Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('伏笔与线索'))`)
+  console.log('PASS UI 右栏两区：检查 tab 承载成稿检查与伏笔线索，版本入口归拢')
+  await button('写作伙伴')
   await button('文字工具')
-  await waitFor(`!Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('门禁'))`)
-  console.log('PASS UI 工具 tab 不再混入检查区块')
+  await waitFor(`document.querySelector('[data-wm-tools]').className.includes('is-open')`)
+  await waitFor(`!Array.from(document.querySelectorAll('.dshWmSecToggle')).some(e=>e.textContent.includes('成稿检查'))`)
+  console.log('PASS UI 文字工具收进伙伴页抽屉，不混入检查区块')
   // 能力缺口必须说话：本 fixture 没注入内核 sessions，伙伴面板要讲清「缺什么、还能不能写、会不会丢」，
   // 而不是让作者对着一只灰掉的按钮猜（0.1.7 适配遗留的 UX 空档）。
   await button('写作伙伴')
@@ -227,18 +229,18 @@ app.whenReady().then(async () => {
   assert.equal(await evaluate(`document.querySelector('[data-wm-rewrite]')`), null, '丢弃后预览应收起')
   assert.equal(await evaluate(`document.querySelector('.dshWmEditor').value`), '挑选出来的改写后的句子要改稿', '丢弃不得改稿')
   console.log('PASS UI 选区改稿 diff 回路：预览、采纳、丢弃')
-  // 大纲视图（第三态）：卡片网格，每章当前版一张卡（字数/门禁角标/拖拽重排），点击卡名打开当前版
+  // 大纲视图（第三态）：卡片网格，每章当前版一张卡（字数/检查角标/拖拽重排），点击卡名打开当前版
   await button('大纲')
   await waitFor(`document.querySelector('[data-wm-outline]')!==null`)
   await waitFor(`document.querySelector('[data-wm-cards]')!==null`)
   await waitFor(`document.querySelectorAll('[data-wm-outline-row]').length===2`)
   const outlineRows = await evaluate(`Array.from(document.querySelectorAll('[data-wm-outline-row]')).map(e=>e.getAttribute('data-wm-outline-row')).join('|')`)
   assert.ok(/第2章-v2\.md/.test(outlineRows), '卡片应是各系列当前版文件名', outlineRows)
-  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-wm-outline-gate]')).some(e=>e.textContent.includes('门禁'))`), 'novel 章卡应有门禁角标')
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-wm-outline-gate]')).some(e=>e.textContent.includes('检查'))`), 'novel 章卡应有检查角标')
   await evaluate(`Array.from(document.querySelectorAll('[data-wm-outline-row]')).find(e=>e.getAttribute('data-wm-outline-row')==='第2章-v2.md').querySelector('.dshWmOutlineName').click()`)
   await waitFor(`document.querySelector('.dshWmEditor')?.value==='第二章原文'`)
   await button('作品导航')
-  console.log('PASS UI 大纲视图：卡片网格、门禁角标、点击打开')
+  console.log('PASS UI 大纲视图：卡片网格、检查角标、点击打开')
   await sleep(250)
   fs.writeFileSync(path.join(temp, 'writing-ui.png'), (await win.webContents.capturePage()).toPNG())
   assert.equal(errors.length, 0, errors.join('\n'))

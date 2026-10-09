@@ -126,7 +126,7 @@ export function apply(ctx) {
   } catch (err) {
     console.warn('[writing-mode] settings.section register failed:', err)
   }
-  console.info('[writing-mode] client ready · float=DOM · overlay+sidebar+settings')
+  console.info('[writing-mode] client ready · entry=sidebar-icon · overlay+footer+header+settings')
 }
 
 export { companionDraftConflict as __draftConflict }
