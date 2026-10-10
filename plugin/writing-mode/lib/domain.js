@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { findProjectRoot, readTextOrNull, listProjectFiles, effectiveRoots, readConfig } from './store.js'
 import { loadKnowledgeFromRoot, searchKnowledge, formatKnowledgeHits } from './knowledge.js'
-import { extractSearchQueries, webResearch, formatWebHits } from './websearch.js'
+import { extractSearchQueries, webResearchDetailed, formatWebHits } from './websearch.js'
 import { naturalSortFiles } from './compile.js'
 
 /* ── 门禁（与 E:\剧本\验证 的 check-*.mjs 同口径）── */
@@ -357,8 +357,23 @@ export async function chatComplete(ctx, { system, userText, route, maxTokens = 2
   }
 }
 
+/**
+ * 单次补全的输入上限（2026-10-10 抬升并改为**显式**上报）。
+ * 原值：assist 12000 / recommend 8000，且都是静默截断。
+ * 上限只受 HTTP body 上限（1 MiB）与模型上下文约束；24000 字≈48KB，余量充足。
+ */
+export const ASSIST_MAX_INPUT = 24000
+export const RECOMMEND_MAX_INPUT = 16000
+
+/** 按上限裁剪输入，并如实报告"只送了前 N 字"。 */
+export function clipInput(raw, limit) {
+  const full = String(raw || '')
+  if (full.length <= limit) return { text: full, truncated: null }
+  return { text: full.slice(0, limit), truncated: { sent: limit, total: full.length, limit } }
+}
+
 export async function recommend(ctx, body, prefs) {
-  const text = String(body?.text || '').slice(0, 8000)
+  const { text, truncated } = clipInput(body?.text, RECOMMEND_MAX_INPUT)
   const style = body?.style === 'spark' ? 'spark' : 'research'
   let projectDir = null
   if (body?.path) {
@@ -368,13 +383,17 @@ export async function recommend(ctx, body, prefs) {
   }
   const brief = projectContextBrief(projectDir)
 
-  // 1) 优先联网查证（中文维基等；失败不挡）
+  // 1) 优先联网查证（Bing RSS → DDG Lite → 中文维基；失败不挡，但如实上报）
   const queries = extractSearchQueries(text, brief, 4)
   let webHits = []
+  let webFailed = false
   try {
-    webHits = await webResearch(queries, 3, 6)
+    const web = await webResearchDetailed(queries, 4, 8)
+    webHits = web.hits
+    webFailed = web.failed
   } catch {
     webHits = []
+    webFailed = true
   }
   const webBlock = formatWebHits(webHits)
     ? `\n【已查到的公开资料（请据此写，勿编造相反事实）】\n${formatWebHits(webHits)}\n`
@@ -406,7 +425,9 @@ export async function recommend(ctx, body, prefs) {
     `\n【文稿片段】\n${text || '（空）'}`,
     webHits.length
       ? '\n请围绕上述公开资料展开；补检索词时给出中英文关键词。'
-      : '\n联网暂时没查到结果：请给具体检索词与替代查证路径，不要虚构百科条目。',
+      : webFailed
+        ? '\n联网查证这次没成功（几个源都没连上）：请**明确说"这次没能联网核实"**，只给检索词与替代查证路径，不要虚构百科条目或史实。'
+        : '\n联网可用但没搜到相关内容：请给具体检索词与替代查证路径，不要虚构百科条目。',
     '\n控制在 300–600 字。',
   ].join('\n')
 
@@ -415,13 +436,15 @@ export async function recommend(ctx, body, prefs) {
     system: '中文输出，简洁具体，避免「首先/其次/综上」。',
     userText: prompt,
     route,
-    maxTokens: 1200,
+    maxTokens: 1600,
   })
 
   const meta = {
     web: webHits.map((h) => h.title),
+    webFailed,
     knowledge: hits.map((h) => h.title),
     queries,
+    truncated,
   }
   if (!r.ok) {
     // 无 LLM：有网页结果就直接展示，否则本地启发式
@@ -444,7 +467,10 @@ export async function recommend(ctx, body, prefs) {
 
 export async function assist(ctx, body, prefs) {
   const action = String(body.action || 'polish')
-  const text = String(body.text || '').slice(0, 12000)
+  // 2026-10-10：原 `slice(0, 12000)` 是**静默**截断——长章只处理前 12000 字，作者看不到
+  // 任何提示，会以为整章都过了一遍。现在上限抬高到 ASSIST_MAX_INPUT，并且把截断事实
+  // 随响应回给 UI（truncated），由界面明说"只处理了前 N 字"。
+  const { text, truncated } = clipInput(body?.text, ASSIST_MAX_INPUT)
   // hint：作者在工具图标菜单里选中工具后随提示词补的要求（2026-10-09 输入框旁工具菜单），
   // 附加在默认指令之后，不替代默认约束；instruction 仍是完整覆盖（老调用方不变）。
   const hint = String(body.hint || '').trim().slice(0, 2000)
@@ -463,8 +489,8 @@ export async function assist(ctx, body, prefs) {
     system: '你是中文写作助手，严格按指令输出，不要闲聊。',
     userText: prompt,
     route,
-    maxTokens: 2048,
+    maxTokens: 4096,
   })
-  if (!r.ok) return { ok: false, status: r.error === 'llm-unavailable' ? 501 : 502, error: r.error }
-  return { ok: true, status: 200, result: r.text, model: r.route }
+  if (!r.ok) return { ok: false, status: r.error === 'llm-unavailable' ? 501 : 502, error: r.error, truncated }
+  return { ok: true, status: 200, result: r.text, model: r.route, truncated }
 }

@@ -1,10 +1,15 @@
 /**
- * 轻量联网查证（无 API Key）：Bing RSS 搜索 + 可选中文维基。
- * 失败静默返回 []；不阻塞写作台。
+ * 轻量联网查证（无 API Key）：Bing RSS → DuckDuckGo Lite → 中文维基。
+ *
+ * 2026-10-10 改三处（原实现"4s 超时 + 失败静默返回 []"）：
+ *   1. 超时 4s → 8s（中文网络下 4s 经常连不上，等于没查）；
+ *   2. 多一条备用引擎（DDG Lite），三源按序回退；
+ *   3. **失败不再静默**：`webResearchDetailed()` 如实回报 attempted/failed，
+ *      由调用方（recommend）告诉作者"联网没查成"，而不是假装"没查到资料"。
  */
 
 const UA = 'Mozilla/5.0 (compatible; dsh-writing-mode/0.1)'
-const TIMEOUT_MS = 4000
+const TIMEOUT_MS = 8000
 
 async function fetchText(url) {
   const ctrl = new AbortController()
@@ -140,26 +145,59 @@ async function wikipediaZh(query) {
 }
 
 /**
- * 优先 Bing RSS，其次中文维基；均失败则 []。
+ * DuckDuckGo Lite（HTML）：Bing 不可达时的备用源。解析 .result-link / .result-snippet。
+ */
+async function duckduckgoLite(query) {
+  const url = 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(String(query).slice(0, 80))
+  const html = await fetchText(url)
+  if (!html) return []
+  const items = []
+  const re = /<a[^>]+class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+  let m
+  while ((m = re.exec(html)) && items.length < 4) {
+    const title = stripTags(m[2])
+    if (!title) continue
+    items.push({ query, title: title.slice(0, 120), snippet: '', url: decodeEntities(m[1]).trim() })
+  }
+  return items
+}
+
+/**
+ * 优先 Bing RSS，其次 DDG Lite，最后中文维基；均失败则 []。
  */
 export async function webResearch(queries, maxQueries = 3, maxHits = 6) {
-  const qs = (queries || []).filter(Boolean).slice(0, maxQueries)
-  const hits = []
-  for (const q of qs) {
-    let part = await bingRss(q)
-    if (!part.length) part = await wikipediaZh(q)
-    hits.push(...part)
-    if (hits.length >= maxHits) break
-  }
-  const seen = new Set()
+  const { hits } = await webResearchDetailed(queries, maxQueries, maxHits)
   return hits
+}
+
+/**
+ * 带失败信息的查证（2026-10-10）：三条源并行跑每条 query，最后按上限裁剪去重。
+ * @returns {{hits: Array, attempted: number, failed: boolean, engines: string[]}}
+ *   failed=true 表示"三条源全都不可达/被拒"——作者看到的不该是"没资料"，而是"没查成"。
+ */
+export async function webResearchDetailed(queries, maxQueries = 3, maxHits = 6) {
+  const qs = (queries || []).filter(Boolean).slice(0, maxQueries)
+  if (qs.length === 0) return { hits: [], attempted: 0, failed: false, engines: [] }
+  const engines = ['bing-rss', 'ddg-lite', 'wikipedia-zh']
+  const perQuery = await Promise.all(
+    qs.map(async (q) => {
+      let part = await bingRss(q)
+      if (!part.length) part = await duckduckgoLite(q)
+      if (!part.length) part = await wikipediaZh(q)
+      return part
+    })
+  )
+  const raw = perQuery.flat()
+  const seen = new Set()
+  const hits = raw
     .filter((h) => {
-      const k = h.title.toLowerCase()
+      const k = String(h.title || '').toLowerCase()
       if (!k || seen.has(k)) return false
       seen.add(k)
       return true
     })
     .slice(0, maxHits)
+  return { hits, attempted: qs.length, failed: hits.length === 0, engines }
 }
 
 export function formatWebHits(hits) {

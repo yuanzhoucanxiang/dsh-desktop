@@ -44,6 +44,7 @@ export function createHarnessAdapter(deps = {}) {
     connection = null,
     remoteSession = () => null,
     uiWorkspace = () => null,
+    uiConversation = () => null,
     conversation = () => null,
     api = null,
     coordination = api ? httpCoordination(api) : null,
@@ -416,6 +417,64 @@ export function createHarnessAdapter(deps = {}) {
       if (typeof off === 'function') nativeUnsubs.push(off)
     }
 
+    /**
+     * 0.2.0 会话图（2026-10-10 修复"面板读不到历史与回复"）。
+     *
+     * 0.1.7 的 chat 图挂在 `Session.getSnapshot().chat` 上；0.2.0 把消息图搬到了
+     * **客户端 UI 组装层**：`ctx.uiConversation.binding(binding).target('chat')`
+     * —— 官方 ChatView 用的就是这张图（`dsh-client-ui-chat` 的 chatSource），
+     * 形状 `{ order, nodes }` 与 `projectChat` 期望的一致，所以投影不用改。
+     *
+     * 三个必须踩准的点（2026-10-10 只读调研 + 实测）：
+     *   1. 必须先 `sessions.retain(id, { source: 'mainView' })`：只 `binding(id)` 是"借"，
+     *      没有 retain 时 binding 是 undefined（官方主视图同款源键）。
+     *   2. 必须先 `subscribe()`：target 在**首次订阅**时才 activate 并构建快照，
+     *      之前 `getSnapshot()` 是 undefined（官方 `BoundConversation.subscribe` 里 activate）。
+     *   3. `openState === 'loading'` 只表示"历史首帧还没到"，**不是**读消息的前提：
+     *      `prompt()` 根本不看 openState（这解释了"发送通、历史空"）。
+     */
+    const chatBinding = { sessionId: null, target: null, off: null, ref: null, error: null }
+
+    function disposeChatBinding() {
+      try { chatBinding.off?.() } catch { /* 已释放 */ }
+      try { chatBinding.ref?.release?.() } catch { /* 旧内核没有 release */ }
+      chatBinding.off = null
+      chatBinding.ref = null
+      chatBinding.target = null
+      chatBinding.sessionId = null
+    }
+
+    function chatTarget() {
+      const id = state.sessionId
+      const uiConv = typeof uiConversation === 'function' ? uiConversation() : null
+      if (!id || !uiConv || !has(sessions, 'binding')) return null
+      if (chatBinding.sessionId === id) return chatBinding.target
+      disposeChatBinding()
+      chatBinding.sessionId = id
+      try {
+        if (has(sessions, 'retain')) chatBinding.ref = sessions.retain(id, { source: 'mainView' })
+        const binding = sessions.binding(id)
+        if (!binding) return null
+        const target = uiConv.binding?.(binding)?.target?.('chat') || null
+        if (!target) return null
+        // 先订阅（激活），再交给调用方读快照
+        chatBinding.off = target.subscribe(() => notify())
+        chatBinding.target = target
+      } catch (err) {
+        chatBinding.error = String(err?.message || err)
+        chatBinding.target = null
+      }
+      return chatBinding.target
+    }
+
+    /** 会话消息图：0.1.7 直接给 `chat`；0.2.0 走 uiConversation 的 chat target。 */
+    function chatGraphOf(chatSnap) {
+      if (chatSnap && chatSnap.chat) return chatSnap.chat
+      const target = chatTarget()
+      if (!target) return null
+      try { return target.getSnapshot() || null } catch { return null }
+    }
+
     function ensureAttached() {
       if (attachedSessionId !== state.sessionId) {
         attachedSessionId = state.sessionId
@@ -458,7 +517,9 @@ export function createHarnessAdapter(deps = {}) {
       // 正常的快速加载不触发：loading 持续 3s 以上才认定卡住。
       const session = currentSession()
       const snap = session?.getSnapshot?.() || null
-      const stuckLoading = Boolean(snap && snap.openState === 'loading' && !snap.chat)
+      // 2026-10-10：判据从 `!snap.chat`（0.1.7 的形状，0.2.0 上恒为真 → 会一直误触发重挂）
+      // 改成"没有任何消息图"——0.2.0 的图在 uiConversation 的 chat target 上。
+      const stuckLoading = Boolean(snap && snap.openState === 'loading' && !chatGraphOf(snap))
       if (session && !stuckLoading) {
         loadingSince = 0
         return
@@ -570,22 +631,28 @@ export function createHarnessAdapter(deps = {}) {
       // （节点追加进同一个 chat 对象）被引用相等掩盖掉——2026-09-14 fixture 实测到这一点。
       const queueSig = (chatSnap?.queue || []).map((row) => row?.id ?? '').join('|')
       const pendingSig = (chatSnap?.pending || []).map((wait) => wait?.key ?? '').join('|')
-      const order = chatSnap?.chat?.order || []
-      const orderSig = `${order.length}:${order.length ? order[order.length - 1] : ''}:${chatSnap?.chat?.nodes?.size ?? ''}`
+      // 消息图：0.1.7 = 会话快照上的 chat；0.2.0 = uiConversation 的 "chat" target（见 chatGraphOf）
+      const chatGraph = chatGraphOf(chatSnap)
+      const order = chatGraph?.order || []
+      const orderSig = `${order.length}:${order.length ? order[order.length - 1] : ''}:${chatGraph?.nodes?.size ?? ''}`
       return snapshotCache.get(
-        [chatSnap?.chat, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(','), caps.missing.join(','), caps.degraded.join(',')],
+        [chatGraph, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(','), caps.missing.join(','), caps.degraded.join(',')],
         () => {
-        const { messages, hasUnknown } = projectChat(chatSnap?.chat)
+        const { messages, hasUnknown } = projectChat(chatGraph)
         // 临时诊断（2026-10-09 排查"绑定会话读不到历史"）：window.__wmDebugCompanion = true 时打印一次实况
         if (typeof window !== 'undefined' && window.__wmDebugCompanion) {
           const dbg = {
             status: state.status,
             sessionId: state.sessionId,
             hasStore: Boolean(session),
-            chatType: Object.prototype.toString.call(chatSnap?.chat),
-            chatKeys: chatSnap?.chat && typeof chatSnap.chat === 'object' ? Object.keys(chatSnap.chat) : null,
-            orderLen: (chatSnap?.chat?.order || []).length,
-            nodesSize: chatSnap?.chat?.nodes?.size ?? null,
+            chatType: Object.prototype.toString.call(chatGraph),
+            chatKeys: chatGraph && typeof chatGraph === 'object' ? Object.keys(chatGraph) : null,
+            orderLen: (chatGraph?.order || []).length,
+            nodesSize: chatGraph?.nodes?.size ?? null,
+            // 图是从哪儿来的：session（0.1.7）/ uiConversation（0.2.0）/ none
+            chatSource: chatSnap?.chat ? 'session' : (chatBinding.target ? 'uiConversation' : 'none'),
+            chatBindingError: chatBinding.error,
+            chatTargetReady: Boolean(chatBinding.target),
             snapKeys: chatSnap && typeof chatSnap === 'object' ? Object.keys(chatSnap) : null,
             msgs: messages.length,
             hasMore: chatSnap?.hasMore ?? null,

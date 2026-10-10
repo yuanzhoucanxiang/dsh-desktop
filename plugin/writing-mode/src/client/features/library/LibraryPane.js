@@ -1,7 +1,8 @@
 /**
  * 左栏「文档库」（P1-② 从 app/WritingModeApp.js 抽出；DOM、类名、key 与事件语义逐字不变）。
  * 纯 props 渲染：库树/视图模式/内联新建条与三个视图切换全部来自 WritingModeApp。
- * 覆盖层（成书/档案）走 onExportBook / onOpenArchive 意图回调，本面板不碰覆盖层状态。
+ * 覆盖层（成书）与建章走 onExportBook / onNewChapter 意图回调，本面板不碰覆盖层状态；
+ * 档案（wiki）入口 2026-10-10 起挪到顶栏图标（随当前文稿所属项目），不再挂在项目操作行。
  */
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
@@ -51,8 +52,8 @@ export const LibraryPane = react.memo(function LibraryPane({
   commitAddRoot,
   KEY_HINT,
   onCollapse,
-  onOpenArchive,
   onExportBook,
+  onNewChapter,
 }) {
   // F1 「＋」入口菜单：四个「加东西」入口收在一处；内容常挂载（门禁按文本点击不看可见性），
   // 关闭时由 .dshWmMenu 规则 display:none；Esc 或点菜单外关闭。
@@ -291,7 +292,8 @@ export const LibraryPane = react.memo(function LibraryPane({
             className: 'dshWmList',
             children:
               libraryView === 'outline'
-                ? jsx.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, 'outline-view')
+                // 散稿桶不是项目（没有 draft/ 契约结构），大纲视图给它只会渲染「读取失败」
+                ? jsx.jsx(OutlineView, { projects: projects.filter((p) => !p.isLoose), onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, 'outline-view')
                 : roots.length === 0
                 ? jsx.jsx(
                     'div',
@@ -339,8 +341,18 @@ export const LibraryPane = react.memo(function LibraryPane({
                       children: (activeTree && activeTree.missing ? T.missing + '\n' : '') + T.noProjects,
                     })
                   : projects.map((proj) => {
+                      // 散稿桶不进作品导航（它是库根散稿的收容，归文件视图管）；
+                      // 搜索时仍列出并强制展开，让命中可见（2026-10-10 第七轮）。
+                      if (proj.isLoose && libraryView === 'writing' && !libQuery) return null
                       const groups = libraryView === 'files' ? groupFiles(proj.files, libQuery) : navigationGroups(proj.files, libQuery)
-                      const openP = !collapsed.has(proj.path)
+                      // 操作行只随「当前项目」（正在编辑的文件所属项目）出现——
+                      // 否则每个展开的项目都重复一遍「档案/成书/添加资料」（2026-10-10 用户反馈）。
+                      const isActiveProj = Boolean(filePath) && (proj.files || []).some((f) => f.abs === filePath)
+                      // 散稿桶（isLoose，库根散稿的收容）默认收起、不挂操作行（档案/成书/加资料
+                      // 对散稿无意义，store 端 wiki 同样不收）；搜索时强制展开让命中可见。
+                      const openP = proj.isLoose
+                        ? collapsed.has('loose:' + proj.path) || Boolean(libQuery)
+                        : !collapsed.has(proj.path)
                       const maxDraft = maxVersionInGroup(
                         (proj.files || []).filter((f) => String(f.rel).startsWith('draft/'))
                       )
@@ -348,14 +360,14 @@ export const LibraryPane = react.memo(function LibraryPane({
                       return jsx.jsx(
                         'div',
                         {
-                          className: 'dshWmProj',
+                          className: 'dshWmProj' + (proj.isLoose ? ' is-loose' : ''),
                           children: [
                             jsx.jsx(
                               'button',
                               {
                                 type: 'button',
                                 className: 'dshWmProjToggle',
-                                onClick: () => toggleProj(proj.path),
+                                onClick: () => toggleProj(proj.isLoose ? 'loose:' + proj.path : proj.path),
                                 children: [
                                   jsx.jsx(
                                     'span',
@@ -366,21 +378,16 @@ export const LibraryPane = react.memo(function LibraryPane({
                                     },
                                     'c'
                                   ),
-                                  jsx.jsx('span', { children: proj.name }, 'n'),
+                                  jsx.jsx('span', {
+                                    children: proj.isLoose ? proj.name + ' · ' + (proj.files || []).length : proj.name,
+                                  }, 'n'),
                                 ],
                               },
                               'pt'
                             ),
-                            openP ? jsx.jsxs('div', {
+                            openP && isActiveProj && !proj.isLoose ? jsx.jsxs('div', {
                               className: 'dshWmProjOps',
                               children: [
-                                jsx.jsx('button', {
-                                  type: 'button',
-                                  className: 'dshWmBtn is-ghost',
-                                  title: '作品档案：已确认设定、进度与资料的只读汇总页',
-                                  onClick: () => onOpenArchive(proj),
-                                  children: '档案',
-                                }, 'archive'),
                                 jsx.jsx('button', {
                                   type: 'button',
                                   className: 'dshWmBtn is-ghost',
@@ -388,19 +395,22 @@ export const LibraryPane = react.memo(function LibraryPane({
                                   onClick: () => onExportBook(proj),
                                   children: '成书',
                                 }, 'export'),
-                                jsx.jsx('select', {
-                                  className: 'dshWmSearch dshWmAddRes', 'aria-label': '按需添加资料', value: '',
-                                  onChange: e => void addProjectResource(proj, e.target.value),
-                                  children: [jsx.jsx('option', { value: '', children: '＋ 添加资料' }, 'placeholder'),
-                                    ...resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel)).map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
-                                }, 'add-resource'),
+                                (() => {
+                                  const remaining = resourceChoices.filter(item => !(proj.files || []).some(f => f.rel === item.rel))
+                                  // 资料添齐了就别留空下拉——点开没有选项是最差的惊喜（2026-10-10 第七轮）
+                                  if (!remaining.length) return null
+                                  return jsx.jsx('select', {
+                                    className: 'dshWmSearch dshWmAddRes', 'aria-label': '按需添加资料', value: '',
+                                    onChange: e => void addProjectResource(proj, e.target.value),
+                                    children: [jsx.jsx('option', { value: '', children: '＋ 添加资料' }, 'placeholder'),
+                                      ...remaining.map(item => jsx.jsx('option', { value: item.rel, children: item.label }, item.rel))],
+                                  }, 'add-resource')
+                                })(),
                               ],
                             }, 'proj-ops') : null,
                             proj.scanWarning ? jsx.jsx('p', { role: 'status', children: proj.scanWarning }) : null,
                             openP
                               ? (() => {
-                                  // 章节优先（2026-10-09 第二轮）：作品导航视图里「正文」直列在项目操作行下，
-                                  // 概览/人物/设定/规划等收进一个「资料与设定」次级容器（默认关闭，常挂载可点）。
                                   const renderGroup = (g) =>
                                     jsx.jsx(
                                       'details',
@@ -428,35 +438,43 @@ export const LibraryPane = react.memo(function LibraryPane({
                                       },
                                       'g-' + g.key
                                     )
-                                  const draftGroup = libraryView === 'writing' ? groups.find((g) => g.key === '正文') : null
-                                  if (!draftGroup) return groups.map(renderGroup)
-                                  const assetGroups = groups.filter((g) => g.key !== '正文')
-                                  const assetCount = assetGroups.reduce((n, g) => n + g.files.length, 0)
-                                  const assetsOpen = Boolean(libQuery) || assetGroups.some((g) => g.files.some((f) => f.abs === filePath))
-                                  return [
-                                    draftGroup.files.map((f) =>
-                                      jsx.jsx(FileRow, {
-                                        file: f,
-                                        maxVer: maxDraft,
-                                        active: Boolean(filePath) && f.abs === filePath,
-                                        onPick: setFilePath,
-                                        labels: T,
-                                      }, f.abs)
-                                    ),
-                                    assetGroups.length
-                                      ? jsx.jsxs('details', {
-                                          className: 'dshWmProjAssets',
-                                          open: assetsOpen,
-                                          children: [
-                                            jsx.jsx('summary', {
-                                              className: 'dshWmFolder is-clickable',
-                                              children: '资料与设定 · ' + assetCount,
-                                            }, 'ah'),
-                                            ...assetGroups.map(renderGroup),
-                                          ],
-                                        }, 'assets')
-                                      : null,
-                                  ]
+                                  // 章节之家（2026-10-10 第六轮）：作品导航里项目下只列章节——资料/设定的
+                                  // 阅读归档案 wiki（顶栏图标），编辑走文件视图；搜索时全量列出让命中可见。
+                                  if (libraryView === 'writing' && !proj.isLoose && !libQuery) {
+                                    const chapters = (groups.find((g) => g.key === '正文') || {}).files || []
+                                    return [
+                                      ...chapters.map((f) =>
+                                        jsx.jsx(FileRow, {
+                                          file: f,
+                                          maxVer: maxDraft,
+                                          active: Boolean(filePath) && f.abs === filePath,
+                                          onPick: setFilePath,
+                                          labels: T,
+                                        }, f.abs)
+                                      ),
+                                      chapters.length === 0
+                                        ? jsx.jsxs('div', {
+                                            className: 'dshWmEmptyChapters',
+                                            children: [
+                                              jsx.jsx('span', { children: T.noChapters }, 't'),
+                                              jsx.jsx('button', {
+                                                type: 'button',
+                                                'data-wm-new-chapter': '1',
+                                                onClick: () => void onNewChapter(proj),
+                                                children: T.firstChapter,
+                                              }, 'b'),
+                                            ],
+                                          }, 'empty-chapters')
+                                        : jsx.jsx('button', {
+                                            type: 'button',
+                                            className: 'dshWmNewChapter',
+                                            'data-wm-new-chapter': '1',
+                                            onClick: () => void onNewChapter(proj),
+                                            children: '＋ ' + T.newChapter,
+                                          }, 'new-chapter'),
+                                    ]
+                                  }
+                                  return groups.map(renderGroup)
                                 })()
                               : null,
                           ],

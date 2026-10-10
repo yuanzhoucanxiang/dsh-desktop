@@ -618,3 +618,24 @@ v0.1.42 于 2026-09-22 公开，代码 ac00c15，Release ID 393502728；五项�
 - **验收**：`verify:writing-ui` 14 段 PASS；`verify:writing-quick` 全链 QUICK_EXIT=0；10-10 第三轮视觉分层后 `verify:writing-ui` 依旧 14 段 PASS（纯样式无感知）。**入库状态**：第一轮（rail/抽屉/术语）随 ZCode 的 v0.1.53 发布流程一并入库（`4a35798`，发布前经用户裁定「等对方改完再发」）；第二轮（顶栏删钮/✦ 菜单/章节优先/`hint`）与第三轮（左栏视觉分层 + 添加资料文案瘦身）由用户发话「提交发布」，随 **v0.1.54** 一并入库发布。
 
 署名：Kimi
+
+## 26. 章节之家与档案上顶栏（2026-10-10 第六轮）
+
+用户反馈：作品概览/人物/世界与设定/故事规划/创作跟踪这些「类似 wiki 档案的东西」不该挂在作品下面——作品下面应直接放章节；「档案」应做成图标放进顶栏。此前两轮（操作行只挂当前项目、散稿桶沉底降级，见 logs/2026-10-10.md）之后，本轮把导航与档案彻底分层：
+
+- **作品导航 = 章节之家**：作品导航视图里项目下只列「正文」章节（直列 FileRow，不再有「正文」分组行，也不再有「资料与设定 · N」容器）；零章节项目显示「还没有章节 + 写第一章」空态，有章节时尾部挂「＋ 新章节」——两者都走 `createChapter`：取已有最大章号 +1，`save` 路由 `revision:null` 独占创建 `draft/novel/第N章-v1.md`（撞名 409 不覆盖），成功即刷新树并打开。资料的阅读归档案 wiki、编辑走文件视图；搜索时全量列出（命中可见）。
+- **档案入口上顶栏**：顶栏在库选择后加「档案」图标钮（feather archive 风格，`.dshWmIconBtn`），作用于**当前文稿所属项目**（`currentProj` = 含 filePath 的非散稿项目）；无所属项目（空态/散稿）时禁用。左栏项目操作行随之摘掉「档案」，只剩成书 + ＋添加资料。
+- **host 补目录**：`save` 独占创建（revision:null）时允许落在还不存在的子目录——新增 `ensureParentUnderRoots`（store.js）：沿路径向上找最近已存在祖先、必须在库根内，才 `mkdirSync(recursive)`；随后 `targetUnder` 照常 realpath 复核，越界/相对路径照旧 400。此前 `resolveUnderRoots` 只查一级父目录，项目内首建 `draft/novel/` 会被误回 path-outside-roots。
+- **产品化动效**：进驻/展开统一 120–180ms 浅位移淡入（`dshWmFadeUp` / `dshWmFadeSide` / 右栏镜像 `dshWmFadeSideR`，作用于 `.dshWmRoot` / `.dshWmSide` / `.dshWmProjOps` / 展开的章节行），`.dshWmItem` 补 background/border-color 过渡；`prefers-reduced-motion:reduce` 下全部关停。
+- **门禁**：ui.cjs 首屏 `.dshWmItem` 计数 3→2（project.md 不再入导航）+ 空态断言档案钮禁用；navigation.cjs 删掉「注入模板后 3→11」的计数改写（模板 9 个资料文件不再占导航，计数与 ui 同为 2），新契约断言：导航无「人物/世界与设定」分组、章节直列、档案钮可用、搜索命中后资料分组自动展开。`build:writing` 通过；`verify:writing-ui` 14 段 PASS、`verify:writing-navigation` PASS；store/route 改动回归 `test:writing-p1` 7/7、`test:writing-hardening` 92/92、`test:writing-stats` 23/23、`test:writing-existing` 6/6。
+- **入库状态**：工作树待提交（与并行会话的 assist 截断提示改动同窗，提交时按文件拆开核对）。
+
+署名：Kimi
+
+### §27 散稿桶撤出导航 + 添加资料降权（2026-10-10 第七轮）
+
+- **散稿桶（独立文稿）不进作品导航与大纲视图**：它是库根散稿的收容、不是项目，导航只归文件视图管（搜索时仍列出并强制展开让命中可见）；大纲视图同步过滤，顺带消掉「大纲读取失败 (invalid-project)」行。
+- **「添加资料」降权**：操作行里从撑满整行的 flex:1 下拉改为内容宽（max-width 150px）、常态透明边、hover 才出虚线框；资料添齐（bible/outline/state 全套）时整个不渲染——点开空下拉是最差的惊喜。
+- **门禁连锁修复（第六轮的债）**：archive.cjs 三处操作行「档案」文字钮改点顶栏 `[data-wm-archive]`，archive/compile/chat 计数断言随新契约改写（8→3 / 5→3 / 3→2）；existing-project-ui.cjs 三处 `button('文件视图')` 前补 `.dshWmLibViews` 就绪等待（`button()` 是一次性点击，未就绪静默空点）。写作门禁 7/7 全绿（ui / navigation / archive / compile / chat / existing-ui / native）。
+
+署名：Kimi

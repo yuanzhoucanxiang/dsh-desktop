@@ -7,6 +7,7 @@ import path from 'node:path'
 import {
   readDoc, writeDoc, createVersion, deleteDoc, normalizePrefs,
   effectiveRoots, resolveUnderRoots, resolveProjectDir, findProjectRoot, newDraftPath,
+  ensureParentUnderRoots,
 } from '../store.js'
 import { withFileLock } from '../file-lock.js'
 import { runGates, ledgerSummary, outlineSummary } from '../domain.js'
@@ -49,6 +50,11 @@ export async function saveDoc({ req, res, route, cfg }) {
       return
     }
     targetPath = newDraftPath(rootPath, parsed?.title)
+  }
+  // 独占创建（revision:null）允许落在还不存在的子目录（项目内首建 draft/novel/ 等）：
+  // 先按库根口径补建父目录链，随后 targetUnder 照常 realpath 复核，安全语义不变。
+  if (route === 'save' && parsed?.revision === null && typeof targetPath === 'string' && targetPath) {
+    ensureParentUnderRoots(targetPath, roots)
   }
   const target = targetUnder({ res, cfg }, targetPath)
   if (target === null) return

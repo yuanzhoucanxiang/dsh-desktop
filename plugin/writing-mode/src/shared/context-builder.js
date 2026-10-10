@@ -164,6 +164,11 @@ export function buildPreparedTurn(input) {
     : { selected: [], omissions: [], charsUsed: 0 }
 
   const parts = []
+  // 写作模式状态（2026-10-10）：作者此刻在写什么、光标在哪、今天写了多少、体检发现什么。
+  // 放在最前，让模型先建立现场感；它只进 body（模型看到的），不进 message（面板显示的），
+  // 所以作者看到的消息仍然是自己敲的那句话。
+  const stateBlock = String(input?.stateBlock ?? '').trim()
+  if (stateBlock) parts.push(stateBlock)
   if (selected.length) {
     const body = selected.map((s) => s.line || `- [${s.label}] ${s.text}`).join('\n')
     const budgetNote = omissions.filter((o) => o.reason === 'budget').length
@@ -191,6 +196,7 @@ export function buildPreparedTurn(input) {
     includeMemory,
     budget,
     charsUsed,
+    stateBlock,
     selectedMemory: Object.freeze(selected.map((s) => Object.freeze(s))),
     omissions: Object.freeze(omissions.map((o) => Object.freeze(o))),
     omittedCount: omissions.filter((o) => o.reason === 'budget').length,

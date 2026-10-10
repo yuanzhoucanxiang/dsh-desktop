@@ -2,18 +2,21 @@ const fs=require('node:fs'),path=require('node:path'),Module=require('node:modul
 let source=fs.readFileSync(path.join(__dirname,'verify-writing-ui.cjs'),'utf8').replace(/\r\n/g,'\n')
 source=source.replace("const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-writing-ui-'))","fs.mkdirSync(path.join(os.tmpdir(),'dsh-preview'),{recursive:true}); const temp = fs.mkdtempSync(path.join(os.tmpdir(),'dsh-preview/writing-navigation-'))")
 source=source.replace("  let handler", "  const templates = await import(pathToFileURL(path.join(repo, 'plugin/writing-mode/lib/templates.js')))\n  for(const f of templates.renderTemplate('novel','演示项目','').files){if(f.rel.endsWith('.gitkeep'))continue;const dest=path.join(project,f.rel);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,f.body)}\n  let handler")
-source=source.replace('.length===3', '.length===11')
 source=source.replace("  await sleep(250)", `
+  // 2026-10-10 第六轮契约：作品导航下项目只列章节——资料/设定的阅读归顶栏「档案」wiki、
+  // 编辑走文件视图；搜索时全量列出（命中可见）。注入的 9 个模板资料不再占导航（计数与 ui.cjs 同为 2）。
   const summaries=await evaluate('Array.from(document.querySelectorAll(".dshWmProj summary")).map(e=>e.textContent)');
-  assert(summaries.includes('人物'));assert(summaries.includes('世界与设定'));
-  assert.equal(await evaluate('Array.from(document.querySelectorAll("details")).find(e=>e.querySelector("summary")?.textContent==="人物").open'),false);
+  assert(!summaries.includes('人物'));assert(!summaries.includes('世界与设定'));
+  assert(await evaluate('Array.from(document.querySelectorAll(".dshWmItemTitle")).some(e=>e.textContent==="第1章")'));
+  assert.equal(await evaluate('document.querySelector("[data-wm-archive]")?.disabled'),false);
   await input('.dshWmSearch','人物档案');
   await waitFor('Array.from(document.querySelectorAll(".dshWmItemTitle")).some(e=>e.textContent==="人物档案")');
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("details")).find(e=>e.querySelector("summary")?.textContent==="人物").open'),true);
   await input('.dshWmSearch','');
   await button('文件视图');
   assert(await evaluate('Array.from(document.querySelectorAll(".dshWmItemTitle")).some(e=>e.textContent==="characters.md")'));
   await button('作品导航');
-  console.log('NAVIGATION_OK Chinese labels, collapsed materials, search and raw view');
+  console.log('NAVIGATION_OK chapters-only navigation; materials live in archive wiki, search and raw view');
   await button('新建项目');
   await input('input[placeholder="项目名"]','轻量新故事');
   await input('input[placeholder="一句话前提"]','一封尚未寄出的信');

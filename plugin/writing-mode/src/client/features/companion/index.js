@@ -19,6 +19,34 @@ import { CompanionMessage } from './CompanionMessage.js'
 import { SessionListSection } from './SessionListSection.js'
 import { companionCapability } from './capability-notice.js'
 import { T } from '../../copy.js'
+import { textHealth, writingStateBlock } from '../../../../lib/writing-state.js'
+
+/**
+ * 把「作者此刻的写作现场」翻成给伙伴看的状态块（2026-10-10）。
+ *
+ * liveState 由写作台传入（编辑器缓冲、光标、选区、未保存、今日字数、门禁、专注）；
+ * 体检在**本地**跑（纯函数、零网络、零延迟），所以它是实时的：作者每次发送时，
+ * 伙伴看到的是这一刻的正文与问题，而不是上次保存的版本。
+ * @returns {string} 空串 = 没有任何可用事实（此时不注入，不编造）
+ */
+export function buildLiveStateBlock(liveState) {
+  const live = liveState || {}
+  const text = typeof live.text === 'string' ? live.text : ''
+  const health = text ? textHealth(text) : null
+  return writingStateBlock({
+    projectLabel: live.projectLabel,
+    fileLabel: live.fileLabel,
+    cursorChars: live.cursorChars,
+    selectionChars: live.selectionChars,
+    dirty: live.dirty,
+    focus: live.focus,
+    todayChars: live.todayChars,
+    dailyGoal: live.dailyGoal,
+    gate: live.gate,
+    health,
+    paragraph: live.paragraph,
+  })
+}
 
 // 文字工具 ✦ 菜单的动作清单与说明（2026-10-09 第二轮：从右栏抽屉收进输入框旁图标菜单）。
 // 菜单行可见文本必须逐字等于工具名（T[a]）——门禁脚本按 textContent=== 精确点击，说明放 title。
@@ -85,7 +113,7 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
     snapshot.running ? jsx.jsx('div', { className: 'dshWmThinking', role: 'status', children: '正在回应…' }) : null,
   ] })
 }
-export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit, onJumpToFile, tools }) {
+export function CompanionChat({ initialBinding, path, contextText, sourceInfo, onExit, onJumpToFile, tools, liveState }) {
   const adapter = harnessAdapter()
   // 能力缺口要能说话：只有灰按钮而不解释原因，作者无法区分「内核没挂上」和「这个作品没会话」。
   const capability = companionCapability(adapter.capabilities())
@@ -384,7 +412,11 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
         }
       }
       if (alive.current) setMemoryBlock(null)
+      // 写作模式状态 + 实时体检（2026-10-10）：把作者此刻的真实现场随消息送给伙伴。
+      // 只进 body（模型看到），不进 message（面板显示），所以作者看到的还是自己那句话。
+      const stateBlock = buildLiveStateBlock(liveState)
       const prepared = buildPreparedTurn({
+        stateBlock,
         message: sentDraft,
         reference: sentReference,
         memoryItems: freshItems,
@@ -739,10 +771,12 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
       ] }) : null,
       // 文字工具产出区：✦ 菜单运行的结果显示在输入框正上方，三个落稿键跟着结果走
       // （原右栏抽屉的 .dshWmAiOut / apply 回路原样搬来，类名与 data 语义不变）。
-      tools && (tools.busy || tools.err || tools.out)
+      tools && (tools.busy || tools.err || tools.out || tools.note)
         ? jsx.jsxs('div', { className: 'dshWmToolOut', 'data-wm-tools-out': '1', children: [
             tools.busy ? jsx.jsx('div', { className: 'dshWmAiHint', role: 'status', children: T.applying }, 'busy') : null,
             tools.err ? jsx.jsx('div', { className: 'dshWmAiHint', role: 'alert', children: tools.err }, 'err') : null,
+            // 非错误但必须知道的提示（如"只处理了前 N 字"）：不进 .dshWmAiOut，避免被"插入文末"带进正文
+            tools.note ? jsx.jsx('div', { className: 'dshWmAiNote', 'data-wm-tools-note': '1', children: tools.note }, 'note') : null,
             jsx.jsx('div', { className: 'dshWmAiOut', children: tools.out || ' ' }, 'out'),
             jsx.jsxs('div', { className: 'dshWmAiActions', children: [
               jsx.jsx('button', { type: 'button', className: 'dshWmBtn', disabled: !tools.out, onClick: tools.onInsert, children: T.insert }, 'ins'),
@@ -875,7 +909,7 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     ] }),
   ] })
 }
-export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools }) {
+export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools, liveState }) {
   const [result, setResult] = react.useState(null)
   const [retry, setRetry] = react.useState(0)
   react.useEffect(() => {
@@ -892,5 +926,5 @@ export function WritingCompanion({ path, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx.jsx(SessionListSection, { currentPath: path || null, onOpenProject: onOpenProject || null }, 'wsl')
   if (!path || result?.path !== path) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx('div', { className: 'dshWmCompanionEmpty', children: path ? '正在打开对话…' : '打开一份稿件，从这里聊起。' }, 'empty')] })
   if (!result.ok) return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsxs('div', { className: 'dshWmCompanionError', role: 'alert', children: [result.error, jsx.jsx('button', { className: 'dshWmQuiet', onClick: () => setRetry(n => n + 1), children: '重试' })] }, 'err')] })
-  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit, onJumpToFile, tools }, result.project)] })
+  return jsx.jsxs('div', { className: 'dshWmCompanionWrap', children: [sessionSection, jsx.jsx(CompanionChat, { initialBinding: result, path, contextText, sourceInfo, onExit, onJumpToFile, tools, liveState }, result.project)] })
 }

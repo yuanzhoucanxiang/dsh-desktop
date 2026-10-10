@@ -67,7 +67,16 @@ app.whenReady().then(async () => {
   }
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(e=>e.textContent===${JSON.stringify(text)}).click()`)
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
-  await waitFor(`document.querySelectorAll('.dshWmItem').length===5`)
+  // 作品导航只列章节（2026-10-10 第六轮）：5 篇可列文稿里 draft 三篇进导航，project/world 归档案与文件视图
+  await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
+
+  // 2026-10-10：项目操作行（档案/成书/添加资料）只随**当前项目**出现
+  // （LibraryPane 的 isActiveProj：正在编辑的文件属于该项目），这是"每个展开的项目
+  // 都重复一遍操作行"那条用户反馈的修法。所以门禁要先打开一篇稿件——这也正是
+  // 真实作者的路径：先点开稿子，再从项目头导出成书。
+  await evaluate(`(() => { const rows=[...document.querySelectorAll('.dshWmItem')]; const p=rows.find(b=>/project\\.md/.test(b.title||''))||rows[0]; if(p) p.click(); return !!p })()`)
+  await waitFor(`!!document.querySelector('textarea.dshWmEditor') && document.querySelector('textarea.dshWmEditor').value.length > 0`)
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(e=>e.textContent==='成书')`)
 
   await button('成书')
   await waitFor(`!!document.querySelector('.dshWmExport')`)

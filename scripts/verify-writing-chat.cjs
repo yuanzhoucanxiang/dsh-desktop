@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(e=>e.textContent===${JSON.stringify(text)}).click()`)
   const input = (selector, text) => evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});const setter=Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(el,${JSON.stringify(text)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`)
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
-  await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
+  await waitFor(`document.querySelectorAll('.dshWmItem').length===2`) // 作品导航只列章节：project.md 不再入导航
   await clickFile('第1章-v1.md')
   await waitFor(`document.querySelector('.dshWmEditor')?.value==='第一章原文'`)
   await button('AI') // 纯写作默认收起右栏：先展开再走伙伴断言

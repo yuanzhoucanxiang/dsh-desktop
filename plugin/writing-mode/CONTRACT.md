@@ -56,7 +56,7 @@
 | `prefs` | POST | patch | prefs（隐藏 Key） |
 | `roots` | POST | mode add/remove/activate/set | config+tree |
 | `get` | GET | path | doc {path,content,mtime,chars,revision} |
-| `save` | POST | path,content,revision | doc；新文件 revision=null，已有文件须匹配 SHA256 |
+| `save` | POST | path,content,revision | doc；新文件 revision=null（独占创建；库内缺失的父目录链自动补建——ensureParentUnderRoots 先校验最近已存在祖先仍在库根内，越界照旧 400），已有文件须匹配 SHA256 |
 | `version` | POST | path,content | 独占创建新版本并返回 doc |
 | `delete` | POST | path,revision | ok |
 | `gate` | POST | path?, content? | gate {kind,rows,pass,fail} |
@@ -279,5 +279,5 @@ POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:tr
 
 - 右栏只有两个 tab：写作伙伴 / 检查。「文字工具」收进伙伴输入框旁的 ✦ 图标菜单：选中工具进入 armed 状态（chip「✦ 润色 ×」压在输入框上方），可补提示词，Enter/发送键运行（单次性；×/Esc 取消）；菜单常挂载（关闭 display:none），菜单行可见文本逐字等于工具名。提示词经 `hint` 字段进 assist 请求，host 拼在默认指令后；产出区（`.dshWmAiOut` + 插入文末/替换选区/发送到会话）在输入框正上方，落稿语义不变。
 - 左右栏均可就地收展：收起时身体边缘留 26px 竖排 rail 入口；展开时面板头有 ⟨/⟩ 折钮；顶栏不再有库/AI 开关；专注模式藏全部侧栏与 rail，退出走顶栏「专注」钮。
-- 左栏：作品导航视图默认只直列「正文」章节（与操作行对齐）；概览/人物/设定/规划等收进「资料与设定 · N」次级容器（默认关闭，搜索或命中当前文件时自动展开）；分组与操作行在视觉上从属于项目名（缩进带 + 引导线）。无正文组的项目与文件/大纲视图维持平铺。
+- 左栏：作品导航视图里项目下只列章节（2026-10-10 第六轮定稿，「资料与设定 · N」次级容器随之撤销）——资料的阅读归顶栏「档案」wiki（图标作用于当前文稿所属项目），编辑走文件视图；搜索时全量列出（命中可见）。零章节项目显示「还没有章节 + 写第一章」，章节列表尾部挂「＋ 新章节」（save revision:null 独占创建，缺 draft/novel/ 由 host 补建）。操作行（成书/添加资料）只随当前项目出现；散稿桶沉底、默认收起、不挂操作行。文件/大纲视图维持平铺。
 - 用户面术语：门禁 → 检查（成稿检查 / 检查一遍 / 状态条「检查 ✓」），台账速览 → 伏笔与线索。内部工程词（gate/ledger 路由、数据字段、验证脚本语境）不变。

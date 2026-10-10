@@ -113,11 +113,17 @@ app.whenReady().then(async () => {
   const clickByAttr = (sel) => evaluate(`document.querySelector(${JSON.stringify(sel)}).click()`)
 
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
-  // 8 篇可列文稿：project + bible 三篇 + outline/foreshadow + draft 三篇（state 下的 json 不进文档库）
-  await waitFor(`document.querySelectorAll('.dshWmItem').length===8`)
+  // 作品导航只列章节（2026-10-10 第六轮）：8 篇可列文稿里 draft 三篇进导航，project/bible/outline 归档案 wiki 与文件视图
+  await waitFor(`document.querySelectorAll('.dshWmItem').length===3`)
+
+  // 2026-10-10：「档案」入口已挪到顶栏图标（[data-wm-archive]，作用于当前文稿所属项目）——
+  // 先打开一篇稿件让该项目成为"当前项目"，顶栏档案钮才可用（真实作者也是先点开稿子再进档案）。
+  await evaluate(`(() => { const rows=[...document.querySelectorAll('.dshWmItem')]; const p=rows.find(b=>/project\.md/.test(b.title||''))||rows[0]; if(p) p.click(); return !!p })()`)
+  await waitFor(`!!document.querySelector('textarea.dshWmEditor') && document.querySelector('textarea.dshWmEditor').value.length > 0`)
+  await waitFor(`document.querySelector('[data-wm-archive]') && !document.querySelector('[data-wm-archive]').disabled`)
 
   // 1) 入口与四区
-  await button('档案')
+  await clickByAttr('[data-wm-archive]')
   await waitFor(`!!document.querySelector('.dshWmWiki')`)
   await waitFor(`Array.from(document.querySelectorAll('[data-wm-wiki-section]')).map(e=>e.getAttribute('data-wm-wiki-section')).join('|')==='设定|进度|时间与伏笔|资料'`)
   assert.equal(await evaluate(`document.querySelector('.dshWmWikiTitle').textContent`), '演示项目')
@@ -179,7 +185,7 @@ app.whenReady().then(async () => {
   console.log('PASS 从档案点章节跳回编辑器，档案层自动收起')
 
   // 7) Esc 只关档案，不退写作台
-  await button('档案')
+  await clickByAttr('[data-wm-archive]')
   await waitFor(`!!document.querySelector('.dshWmWiki')`)
   await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
   await waitFor(`!document.querySelector('.dshWmWiki')`)
@@ -190,7 +196,7 @@ app.whenReady().then(async () => {
   await input('.dshWmEditor', '第一章新稿，雾从海面压过来。灯塔的光扫过一次，又暗下去。')
   await button('保存')
   await waitFor(`document.querySelector('[data-wm-save-label]').textContent==='已保存'`)
-  await button('档案')
+  await clickByAttr('[data-wm-archive]')
   await waitFor(`!!document.querySelector('.dshWmWiki')`)
   // 读数据属性而非 textContent：卡片文案是「12 字 · 今天」，Number(全文) 是 NaN
   await waitFor(`Number(document.querySelector('[data-wm-wiki-today]')?.getAttribute('data-wm-wiki-today')||0)>0`)

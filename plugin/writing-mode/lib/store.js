@@ -244,6 +244,34 @@ export function resolveUnderRoots(filePath, roots) {
   return null
 }
 
+/**
+ * 为「独占创建新文稿」（save revision:null）补建缺失的父目录链——例如项目里首次创建
+ * draft/novel/ 时 resolveUnderRoots 会因最近祖先不存在而回 400。
+ * 安全口径不变：先沿路径向上找最近的**已存在**祖先，它必须落在某个库根之内，
+ * 才 mkdir 缺失层；返回是否有资格补建（false 时调用方照旧走 resolveUnderRoots 报错）。
+ */
+export function ensureParentUnderRoots(filePath, roots) {
+  if (typeof filePath !== 'string' || !filePath.trim() || !path.isAbsolute(filePath)) return false
+  const targetDir = path.dirname(path.resolve(String(filePath)))
+  let dir = targetDir
+  for (;;) {
+    const real = realOrNull(dir)
+    if (real !== null) {
+      const under = roots.some((r) => {
+        if (!r.real) return false
+        const rel = path.relative(r.real, real)
+        return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+      })
+      if (!under) return false
+      try { fs.mkdirSync(targetDir, { recursive: true }) } catch { return false }
+      return true
+    }
+    const up = path.dirname(dir)
+    if (up === dir) return false
+    dir = up
+  }
+}
+
 export function listProjectFiles(projectDir, shallow = false, options = {}) {
   let visited = 0
   const warn = () => { options.truncated = true }
@@ -347,7 +375,8 @@ export function scanTree(cfg) {
         }
       } catch {}
     }
-    projects.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    // 散稿伪条目（isLoose）永远沉底：它是「库根散文件的收容桶」，不与真实作品平级争视觉（2026-10-10）。
+    projects.sort((a, b) => (a.isLoose ? 1 : 0) - (b.isLoose ? 1 : 0) || a.name.localeCompare(b.name, 'zh'))
     return {
       path: r.path,
       label: r.label,

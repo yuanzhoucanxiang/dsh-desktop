@@ -22,6 +22,11 @@ export function bindHarness(ctx) {
   workspacesRef = ctx.workspaces || null
   ctxRef = ctx || null
   adapterRef = null // 服务引用换了，adapter 必须重建（否则拿着旧 store）
+  // 调试钩子（默认关闭、零开销）：探针先用 addScriptToEvaluateOnNewDocument 置
+  // window.__wmDebugCompanion=true，就能在页面里直接查根 ctx 与服务，而不必改源码重打包。
+  try {
+    if (typeof window !== 'undefined' && window.__wmDebugCompanion) window.__wmCtx = ctx
+  } catch { /* 只读环境忽略 */ }
 }
 
 export function harnessSessions() { return sessionsRef }
@@ -43,6 +48,12 @@ export function harnessRemoteSession() { return tryService('remote.session') }
 /** 0.1.7 草稿通道：conversation.input.shell(sessionId)（0.1.1 没有这个服务，解析不到就是 null）。 */
 export function harnessConversation() { return tryService('conversation') }
 
+/**
+ * 0.2.0 会话图通道：uiConversation（`binding(binding).target('chat')`）。
+ * 0.1.7 没有这个服务 → 返回 null，adapter 自动回退到 Session 快照上的 chat。
+ */
+export function harnessUiConversation() { return tryService('uiConversation') }
+
 /** 本渲染进程唯一的 harness adapter（懒创建；bindHarness 之后失效重建）。 */
 export function harnessAdapter() {
   if (!adapterRef) {
@@ -52,6 +63,7 @@ export function harnessAdapter() {
       connection: connectionRef ? { agentPresets: connectionRef.agentPresets } : null,
       remoteSession: harnessRemoteSession,
       uiWorkspace: () => tryService('uiWorkspace'),
+      uiConversation: harnessUiConversation,
       conversation: harnessConversation,
       api,
     })

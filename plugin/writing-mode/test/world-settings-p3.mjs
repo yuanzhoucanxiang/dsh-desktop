@@ -248,9 +248,10 @@ const S = (title, conclusion) => ({
   data.changes = Array.from({ length: 800 }, (_, i) => ({ at: new Date().toISOString(), actor: 'host', op: 'pad', id: `p${i}` }))
   fs.writeFileSync(file, JSON.stringify(data, null, 2))
   const cur = readMemory(p)
+  let res = null
   let full = null
   try {
-    applyMemoryOp(p, {
+    res = applyMemoryOp(p, {
       op: 'confirm-setting',
       baseRevision: cur.memory.revision,
       baseEtag: cur.etag,
@@ -262,8 +263,18 @@ const S = (title, conclusion) => ({
   } catch (e) {
     full = e
   }
-  ok('W13 history-full not silent trim', full?.code === 'history-full', full?.code)
-  ok('W13 items unchanged', readMemory(p).memory.items.length === 1)
+  // 2026-10-10 行为变更：写路径不再撞 history-full 死锁——到顶先把最旧一段**归档**（state/backups/）
+  // 再继续，归档事实随响应返回。判据仍是"不许静默丢"：被裁字节必须能从备份整段找回。
+  const arch = (res?.autoArchived || []).find((a) => a.kind === 'changes') || null
+  ok('W13 历史满时自动归档而不是静默裁剪',
+    Boolean(arch) && arch.dropped > 0 && !full,
+    full ? String(full.code) : JSON.stringify(res?.autoArchived))
+  const backupAbs = arch?.backup ? path.join(p, ...String(arch.backup).split('/')) : null
+  const backupBody = backupAbs && fs.existsSync(backupAbs) ? JSON.parse(fs.readFileSync(backupAbs, 'utf8')) : null
+  ok('W13 被裁历史可在 state/backups/ 整段找回（不丢字节）',
+    Boolean(backupBody) && backupBody.kind === 'changes' && Array.isArray(backupBody.dropped) && backupBody.dropped.length === arch.dropped,
+    JSON.stringify({ backup: arch?.backup, dropped: backupBody?.dropped?.length }))
+  ok('W13 归档不影响已保存的条目（含本次新加的那条）', readMemory(p).memory.items.length === 2, String(readMemory(p).memory.items.length))
 }
 
 // ── W23 跨进程锁：子进程持锁时父进程超时 ──

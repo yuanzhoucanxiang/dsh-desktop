@@ -431,9 +431,15 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
   const attempt = (payload) => { try { return { res: call(payload) } } catch (e) { return { err: e } } }
 
   for (let i = 0; i < 200; i++) call({ op: 'save-setting-candidate', operationId: 'op-' + i, item: { kind: 'fact', setting: { title: '设定' + i, conclusion: '结论' + i } } })
-  const blocked = attempt({ op: 'save-setting-candidate', operationId: 'op-201', item: { kind: 'fact', setting: { title: '第201条', conclusion: '结论' } } })
-  ok('V9 收据满 200 后确实拒绝（前提成立）', blocked.err?.code === 'operations-full', String(blocked.err?.code))
-  ok('V9 配额用量随读返回，UI 可提前提醒', quotaOf(readMemory(proj, opts).memory).operations === 200)
+  // 2026-10-10 行为变更：写路径不再撞 operations-full 死锁——到顶先把最旧一段归档再继续。
+  const relieved = attempt({ op: 'save-setting-candidate', operationId: 'op-201', item: { kind: 'fact', setting: { title: '第201条', conclusion: '结论' } } })
+  ok('V9 收据满 200 后自动归档最旧一段并继续（不再是永久停摆）',
+    Boolean(relieved.res) && relieved.res.autoArchived?.some((a) => a.kind === 'operations' && a.dropped > 0),
+    JSON.stringify({ err: relieved.err?.code, autoArchived: relieved.res?.autoArchived }))
+  const quotaNow = quotaOf(readMemory(proj, opts).memory)
+  ok('V9 配额用量随读返回且裁到上限之内（UI 可提前提醒）',
+    quotaNow.operations <= quotaNow.maxOperations && quotaNow.maxOperations === 200 && quotaNow.maxItems === 400 && quotaNow.maxChanges === 800,
+    JSON.stringify(quotaNow))
 
   const pruned = attempt({ op: 'prune-operations' })
   const backupRel = pruned.res?.archived?.backup
@@ -449,7 +455,7 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
   ok('V9 被裁收据的迟到重试判 operation-pruned，不重复建设定',
     replayPruned.err?.code === 'operation-pruned', String(replayPruned.err?.code || replayPruned.res?.receipt?.itemId))
   const itemsNow = readMemory(proj, opts).memory.items.length
-  ok('V9 归档不影响已保存的设定条目', itemsNow === 201, String(itemsNow))
+  ok('V9 归档不影响已保存的设定条目', itemsNow === 202, String(itemsNow))
 
   let guard = 0
   while (readMemory(proj, opts).memory.items.length < 400 && guard++ < 250) {
@@ -472,15 +478,22 @@ const srcOf = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
   ok('V9 purge 不接受 confirmed/proposed（只允许终态）',
     errCode(() => applyMemoryOp(proj, { op: 'purge-retracted', statuses: ['confirmed'], baseRevision: rev, baseEtag: etag }, opts)) === 'bad-statuses')
 
-  // 历史上限：填满后仍能归档（维护路径不受 history-full 阻挡）
+  // 历史上限：2026-10-10 起写路径自动归档（不再让作者撞 history-full 死锁）；
+  // 维护出口仍然保留，用于作者主动控制保留量。
   const histId = readMemory(proj, opts).memory.items.at(-1)?.id
   let g2 = 0
-  let histFull = null
+  let histAuto = null
+  let histErr = null
   while (g2++ < 900) {
     const a = attempt({ op: 'update', id: histId, item: { text: '反复改 ' + g2 } })
-    if (a.err) { histFull = a.err.code; break }
+    if (a.err) { histErr = a.err.code; break }
+    if (a.res?.autoArchived?.some((x) => x.kind === 'changes')) { histAuto = a.res.autoArchived; break }
   }
-  ok('V9 变更历史满后报 history-full', histFull === 'history-full', String(histFull))
+  ok('V9 变更历史满时自动归档最旧一段并继续（不再是 history-full 死锁）',
+    Boolean(histAuto) && histAuto.some((x) => x.kind === 'changes' && x.dropped > 0) && histErr === null,
+    JSON.stringify({ histAuto, histErr }))
+  // 再攒一段，证明维护出口仍可主动归档
+  for (let i = 0; i < 140; i++) attempt({ op: 'update', id: histId, item: { text: '补历史 ' + i } })
   const arch = attempt({ op: 'archive-history' })
   ok('V9 历史满时归档出口仍可用（不是满了就再也清不了）',
     arch.res?.archived?.dropped > 0 && arch.err === undefined, JSON.stringify({ dropped: arch.res?.archived?.dropped, err: arch.err?.code }))

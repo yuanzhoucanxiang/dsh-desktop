@@ -5,6 +5,7 @@
  */
 import { getConfigList, getTree, postPrefs, postRoots } from './config.js'
 import { getDirs } from './fs.js'
+import { getHealth } from './health.js'
 import { getDoc, saveDoc, deleteDocRoute, postGate, postLedger, getStats, getOutline, postReorder } from './docs.js'
 import { getTemplates, postProjectResource, postCreateProject, postCompile, postArchiveExport, getWiki } from './project.js'
 import { getMemory, postMemory, getMemoryOperation, settingProjectionRoute, maintenanceRoute, projectRecoveryRoute } from './memory.js'
@@ -26,6 +27,7 @@ export const ROUTE_HANDLERS = {
   list: getConfigList,
   tree: getTree,
   dirs: getDirs,
+  health: getHealth,
   prefs: postPrefs,
   roots: postRoots,
   get: getDoc,

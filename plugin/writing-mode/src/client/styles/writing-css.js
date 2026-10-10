@@ -66,6 +66,8 @@ export const CSS = [
   '.dshWmIconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px;}',
   '.dshWmIconBtn.is-on{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);}',
   '.dshWmIconBtn svg{display:block;}',
+  '.dshWmIconBtn:disabled{opacity:.4;cursor:default;}',
+  '.dshWmIconBtn:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary);}',
   /* 侧栏展开态：官方 footerActions 为整宽 flex（左起），给它留一点左内边距与 设置 行对齐观感 */
   '.dshWmIconBtn.is-wide{margin-left:2px;}',
 
@@ -256,13 +258,19 @@ export const CSS = [
   '.dshWmProj{margin-bottom:18px;}',
   /* 左栏层级（2026-10-09 定结构，2026-10-10 定视觉比重）：主=章节正文（14px 正文色，
      唯一大号字）；次=项目名（14px 中黑锚点，靠字重不靠字号压过章节）；再次=分组文件夹
-     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=档案/成书/添加资料
-     （xs 灰字弱钮，不与内容抢读）。缩进仍表达归属，比重表达主次。 */
+     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=成书/添加资料
+     （xs 灰字弱钮，不与内容抢读；档案入口已挪顶栏图标，随当前文稿所属项目）。
+     缩进仍表达归属，比重表达主次。 */
   '.dshWmProj>.dshWmProjOps{margin-left:18px;}',
   '.dshWmProj>.dshWmItem{margin-left:18px;width:calc(100% - 18px);font-size:var(--wm-text-md);padding:6px 8px;}',
+  /* 「＋ 新章节」/「还没有章节」空态（第六轮）：与章节行同缩进、xs 灰字弱存在——是入口不是内容。 */
+  '.dshWmProj>.dshWmNewChapter{margin-left:18px;display:block;width:calc(100% - 18px);text-align:left;border:0;background:transparent;color:var(--wm-text-dim);font:inherit;font-size:var(--wm-text-xs);padding:4px 8px;cursor:pointer;border-radius:var(--wm-radius-s);box-sizing:border-box;}',
+  '.dshWmProj>.dshWmNewChapter:hover{color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);}',
+  '.dshWmProj>.dshWmEmptyChapters{margin-left:18px;display:flex;align-items:center;gap:8px;padding:2px 8px;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
+  '.dshWmEmptyChapters button{border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--wm-text-xs);padding:2px 10px;cursor:pointer;}',
+  '.dshWmEmptyChapters button:hover{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}',
   '.dshWmProj>details{margin-left:9px;padding-left:9px;border-left:1px solid var(--dsw-alias-border-l2);}',
   '.dshWmProj>details>summary.dshWmFolder{padding-left:2px;}',
-  '.dshWmProjAssets>details{margin-left:4px;padding-left:8px;}',
   '.dshWmProjToggle{',
   '  display:flex;align-items:center;gap:6px;width:100%;',
   '  padding:10px 8px 6px;border:none;background:transparent;cursor:pointer;',
@@ -270,6 +278,10 @@ export const CSS = [
   '  text-align:left;',
   '}',
   '.dshWmProjToggle:hover{color:var(--dsw-alias-brand-primary);}',
+  /* 散稿桶（isLoose）：不是一部作品，只是库根散稿的收容——降到灰字小级、
+     默认收起（LibraryPane 控制）、排序沉底（store 控制），不与作品名平级（2026-10-10）。 */
+  '.dshWmProj.is-loose{margin-bottom:6px;}',
+  '.dshWmProj.is-loose>.dshWmProjToggle{font-size:var(--wm-text-xs);color:var(--wm-text-dim);padding-top:6px;}',
   '.dshWmProjChev{font-size:var(--wm-text-xs);color:var(--wm-text-dim);transition:transform .12s;flex:none;}',
   '.dshWmProjChev.is-open{transform:rotate(90deg);}',
   '.dshWmFolder{',
@@ -289,6 +301,7 @@ export const CSS = [
   '  padding:var(--wm-space-1) var(--wm-space-2);margin-bottom:2px;border-radius:var(--wm-radius-m);border:1px solid transparent;',
   '  background:transparent;color:var(--dsw-alias-label-primary);',
   '  font:inherit;font-size:var(--wm-text-sm);line-height:1.25;box-sizing:border-box;',
+  '  transition:background .12s ease,border-color .12s ease;',
   '}',
   '.dshWmItem:hover{background:var(--dsw-alias-interactive-bg-hover);}',
   '.dshWmItem.is-on{',
@@ -390,6 +403,8 @@ export const CSS = [
   '  font-size:var(--wm-text-sm);line-height:1.7;white-space:pre-wrap;word-break:break-word;',
   '}',
   '.dshWmAiHint{font-size:var(--wm-text-xs);color:var(--wm-text-dim);line-height:1.5;}',
+  /* 非错误但作者必须知道的提示（如"只处理了前 N 字"）：2026-10-10 */
+  '.dshWmAiNote{font-size:var(--wm-text-xs);color:var(--wm-warn);line-height:1.5;}',
   '.dshWmSec{display:flex;flex-direction:column;gap:6px;}',
   '.dshWmSecToggle{',
   '  display:flex;align-items:center;gap:6px;width:100%;',
@@ -538,7 +553,11 @@ export const CSS = [
   /* 操作行降权（2026-10-10）：档案/成书/添加资料是三级动作——xs 灰字、按钮去边框，
      不再与章节行同量级。 */
   '.dshWmProjOps{display:flex;align-items:center;gap:2px;margin:0 0 6px;}',
-  '.dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;font-size:var(--wm-text-xs);padding:4px 8px;}',
+  /* 「＋ 添加资料」降权（2026-10-10 第七轮）：不再 flex:1 撑满整行——收成内容宽的弱文本触发器，
+     常态透明边、hover/焦点才出虚线框；资料添齐时 LibraryPane 干脆不渲染它。 */
+  '.dshWmProjOps .dshWmSearch{margin:0;flex:none;width:auto;max-width:150px;min-width:0;font-size:var(--wm-text-xs);padding:2px 4px;}',
+  '.dshWmProjOps .dshWmSearch.dshWmAddRes{border-color:transparent;background:transparent;color:var(--wm-text-dim);}',
+  '.dshWmProjOps .dshWmSearch.dshWmAddRes:hover,.dshWmProjOps .dshWmSearch.dshWmAddRes:focus{border-color:var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);}',
   '.dshWmProjOps .dshWmBtn{flex:none;font-size:var(--wm-text-xs);padding:3px 7px;border-color:transparent;color:var(--wm-text-dim);}',
   '.dshWmProjOps .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;background:var(--dsw-alias-interactive-bg-hover);}',
   '.dshWmExport{',
@@ -760,6 +779,21 @@ export const CSS = [
   '.dshWmMemoryStatus[data-status="resolved"]{color:var(--dsw-alias-brand-primary);}',
   '.dshWmWikiLedger{display:flex;flex-direction:column;gap:6px;}',
   '.dshWmWorldProjection{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);}',
+
+  /* 产品化动效（2026-10-10 第六轮）：进驻与展开用 120–180ms 浅位移淡入——够感知、不拖节奏；
+     prefers-reduced-motion 下全部关停。 */
+  '@keyframes dshWmFadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}',
+  '@keyframes dshWmFadeSide{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}',
+  '@keyframes dshWmFadeSideR{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}',
+  '.dshWmRoot{animation:dshWmFadeUp .18s ease-out;}',
+  '.dshWmSide{animation:dshWmFadeSide .16s ease-out;}',
+  '.dshWmSide.is-ai{animation:dshWmFadeSideR .16s ease-out;}',
+  '.dshWmProjOps{animation:dshWmFadeUp .12s ease-out;}',
+  '.dshWmProj details[open]>.dshWmItem{animation:dshWmFadeUp .12s ease-out;}',
+  '@media (prefers-reduced-motion:reduce){',
+  '  .dshWmRoot,.dshWmSide,.dshWmSide.is-ai,.dshWmProjOps,.dshWmProj details[open]>.dshWmItem{animation:none !important;}',
+  '  .dshWmItem,.dshWmIconBtn{transition:none !important;}',
+  '}',
 ].join('\n')
 
 const TAG = 'dsh-writing-mode-css'

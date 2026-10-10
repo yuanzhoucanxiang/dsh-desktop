@@ -40,6 +40,20 @@ const LS_FILE = 'dsh-writing-mode-file'
 // 两处快捷键提示此前一处写 Ctrl+Shift+S、另一处写 Ctrl+Shift+W，作者照着按发现都不对。
 const KEY_HINT = 'Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台'
 
+/**
+ * 单次补全的输入上限（与 host `ASSIST_MAX_INPUT` 对齐；2026-10-10）。
+ * 此前无选区时静默砍到 4000 字，长章只处理开头一小段而作者毫不知情。
+ */
+const ASSIST_INPUT_LIMIT = 24000
+
+/** 相对库根的路径：状态块给伙伴看「正文/第一章.md」，而不是本机绝对路径。 */
+function relToRoot(filePath, root) {
+  const f = String(filePath || '').replace(/\\/g, '/')
+  const r = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (r && f.toLowerCase().startsWith(r.toLowerCase() + '/')) return f.slice(r.length + 1)
+  return f.split('/').filter(Boolean).pop() || f
+}
+
 export function WritingModeApp() {
   const [active, setActive] = react.useState(getModeActive)
   react.useEffect(() => subscribeMode(() => setActive(getModeActive())), [])
@@ -93,6 +107,8 @@ export function WritingModeApp() {
   const [aiTab, setAiTab] = react.useState('companion')
   const [aiOut, setAiOut] = react.useState('')
   const [aiBusy, setAiBusy] = react.useState(false)
+  // 截断等"非错误但作者必须知道"的提示（2026-10-10）
+  const [aiNote, setAiNote] = react.useState('')
   const [aiErr, setAiErr] = react.useState('')
   const [gate, setGate] = react.useState(null)
   const [gateBusy, setGateBusy] = react.useState(false)
@@ -569,6 +585,35 @@ export function WritingModeApp() {
     }
   }
 
+  // 「写第一章 / ＋新章节」（2026-10-10 第六轮）：在项目 draft/novel/ 下独占创建 第N章-v1.md
+  // （N = 已有最大章号+1），成功即刷新库树并打开。revision:null = 独占创建，撞名 409 不覆盖；
+  // 项目还没有 draft/novel/ 时由 host 路由补建目录（ensureParentUnderRoots，仍在库根校验之后）。
+  async function createChapter(proj) {
+    const nums = (proj.files || [])
+      .map((f) => /第(\d+)章/.exec(String(f.rel || '')))
+      .filter(Boolean)
+      .map((m) => Number(m[1]))
+    const n = nums.length ? Math.max(...nums) + 1 : 1
+    const title = '第' + n + '章'
+    try {
+      const data = await api('save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          path: String(proj.path).replace(/[\\/]+$/, '') + '/draft/novel/' + title + '-v1.md',
+          content: '# ' + title + '\n\n',
+          revision: null,
+        }),
+      })
+      if (!data.ok) {
+        flashMsg(data.error === 'document-conflict' ? '这一章已经存在，直接去文档库里打开它吧' : '创建章节失败：' + (data.error || '未知错误'))
+        return
+      }
+      await refreshTree()
+      setFilePath(data.doc.path)
+    } catch (err) { flashMsg('创建章节失败：' + err.message) }
+  }
+
 
   async function runAssist(action, hint) {
     const snapshot = editor.get()
@@ -583,13 +628,24 @@ export function WritingModeApp() {
     setAiBusy(true)
     setAiErr('')
     setAiOut('')
+    setAiNote('')
+    // 无选区时用整篇正文（原先静默砍到 4000 字）；到上限时**明说**只送了前 N 字。
+    const full = text && text.trim() ? text : content
+    const clipped = full.length > ASSIST_INPUT_LIMIT
+      ? { sent: ASSIST_INPUT_LIMIT, total: full.length }
+      : null
+    if (clipped) {
+      setAiNote(
+        `这篇有 ${clipped.total} 字，本次只处理了前 ${clipped.sent} 字。要整章一起改，选好范围再跑，或用「发送到会话」交给写作伙伴。`
+      )
+    }
     try {
       const data = await api('assist', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           action,
-          text: text || content.slice(0, 4000),
+          text: clipped ? full.slice(0, ASSIST_INPUT_LIMIT) : full,
           path: filePath,
           // 工具菜单里作者随提示词补的要求（空串不落字段，host 用纯默认指令）
           hint: String(hint || '').trim() || undefined,
@@ -603,6 +659,14 @@ export function WritingModeApp() {
         }
         aiTarget.current = { path: snapshot.path, edit: snapshot.edit, action, ...selection }
         setAiOut(data.result || '')
+        // 联网查证失败（几个源都没连上）如实说出来，别让作者把模型知识当查证结果（2026-10-10）
+        if (data.webFailed) {
+          setAiNote((prev) =>
+            prev
+              ? prev + ' 另外：这次联网查证没成功（搜索源都没连上），资料请自行核实。'
+              : '这次联网查证没成功（搜索源都没连上）：下面是模型凭已有知识给的方向，事实请自行核实。'
+          )
+        }
         return
       }
       if (data.error === 'llm-unavailable') {
@@ -722,6 +786,9 @@ export function WritingModeApp() {
 
   const projects = activeTree ? activeTree.projects || [] : []
 
+  // 顶栏「档案」入口的作用对象（2026-10-10 第六轮）：当前文稿所属项目；散稿桶不算项目，不给档案。
+  const currentProj = projects.find((p) => !p.isLoose && (p.files || []).some((f) => f.abs === filePath)) || null
+
   function toggleProj(key) {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -811,6 +878,8 @@ export function WritingModeApp() {
         documentState,
         persist,
         close,
+        archiveProj: currentProj,
+        onOpenArchive: () => { if (currentProj) { setExportProj(null); openArchive(currentProj) } },
       }, 'bar'),
       jsx.jsx(
         'div',
@@ -871,7 +940,7 @@ export function WritingModeApp() {
               commitAddRoot,
               KEY_HINT,
               onCollapse: () => setLibOpenManual(false),
-              onOpenArchive: (proj) => { setExportProj(null); openArchive(proj) },
+              onNewChapter: createChapter,
               onExportBook: (proj) => { setArchiveProj(null); setExportProj(proj) },
             }, 'docs'),
             jsx.jsx(
@@ -1066,6 +1135,30 @@ export function WritingModeApp() {
                       // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
                       aiTab === 'companion' ? jsx.jsx(WritingCompanion, {
                         path: filePath || activeRoot,
+                        // 写作模式状态 + 实时体检（2026-10-10）：每次发送都按**此刻**的编辑器缓冲算，
+                        // 未保存的改动也在内；伙伴据此回答，不用猜作者写到哪、有没有问题。
+                        liveState: {
+                          projectLabel: (() => {
+                            const root = roots.find((r) => String(r.path).toLowerCase() === String(activeRoot).toLowerCase())
+                            return (root && root.label) || (activeRoot ? String(activeRoot).split(/[\\/]/).filter(Boolean).pop() : '')
+                          })(),
+                          fileLabel: filePath ? relToRoot(filePath, activeRoot) : '',
+                          text: content,
+                          cursorChars: taRef.current ? taRef.current.selectionStart : 0,
+                          selectionChars: taRef.current ? Math.max(0, taRef.current.selectionEnd - taRef.current.selectionStart) : 0,
+                          dirty: Boolean(documentState.dirty),
+                          focus,
+                          todayChars: stats && Number.isFinite(stats.today) ? stats.today : undefined,
+                          dailyGoal,
+                          gate: gate && gate.kind && gate.kind !== 'none' ? { kind: gate.kind, pass: Boolean(gate.pass), fail: Number(gate.fail) || 0 } : null,
+                          paragraph: (() => {
+                            if (!content) return ''
+                            const at = taRef.current ? taRef.current.selectionStart : 0
+                            const before = content.lastIndexOf('\n\n', Math.max(0, at - 1))
+                            const after = content.indexOf('\n\n', at)
+                            return content.slice(before < 0 ? 0 : before + 2, after < 0 ? content.length : after)
+                          })(),
+                        },
                         sourceInfo: () => {
                           const snap = editor.get()
                           return snap.path ? { path: snap.path, revision: snap.revision } : null
@@ -1101,6 +1194,7 @@ export function WritingModeApp() {
                         tools: {
                           busy: aiBusy,
                           err: aiErr,
+                          note: aiNote,
                           out: aiOut,
                           onRun: (action, hint) => void runAssist(action, hint),
                           onInsert: applyInsert,

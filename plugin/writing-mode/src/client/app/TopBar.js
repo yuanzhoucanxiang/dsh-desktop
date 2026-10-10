@@ -21,6 +21,8 @@ export const TopBar = react.memo(function TopBar({
   documentState,
   persist,
   close,
+  archiveProj,
+  onOpenArchive,
 }) {
   // 「辅助 ▾」菜单：内容常挂载（门禁按文本点击不检查可见性），关闭时由 .dshWmMenu 规则 display:none
   const [auxOpen, setAuxOpen] = react.useState(false)
@@ -80,6 +82,26 @@ export const TopBar = react.memo(function TopBar({
             )
           : null,
         jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-roots'),
+        // 档案（wiki）入口：作用于当前文稿所属项目；无所属项目（空态/散稿）时禁用。
+        jsx.jsx('button', {
+          type: 'button',
+          className: 'dshWmIconBtn',
+          'data-wm-archive': '1',
+          disabled: !archiveProj,
+          title: archiveProj ? T.archive + '：' + archiveProj.name : T.archiveHint,
+          'aria-label': T.archive,
+          onClick: () => onOpenArchive?.(),
+          children: jsx.jsxs('svg', {
+            width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+            stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+            'aria-hidden': 'true', focusable: 'false',
+            children: [
+              jsx.jsx('polyline', { points: '21 8 21 21 3 21 3 8' }, 'p'),
+              jsx.jsx('rect', { x: 1, y: 3, width: 22, height: 5 }, 'r'),
+              jsx.jsx('line', { x1: 10, y1: 12, x2: 14, y2: 12 }, 'l'),
+            ],
+          }, 'i'),
+        }, 'archive'),
         jsx.jsx('span', { className: 'dshWmBarSpacer' }),
         jsx.jsx(
           'div',

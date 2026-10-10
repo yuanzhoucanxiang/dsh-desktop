@@ -208,7 +208,7 @@ export const COMPANION_PRESET_PLUGINS = [
     id: "tool-web",
     name: "@deepseek-ai/dsh-tool-web",
     config: {
-      fetch: false,
+      fetch: true,
       searchTimeoutMs: 60000
     }
   },

@@ -2299,6 +2299,11 @@ var zh = {
   emptyCta: "一键加入 E:\\剧本",
   noProjects: "该库下没有含 project.md 的项目。可打开任意 .md / .fountain。",
   focus: "专注",
+  archive: "档案",
+  archiveHint: "作品档案：设定、进度与资料的 wiki 站（随当前文稿所属作品）",
+  noChapters: "还没有章节",
+  firstChapter: "写第一章",
+  newChapter: "新章节",
   chars: "字",
   openAi: "AI",
   closeAi: "收 AI",
@@ -2408,6 +2413,11 @@ var en = {
   emptyCta: "Add E:\\剧本",
   noProjects: "No project.md under this root. You can still open any .md / .fountain.",
   focus: "Focus",
+  archive: "Wiki",
+  archiveHint: "Project wiki: settings, progress and materials (follows the project of the open document)",
+  noChapters: "No chapters yet",
+  firstChapter: "Start chapter one",
+  newChapter: "New chapter",
   chars: "chars",
   openAi: "AI",
   closeAi: "Hide AI",
@@ -2546,6 +2556,8 @@ var CSS = [
   ".dshWmIconBtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px;}",
   ".dshWmIconBtn.is-on{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);}",
   ".dshWmIconBtn svg{display:block;}",
+  ".dshWmIconBtn:disabled{opacity:.4;cursor:default;}",
+  ".dshWmIconBtn:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary);}",
   /* 侧栏展开态：官方 footerActions 为整宽 flex（左起），给它留一点左内边距与 设置 行对齐观感 */
   ".dshWmIconBtn.is-wide{margin-left:2px;}",
   /* 压住 PALIS 状态条 / 更高层 UI */
@@ -2732,13 +2744,19 @@ var CSS = [
   ".dshWmProj{margin-bottom:18px;}",
   /* 左栏层级（2026-10-09 定结构，2026-10-10 定视觉比重）：主=章节正文（14px 正文色，
      唯一大号字）；次=项目名（14px 中黑锚点，靠字重不靠字号压过章节）；再次=分组文件夹
-     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=档案/成书/添加资料
-     （xs 灰字弱钮，不与内容抢读）。缩进仍表达归属，比重表达主次。 */
+     （11px 灰标签，全部降权——粗体大写在中文界面只剩吵）；三级=成书/添加资料
+     （xs 灰字弱钮，不与内容抢读；档案入口已挪顶栏图标，随当前文稿所属项目）。
+     缩进仍表达归属，比重表达主次。 */
   ".dshWmProj>.dshWmProjOps{margin-left:18px;}",
   ".dshWmProj>.dshWmItem{margin-left:18px;width:calc(100% - 18px);font-size:var(--wm-text-md);padding:6px 8px;}",
+  /* 「＋ 新章节」/「还没有章节」空态（第六轮）：与章节行同缩进、xs 灰字弱存在——是入口不是内容。 */
+  ".dshWmProj>.dshWmNewChapter{margin-left:18px;display:block;width:calc(100% - 18px);text-align:left;border:0;background:transparent;color:var(--wm-text-dim);font:inherit;font-size:var(--wm-text-xs);padding:4px 8px;cursor:pointer;border-radius:var(--wm-radius-s);box-sizing:border-box;}",
+  ".dshWmProj>.dshWmNewChapter:hover{color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);}",
+  ".dshWmProj>.dshWmEmptyChapters{margin-left:18px;display:flex;align-items:center;gap:8px;padding:2px 8px;font-size:var(--wm-text-xs);color:var(--wm-text-dim);}",
+  ".dshWmEmptyChapters button{border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--wm-text-xs);padding:2px 10px;cursor:pointer;}",
+  ".dshWmEmptyChapters button:hover{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}",
   ".dshWmProj>details{margin-left:9px;padding-left:9px;border-left:1px solid var(--dsw-alias-border-l2);}",
   ".dshWmProj>details>summary.dshWmFolder{padding-left:2px;}",
-  ".dshWmProjAssets>details{margin-left:4px;padding-left:8px;}",
   ".dshWmProjToggle{",
   "  display:flex;align-items:center;gap:6px;width:100%;",
   "  padding:10px 8px 6px;border:none;background:transparent;cursor:pointer;",
@@ -2746,6 +2764,10 @@ var CSS = [
   "  text-align:left;",
   "}",
   ".dshWmProjToggle:hover{color:var(--dsw-alias-brand-primary);}",
+  /* 散稿桶（isLoose）：不是一部作品，只是库根散稿的收容——降到灰字小级、
+     默认收起（LibraryPane 控制）、排序沉底（store 控制），不与作品名平级（2026-10-10）。 */
+  ".dshWmProj.is-loose{margin-bottom:6px;}",
+  ".dshWmProj.is-loose>.dshWmProjToggle{font-size:var(--wm-text-xs);color:var(--wm-text-dim);padding-top:6px;}",
   ".dshWmProjChev{font-size:var(--wm-text-xs);color:var(--wm-text-dim);transition:transform .12s;flex:none;}",
   ".dshWmProjChev.is-open{transform:rotate(90deg);}",
   ".dshWmFolder{",
@@ -2765,6 +2787,7 @@ var CSS = [
   "  padding:var(--wm-space-1) var(--wm-space-2);margin-bottom:2px;border-radius:var(--wm-radius-m);border:1px solid transparent;",
   "  background:transparent;color:var(--dsw-alias-label-primary);",
   "  font:inherit;font-size:var(--wm-text-sm);line-height:1.25;box-sizing:border-box;",
+  "  transition:background .12s ease,border-color .12s ease;",
   "}",
   ".dshWmItem:hover{background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmItem.is-on{",
@@ -2862,6 +2885,8 @@ var CSS = [
   "  font-size:var(--wm-text-sm);line-height:1.7;white-space:pre-wrap;word-break:break-word;",
   "}",
   ".dshWmAiHint{font-size:var(--wm-text-xs);color:var(--wm-text-dim);line-height:1.5;}",
+  /* 非错误但作者必须知道的提示（如"只处理了前 N 字"）：2026-10-10 */
+  ".dshWmAiNote{font-size:var(--wm-text-xs);color:var(--wm-warn);line-height:1.5;}",
   ".dshWmSec{display:flex;flex-direction:column;gap:6px;}",
   ".dshWmSecToggle{",
   "  display:flex;align-items:center;gap:6px;width:100%;",
@@ -3002,7 +3027,11 @@ var CSS = [
   /* 操作行降权（2026-10-10）：档案/成书/添加资料是三级动作——xs 灰字、按钮去边框，
      不再与章节行同量级。 */
   ".dshWmProjOps{display:flex;align-items:center;gap:2px;margin:0 0 6px;}",
-  ".dshWmProjOps .dshWmSearch{margin:0;flex:1;min-width:0;font-size:var(--wm-text-xs);padding:4px 8px;}",
+  /* 「＋ 添加资料」降权（2026-10-10 第七轮）：不再 flex:1 撑满整行——收成内容宽的弱文本触发器，
+     常态透明边、hover/焦点才出虚线框；资料添齐时 LibraryPane 干脆不渲染它。 */
+  ".dshWmProjOps .dshWmSearch{margin:0;flex:none;width:auto;max-width:150px;min-width:0;font-size:var(--wm-text-xs);padding:2px 4px;}",
+  ".dshWmProjOps .dshWmSearch.dshWmAddRes{border-color:transparent;background:transparent;color:var(--wm-text-dim);}",
+  ".dshWmProjOps .dshWmSearch.dshWmAddRes:hover,.dshWmProjOps .dshWmSearch.dshWmAddRes:focus{border-color:var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);}",
   ".dshWmProjOps .dshWmBtn{flex:none;font-size:var(--wm-text-xs);padding:3px 7px;border-color:transparent;color:var(--wm-text-dim);}",
   ".dshWmProjOps .dshWmBtn:hover{color:var(--dsw-alias-label-primary);border-color:transparent;background:var(--dsw-alias-interactive-bg-hover);}",
   ".dshWmExport{",
@@ -3213,7 +3242,21 @@ var CSS = [
   '.dshWmMemoryStatus[data-status="retracted"]{color:var(--wm-text-dim);}',
   '.dshWmMemoryStatus[data-status="resolved"]{color:var(--dsw-alias-brand-primary);}',
   ".dshWmWikiLedger{display:flex;flex-direction:column;gap:6px;}",
-  ".dshWmWorldProjection{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);}"
+  ".dshWmWorldProjection{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:var(--dsw-alias-bg-layer-2);}",
+  /* 产品化动效（2026-10-10 第六轮）：进驻与展开用 120–180ms 浅位移淡入——够感知、不拖节奏；
+     prefers-reduced-motion 下全部关停。 */
+  "@keyframes dshWmFadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}",
+  "@keyframes dshWmFadeSide{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}",
+  "@keyframes dshWmFadeSideR{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}",
+  ".dshWmRoot{animation:dshWmFadeUp .18s ease-out;}",
+  ".dshWmSide{animation:dshWmFadeSide .16s ease-out;}",
+  ".dshWmSide.is-ai{animation:dshWmFadeSideR .16s ease-out;}",
+  ".dshWmProjOps{animation:dshWmFadeUp .12s ease-out;}",
+  ".dshWmProj details[open]>.dshWmItem{animation:dshWmFadeUp .12s ease-out;}",
+  "@media (prefers-reduced-motion:reduce){",
+  "  .dshWmRoot,.dshWmSide,.dshWmSide.is-ai,.dshWmProjOps,.dshWmProj details[open]>.dshWmItem{animation:none !important;}",
+  "  .dshWmItem,.dshWmIconBtn{transition:none !important;}",
+  "}"
 ].join("\n");
 var TAG = "dsh-writing-mode-css";
 function ensureWritingCss() {
@@ -3355,7 +3398,9 @@ var TopBar = react.memo(function TopBar2({
   dirty,
   documentState,
   persist,
-  close
+  close,
+  archiveProj,
+  onOpenArchive
 }) {
   const [auxOpen, setAuxOpen] = react.useState(false);
   const auxRef = react.useRef(null);
@@ -3409,6 +3454,33 @@ var TopBar = react.memo(function TopBar2({
           "roots"
         ) : null,
         jsx.jsx("span", { className: "dshWmBarSep" }, "sep-roots"),
+        // 档案（wiki）入口：作用于当前文稿所属项目；无所属项目（空态/散稿）时禁用。
+        jsx.jsx("button", {
+          type: "button",
+          className: "dshWmIconBtn",
+          "data-wm-archive": "1",
+          disabled: !archiveProj,
+          title: archiveProj ? T.archive + "：" + archiveProj.name : T.archiveHint,
+          "aria-label": T.archive,
+          onClick: () => onOpenArchive?.(),
+          children: jsx.jsxs("svg", {
+            width: 16,
+            height: 16,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 1.8,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            "aria-hidden": "true",
+            focusable: "false",
+            children: [
+              jsx.jsx("polyline", { points: "21 8 21 21 3 21 3 8" }, "p"),
+              jsx.jsx("rect", { x: 1, y: 3, width: 22, height: 5 }, "r"),
+              jsx.jsx("line", { x1: 10, y1: 12, x2: 14, y2: 12 }, "l")
+            ]
+          }, "i")
+        }, "archive"),
         jsx.jsx("span", { className: "dshWmBarSpacer" }),
         jsx.jsx(
           "div",
@@ -3750,6 +3822,7 @@ function createHarnessAdapter(deps = {}) {
     connection = null,
     remoteSession = () => null,
     uiWorkspace = () => null,
+    uiConversation = () => null,
     conversation = () => null,
     api: api2 = null,
     coordination = api2 ? httpCoordination(api2) : null,
@@ -4052,6 +4125,52 @@ function createHarnessAdapter(deps = {}) {
       const off = store.subscribe(() => notify());
       if (typeof off === "function") nativeUnsubs.push(off);
     }
+    const chatBinding = { sessionId: null, target: null, off: null, ref: null, error: null };
+    function disposeChatBinding() {
+      try {
+        chatBinding.off?.();
+      } catch {
+      }
+      try {
+        chatBinding.ref?.release?.();
+      } catch {
+      }
+      chatBinding.off = null;
+      chatBinding.ref = null;
+      chatBinding.target = null;
+      chatBinding.sessionId = null;
+    }
+    function chatTarget() {
+      const id = state.sessionId;
+      const uiConv = typeof uiConversation === "function" ? uiConversation() : null;
+      if (!id || !uiConv || !has(sessions, "binding")) return null;
+      if (chatBinding.sessionId === id) return chatBinding.target;
+      disposeChatBinding();
+      chatBinding.sessionId = id;
+      try {
+        if (has(sessions, "retain")) chatBinding.ref = sessions.retain(id, { source: "mainView" });
+        const binding2 = sessions.binding(id);
+        if (!binding2) return null;
+        const target = uiConv.binding?.(binding2)?.target?.("chat") || null;
+        if (!target) return null;
+        chatBinding.off = target.subscribe(() => notify());
+        chatBinding.target = target;
+      } catch (err) {
+        chatBinding.error = String(err?.message || err);
+        chatBinding.target = null;
+      }
+      return chatBinding.target;
+    }
+    function chatGraphOf(chatSnap) {
+      if (chatSnap && chatSnap.chat) return chatSnap.chat;
+      const target = chatTarget();
+      if (!target) return null;
+      try {
+        return target.getSnapshot() || null;
+      } catch {
+        return null;
+      }
+    }
     function ensureAttached() {
       if (attachedSessionId !== state.sessionId) {
         attachedSessionId = state.sessionId;
@@ -4075,7 +4194,7 @@ function createHarnessAdapter(deps = {}) {
       if (state.status !== "ready" || !state.sessionId) return;
       const session = currentSession();
       const snap = session?.getSnapshot?.() || null;
-      const stuckLoading = Boolean(snap && snap.openState === "loading" && !snap.chat);
+      const stuckLoading = Boolean(snap && snap.openState === "loading" && !chatGraphOf(snap));
       if (session && !stuckLoading) {
         loadingSince = 0;
         return;
@@ -4176,21 +4295,26 @@ function createHarnessAdapter(deps = {}) {
       const statusKey = `${state.status}|${state.record?.phase || ""}|${state.record?.version ?? ""}|${state.sessionId || ""}|${state.error || ""}`;
       const queueSig = (chatSnap?.queue || []).map((row) => row?.id ?? "").join("|");
       const pendingSig = (chatSnap?.pending || []).map((wait2) => wait2?.key ?? "").join("|");
-      const order2 = chatSnap?.chat?.order || [];
-      const orderSig = `${order2.length}:${order2.length ? order2[order2.length - 1] : ""}:${chatSnap?.chat?.nodes?.size ?? ""}`;
+      const chatGraph = chatGraphOf(chatSnap);
+      const order2 = chatGraph?.order || [];
+      const orderSig = `${order2.length}:${order2.length ? order2[order2.length - 1] : ""}:${chatGraph?.nodes?.size ?? ""}`;
       return snapshotCache.get(
-        [chatSnap?.chat, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(","), caps.missing.join(","), caps.degraded.join(",")],
+        [chatGraph, orderSig, statusKey, key, chatSnap?.running, queueSig, pendingSig, chatSnap?.hasMore, inputSnap?.draft, inputSnap?.claim, (inputSnap?.imageIds || []).join(","), caps.missing.join(","), caps.degraded.join(",")],
         () => {
-          const { messages, hasUnknown } = projectChat(chatSnap?.chat);
+          const { messages, hasUnknown } = projectChat(chatGraph);
           if (typeof window !== "undefined" && window.__wmDebugCompanion) {
             const dbg = {
               status: state.status,
               sessionId: state.sessionId,
               hasStore: Boolean(session),
-              chatType: Object.prototype.toString.call(chatSnap?.chat),
-              chatKeys: chatSnap?.chat && typeof chatSnap.chat === "object" ? Object.keys(chatSnap.chat) : null,
-              orderLen: (chatSnap?.chat?.order || []).length,
-              nodesSize: chatSnap?.chat?.nodes?.size ?? null,
+              chatType: Object.prototype.toString.call(chatGraph),
+              chatKeys: chatGraph && typeof chatGraph === "object" ? Object.keys(chatGraph) : null,
+              orderLen: (chatGraph?.order || []).length,
+              nodesSize: chatGraph?.nodes?.size ?? null,
+              // 图是从哪儿来的：session（0.1.7）/ uiConversation（0.2.0）/ none
+              chatSource: chatSnap?.chat ? "session" : chatBinding.target ? "uiConversation" : "none",
+              chatBindingError: chatBinding.error,
+              chatTargetReady: Boolean(chatBinding.target),
               snapKeys: chatSnap && typeof chatSnap === "object" ? Object.keys(chatSnap) : null,
               msgs: messages.length,
               hasMore: chatSnap?.hasMore ?? null,
@@ -4507,6 +4631,10 @@ function bindHarness(ctx) {
   workspacesRef = ctx.workspaces || null;
   ctxRef = ctx || null;
   adapterRef = null;
+  try {
+    if (typeof window !== "undefined" && window.__wmDebugCompanion) window.__wmCtx = ctx;
+  } catch {
+  }
 }
 function harnessSessions() {
   return sessionsRef;
@@ -4524,6 +4652,9 @@ function harnessRemoteSession() {
 function harnessConversation() {
   return tryService("conversation");
 }
+function harnessUiConversation() {
+  return tryService("uiConversation");
+}
 function harnessAdapter() {
   if (!adapterRef) {
     adapterRef = createHarnessAdapter({
@@ -4532,6 +4663,7 @@ function harnessAdapter() {
       connection: connectionRef ? { agentPresets: connectionRef.agentPresets } : null,
       remoteSession: harnessRemoteSession,
       uiWorkspace: () => tryService("uiWorkspace"),
+      uiConversation: harnessUiConversation,
       conversation: harnessConversation,
       api
     });
@@ -4945,8 +5077,8 @@ var LibraryPane = react6.memo(function LibraryPane2({
   commitAddRoot,
   KEY_HINT: KEY_HINT2,
   onCollapse,
-  onOpenArchive,
-  onExportBook
+  onExportBook,
+  onNewChapter
 }) {
   const [menuOpen, setMenuOpen] = react6.useState(false);
   const menuRef = react6.useRef(null);
@@ -5193,7 +5325,7 @@ var LibraryPane = react6.memo(function LibraryPane2({
           "div",
           {
             className: "dshWmList",
-            children: libraryView === "outline" ? jsx11.jsx(OutlineView, { projects, onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, "outline-view") : roots.length === 0 ? jsx11.jsx(
+            children: libraryView === "outline" ? jsx11.jsx(OutlineView, { projects: projects.filter((p) => !p.isLoose), onOpen: (abs) => setFilePath(abs), onReorderDone: handleReordered, onFlash: flashMsg }, "outline-view") : roots.length === 0 ? jsx11.jsx(
               "div",
               {
                 className: "dshWmWelcome",
@@ -5236,8 +5368,10 @@ var LibraryPane = react6.memo(function LibraryPane2({
               className: "dshWmEmpty",
               children: (activeTree && activeTree.missing ? T.missing + "\n" : "") + T.noProjects
             }) : projects.map((proj) => {
+              if (proj.isLoose && libraryView === "writing" && !libQuery) return null;
               const groups = libraryView === "files" ? groupFiles(proj.files, libQuery) : navigationGroups(proj.files, libQuery);
-              const openP = !collapsed.has(proj.path);
+              const isActiveProj = Boolean(filePath) && (proj.files || []).some((f) => f.abs === filePath);
+              const openP = proj.isLoose ? collapsed.has("loose:" + proj.path) || Boolean(libQuery) : !collapsed.has(proj.path);
               const maxDraft = maxVersionInGroup(
                 (proj.files || []).filter((f) => String(f.rel).startsWith("draft/"))
               );
@@ -5245,14 +5379,14 @@ var LibraryPane = react6.memo(function LibraryPane2({
               return jsx11.jsx(
                 "div",
                 {
-                  className: "dshWmProj",
+                  className: "dshWmProj" + (proj.isLoose ? " is-loose" : ""),
                   children: [
                     jsx11.jsx(
                       "button",
                       {
                         type: "button",
                         className: "dshWmProjToggle",
-                        onClick: () => toggleProj(proj.path),
+                        onClick: () => toggleProj(proj.isLoose ? "loose:" + proj.path : proj.path),
                         children: [
                           jsx11.jsx(
                             "span",
@@ -5262,21 +5396,16 @@ var LibraryPane = react6.memo(function LibraryPane2({
                             },
                             "c"
                           ),
-                          jsx11.jsx("span", { children: proj.name }, "n")
+                          jsx11.jsx("span", {
+                            children: proj.isLoose ? proj.name + " · " + (proj.files || []).length : proj.name
+                          }, "n")
                         ]
                       },
                       "pt"
                     ),
-                    openP ? jsx11.jsxs("div", {
+                    openP && isActiveProj && !proj.isLoose ? jsx11.jsxs("div", {
                       className: "dshWmProjOps",
                       children: [
-                        jsx11.jsx("button", {
-                          type: "button",
-                          className: "dshWmBtn is-ghost",
-                          title: "作品档案：已确认设定、进度与资料的只读汇总页",
-                          onClick: () => onOpenArchive(proj),
-                          children: "档案"
-                        }, "archive"),
                         jsx11.jsx("button", {
                           type: "button",
                           className: "dshWmBtn is-ghost",
@@ -5284,16 +5413,20 @@ var LibraryPane = react6.memo(function LibraryPane2({
                           onClick: () => onExportBook(proj),
                           children: "成书"
                         }, "export"),
-                        jsx11.jsx("select", {
-                          className: "dshWmSearch dshWmAddRes",
-                          "aria-label": "按需添加资料",
-                          value: "",
-                          onChange: (e) => void addProjectResource(proj, e.target.value),
-                          children: [
-                            jsx11.jsx("option", { value: "", children: "＋ 添加资料" }, "placeholder"),
-                            ...resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel)).map((item) => jsx11.jsx("option", { value: item.rel, children: item.label }, item.rel))
-                          ]
-                        }, "add-resource")
+                        (() => {
+                          const remaining = resourceChoices.filter((item) => !(proj.files || []).some((f) => f.rel === item.rel));
+                          if (!remaining.length) return null;
+                          return jsx11.jsx("select", {
+                            className: "dshWmSearch dshWmAddRes",
+                            "aria-label": "按需添加资料",
+                            value: "",
+                            onChange: (e) => void addProjectResource(proj, e.target.value),
+                            children: [
+                              jsx11.jsx("option", { value: "", children: "＋ 添加资料" }, "placeholder"),
+                              ...remaining.map((item) => jsx11.jsx("option", { value: item.rel, children: item.label }, item.rel))
+                            ]
+                          }, "add-resource");
+                        })()
                       ]
                     }, "proj-ops") : null,
                     proj.scanWarning ? jsx11.jsx("p", { role: "status", children: proj.scanWarning }) : null,
@@ -5324,33 +5457,39 @@ var LibraryPane = react6.memo(function LibraryPane2({
                         },
                         "g-" + g.key
                       );
-                      const draftGroup = libraryView === "writing" ? groups.find((g) => g.key === "正文") : null;
-                      if (!draftGroup) return groups.map(renderGroup);
-                      const assetGroups = groups.filter((g) => g.key !== "正文");
-                      const assetCount = assetGroups.reduce((n, g) => n + g.files.length, 0);
-                      const assetsOpen = Boolean(libQuery) || assetGroups.some((g) => g.files.some((f) => f.abs === filePath));
-                      return [
-                        draftGroup.files.map(
-                          (f) => jsx11.jsx(FileRow, {
-                            file: f,
-                            maxVer: maxDraft,
-                            active: Boolean(filePath) && f.abs === filePath,
-                            onPick: setFilePath,
-                            labels: T
-                          }, f.abs)
-                        ),
-                        assetGroups.length ? jsx11.jsxs("details", {
-                          className: "dshWmProjAssets",
-                          open: assetsOpen,
-                          children: [
-                            jsx11.jsx("summary", {
-                              className: "dshWmFolder is-clickable",
-                              children: "资料与设定 · " + assetCount
-                            }, "ah"),
-                            ...assetGroups.map(renderGroup)
-                          ]
-                        }, "assets") : null
-                      ];
+                      if (libraryView === "writing" && !proj.isLoose && !libQuery) {
+                        const chapters = (groups.find((g) => g.key === "正文") || {}).files || [];
+                        return [
+                          ...chapters.map(
+                            (f) => jsx11.jsx(FileRow, {
+                              file: f,
+                              maxVer: maxDraft,
+                              active: Boolean(filePath) && f.abs === filePath,
+                              onPick: setFilePath,
+                              labels: T
+                            }, f.abs)
+                          ),
+                          chapters.length === 0 ? jsx11.jsxs("div", {
+                            className: "dshWmEmptyChapters",
+                            children: [
+                              jsx11.jsx("span", { children: T.noChapters }, "t"),
+                              jsx11.jsx("button", {
+                                type: "button",
+                                "data-wm-new-chapter": "1",
+                                onClick: () => void onNewChapter(proj),
+                                children: T.firstChapter
+                              }, "b")
+                            ]
+                          }, "empty-chapters") : jsx11.jsx("button", {
+                            type: "button",
+                            className: "dshWmNewChapter",
+                            "data-wm-new-chapter": "1",
+                            onClick: () => void onNewChapter(proj),
+                            children: "＋ " + T.newChapter
+                          }, "new-chapter")
+                        ];
+                      }
+                      return groups.map(renderGroup);
                     })() : null
                   ]
                 },
@@ -5766,15 +5905,15 @@ function contentFingerprint(text7) {
   const body = String(text7 ?? "");
   return `${body.length}:${hash32(body)}`;
 }
-function makeReference({ label, excerpt, path: path2 = null, revision = null, start: start2 = null, end = null, dirty = false, note = null }) {
+function makeReference({ label, excerpt: excerpt2, path: path2 = null, revision = null, start: start2 = null, end = null, dirty = false, note = null }) {
   const selection = Number.isInteger(start2) && Number.isInteger(end) && end > start2 ? { start: start2, end } : null;
   return Object.freeze({
     label: label || "稿件快照",
-    text: String(excerpt ?? ""),
+    text: String(excerpt2 ?? ""),
     path: path2 || null,
     revision: revision ?? null,
     selection,
-    snapshotFingerprint: dirty ? `unsaved:${contentFingerprint(excerpt)}` : null,
+    snapshotFingerprint: dirty ? `unsaved:${contentFingerprint(excerpt2)}` : null,
     note: note || null
   });
 }
@@ -5823,9 +5962,11 @@ var KIND_LABEL = { fact: "设定", preference: "偏好", "open-question": "待�
 var STATUS_LABEL = { proposed: "候选", confirmed: "已确认", retracted: "已撤回", resolved: "已解决" };
 var SOURCE_LABEL = { author: "作者", assistant: "助手建议", host: "内核" };
 var QUOTA_ERROR_COPY = {
-  "operations-full": "世界观操作收据已满（200 条），本作品暂时无法再保存或确认设定。点下面的「归档操作收据」：最早的收据会整体备份到 state/backups/ 后清出空间，已确认的设定与可读稿不受影响。",
+  // 2026-10-10：前两条硬顶已改成**写路径自动归档**（host relieveQuotaForWrite：到顶先把最旧一段
+  // 备份进 state/backups/ 再继续），正常写作不会再撞上；按钮留着是为了让作者能主动控制保留量。
+  "operations-full": "世界观操作收据已满（200 条）。正常情况下主机已自动归档最旧的一段（备份在 state/backups/）；若仍看到这条，点下面的「归档操作收据」手动清出空间，已确认的设定与可读稿不受影响。",
   "memory-full": "备忘条目已满（400 条，已撤回/已解决的也占配额）。点下面的「清理已撤回条目」腾出空间，清理前会整体备份。",
-  "history-full": "变更历史已满（800 条）。点下面的「归档变更历史」：最早的变更会整体备份后清出空间，条目本身不受影响。",
+  "history-full": "变更历史已满（800 条）。正常情况下主机已自动归档最旧的一段；若仍看到这条，点下面的「归档变更历史」手动清出空间，条目本身不受影响。",
   "operation-pruned": "这次操作的收据已被归档裁掉。为避免重复建一条设定，主机拒绝再次执行它——请重新发起一次新的保存。"
 };
 var MAINTENANCE_OPS = ["archive-history", "prune-operations", "purge-retracted"];
@@ -6111,13 +6252,13 @@ function normalizeSources(raw) {
   if (list4.length > MAX_SOURCES) throw settingError("sources-too-many", 413);
   let excerptChars = 0;
   const out = list4.map((s) => {
-    const excerpt = String(s?.excerpt ?? "");
-    excerptChars += codePointLength(excerpt);
+    const excerpt2 = String(s?.excerpt ?? "");
+    excerptChars += codePointLength(excerpt2);
     return {
       sessionId: s?.sessionId != null ? String(s.sessionId).slice(0, 160) : null,
       messageId: s?.messageId != null ? String(s.messageId).slice(0, 160) : null,
       role: s?.role === "assistant" || s?.role === "author" ? s.role : null,
-      excerpt,
+      excerpt: excerpt2,
       snapshotHash: s?.snapshotHash != null ? String(s.snapshotHash).slice(0, 128) : null,
       unavailable: s?.unavailable === true
     };
@@ -7289,6 +7430,8 @@ function buildPreparedTurn(input) {
   const turnHay = message + (reference ? "\n" + reference.text : "");
   const { selected, omissions, charsUsed } = includeMemory ? selectMemory(items, input?.pinnedMemoryIds, budget, input?.excludedMemoryIds, turnHay) : { selected: [], omissions: [], charsUsed: 0 };
   const parts = [];
+  const stateBlock = String(input?.stateBlock ?? "").trim();
+  if (stateBlock) parts.push(stateBlock);
   if (selected.length) {
     const body = selected.map((s) => s.line || `- [${s.label}] ${s.text}`).join("\n");
     const budgetNote = omissions.filter((o) => o.reason === "budget").length;
@@ -7315,6 +7458,7 @@ ${reference.text}`
     includeMemory,
     budget,
     charsUsed,
+    stateBlock,
     selectedMemory: Object.freeze(selected.map((s) => Object.freeze(s))),
     omissions: Object.freeze(omissions.map((o) => Object.freeze(o))),
     omittedCount: omissions.filter((o) => o.reason === "budget").length,
@@ -20289,7 +20433,182 @@ function companionCapability(caps) {
   };
 }
 
+// plugin/writing-mode/lib/writing-state.js
+var SENTENCE_END = /[。！？!?；;…]+[”」』）)]*/g;
+var ADVERBS = ["很", "非常", "十分", "特别", "真正", "确实", "极其", "格外", "异常", "相当", "几乎", "简直"];
+var WEAK_OPENERS = ["他", "她", "它", "我", "你", "他们", "我们", "这", "那"];
+var SEVERITY_WEIGHT = { high: 6, warn: 3, info: 1 };
+function splitSentences(text7) {
+  const src = String(text7 || "");
+  const out = [];
+  let start2 = 0;
+  SENTENCE_END.lastIndex = 0;
+  let m;
+  while ((m = SENTENCE_END.exec(src)) !== null) {
+    const end = m.index + m[0].length;
+    const chunk = src.slice(start2, end);
+    if (chunk.trim()) out.push({ at: start2, text: chunk.trim() });
+    start2 = end;
+  }
+  const tail = src.slice(start2);
+  if (tail.trim()) out.push({ at: start2, text: tail.trim() });
+  return out;
+}
+var countChar = (text7, ch) => String(text7).split(ch).length - 1;
+var excerpt = (text7, at, len = 34) => String(text7).slice(Math.max(0, at), Math.max(0, at) + len).replace(/\s+/g, " ");
+function textHealth(text7, opts = {}) {
+  const src = String(text7 || "");
+  const maxSentence = Number(opts.maxSentence) > 0 ? Number(opts.maxSentence) : 60;
+  const maxParagraph = Number(opts.maxParagraph) > 0 ? Number(opts.maxParagraph) : 300;
+  const issues = [];
+  const push3 = (kind, severity, at, hint, extra) => issues.push({ kind, severity, at, excerpt: excerpt(src, at), hint, ...extra || {} });
+  const sentences = splitSentences(src);
+  const paragraphs = src.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  let maxLen = 0;
+  for (const s of sentences) {
+    const len = s.text.replace(/\s+/g, "").length;
+    if (len > maxLen) maxLen = len;
+    if (len > maxSentence) {
+      push3(
+        len > 100 ? "sentence-too-long" : "sentence-long",
+        len > 100 ? "warn" : "info",
+        s.at,
+        `${len} 字一句；考虑在转折处断成两句`,
+        { length: len }
+      );
+    }
+  }
+  for (const p of paragraphs) {
+    const len = p.replace(/\s+/g, "").length;
+    if (len > maxParagraph) {
+      push3("paragraph-long", "info", src.indexOf(p), `${len} 字一段；长段落读者容易跳读`, { length: len });
+    }
+  }
+  const adverbHits = [];
+  for (const word of ADVERBS) {
+    let i = src.indexOf(word);
+    while (i >= 0 && adverbHits.length < 200) {
+      adverbHits.push({ word, at: i });
+      i = src.indexOf(word, i + word.length);
+    }
+  }
+  const chars = src.replace(/\s+/g, "").length;
+  const adverbPer1000 = chars ? adverbHits.length * 1e3 / chars : 0;
+  if (adverbHits.length >= 8 && adverbPer1000 > 4) {
+    push3(
+      "adverb-heavy",
+      "warn",
+      adverbHits[0].at,
+      `全文「${adverbHits[0].word}」这类程度副词 ${adverbHits.length} 处（每千字 ${adverbPer1000.toFixed(1)} 处）；删掉一半往往更有力`
+    );
+  }
+  for (const s of sentences) {
+    const n = countChar(s.text, "的");
+    if (n >= 5) push3("de-stack", "info", s.at, `这一句有 ${n} 个「的」；合并修饰语会更利落`, { count: n });
+  }
+  for (const s of sentences) {
+    const freq = /* @__PURE__ */ new Map();
+    for (const w of s.text.match(/[\u4e00-\u9fff]{2}/g) || []) {
+      if (/^(的|了|是|在|和|与|就|都|也|还|被|把|着|过|有|不|一|这|那|他|她|它|我|你)/.test(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+    const worst = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (worst && worst[1] >= 3) push3("word-repeat", "info", s.at, `「${worst[0]}」在一句里出现 ${worst[1]} 次`, { word: worst[0], count: worst[1] });
+  }
+  const openers = paragraphs.map((p) => p.slice(0, 2));
+  for (let i = 2; i < openers.length; i++) {
+    if (openers[i] && openers[i] === openers[i - 1] && openers[i] === openers[i - 2] && WEAK_OPENERS.includes(openers[i][0])) {
+      push3("same-opening", "info", src.indexOf(paragraphs[i]), `连续三段都以「${openers[i]}」开头`, { opener: openers[i] });
+      break;
+    }
+  }
+  const dialogueLines = src.split(/\r?\n/).filter((l) => /[「“"]/.test(l));
+  for (const line of dialogueLines) {
+    const open = countChar(line, "「") + countChar(line, "“");
+    const close = countChar(line, "」") + countChar(line, "”");
+    if (open !== close) {
+      push3("quote-unbalanced", "warn", src.indexOf(line), "这一行的引号开合不成对", { open, close });
+    }
+  }
+  const runMatch = src.match(/([，。！？、；：])\1{2,}/);
+  if (runMatch) push3("punctuation-run", "info", src.indexOf(runMatch[0]), `「${runMatch[0]}」标点连打`);
+  const gap = src.match(/\n{4,}/);
+  if (gap) push3("blank-run", "info", src.indexOf(gap[0]), "连续多个空行；排版交给样式即可");
+  const weight = issues.reduce((sum, it) => sum + (SEVERITY_WEIGHT[it.severity] || 1), 0);
+  const score = Math.max(0, 100 - weight);
+  const high = issues.filter((i) => i.severity === "warn").length;
+  const brief = issues.length === 0 ? "体检 ✓ 没有明显问题" : `体检 ${issues.length} 处提示${high ? `（${high} 处较明显）` : ""}`;
+  return {
+    metrics: {
+      chars,
+      sentences: sentences.length,
+      paragraphs: paragraphs.length,
+      avgSentence: sentences.length ? Math.round(chars / sentences.length * 10) / 10 : 0,
+      maxSentence: maxLen,
+      adverbs: adverbHits.length,
+      dialogueLines: dialogueLines.length
+    },
+    issues,
+    score,
+    brief
+  };
+}
+function textHealthBrief(health) {
+  return health && health.brief ? health.brief : "";
+}
+function writingStateBlock(s = {}) {
+  const lines = [];
+  const project = String(s.projectLabel || s.project || "").trim();
+  const file = String(s.fileLabel || s.filePath || "").trim();
+  if (project) lines.push(`- 作品：${project}`);
+  if (file) lines.push(`- 正在写：${file}`);
+  const cursor = Number(s.cursorChars);
+  if (Number.isFinite(cursor) && cursor >= 0) lines.push(`- 光标：第 ${cursor} 字处`);
+  if (s.selectionChars > 0) lines.push(`- 选区：${s.selectionChars} 字`);
+  if (typeof s.dirty === "boolean") lines.push(`- 未保存改动：${s.dirty ? "有" : "无"}`);
+  if (s.focus) lines.push("- 专注模式：开");
+  if (Number.isFinite(Number(s.todayChars))) {
+    lines.push(`- 今日净增：${s.todayChars >= 0 ? "+" : ""}${s.todayChars} 字${Number(s.dailyGoal) > 0 ? ` / 目标 ${s.dailyGoal}` : ""}`);
+  }
+  if (s.gate && s.gate.kind && s.gate.kind !== "none") {
+    lines.push(`- 成稿检查（${s.gate.kind}）：${s.gate.pass ? "全部通过" : `${s.gate.fail} 项未达标`}`);
+  }
+  if (s.health && Array.isArray(s.health.issues)) {
+    lines.push(`- 实时体检：${s.health.brief || textHealthBrief(s.health)}`);
+    const top = s.health.issues.slice(0, 3);
+    for (const it of top) lines.push(`  · ${it.hint}（「${it.excerpt}…」）`);
+  }
+  if (s.paragraph) {
+    const p = String(s.paragraph).replace(/\s+/g, " ").slice(0, 240);
+    if (p) lines.push(`- 当前段落：${p}${String(s.paragraph).length > 240 ? "…" : ""}`);
+  }
+  if (!lines.length) return "";
+  return [
+    "【写作模式状态】（系统自动附带的事实，作者看不到这一段）",
+    ...lines,
+    "以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。"
+  ].join("\n");
+}
+
 // plugin/writing-mode/src/client/features/companion/index.js
+function buildLiveStateBlock(liveState) {
+  const live = liveState || {};
+  const text7 = typeof live.text === "string" ? live.text : "";
+  const health = text7 ? textHealth(text7) : null;
+  return writingStateBlock({
+    projectLabel: live.projectLabel,
+    fileLabel: live.fileLabel,
+    cursorChars: live.cursorChars,
+    selectionChars: live.selectionChars,
+    dirty: live.dirty,
+    focus: live.focus,
+    todayChars: live.todayChars,
+    dailyGoal: live.dailyGoal,
+    gate: live.gate,
+    health,
+    paragraph: live.paragraph
+  });
+}
 var TOOL_ACTIONS = ["polish", "continue", "outline", "compress", "expand", "research", "spark"];
 var toolTitleOf = (a) => T["toolTitle" + a[0].toUpperCase() + a.slice(1)] || "";
 var emptyCompanionSnapshot = Object.freeze({});
@@ -20347,7 +20666,7 @@ function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, 
     snapshot.running ? jsx28.jsx("div", { className: "dshWmThinking", role: "status", children: "正在回应…" }) : null
   ] });
 }
-function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools }) {
+function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools, liveState }) {
   const adapter = harnessAdapter();
   const capability = companionCapability(adapter.capabilities());
   const capabilityText = capability.reasons.length ? capability.headline + "：" + capability.reasons.join("；") : capability.headline;
@@ -20649,7 +20968,9 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
         }
       }
       if (alive.current) setMemoryBlock(null);
+      const stateBlock = buildLiveStateBlock(liveState);
       const prepared = buildPreparedTurn({
+        stateBlock,
         message: sentDraft,
         reference: sentReference,
         memoryItems: freshItems,
@@ -20964,9 +21285,11 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
       ] }) : null,
       // 文字工具产出区：✦ 菜单运行的结果显示在输入框正上方，三个落稿键跟着结果走
       // （原右栏抽屉的 .dshWmAiOut / apply 回路原样搬来，类名与 data 语义不变）。
-      tools && (tools.busy || tools.err || tools.out) ? jsx28.jsxs("div", { className: "dshWmToolOut", "data-wm-tools-out": "1", children: [
+      tools && (tools.busy || tools.err || tools.out || tools.note) ? jsx28.jsxs("div", { className: "dshWmToolOut", "data-wm-tools-out": "1", children: [
         tools.busy ? jsx28.jsx("div", { className: "dshWmAiHint", role: "status", children: T.applying }, "busy") : null,
         tools.err ? jsx28.jsx("div", { className: "dshWmAiHint", role: "alert", children: tools.err }, "err") : null,
+        // 非错误但必须知道的提示（如"只处理了前 N 字"）：不进 .dshWmAiOut，避免被"插入文末"带进正文
+        tools.note ? jsx28.jsx("div", { className: "dshWmAiNote", "data-wm-tools-note": "1", children: tools.note }, "note") : null,
         jsx28.jsx("div", { className: "dshWmAiOut", children: tools.out || " " }, "out"),
         jsx28.jsxs("div", { className: "dshWmAiActions", children: [
           jsx28.jsx("button", { type: "button", className: "dshWmBtn", disabled: !tools.out, onClick: tools.onInsert, children: T.insert }, "ins"),
@@ -21103,7 +21426,7 @@ function CompanionChat({ initialBinding, path: path2, contextText, sourceInfo, o
     ] })
   ] });
 }
-function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools }) {
+function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpenProject, onJumpToFile, tools, liveState }) {
   const [result, setResult] = react13.useState(null);
   const [retry, setRetry] = react13.useState(0);
   react13.useEffect(() => {
@@ -21124,7 +21447,7 @@ function WritingCompanion({ path: path2, contextText, sourceInfo, onExit, onOpen
   const sessionSection = jsx28.jsx(SessionListSection, { currentPath: path2 || null, onOpenProject: onOpenProject || null }, "wsl");
   if (!path2 || result?.path !== path2) return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx("div", { className: "dshWmCompanionEmpty", children: path2 ? "正在打开对话…" : "打开一份稿件，从这里聊起。" }, "empty")] });
   if (!result.ok) return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsxs("div", { className: "dshWmCompanionError", role: "alert", children: [result.error, jsx28.jsx("button", { className: "dshWmQuiet", onClick: () => setRetry((n) => n + 1), children: "重试" })] }, "err")] });
-  return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools }, result.project)] });
+  return jsx28.jsxs("div", { className: "dshWmCompanionWrap", children: [sessionSection, jsx28.jsx(CompanionChat, { initialBinding: result, path: path2, contextText, sourceInfo, onExit, onJumpToFile, tools, liveState }, result.project)] });
 }
 
 // plugin/writing-mode/src/client/features/export-book/index.js
@@ -21989,6 +22312,13 @@ function InspectionPanel({
 // plugin/writing-mode/src/client/app/WritingModeApp.js
 var LS_FILE = "dsh-writing-mode-file";
 var KEY_HINT = "Esc 退出 · Ctrl+S 保存 · Ctrl+Shift+S 另存新版 · Ctrl+Shift+W 开关写作台";
+var ASSIST_INPUT_LIMIT = 24e3;
+function relToRoot(filePath, root4) {
+  const f = String(filePath || "").replace(/\\/g, "/");
+  const r = String(root4 || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  if (r && f.toLowerCase().startsWith(r.toLowerCase() + "/")) return f.slice(r.length + 1);
+  return f.split("/").filter(Boolean).pop() || f;
+}
 function WritingModeApp() {
   const [active, setActive] = react17.useState(getModeActive);
   react17.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
@@ -22051,6 +22381,7 @@ function WritingModeApp() {
   const [aiTab, setAiTab] = react17.useState("companion");
   const [aiOut, setAiOut] = react17.useState("");
   const [aiBusy, setAiBusy] = react17.useState(false);
+  const [aiNote, setAiNote] = react17.useState("");
   const [aiErr, setAiErr] = react17.useState("");
   const [gate, setGate] = react17.useState(null);
   const [gateBusy, setGateBusy] = react17.useState(false);
@@ -22529,6 +22860,30 @@ function WritingModeApp() {
       taRef.current?.focus();
     }
   }
+  async function createChapter(proj) {
+    const nums = (proj.files || []).map((f) => /第(\d+)章/.exec(String(f.rel || ""))).filter(Boolean).map((m) => Number(m[1]));
+    const n = nums.length ? Math.max(...nums) + 1 : 1;
+    const title = "第" + n + "章";
+    try {
+      const data = await api("save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          path: String(proj.path).replace(/[\\/]+$/, "") + "/draft/novel/" + title + "-v1.md",
+          content: "# " + title + "\n\n",
+          revision: null
+        })
+      });
+      if (!data.ok) {
+        flashMsg(data.error === "document-conflict" ? "这一章已经存在，直接去文档库里打开它吧" : "创建章节失败：" + (data.error || "未知错误"));
+        return;
+      }
+      await refreshTree();
+      setFilePath(data.doc.path);
+    } catch (err) {
+      flashMsg("创建章节失败：" + err.message);
+    }
+  }
   async function runAssist(action, hint) {
     const snapshot = editor.get();
     const selection = taRef.current ? { start: taRef.current.selectionStart, end: taRef.current.selectionEnd } : { start: 0, end: 0 };
@@ -22542,13 +22897,21 @@ function WritingModeApp() {
     setAiBusy(true);
     setAiErr("");
     setAiOut("");
+    setAiNote("");
+    const full = text7 && text7.trim() ? text7 : content3;
+    const clipped = full.length > ASSIST_INPUT_LIMIT ? { sent: ASSIST_INPUT_LIMIT, total: full.length } : null;
+    if (clipped) {
+      setAiNote(
+        `这篇有 ${clipped.total} 字，本次只处理了前 ${clipped.sent} 字。要整章一起改，选好范围再跑，或用「发送到会话」交给写作伙伴。`
+      );
+    }
     try {
       const data = await api("assist", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          text: text7 || content3.slice(0, 4e3),
+          text: clipped ? full.slice(0, ASSIST_INPUT_LIMIT) : full,
           path: filePath,
           // 工具菜单里作者随提示词补的要求（空串不落字段，host 用纯默认指令）
           hint: String(hint || "").trim() || void 0,
@@ -22562,6 +22925,11 @@ function WritingModeApp() {
         }
         aiTarget.current = { path: snapshot.path, edit: snapshot.edit, action, ...selection };
         setAiOut(data.result || "");
+        if (data.webFailed) {
+          setAiNote(
+            (prev) => prev ? prev + " 另外：这次联网查证没成功（搜索源都没连上），资料请自行核实。" : "这次联网查证没成功（搜索源都没连上）：下面是模型凭已有知识给的方向，事实请自行核实。"
+          );
+        }
         return;
       }
       if (data.error === "llm-unavailable") {
@@ -22663,6 +23031,7 @@ function WritingModeApp() {
     return String(r.path).toLowerCase() === String(activeRoot).toLowerCase();
   }) || tree.find((r) => r.active) || tree[0];
   const projects = activeTree ? activeTree.projects || [] : [];
+  const currentProj = projects.find((p) => !p.isLoose && (p.files || []).some((f) => f.abs === filePath)) || null;
   function toggleProj(key) {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -22732,7 +23101,14 @@ function WritingModeApp() {
         dirty,
         documentState,
         persist,
-        close
+        close,
+        archiveProj: currentProj,
+        onOpenArchive: () => {
+          if (currentProj) {
+            setExportProj(null);
+            openArchive(currentProj);
+          }
+        }
       }, "bar"),
       jsx36.jsx(
         "div",
@@ -22791,10 +23167,7 @@ function WritingModeApp() {
               commitAddRoot,
               KEY_HINT,
               onCollapse: () => setLibOpenManual(false),
-              onOpenArchive: (proj) => {
-                setExportProj(null);
-                openArchive(proj);
-              },
+              onNewChapter: createChapter,
               onExportBook: (proj) => {
                 setArchiveProj(null);
                 setExportProj(proj);
@@ -22972,6 +23345,30 @@ function WritingModeApp() {
                   // 并在挂回时把原生主视图再聚焦一次（作者只是想看会儿稿子，不该有这么大副作用）。
                   aiTab === "companion" ? jsx36.jsx(WritingCompanion, {
                     path: filePath || activeRoot,
+                    // 写作模式状态 + 实时体检（2026-10-10）：每次发送都按**此刻**的编辑器缓冲算，
+                    // 未保存的改动也在内；伙伴据此回答，不用猜作者写到哪、有没有问题。
+                    liveState: {
+                      projectLabel: (() => {
+                        const root4 = roots.find((r) => String(r.path).toLowerCase() === String(activeRoot).toLowerCase());
+                        return root4 && root4.label || (activeRoot ? String(activeRoot).split(/[\\/]/).filter(Boolean).pop() : "");
+                      })(),
+                      fileLabel: filePath ? relToRoot(filePath, activeRoot) : "",
+                      text: content3,
+                      cursorChars: taRef.current ? taRef.current.selectionStart : 0,
+                      selectionChars: taRef.current ? Math.max(0, taRef.current.selectionEnd - taRef.current.selectionStart) : 0,
+                      dirty: Boolean(documentState.dirty),
+                      focus,
+                      todayChars: stats && Number.isFinite(stats.today) ? stats.today : void 0,
+                      dailyGoal,
+                      gate: gate && gate.kind && gate.kind !== "none" ? { kind: gate.kind, pass: Boolean(gate.pass), fail: Number(gate.fail) || 0 } : null,
+                      paragraph: (() => {
+                        if (!content3) return "";
+                        const at = taRef.current ? taRef.current.selectionStart : 0;
+                        const before = content3.lastIndexOf("\n\n", Math.max(0, at - 1));
+                        const after = content3.indexOf("\n\n", at);
+                        return content3.slice(before < 0 ? 0 : before + 2, after < 0 ? content3.length : after);
+                      })()
+                    },
                     sourceInfo: () => {
                       const snap = editor.get();
                       return snap.path ? { path: snap.path, revision: snap.revision } : null;
@@ -22980,11 +23377,11 @@ function WritingModeApp() {
                       const selected = Boolean(taRef.current && taRef.current.selectionEnd > taRef.current.selectionStart);
                       const start2 = selected ? taRef.current.selectionStart : null;
                       const end = selected ? taRef.current.selectionEnd : null;
-                      const excerpt = selected ? content3.slice(start2, end) : content3;
+                      const excerpt2 = selected ? content3.slice(start2, end) : content3;
                       const snap = editor.get();
                       return makeReference({
-                        label: (selected ? "选区 · " : "稿件 · ") + (filePath || "未命名").split(/[\\/]/).pop() + " · " + excerpt.length + " 字",
-                        excerpt,
+                        label: (selected ? "选区 · " : "稿件 · ") + (filePath || "未命名").split(/[\\/]/).pop() + " · " + excerpt2.length + " 字",
+                        excerpt: excerpt2,
                         path: filePath || null,
                         revision: snap.path === filePath ? snap.revision : null,
                         start: start2,
@@ -23007,6 +23404,7 @@ function WritingModeApp() {
                     tools: {
                       busy: aiBusy,
                       err: aiErr,
+                      note: aiNote,
                       out: aiOut,
                       onRun: (action, hint) => void runAssist(action, hint),
                       onInsert: applyInsert,

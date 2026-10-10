@@ -464,6 +464,28 @@ function assertClientMayTouchSetting(req, target) {
  * Legacy ops: add/update/restore/retract/resolve
  * Setting ops: save-setting-candidate | confirm-setting (require operationId + requestHash)
  */
+/**
+ * 写路径上的配额自救（2026-10-10）。
+ *
+ * 原行为：changes ≥ 800 或 operations ≥ 200 时，**任何**设置类操作都被 409 拒掉
+ * （history-full / operations-full），而唯一的出口是维护接口——作者在写作台里
+ * 只看到"备忘暂不可用"，重试永远失败，等于功能永久停摆。
+ * 现在：到顶就先把最旧的一段归档（state/backups/，与维护出口同一套"先备份后裁"），
+ * 本次操作照常执行，归档事实随响应回给 UI。
+ */
+function relieveQuotaForWrite(file, memory) {
+  const archived = []
+  if ((memory.changes || []).length >= MAX_CHANGES) {
+    const r = applyQuotaMaintenance(file, memory, 'archive-history', { keep: KEEP_CHANGES })
+    if (r && r.dropped) archived.push({ kind: 'changes', dropped: r.dropped, backup: r.backup })
+  }
+  if ((memory.operations || []).length >= MAX_OPERATIONS) {
+    const r = applyQuotaMaintenance(file, memory, 'prune-operations', { keep: KEEP_OPERATIONS })
+    if (r && r.dropped) archived.push({ kind: 'operations', dropped: r.dropped, backup: r.backup })
+  }
+  return archived
+}
+
 export function applyMemoryOp(projectDir, req = {}, opts = {}) {
   const { op, baseRevision, baseEtag, id, item, actor } = req
   const { projectReal, file } = assertMemoryPathSafe(projectDir, opts)
@@ -482,6 +504,9 @@ export function applyMemoryOp(projectDir, req = {}, opts = {}) {
     const current = readMemory(projectReal, opts)
     let memory = structuredClone(current.memory)
     let etagNow = current.etag
+
+    // 2026-10-10：配额到顶先自救（归档最旧一段）再继续，避免"满了就永久停摆"。
+    const autoArchived = relieveQuotaForWrite(file, memory)
 
     // 幂等优先：先查收据，再校验 revision/etag（方案 §4.2）
     if (SETTING_OPS.has(op)) {
@@ -740,7 +765,13 @@ export function applyMemoryOp(projectDir, req = {}, opts = {}) {
     // All validation completed; migration and the requested mutation commit together.
     if (legacy) backupMemoryFile(file)
     const committed = commitMemory(file, projectReal, memory, opts)
-    return { ...committed, receipt, replay: false, migratedFrom: legacy ? MEMORY_SCHEMA_LEGACY : null }
+    return {
+      ...committed,
+      receipt,
+      replay: false,
+      migratedFrom: legacy ? MEMORY_SCHEMA_LEGACY : null,
+      autoArchived: autoArchived.length ? autoArchived : null,
+    }
   })
 }
 

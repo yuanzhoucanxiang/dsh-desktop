@@ -21,7 +21,7 @@ rep("  await waitFor(`!!document.querySelector('.dshWmItem')`)",String.raw`
   await waitFor('!!document.querySelector("input[aria-label=文件夹路径]")');
   await evaluate('(()=>{const e=document.querySelector("input[aria-label=文件夹路径]");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,'+JSON.stringify(project)+');e.dispatchEvent(new Event("input",{bubbles:true}));})()');
   await button('打开项目');
-  await waitFor('document.querySelectorAll(".dshWmItem").length===13');
+  await waitFor('!!document.querySelector(".dshWmLibViews")');await button('文件视图');await waitFor('document.querySelectorAll(".dshWmItem").length===13');
   assert.equal(fs.existsSync(path.join(project,'project.md')),false);
   results.push('UI attaches unmodified existing folder and shows all 13 original Markdown documents');
 `)
@@ -46,14 +46,14 @@ fixture=fixture.slice(0,cut)+String.raw`
   const invalidFile=await req('roots',{mode:'add',kind:'project',path:path.join(project,'00_设定/设定档案.md')});assert.equal(invalidFile.ok,false);
   await win.webContents.reload();await waitFor('!!document.getElementById("dsh-writing-mode-float")');
   await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');
-  await waitFor('document.querySelectorAll(".dshWmItem").length===13');
+  await waitFor('!!document.querySelector(".dshWmLibViews")');await button('文件视图');await waitFor('document.querySelectorAll(".dshWmItem").length===13');
   await evaluate('Array.from(document.querySelectorAll(".dshWmItem")).find(e=>e.title==="01_概念设计/01_世界定调.md").click()');
   await waitFor('document.querySelector(".dshWmEditor")?.value.includes("世界定调")');
   await button('稍后配置');await sleep(300);await button('稍后配置');
   await sleep(1500);
   await waitFor('!!document.getElementById("dsh-writing-mode-float")');
   await evaluate('if(!document.querySelector(".dshWmRoot"))document.getElementById("dsh-writing-mode-float").click()');
-  await waitFor('document.querySelectorAll(".dshWmItem").length===13');
+  await waitFor('!!document.querySelector(".dshWmLibViews")');await button('文件视图');await waitFor('document.querySelectorAll(".dshWmItem").length===13');
   await evaluate('Array.from(document.querySelectorAll(".dshWmItem")).find(e=>e.title==="01_概念设计/01_世界定调.md").click()');
   await waitFor('document.querySelector(".dshWmEditor")?.value.includes("世界定调")');
   results.push('Configuration survives preference update and renderer restart; missing directories and file paths rejected');
