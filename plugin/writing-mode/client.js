@@ -2301,6 +2301,7 @@ var zh = {
   focus: "专注",
   archive: "档案",
   archiveHint: "作品档案：设定、进度与资料的 wiki 站（随当前文稿所属作品）",
+  archiveNeedDoc: "先打开一篇稿件：作品档案跟着「当前文稿所属的作品」走；一个作品都没有时，先在库面板里新建或添加作品。",
   noChapters: "还没有章节",
   firstChapter: "写第一章",
   newChapter: "新章节",
@@ -2415,6 +2416,7 @@ var en = {
   focus: "Focus",
   archive: "Wiki",
   archiveHint: "Project wiki: settings, progress and materials (follows the project of the open document)",
+  archiveNeedDoc: "Open a document first — the wiki follows the project of the open document. If you have no project yet, create or add one in the library pane.",
   noChapters: "No chapters yet",
   firstChapter: "Start chapter one",
   newChapter: "New chapter",
@@ -3454,12 +3456,12 @@ var TopBar = react.memo(function TopBar2({
           "roots"
         ) : null,
         jsx.jsx("span", { className: "dshWmBarSep" }, "sep-roots"),
-        // 档案（wiki）入口：作用于当前文稿所属项目；无所属项目（空态/散稿）时禁用。
+        // 档案（wiki）入口：作用于当前文稿所属项目。定位不到作品时**不再禁用**——
+        // 灰掉的按钮只会让作者以为"档案打不开"（2026-10-10 用户反馈），改为可点并在点击时说明。
         jsx.jsx("button", {
           type: "button",
           className: "dshWmIconBtn",
           "data-wm-archive": "1",
-          disabled: !archiveProj,
           title: archiveProj ? T.archive + "：" + archiveProj.name : T.archiveHint,
           "aria-label": T.archive,
           onClick: () => onOpenArchive?.(),
@@ -22319,6 +22321,9 @@ function relToRoot(filePath, root4) {
   if (r && f.toLowerCase().startsWith(r.toLowerCase() + "/")) return f.slice(r.length + 1);
   return f.split("/").filter(Boolean).pop() || f;
 }
+function normPath(p) {
+  return String(p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
 function WritingModeApp() {
   const [active, setActive] = react17.useState(getModeActive);
   react17.useEffect(() => subscribeMode(() => setActive(getModeActive())), []);
@@ -23031,7 +23036,20 @@ function WritingModeApp() {
     return String(r.path).toLowerCase() === String(activeRoot).toLowerCase();
   }) || tree.find((r) => r.active) || tree[0];
   const projects = activeTree ? activeTree.projects || [] : [];
-  const currentProj = projects.find((p) => !p.isLoose && (p.files || []).some((f) => f.abs === filePath)) || null;
+  const currentProj = (() => {
+    const want = normPath(filePath);
+    if (want) {
+      for (const t of tree) {
+        for (const p of t.projects || []) {
+          if (p.isLoose) continue;
+          if ((p.files || []).some((f) => normPath(f.abs) === want)) return p;
+        }
+      }
+    }
+    const all2 = [];
+    for (const t of tree) for (const p of t.projects || []) if (!p.isLoose) all2.push(p);
+    return all2.length === 1 ? all2[0] : null;
+  })();
   function toggleProj(key) {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -23104,10 +23122,12 @@ function WritingModeApp() {
         close,
         archiveProj: currentProj,
         onOpenArchive: () => {
-          if (currentProj) {
-            setExportProj(null);
-            openArchive(currentProj);
+          if (!currentProj) {
+            flashMsg(T.archiveNeedDoc);
+            return;
           }
+          setExportProj(null);
+          openArchive(currentProj);
         }
       }, "bar"),
       jsx36.jsx(

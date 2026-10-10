@@ -82,12 +82,12 @@ export const TopBar = react.memo(function TopBar({
             )
           : null,
         jsx.jsx('span', { className: 'dshWmBarSep' }, 'sep-roots'),
-        // 档案（wiki）入口：作用于当前文稿所属项目；无所属项目（空态/散稿）时禁用。
+        // 档案（wiki）入口：作用于当前文稿所属项目。定位不到作品时**不再禁用**——
+        // 灰掉的按钮只会让作者以为"档案打不开"（2026-10-10 用户反馈），改为可点并在点击时说明。
         jsx.jsx('button', {
           type: 'button',
           className: 'dshWmIconBtn',
           'data-wm-archive': '1',
-          disabled: !archiveProj,
           title: archiveProj ? T.archive + '：' + archiveProj.name : T.archiveHint,
           'aria-label': T.archive,
           onClick: () => onOpenArchive?.(),

@@ -54,6 +54,11 @@ function relToRoot(filePath, root) {
   return f.split('/').filter(Boolean).pop() || f
 }
 
+/** 路径比较用的规范化（Windows 上大小写与分隔符都可能不同）。 */
+function normPath(p) {
+  return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
 export function WritingModeApp() {
   const [active, setActive] = react.useState(getModeActive)
   react.useEffect(() => subscribeMode(() => setActive(getModeActive())), [])
@@ -787,7 +792,25 @@ export function WritingModeApp() {
   const projects = activeTree ? activeTree.projects || [] : []
 
   // 顶栏「档案」入口的作用对象（2026-10-10 第六轮）：当前文稿所属项目；散稿桶不算项目，不给档案。
-  const currentProj = projects.find((p) => !p.isLoose && (p.files || []).some((f) => f.abs === filePath)) || null
+  // 2026-10-10 修复「档案打不开」：
+  //   ① 原来只在**当前库根**的树里找——稿件属于别的库根时找不到，档案钮就一直是灰的；
+  //   ② 原来用 `f.abs === filePath` 精确字符串比较，Windows 上大小写/分隔符略有差异就匹配不上；
+  //   ③ 一个作品都定位不到时（没开稿/树还没加载完），退回"全部库根里唯一的那个作品"，
+  //      让作者至少点得开档案；仍然定位不到才由点击提示"先打开一篇稿件"。
+  const currentProj = (() => {
+    const want = normPath(filePath)
+    if (want) {
+      for (const t of tree) {
+        for (const p of t.projects || []) {
+          if (p.isLoose) continue
+          if ((p.files || []).some((f) => normPath(f.abs) === want)) return p
+        }
+      }
+    }
+    const all = []
+    for (const t of tree) for (const p of t.projects || []) if (!p.isLoose) all.push(p)
+    return all.length === 1 ? all[0] : null
+  })()
 
   function toggleProj(key) {
     setCollapsed((prev) => {
@@ -879,7 +902,12 @@ export function WritingModeApp() {
         persist,
         close,
         archiveProj: currentProj,
-        onOpenArchive: () => { if (currentProj) { setExportProj(null); openArchive(currentProj) } },
+        onOpenArchive: () => {
+          // 定位不到作品时不再让按钮静默变灰（作者会以为"打不开"）：说清楚该怎么做。
+          if (!currentProj) { flashMsg(T.archiveNeedDoc); return }
+          setExportProj(null)
+          openArchive(currentProj)
+        },
       }, 'bar'),
       jsx.jsx(
         'div',
