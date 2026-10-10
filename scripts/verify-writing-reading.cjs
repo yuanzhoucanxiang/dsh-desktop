@@ -15,6 +15,11 @@ fixture=fixture.slice(0,cut)+String.raw`
   }
   await showText('先听见 **风',true)
   assert.ok(await evaluate("document.querySelector('.dshWmMarkdown').innerText.includes('先听见')"))
+  // 2026-10-10：几何断言前关掉入场动效。Kimi 的 dshWmFadeSide/FadeSideR 用 translateX(±8px)，
+  // 而本门禁的窗口是 show:false（隐藏窗口里 CSS 动画时钟可能停在 t=0），量到的就是 translateX(8px)
+  // 的**起始帧** → side.right 比视口大 8px 的假红（实测 transform: matrix(1,0,0,1,8,0) 且多次采样不变）。
+  // 几何断言要的是落定后的布局，动效属于观感，不参与几何契约。
+  await evaluate("(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none !important;transition:none !important}';document.head.append(s);return true})()")
   await showText(markdown)
   await waitFor("!!document.querySelector('.dshWmMarkdown table')")
   const dom=await evaluate("(()=>{const el=document.querySelector('.dshWmMarkdown');return {strong:el.querySelector('strong')?.textContent,quote:el.querySelector('blockquote')?.textContent,list:el.querySelectorAll('li').length,table:el.querySelectorAll('tbody tr').length,code:el.querySelector('pre code')?.textContent,links:Array.from(el.querySelectorAll('a')).map(a=>({href:a.getAttribute('href'),target:a.target,rel:a.rel})),images:el.querySelectorAll('img').length,scripts:el.querySelectorAll('script').length,attack:!!window.readingAttack,author:document.querySelector('.is-user .dshWmMessageText').textContent}})()")
@@ -36,9 +41,24 @@ fixture=fixture.slice(0,cut)+String.raw`
   await button('收起备忘')
   results.push({id:'candidate-uses-original-markdown',status:'PASS'})
   const geometry=[]
+  // 2026-10-10：面板有 120–180ms 的浅位移入场动效（dshWmFadeSide）。原来 resize 后只 sleep 200ms
+  // 就量矩形，慢一点就量到 translateX 中途的位置 → right 比视口大 8px 的**假红**（本机复现两次）。
+  // 改为"连续两次采样一致才断言"，量的是落定后的几何。
+  const measure = () => evaluate("(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,bottom:r.bottom}};const side=document.querySelector('.dshWmSide.is-ai');const cs=getComputedStyle(side);return {viewport:innerWidth,side:rect('.dshWmSide.is-ai'),compose:rect('.dshWmCompose'),message:rect('.dshWmMarkdown'),scrollWidth:side.scrollWidth,clientWidth:side.clientWidth,transform:cs.transform,animation:cs.animationName,root:rect('.dshWmRoot'),rail:document.querySelector('.dshWmRail.is-ai')?rect('.dshWmRail.is-ai'):null}})()")
+  const settled = async () => {
+    let prev = await measure()
+    for (let i = 0; i < 15; i++) {
+      await sleep(120)
+      const next = await measure()
+      const stable = Math.abs(next.side.left - prev.side.left) < 0.5 && Math.abs(next.side.right - prev.side.right) < 0.5
+      prev = next
+      if (stable) return next
+    }
+    return prev
+  }
   for(const width of [1500,1280,980]){
     win.setContentSize(width,900);await sleep(200)
-    const g=await evaluate("(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,bottom:r.bottom}};const side=document.querySelector('.dshWmSide.is-ai');return {viewport:innerWidth,side:rect('.dshWmSide.is-ai'),compose:rect('.dshWmCompose'),message:rect('.dshWmMarkdown'),scrollWidth:side.scrollWidth,clientWidth:side.clientWidth}})()")
+    const g = await settled()
     assert.ok(g.side.right<=g.viewport+1&&g.compose.left>=g.side.left&&g.compose.right<=g.side.right+1,JSON.stringify(g))
     assert.ok(g.message.right<=g.side.right+1&&g.scrollWidth<=g.clientWidth+1,JSON.stringify(g))
     geometry.push(g)

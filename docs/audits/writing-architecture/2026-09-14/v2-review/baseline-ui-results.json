@@ -65,12 +65,12 @@
         "visible": "NEW_DURING_RECOVERY",
         "disk": {
           "schemaVersion": 2,
-          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-rMq6fQ\\library\\演示项目",
-          "windowId": "3e5dc964-b986-4a5b-8deb-6980f198633a",
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-23qOd6\\library\\演示项目",
+          "windowId": "d2003350-87b7-4798-82d1-cebd3a796e66",
           "text": "NEW_DURING_RECOVERY",
           "reference": null,
           "rev": 8,
-          "updatedAt": "2026-10-10T07:27:33.310Z",
+          "updatedAt": "2026-10-10T11:05:29.750Z",
           "cleared": false
         }
       }
@@ -125,7 +125,7 @@
         "sent": [
           {
             "type": "text",
-            "text": "【写作模式状态】（系统自动附带的事实，作者看不到这一段）\n- 作品：library\n- 正在写：演示项目/draft/novel/第1章-v1.md\n- 光标：第 5 字处\n- 未保存改动：无\n- 今日净增：+0 字\n- 成稿检查（novel）：2 项未达标\n- 实时体检：体检 ✓ 没有明显问题\n- 当前段落：第一章原文\n以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。\n\n【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-rMq6fQ\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
+            "text": "【写作模式状态】（系统自动附带的事实，作者看不到这一段）\n- 作品：library\n- 正在写：演示项目/draft/novel/第1章-v1.md\n- 光标：第 5 字处\n- 未保存改动：无\n- 今日净增：+0 字\n- 成稿检查（novel）：2 项未达标\n- 实时体检：体检 ✓ 没有明显问题\n- 当前段落：第一章原文\n以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。\n\n【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-23qOd6\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
           }
         ]
       }

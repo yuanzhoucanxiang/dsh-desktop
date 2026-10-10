@@ -20,6 +20,7 @@ import {
 } from '../coordination.js'
 import { recommend, assist } from '../domain.js'
 import { writeJson, readJsonBody } from '../http.js'
+import { companionProjectOf } from './helpers.js'
 
 /**
  * V6：草稿桶的项目身份必须用**规范路径**（resolveUnderRoots 已做过 realpath），
@@ -97,8 +98,8 @@ export async function companionRoute({ req, res, url, cfg, hostCtx, ensurePreset
   cfg = readConfig()
   const target = body && resolveUnderRoots(body.path, effectiveRoots(cfg))
   if (!target || !fs.existsSync(target.abs)) return writeJson(res, 400, { ok: false, error: 'bad-path' })
-  const directory = fs.statSync(target.abs).isDirectory()
-  const project = findProjectRoot(directory ? path.join(target.abs, 'project.md') : target.abs) || (directory ? target.abs : path.dirname(target.abs))
+  // 与 coordination 共用同一套身份判定（裸库根 → 库根本身），两条路由不许再分裂。
+  const project = companionProjectOf(body.path, effectiveRoots(cfg))
   const key = process.platform === 'win32' ? project.toLowerCase() : project
   if (req.method === 'POST' && body.prepare === true) {
     try {
@@ -168,11 +169,14 @@ const stripOutcome = ({ _outcome, ...record }) => record
  * 项目身份用**作品的规范路径**（与记忆同源：resolveUnderRoots + resolveProjectDir），
  * 因此协调记录天然按作品分桶，且跨窗口/跨进程看到同一份记录。
  */
+/**
+ * 项目身份判定统一收在 helpers.companionProjectOf（2026-10-10：修「切换工作区后
+ * 写作助手无法启用 / 协调服务不可用」——裸库根在 coordination 眼里曾经不是项目）。
+ */
 export async function coordinationRoute({ req, res, url, cfg }) {
   const resolveProjectKey = (rawPath) => {
     const roots = effectiveRoots(cfg)
-    const target = resolveUnderRoots(rawPath, roots)
-    const proj = target ? resolveProjectDir(target.abs, roots) : null
+    const proj = companionProjectOf(rawPath, roots)
     return proj ? { proj, roots } : null
   }
   try {
