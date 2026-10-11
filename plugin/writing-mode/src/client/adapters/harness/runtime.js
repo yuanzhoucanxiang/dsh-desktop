@@ -54,6 +54,13 @@ export function harnessConversation() { return tryService('conversation') }
  */
 export function harnessUiConversation() { return tryService('uiConversation') }
 
+/**
+ * 提问作答通道（2026-10-10）：remote.userQuestions——官方 ui-user-questions 用的是同一个 Remote。
+ * 惰性解析（同上面几条），**不能**往 entry.js 的 inject 里加：0.1.1 没有这个服务，
+ * 加了 fiber 永不激活。
+ */
+export function harnessUserQuestions() { return tryService('remote.userQuestions') }
+
 /** 本渲染进程唯一的 harness adapter（懒创建；bindHarness 之后失效重建）。 */
 export function harnessAdapter() {
   if (!adapterRef) {
@@ -65,6 +72,7 @@ export function harnessAdapter() {
       uiWorkspace: () => tryService('uiWorkspace'),
       uiConversation: harnessUiConversation,
       conversation: harnessConversation,
+      userQuestions: harnessUserQuestions,
       api,
     })
   }

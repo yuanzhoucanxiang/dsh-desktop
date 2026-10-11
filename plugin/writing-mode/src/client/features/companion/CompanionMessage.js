@@ -3,6 +3,7 @@ import * as jsx from 'react/jsx-runtime'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { rewriteJumpLinks, parseJumpHref } from './jump.js'
+import { parseChoiceBlock } from './choices.js'
 
 // Links use the desktop shell's existing external-browser policy.
 // v0.1.40 的旧决策是「模型输出不能导航编辑器」；本版起改为**点击制**跳回：
@@ -54,16 +55,34 @@ const components = (onJumpToFile) => ({
 
 // Finished messages do not need to reparse when the input or a later streaming
 // message changes. Raw author text and candidate source snapshots stay intact.
-export const CompanionMessage = memo(function CompanionMessage({ text, kind, onJumpToFile }) {
+// onChoose 与 onJumpToFile 同样进闭包：memo 依赖它们的稳定性（调用方 useCallback 保证）
+export const CompanionMessage = memo(function CompanionMessage({ text, kind, onJumpToFile, onChoose }) {
   if (kind !== 'assistant') return jsx.jsx('div', { className: 'dshWmMessageText', children: text })
-  return jsx.jsx('div', {
+  // 「【选择】」块（2026-10-11）：伙伴按人设约定把选项放在回复末尾，这里把它从正文里摘掉、渲染成按钮
+  // （摘掉是为了不重复——文字里已经列过一遍）。解析不出来就原样显示，不猜、不误伤普通列表。
+  const choice = parseChoiceBlock(text)
+  const markdown = jsx.jsx(Markdown, {
+    remarkPlugins: plugins,
+    components: components(onJumpToFile),
+    skipHtml: true,
+    urlTransform: urlPolicy,
+    children: rewriteJumpLinks(choice ? choice.body : text || ''),
+  }, 'md')
+  if (!choice) return jsx.jsx('div', { className: 'dshWmMessageText dshWmMarkdown', children: markdown })
+  return jsx.jsxs('div', {
     className: 'dshWmMessageText dshWmMarkdown',
-    children: jsx.jsx(Markdown, {
-      remarkPlugins: plugins,
-      components: components(onJumpToFile),
-      skipHtml: true,
-      urlTransform: urlPolicy,
-      children: rewriteJumpLinks(text || ''),
-    }),
+    children: [
+      markdown,
+      jsx.jsx('div', {
+        className: 'dshWmChoices',
+        children: choice.options.map((label) => jsx.jsx('button', {
+          type: 'button',
+          className: 'dshWmChoice',
+          'data-wm-choice': label,
+          onClick: () => { if (onChoose) onChoose(label) },
+          children: label,
+        }, label)),
+      }, 'ch'),
+    ],
   })
 })

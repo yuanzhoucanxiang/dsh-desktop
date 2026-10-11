@@ -107,6 +107,18 @@ export function WritingModeApp() {
   const { path: filePath, content, dirty, status: saveState } = documentState
   const setContent = value => editor.change(value)
   const setFilePath = path => { void editor.open(path) }
+  // 章节上下文（2026-10-11）：稿件一换就向 host 预取"这一章在作品里的位置"（第几章/前后章/
+  // 章末钩子/未兑现伏笔/在场人物），随消息注入给写作伙伴——伙伴不用问也知道现场。
+  // 只读、失败静默（取不到就不注入，不编造）。
+  const [chapterLines, setChapterLines] = react.useState([])
+  react.useEffect(() => {
+    let alive = true
+    if (!filePath) { setChapterLines([]); return () => { alive = false } }
+    api('chapter-context', { method: 'GET', headers: { accept: 'application/json' } }, { path: filePath })
+      .then((data) => { if (alive) setChapterLines(Array.isArray(data?.lines) ? data.lines : []) })
+      .catch(() => { if (alive) setChapterLines([]) })
+    return () => { alive = false }
+  }, [filePath])
   // 纯写作第一屏：右栏默认收起，作者点右缘 rail「AI」才召唤
   const [aiOpen, setAiOpen] = react.useState(false)
   const [aiTab, setAiTab] = react.useState('companion')
@@ -502,6 +514,22 @@ export function WritingModeApp() {
     if (!data.ok) { flashMsg('打开文件夹失败：' + (data.error || 'unknown')); return }
     setAddRootMode(false)
     setAddRootPath('')
+    void refreshTree()
+  }
+
+  // 空状态自救（2026-10-10）：把当前库根就地改成「单个作品」。
+  // 与「＋ → 打开已有」同一条写入路径（host 端对已存在的根是原地改 kind，不搬文件、不写标记），
+  // 区别只是路径取自当前库根，不用作者手打绝对路径。
+  async function useRootAsProject(p) {
+    const target = String(p || '').trim()
+    if (!target) return
+    const data = await api('roots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'add', path: target, active: true, kind: 'project' }),
+    })
+    if (!data.ok) { flashMsg('打开文件夹失败：' + (data.error || 'unknown')); return }
+    flashMsg('已按单个作品打开；资料在「文件视图」里')
     void refreshTree()
   }
 
@@ -969,6 +997,7 @@ export function WritingModeApp() {
               KEY_HINT,
               onCollapse: () => setLibOpenManual(false),
               onNewChapter: createChapter,
+              onUseAsProject: useRootAsProject,
               onExportBook: (proj) => { setArchiveProj(null); setExportProj(proj) },
             }, 'docs'),
             jsx.jsx(
@@ -1068,7 +1097,20 @@ export function WritingModeApp() {
                         children: [
                           jsx.jsx('span', { children: documentState.error }, 'm'),
                           jsx.jsx('span', { className: 'dshWmSpacer' }, 's'),
-                          dirty && filePath
+                          // 出界文稿（切库后）：重试/另存都必败，藏起死路按钮，
+                          // 给一个「先收起文稿」逃生口——文字移交暂存通道，不丢。
+                          documentState.errorCode === 'path-outside-roots'
+                            ? jsx.jsx('button', {
+                                type: 'button',
+                                className: 'dshWmBtn is-ghost',
+                                title: T.parkHint,
+                                onClick: () => {
+                                  if (editor.park()) { try { localStorage.removeItem(LS_FILE) } catch {} }
+                                },
+                                children: T.parkDoc,
+                              }, 'park')
+                            : null,
+                          documentState.errorCode !== 'path-outside-roots' && dirty && filePath
                             ? jsx.jsx('button', {
                                 type: 'button',
                                 className: 'dshWmBtn',
@@ -1076,7 +1118,7 @@ export function WritingModeApp() {
                                 children: '重试保存',
                               }, 'retry')
                             : null,
-                          filePath
+                          documentState.errorCode !== 'path-outside-roots' && filePath
                             ? jsx.jsx('button', {
                                 type: 'button',
                                 className: 'dshWmBtn is-ghost',
@@ -1176,6 +1218,7 @@ export function WritingModeApp() {
                           selectionChars: taRef.current ? Math.max(0, taRef.current.selectionEnd - taRef.current.selectionStart) : 0,
                           dirty: Boolean(documentState.dirty),
                           focus,
+                          chapterLines,
                           todayChars: stats && Number.isFinite(stats.today) ? stats.today : undefined,
                           dailyGoal,
                           gate: gate && gate.kind && gate.kind !== 'none' ? { kind: gate.kind, pass: Boolean(gate.pass), fail: Number(gate.fail) || 0 } : null,

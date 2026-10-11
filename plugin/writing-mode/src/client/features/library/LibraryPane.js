@@ -54,6 +54,7 @@ export const LibraryPane = react.memo(function LibraryPane({
   onCollapse,
   onExportBook,
   onNewChapter,
+  onUseAsProject,
 }) {
   // F1 「＋」入口菜单：四个「加东西」入口收在一处；内容常挂载（门禁按文本点击不看可见性），
   // 关闭时由 .dshWmMenu 规则 display:none；Esc 或点菜单外关闭。
@@ -336,9 +337,25 @@ export const LibraryPane = react.memo(function LibraryPane({
                     'wel'
                   )
                 : projects.length === 0
-                  ? jsx.jsx('div', {
+                  ? jsx.jsxs('div', {
                       className: 'dshWmEmpty',
-                      children: (activeTree && activeTree.missing ? T.missing + '\n' : '') + T.noProjects,
+                      children: [
+                        jsx.jsx('div', {
+                          children: (activeTree && activeTree.missing ? T.missing + '\n' : '') + T.noProjects,
+                        }, 'np'),
+                        // 自救入口（2026-10-10）：把当前库根就地改成「单个作品」（见 copy.js useAsProject）。
+                        // 根路径失效时不给——那时该做的是重新指定目录，不是换 kind。
+                        activeTree && activeTree.path && !activeTree.missing && onUseAsProject
+                          ? jsx.jsx('button', {
+                              type: 'button',
+                              className: 'dshWmBtn',
+                              'data-wm-use-as-project': '1',
+                              title: T.useAsProjectHint,
+                              onClick: () => { void onUseAsProject(activeTree.path) },
+                              children: T.useAsProject,
+                            }, 'up')
+                          : null,
+                      ],
                     })
                   : projects.map((proj) => {
                       // 散稿桶不进作品导航（它是库根散稿的收容，归文件视图管）；

@@ -157,7 +157,8 @@ export const TopBar = react.memo(function TopBar({
           jsx.jsx('button', {
             type: 'button',
             className: 'dshWmBtn is-primary',
-            disabled: !filePath,
+            // 出界文稿（切库后）重试必败——禁掉，稿面下方的错误条里有出路说明与「先收起文稿」
+            disabled: !filePath || documentState.errorCode === 'path-outside-roots',
             title: saveState === 'error' ? documentState.error : undefined,
             onClick: () => void persist(),
             children: saveState === 'saving'

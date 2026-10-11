@@ -43,6 +43,12 @@ const zh = {
   empty: '还没有库根。点 + 选择写作文件夹（例如 E:\\剧本）。',
   emptyCta: '一键加入 E:\\剧本',
   noProjects: '该库下没有含 project.md 的项目。可打开任意 .md / .fountain。',
+  // 空状态自救（2026-10-10）：作者手上常是「已有目录 + 自己的文件夹分层」（00_设定/01_概念设计/…），
+  // 既没有 project.md、也不在库模式认的 bible/draft 那几个固定目录里 → 库里 0 个项目。
+  // 这条钮把当前库根就地改成「单个作品」（host 端 mode:add+kind:project 对已存在的根是原地改 kind，
+  // 不搬文件、不写标记）。此前唯一入口藏在 ＋ → 打开已有 里，还要手打绝对路径。
+  useAsProject: '把这个目录当作一部作品打开',
+  useAsProjectHint: '不搬动、不改名任何文件；之后这个库根按「单个作品」扫描，资料在「文件视图」里看。',
   focus: '专注',
   archive: '档案',
   archiveHint: '作品档案：设定、进度与资料的 wiki 站（随当前文稿所属作品）',
@@ -50,6 +56,8 @@ const zh = {
   noChapters: '还没有章节',
   firstChapter: '写第一章',
   newChapter: '新章节',
+  parkDoc: '先收起文稿',
+  parkHint: '收起到空页；文字已暂存，文件回到库内时会自动恢复',
   chars: '字',
   openAi: 'AI',
   closeAi: '收 AI',
@@ -158,6 +166,8 @@ const en = {
   empty: 'No library root. Click + to pick a folder (e.g. E:\\剧本).',
   emptyCta: 'Add E:\\剧本',
   noProjects: 'No project.md under this root. You can still open any .md / .fountain.',
+  useAsProject: 'Open this folder as one work',
+  useAsProjectHint: 'No file is moved or renamed. This root is then scanned as a single work; its documents appear in Files view.',
   focus: 'Focus',
   archive: 'Wiki',
   archiveHint: 'Project wiki: settings, progress and materials (follows the project of the open document)',
@@ -165,6 +175,8 @@ const en = {
   noChapters: 'No chapters yet',
   firstChapter: 'Start chapter one',
   newChapter: 'New chapter',
+  parkDoc: 'Close for now',
+  parkHint: 'Back to the blank page; your text is stashed and auto-restores once the file is inside the library again',
   chars: 'chars',
   openAi: 'AI',
   closeAi: 'Hide AI',

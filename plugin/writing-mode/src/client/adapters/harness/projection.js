@@ -49,7 +49,23 @@ export function projectChat(chat) {
     }
     if (node.kind === 'turn-tail') continue // footer of the same assistant step
     if (node.kind === 'tool-call') {
-      messages.push({ key, kind: 'detail', text: '工具活动', detail: data })
+      // 工具调用保留**结构化**字段（2026-10-10）：写作助手要认出 ask_user_question 并把选项画出来，
+      // 不能只给一坨 JSON。detail 仍原样保留给「工具活动」折叠块（未识别内容照旧可见）。
+      const root = data.root && typeof data.root === 'object' ? data.root : data
+      const result = root.kind === 'tool-result' ? root : null
+      messages.push({
+        key,
+        kind: 'detail',
+        text: '工具活动',
+        detail: data,
+        tool: {
+          name: String((result ? result.call?.name : root.name) || ''),
+          callId: String(root.callId || ''),
+          argsRaw: String((result ? result.call?.argsRaw : root.argsRaw) || ''),
+          phase: result ? 'result' : String(root.phase || ''),
+          isError: result ? result.isError === true : false,
+        },
+      })
       continue
     }
     if (node.kind === 'turn-error') {

@@ -178,6 +178,27 @@ export const CSS = [
   '.dshWmMarkdownTable{max-width:100%;overflow:auto;margin:.8em 0;}.dshWmMarkdown table{border-collapse:collapse;font-size:.92em;min-width:100%;}.dshWmMarkdown th,.dshWmMarkdown td{padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);text-align:left;vertical-align:top;}.dshWmMarkdown hr{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:1.2em 0;}',
   '.dshWmActivity{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);margin:8px 0;overflow-wrap:anywhere;}.dshWmActivity pre,.dshWmReference pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-family:inherit;font-size:var(--wm-text-sm);line-height:1.6;}.dshWmActivity summary,.dshWmReference summary{cursor:pointer;}',
   '.dshWmRequest{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);font-size:var(--wm-text-sm);display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:12px 0;}.dshWmThinking{font-size:var(--wm-text-sm);color:var(--dsw-alias-label-secondary);padding:10px 0;}',
+  /* 提问卡（2026-10-10）：模型提问在写作台里的可作答面——此前只有一行折叠的「工具活动」+ 原始 JSON。 */
+  '.dshWmAsk{margin:14px 0;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-m);background:var(--dsw-alias-bg-layer-2);display:flex;flex-direction:column;gap:10px;}',
+  '.dshWmAsk.is-done{opacity:.75;}',
+  '.dshWmAskHead{font-size:var(--wm-text-xs);color:var(--wm-text-dim);letter-spacing:.04em;}',
+  '.dshWmAskQ{display:flex;flex-direction:column;gap:6px;}',
+  '.dshWmAskHeader{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
+  '.dshWmAskText{font-size:var(--wm-text-sm);line-height:1.7;color:var(--dsw-alias-label-primary);}',
+  '.dshWmAskDetail{font-size:var(--wm-text-xs);line-height:1.6;color:var(--dsw-alias-label-secondary);}',
+  '.dshWmAskOpts{display:flex;flex-direction:column;gap:6px;}',
+  '.dshWmAskOpt{display:flex;flex-direction:column;gap:2px;text-align:left;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);cursor:pointer;}',
+  '.dshWmAskOpt:hover:not(:disabled){border-color:var(--dsw-alias-brand-primary);}',
+  '.dshWmAskOpt.is-on{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);}',
+  '.dshWmAskOpt:disabled{cursor:default;}',
+  '.dshWmAskOptDesc{font-size:var(--wm-text-xs);color:var(--dsw-alias-label-secondary);}',
+  '.dshWmAskCustom{padding:7px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--wm-radius-s);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);}',
+  '.dshWmAskFoot{display:flex;align-items:center;gap:10px;}',
+  '.dshWmAskNote{font-size:var(--wm-text-xs);line-height:1.6;color:var(--wm-err);}',
+  /* 「【选择】」块（2026-10-11）：伙伴按人设把选项放在回复末尾，面板把它渲染成按钮——点一下就是一次发言。 */
+  '.dshWmChoices{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:12px;}',
+  '.dshWmChoice{text-align:left;padding:7px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--wm-text-sm);cursor:pointer;}',
+  '.dshWmChoice:hover{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);}',
   '.dshWmCompanionError{padding:10px;font-size:var(--wm-text-sm);line-height:1.6;color:var(--wm-err);overflow-wrap:anywhere;max-height:120px;overflow:auto;}',
   /* 内核能力缺口：常驻状态条，不是主角——密度压低、红色收进左侧竖条与标题，
      正文保持 muted（空态欢迎语才是右栏开场白）。受限=一行 Quiet 灰字。 */
@@ -511,6 +532,7 @@ export const CSS = [
   '.dshWmWelcomeTitle{font-size:var(--wm-text-xl);font-weight:650;color:var(--dsw-alias-label-primary);}',
   '.dshWmWelcomeBody{font-size:var(--wm-text-sm);line-height:1.7;max-width:420px;}',
   '.dshWmEmpty{padding:16px;color:var(--wm-text-dim);font-size:var(--wm-text-sm);line-height:1.6;}',
+  '.dshWmEmpty .dshWmBtn{margin-top:10px;}',
   /* 空页（无文件时的第一屏）：纯写作默认态的主角——一句标题 + 两个文字级动作。
      类名避开 LibraryPane 已占用的 .dshWmEmpty/.dshWmWelcome。 */
   '.dshWmEmptyPage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--wm-space-4);padding:40px;text-align:center;}',

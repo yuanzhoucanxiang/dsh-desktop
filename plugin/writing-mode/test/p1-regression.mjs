@@ -121,6 +121,55 @@ const roots = [{ path: root, real: fs.realpathSync(root), label: 'root', default
   ok('route 与 path 分离', parsed.searchParams.get('route') === 'get' && parsed.searchParams.get('path') === '/x/y.md', url)
 }
 
+/* 6. 出界文稿（切库后）：errorCode 标记 + 人话文案 + park() 移交暂存不丢字 */
+{
+  const file = path.join(project, 'draft', 'novel', 'parked.md')
+  writeDoc(resolveUnderRoots(file, roots), 'on disk', null)
+  const backups = []
+  let outside = false
+  const io = {
+    read: async (p) => ({ ok: true, doc: readDoc(resolveUnderRoots(p, roots)) }),
+    save: async (body) => {
+      if (outside) return { ok: false, error: 'path-outside-roots' }
+      const doc = writeDoc(resolveUnderRoots(body.path, roots), body.content, body.revision)
+      return { ok: true, doc: { path: doc.path, content: doc.content, revision: doc.revision, mtime: doc.mtime } }
+    },
+    version: async () => ({ ok: false, error: 'path-outside-roots' }),
+    backup: (d) => backups.push(d),
+  }
+  const session = createEditorSession(io, null)
+  await session.open(file)
+  session.change('unsaved words')
+  outside = true
+  ok('出界保存失败', (await session.flush()) === false && session.get().status === 'error')
+  const st1 = session.get()
+  ok('errorCode 标记 path-outside-roots', st1.errorCode === 'path-outside-roots', st1.errorCode)
+  ok('文案说人话不甩错误码', st1.error.includes('作品库') && !st1.error.includes('path-outside-roots'), st1.error)
+  ok('park 清回空页', session.park() === true && session.get().path === null && session.get().dirty === false && session.get().error === '')
+  const parked = backups.at(-1)
+  ok('未保存文字移交暂存通道', parked?.path === file && parked?.content === 'unsaved words', JSON.stringify(parked))
+  // 文件回到库内后重开：暂存文字自动恢复（open 的 recovered 通道原样复用）
+  outside = false
+  const session2 = createEditorSession(io, parked)
+  await session2.open(file)
+  const st2 = session2.get()
+  ok('重开自动恢复未保存文字', st2.content === 'unsaved words' && st2.dirty === true && st2.error.includes('已恢复'), st2.error)
+}
+
+/* 7. 文件被移走/删除：ENOENT 人性化，不甩系统原始文本 */
+{
+  const io = {
+    read: async () => ({ ok: false, error: "ENOENT: no such file or directory, open 'x.md'" }),
+    save: async () => ({ ok: false, error: 'unused' }),
+    backup: () => {},
+  }
+  const session = createEditorSession(io, null)
+  await session.open(path.join(project, 'gone.md'))
+  const st = session.get()
+  ok('ENOENT 标记 file-gone', st.errorCode === 'file-gone', st.errorCode)
+  ok('ENOENT 文案人性化', st.error.includes('移动或删除') && !st.error.includes('ENOENT'), st.error)
+}
+
 fs.rmSync(root, { recursive: true, force: true })
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

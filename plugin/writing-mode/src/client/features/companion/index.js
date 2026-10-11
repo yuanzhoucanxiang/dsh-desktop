@@ -16,6 +16,9 @@ import { newOperationToken } from '../../adapters/harness/adapter.js'
 import { buildPreparedTurn } from '../../../shared/context-builder.js'
 import { worldSettingMentioned } from '../../../shared/world-setting.js'
 import { CompanionMessage } from './CompanionMessage.js'
+import { QuestionCard } from './QuestionCard.js'
+import { askCallOf } from './questions.js'
+import { choiceMessage } from './choices.js'
 import { SessionListSection } from './SessionListSection.js'
 import { companionCapability } from './capability-notice.js'
 import { T } from '../../copy.js'
@@ -44,6 +47,8 @@ export function buildLiveStateBlock(liveState) {
     dailyGoal: live.dailyGoal,
     gate: live.gate,
     health,
+    // 章节上下文（host route=chapter-context 预取的注入行）：第几章/前后章/钩子/伏笔/在场人物
+    chapterLines: live.chapterLines,
     paragraph: live.paragraph,
   })
 }
@@ -70,7 +75,7 @@ export function companionRows(snapshot) {
 }
 
 
-export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect, onJumpToFile }) {
+export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelectedIds, onToggleWorldSelect, onJumpToFile, onAnswerQuestion, onChoose }) {
   const rows = companionRows(snapshot)
   const scroll = react.useRef(null)
   const follow = react.useRef(true)
@@ -83,11 +88,16 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
       jsx.jsx('span', { className: 'dshWmCompanionMark', children: '✦' }),
       jsx.jsx('h3', { children: '故事，慢慢聊。' }),
       jsx.jsx('p', { children: '一个人物、一段卡住的情节，\n或一个还没成形的念头。' }),
-    ] }) : rows.map(row => row.kind === 'detail' ? jsx.jsxs('details', { className: 'dshWmActivity', children: [
+    ] }) : rows.map(row => {
+      // 提问不是聊天节点，它藏在工具调用里（2026-10-10）：认出 ask_user_question 就画成可作答的卡片，
+      // 其余工具活动仍走折叠的原始 JSON——未识别内容照旧可见。
+      const ask = row.kind === 'detail' ? askCallOf(row) : null
+      if (ask) return jsx.jsx(QuestionCard, { ask, onAnswer: onAnswerQuestion, onFull }, row.key)
+      return row.kind === 'detail' ? jsx.jsxs('details', { className: 'dshWmActivity', children: [
       jsx.jsx('summary', { children: row.text }), jsx.jsx('pre', { children: JSON.stringify(row.detail, null, 2) }),
     ] }, row.key) : jsx.jsxs('article', { className: 'dshWmMessage is-' + row.kind + (worldSelectedIds?.includes(row.key) ? ' is-world-selected' : ''), children: [
       jsx.jsx('span', { className: 'dshWmMessageWho', children: row.kind === 'user' ? '你' : '写作伙伴' }),
-      jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind, onJumpToFile }),
+      jsx.jsx(CompanionMessage, { text: row.text, kind: row.kind, onJumpToFile, onChoose }),
       row.reference ? jsx.jsxs('details', { className: 'dshWmActivity', children: [jsx.jsx('summary', { children: '引用的稿件' }), jsx.jsx('pre', { children: row.reference })] }) : null,
       row.kind === 'assistant' && onCandidate
         ? jsx.jsx('button', {
@@ -104,7 +114,8 @@ export function CompanionTranscript({ snapshot, onFull, onCandidate, worldSelect
             children: worldSelectedIds?.includes(row.key) ? '✓ 整理范围' : '选入整理',
           })
         : null,
-    ] }, row.key)),
+    ] }, row.key)
+    }),
     (snapshot.queue || []).map(row => jsx.jsx('div', { className: 'dshWmActivity', children: '等待回复后发送 · ' + (row.text || row.preview || '消息') }, row.id)),
     (snapshot.pending || []).map(wait => jsx.jsxs('div', { className: 'dshWmRequest', children: [
       jsx.jsx('strong', { children: wait.kind === 'approval' ? '有一项操作需要你授权' : '写作伙伴有个问题想确认' }),
@@ -356,6 +367,27 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     updateDraft('')
     tools.onRun(action, hint)
   }
+  /**
+   * 回答一次提问（adapter → remote.userQuestions.answer，与官方 ui-user-questions 同一个 Remote）。
+   * 只对**已转为 continued** 的提问有效：前台还开着的那次由内核的等待请求结算，客户端替不了它。
+   * 所以这里把失败当正常结果返回 { ok:false, code }，由卡片翻成一句人话 + 一条出路。
+   */
+  const answerQuestion = react.useCallback(async (callId, answer) => {
+    if (!handle || typeof handle.answerQuestion !== 'function') return { ok: false, code: 'no-session' }
+    return handle.answerQuestion(callId, answer)
+  }, [handle])
+  // send 每轮渲染都是新函数，而 CompanionMessage 是 memo（回调必须稳定，否则整条转录重渲染）——
+  // 用 ref 间接引用，让 chooseOption 的身份恒定。
+  const sendRef = react.useRef(null)
+  sendRef.current = send
+  /**
+   * 「【选择】」块点选：把标签作为**一句普通发言**发出去。模型本来就没被阻塞，所以点一下就继续；
+   * 走的是与手动发送同一条路径，受理判定、草稿保全、错误提示全都一致。
+   */
+  const chooseOption = react.useCallback((label) => {
+    const text = choiceMessage(label)
+    if (text && sendRef.current) void sendRef.current({ text })
+  }, [])
   async function fullConversation() {
     if (sending.current) return
     sending.current = true; setBusy(true)
@@ -378,10 +410,13 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
     finally { sending.current = false; if (alive.current) setBusy(false) }
   }
   async function send(options = {}) {
-    if (sending.current || !draft.trim()) return
-    if (needsFullComposer) { void fullConversation(); return }
+    // options.text：面板代替作者发一句确定的话（「【选择】」块点选）。此时**不动**输入框里的草稿，
+    // 也不带稿件引用——点选项是回答，不是新一轮带稿讨论。
+    const outgoing = typeof options.text === 'string' ? options.text : draft
+    if (sending.current || !outgoing.trim()) return
+    if (needsFullComposer && options.text === undefined) { void fullConversation(); return }
     sending.current = true; setBusy(true); setError('')
-    const sentDraft = draft, sentReference = reference
+    const sentDraft = outgoing, sentReference = options.text === undefined ? reference : null
     operationIdRef.current = newOperationToken()
     try {
       const target = handle || (await ensureHandle())
@@ -589,6 +624,8 @@ export function CompanionChat({ initialBinding, path, contextText, sourceInfo, o
       onFull: () => void fullConversation(),
       onCandidate: startCandidate,
       onJumpToFile,
+      onAnswerQuestion: answerQuestion,
+      onChoose: chooseOption,
       worldSelectedIds: worldSelection.map((m) => m.id),
       onToggleWorldSelect: snapshot.running ? null : (msg) => {
         setWorldSelection((list) => {

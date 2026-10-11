@@ -46,6 +46,7 @@ export function createHarnessAdapter(deps = {}) {
     uiWorkspace = () => null,
     uiConversation = () => null,
     conversation = () => null,
+    userQuestions = () => null,
     api = null,
     coordination = api ? httpCoordination(api) : null,
     now = () => Date.now(),
@@ -959,6 +960,29 @@ export function createHarnessAdapter(deps = {}) {
       return getSnapshot()
     }
 
+    /**
+     * 回答一次提问（走官方同一个 Remote：remote.userQuestions.answer）。
+     *
+     * 能作答的只有**已转为 continued** 的提问（前台等待已结束/超时）：内核 user-questions 契约写明，
+     * 提问还开在前台时只有那次等待中的请求能结算它，客户端无法从这条 Remote 替它作答。所以失败是
+     * **正常结果**而非异常：返回 { ok:false, code }，由 UI 给作者一条明确的出路（去完整会话）。
+     */
+    async function answerQuestion(callId, answer) {
+      const id = String(callId || '')
+      if (!id) return { ok: false, code: 'no-call-id' }
+      if (!state.sessionId) return { ok: false, code: 'no-session' }
+      const remote = typeof userQuestions === 'function' ? userQuestions() : null
+      if (!remote || !has(remote, 'answer')) return { ok: false, code: 'answer-unavailable' }
+      try {
+        // 局部名刻意避开 `accepted`：verify:writing-imports 的 R7 会把它当成 adapter 导出的符号，
+        // 而 world-organizer.js 里有同名的自有局部变量（该门禁的声明提取漏了同行多声明）→ 误报。
+        const settled = await remote.answer(state.sessionId, id, answer)
+        return settled ? { ok: true } : { ok: false, code: 'not-answerable' }
+      } catch (err) {
+        return { ok: false, code: String(err?.code || 'answer-failed'), error: String(err?.message || err) }
+      }
+    }
+
     const handle = {
       projectKey: key,
       projectPath: path,
@@ -970,6 +994,7 @@ export function createHarnessAdapter(deps = {}) {
       setDraft,
       send,
       cancel,
+      answerQuestion,
       openFullSession,
       dispose,
       recover,
