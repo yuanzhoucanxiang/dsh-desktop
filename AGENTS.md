@@ -29,3 +29,16 @@
 - **内核零修改**：外壳只负责拉起 `dsh web`、读 git（审阅）、承载页面；不改 DeepSeek Harness 内核代码。
 - 文档分工：`README.md`（用户向使用说明）、`WORKLOG.md`（日志索引 + 协作规范）、`AGENTS.md`（本文件，协作约定）。
 - 关键坑速查见 `WORKLOG.md` 的「踩坑速查」与 `logs/` 里的历史条目。
+
+## 写作模式插件的仓库边界（2026-10-11 起）
+
+写作模式已拆到独立仓库 `yuanzhoucanxiang/dsh-writing-mode`，本仓库以 **git submodule** 挂在 `plugin/writing-mode`。
+
+- **不要在 `plugin/writing-mode/` 里改代码**：那是 submodule 的检出，提交只会留在本机；插件改动一律去新仓库提交，再在这里更新指针：
+  ```powershell
+  cd plugin/writing-mode ; git fetch ; git checkout <新提交>
+  cd ../.. ; git add plugin/writing-mode ; git commit -m "chore: 更新写作模式插件到 <提交>"
+  ```
+- **`client.js` 不随插件仓库走**（构建产物）：新克隆先 `npm run build:writing`（`prestart`/`predev`/`build.ps1` 也会自动跑），否则 `plugin/writing-mode/client.js` 不存在，加载它的 Electron 门禁会失败。
+- **克隆/CI 必须取子模块**：`git submodule update --init --recursive`；`.github/workflows/build-macos.yml` 的 checkout 已带 `submodules: recursive`。
+- **门禁归属**：node 层（构建一致性、架构、`test/**`）在插件仓库；**需要外壳运行时的 Electron 端到端门禁留在本仓库**（`scripts/verify-writing-*.cjs`），路径不变、照旧跑。

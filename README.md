@@ -296,3 +296,18 @@ dsh-desktop/
 ### 打开已有写作项目（开发中）
 
 在写作模式顶部点“打开已有”，选择已有作品文件夹。无需移动或重命名其中的设定、故事和笔记，也无需 project.md；插件会按完整目录分组展示 Markdown。接入本身不会修改正文或自动确认设定。正式发布前请用隔离副本试用。
+
+## 写作模式插件（独立仓库）
+
+写作模式在 **2026-10-11** 拆成了独立仓库 [dsh-writing-mode](https://github.com/yuanzhoucanxiang/dsh-writing-mode)，本仓库以 git submodule 挂在 `plugin/writing-mode`：
+
+```bash
+git clone --recurse-submodules <本仓库>
+# 已经克隆过：
+git submodule update --init --recursive
+npm run build:writing     # 生成 plugin/writing-mode/client.js（构建产物，不随仓库走）
+```
+
+- 插件改动请在插件仓库提交（本仓库只更新 submodule 指针）
+- 插件有独立版本（`v0.2.x`）与独立 CI；本外壳的版本只描述外壳与内置插件快照
+- Electron 端到端门禁（UI / 原生 / 档案 / 成书 / 阅读 / 导航 / 打包）留在本仓库——它们需要外壳运行时与夹具
