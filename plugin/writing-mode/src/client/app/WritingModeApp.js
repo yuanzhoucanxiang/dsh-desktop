@@ -11,6 +11,7 @@ import * as jsx from 'react/jsx-runtime'
 import { T } from '../copy.js'
 import { TopBar } from './TopBar.js'
 import { StatusBar } from './StatusBar.js'
+import { textHealth } from '../../../lib/writing-state.js'
 import { EmptyState } from './EmptyState.js'
 import { api } from '../services/writing-api.js'
 import { harnessSessions } from '../adapters/harness/runtime.js'
@@ -111,6 +112,16 @@ export function WritingModeApp() {
   // 章末钩子/未兑现伏笔/在场人物），随消息注入给写作伙伴——伙伴不用问也知道现场。
   // 只读、失败静默（取不到就不注入，不编造）。
   const [chapterLines, setChapterLines] = react.useState([])
+  // 实时体检（2026-10-11）：本地纯函数、零网络，400ms 防抖——长稿也不会在每次敲键时算一遍。
+  // 状态条显示「体检 N 处」/「体检 ✓」，鼠标停上去看具体哪几处；同一份结果随消息发给伙伴。
+  const [health, setHealth] = react.useState(null)
+  react.useEffect(() => {
+    if (!filePath) { setHealth(null); return undefined }
+    const timer = setTimeout(() => {
+      try { setHealth(textHealth(content)) } catch { setHealth(null) }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [content, filePath])
   react.useEffect(() => {
     let alive = true
     if (!filePath) { setChapterLines([]); return () => { alive = false } }
@@ -1139,6 +1150,7 @@ export function WritingModeApp() {
                     stats,
                     dailyGoal,
                     gate,
+                    health,
                   }, 'st'),
                   exportProj
                     ? jsx.jsx(ExportBookPanel, {

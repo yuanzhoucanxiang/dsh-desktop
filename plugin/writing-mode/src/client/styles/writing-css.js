@@ -719,6 +719,9 @@ export const CSS = [
   '.dshWmGateState.is-fail{color:var(--wm-err);}',
   /* 状态条元信息（字数/格式/今日净增）：降权，不与检查摘要抢读 */
   '.dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
+  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼 */
+  '.dshWmHealthChip{font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:default;}',
+  '.dshWmHealthChip.is-warn{color:var(--wm-warn);}',
 
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
   '.dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}',

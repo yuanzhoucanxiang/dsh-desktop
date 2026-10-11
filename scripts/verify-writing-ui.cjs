@@ -151,6 +151,12 @@ app.whenReady().then(async () => {
   await button('保存目标')
   await waitFor(`document.querySelector('[data-wm-stats-today]').textContent.includes('2000字')`)
   console.log('PASS UI 码字统计：今日净增上状态条，日更目标可设并回显')
+  // 实时体检芯片（2026-10-11）：本地算、400ms 防抖；有稿就该出现，且计数与 title 里的说明对得上
+  await waitFor(`document.querySelector('[data-wm-health]')!==null`)
+  const healthCount = Number(await evaluate(`document.querySelector('[data-wm-health]').getAttribute('data-wm-health')`))
+  assert.ok(Number.isInteger(healthCount) && healthCount >= 0, '体检计数应为非负整数：' + healthCount)
+  assert.ok(String(await evaluate(`document.querySelector('[data-wm-health]').title`)).includes('体检'), '体检芯片应有说明 title')
+  console.log(`PASS UI 实时体检芯片：data-wm-health=${healthCount}`)
   // 目标流程把右栏切到了「检查」；切回伙伴页，保住后续能力条/专注断言的前置状态
   await button('写作伙伴')
   await waitFor(`document.querySelector('[data-wm-capability="blocked"]')!==null`)

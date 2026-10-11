@@ -2322,6 +2322,8 @@ var zh = {
   archive: "档案",
   archiveHint: "作品档案：设定、进度与资料的 wiki 站（随当前文稿所属作品）",
   archiveNeedDoc: "先打开一篇稿件：作品档案跟着「当前文稿所属的作品」走；一个作品都没有时，先在库面板里新建或添加作品。",
+  health: "体检",
+  healthCompanion: "同一份体检也会随消息发给写作伙伴",
   noChapters: "还没有章节",
   firstChapter: "写第一章",
   newChapter: "新章节",
@@ -2441,6 +2443,8 @@ var en = {
   archive: "Wiki",
   archiveHint: "Project wiki: settings, progress and materials (follows the project of the open document)",
   archiveNeedDoc: "Open a document first — the wiki follows the project of the open document. If you have no project yet, create or add one in the library pane.",
+  health: "Checkup",
+  healthCompanion: "the same checkup is sent to your writing partner with each message",
   noChapters: "No chapters yet",
   firstChapter: "Start chapter one",
   newChapter: "New chapter",
@@ -3219,6 +3223,9 @@ var CSS = [
   ".dshWmGateState.is-fail{color:var(--wm-err);}",
   /* 状态条元信息（字数/格式/今日净增）：降权，不与检查摘要抢读 */
   ".dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}",
+  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼 */
+  ".dshWmHealthChip{font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:default;}",
+  ".dshWmHealthChip.is-warn{color:var(--wm-warn);}",
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
   ".dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}",
   ".dshWmProjFormActions{display:flex;gap:6px;}",
@@ -3615,6 +3622,16 @@ var TopBar = react.memo(function TopBar2({
 // plugin/writing-mode/src/client/app/StatusBar.js
 var react2 = __toESM(require("react"), 1);
 var jsx3 = __toESM(require("react/jsx-runtime"), 1);
+function healthTitle(health) {
+  if (!health) return "";
+  if (!health.issues.length) return T.health + "：" + (health.brief || "") + "（" + T.healthCompanion + "）";
+  const top = health.issues.slice(0, 3).map((it) => `· ${it.hint}（「${it.excerpt}…」）`);
+  const more = health.issues.length > 3 ? `
+…另有 ${health.issues.length - 3} 处` : "";
+  return `${T.health}：${health.brief}
+${top.join("\n")}${more}
+${T.healthCompanion}`;
+}
 var StatusBar = react2.memo(function StatusBar2({
   saveState,
   dirty,
@@ -3623,7 +3640,8 @@ var StatusBar = react2.memo(function StatusBar2({
   filePath,
   stats,
   dailyGoal,
-  gate
+  gate,
+  health
 }) {
   return jsx3.jsx(
     "div",
@@ -3666,12 +3684,181 @@ var StatusBar = react2.memo(function StatusBar2({
         gate ? jsx3.jsx("span", {
           className: "dshWmGateState " + (gate.pass ? "is-pass" : "is-fail"),
           children: gate.pass ? T.gateShort + " ✓" : T.gateShort + " " + gate.fail
-        }) : null
+        }) : null,
+        /* 实时体检（2026-10-11）：本地毫秒级算出来的提示数，鼠标停上去看具体是哪几处；
+           同一份结果也会随消息发给写作伙伴（所以它不用你复述问题）。 */
+        health ? jsx3.jsx("span", { className: "dshWmStatusSep", children: "·" }, "hs") : null,
+        health ? jsx3.jsx("span", {
+          className: "dshWmHealthChip" + (health.issues.length ? " is-warn" : ""),
+          "data-wm-health": String(health.issues.length),
+          title: healthTitle(health),
+          children: health.issues.length ? T.health + " " + health.issues.length : T.health + " ✓"
+        }, "hv") : null
       ]
     },
     "st"
   );
 });
+
+// plugin/writing-mode/lib/writing-state.js
+var SENTENCE_END = /[。！？!?；;…]+[”」』）)]*/g;
+var ADVERBS = ["很", "非常", "十分", "特别", "真正", "确实", "极其", "格外", "异常", "相当", "几乎", "简直"];
+var WEAK_OPENERS = ["他", "她", "它", "我", "你", "他们", "我们", "这", "那"];
+var SEVERITY_WEIGHT = { high: 6, warn: 3, info: 1 };
+function splitSentences(text7) {
+  const src = String(text7 || "");
+  const out = [];
+  let start2 = 0;
+  SENTENCE_END.lastIndex = 0;
+  let m;
+  while ((m = SENTENCE_END.exec(src)) !== null) {
+    const end = m.index + m[0].length;
+    const chunk = src.slice(start2, end);
+    if (chunk.trim()) out.push({ at: start2, text: chunk.trim() });
+    start2 = end;
+  }
+  const tail = src.slice(start2);
+  if (tail.trim()) out.push({ at: start2, text: tail.trim() });
+  return out;
+}
+var countChar = (text7, ch) => String(text7).split(ch).length - 1;
+var excerpt = (text7, at, len = 34) => String(text7).slice(Math.max(0, at), Math.max(0, at) + len).replace(/\s+/g, " ");
+function textHealth(text7, opts = {}) {
+  const src = String(text7 || "");
+  const maxSentence = Number(opts.maxSentence) > 0 ? Number(opts.maxSentence) : 60;
+  const maxParagraph = Number(opts.maxParagraph) > 0 ? Number(opts.maxParagraph) : 300;
+  const issues = [];
+  const push3 = (kind, severity, at, hint, extra) => issues.push({ kind, severity, at, excerpt: excerpt(src, at), hint, ...extra || {} });
+  const sentences = splitSentences(src);
+  const paragraphs = src.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  let maxLen = 0;
+  for (const s of sentences) {
+    const len = s.text.replace(/\s+/g, "").length;
+    if (len > maxLen) maxLen = len;
+    if (len > maxSentence) {
+      push3(
+        len > 100 ? "sentence-too-long" : "sentence-long",
+        len > 100 ? "warn" : "info",
+        s.at,
+        `${len} 字一句；考虑在转折处断成两句`,
+        { length: len }
+      );
+    }
+  }
+  for (const p of paragraphs) {
+    const len = p.replace(/\s+/g, "").length;
+    if (len > maxParagraph) {
+      push3("paragraph-long", "info", src.indexOf(p), `${len} 字一段；长段落读者容易跳读`, { length: len });
+    }
+  }
+  const adverbHits = [];
+  for (const word of ADVERBS) {
+    let i = src.indexOf(word);
+    while (i >= 0 && adverbHits.length < 200) {
+      adverbHits.push({ word, at: i });
+      i = src.indexOf(word, i + word.length);
+    }
+  }
+  const chars = src.replace(/\s+/g, "").length;
+  const adverbPer1000 = chars ? adverbHits.length * 1e3 / chars : 0;
+  if (adverbHits.length >= 8 && adverbPer1000 > 4) {
+    push3(
+      "adverb-heavy",
+      "warn",
+      adverbHits[0].at,
+      `全文「${adverbHits[0].word}」这类程度副词 ${adverbHits.length} 处（每千字 ${adverbPer1000.toFixed(1)} 处）；删掉一半往往更有力`
+    );
+  }
+  for (const s of sentences) {
+    const n = countChar(s.text, "的");
+    if (n >= 5) push3("de-stack", "info", s.at, `这一句有 ${n} 个「的」；合并修饰语会更利落`, { count: n });
+  }
+  for (const s of sentences) {
+    const freq = /* @__PURE__ */ new Map();
+    for (const w of s.text.match(/[\u4e00-\u9fff]{2}/g) || []) {
+      if (/^(的|了|是|在|和|与|就|都|也|还|被|把|着|过|有|不|一|这|那|他|她|它|我|你)/.test(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+    const worst = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (worst && worst[1] >= 3) push3("word-repeat", "info", s.at, `「${worst[0]}」在一句里出现 ${worst[1]} 次`, { word: worst[0], count: worst[1] });
+  }
+  const openers = paragraphs.map((p) => p.slice(0, 2));
+  for (let i = 2; i < openers.length; i++) {
+    if (openers[i] && openers[i] === openers[i - 1] && openers[i] === openers[i - 2] && WEAK_OPENERS.includes(openers[i][0])) {
+      push3("same-opening", "info", src.indexOf(paragraphs[i]), `连续三段都以「${openers[i]}」开头`, { opener: openers[i] });
+      break;
+    }
+  }
+  const dialogueLines = src.split(/\r?\n/).filter((l) => /[「“"]/.test(l));
+  for (const line of dialogueLines) {
+    const open = countChar(line, "「") + countChar(line, "“");
+    const close = countChar(line, "」") + countChar(line, "”");
+    if (open !== close) {
+      push3("quote-unbalanced", "warn", src.indexOf(line), "这一行的引号开合不成对", { open, close });
+    }
+  }
+  const runMatch = src.match(/([，。！？、；：])\1{2,}/);
+  if (runMatch) push3("punctuation-run", "info", src.indexOf(runMatch[0]), `「${runMatch[0]}」标点连打`);
+  const gap = src.match(/\n{4,}/);
+  if (gap) push3("blank-run", "info", src.indexOf(gap[0]), "连续多个空行；排版交给样式即可");
+  const weight = issues.reduce((sum, it) => sum + (SEVERITY_WEIGHT[it.severity] || 1), 0);
+  const score = Math.max(0, 100 - weight);
+  const high = issues.filter((i) => i.severity === "warn").length;
+  const brief = issues.length === 0 ? "体检 ✓ 没有明显问题" : `体检 ${issues.length} 处提示${high ? `（${high} 处较明显）` : ""}`;
+  return {
+    metrics: {
+      chars,
+      sentences: sentences.length,
+      paragraphs: paragraphs.length,
+      avgSentence: sentences.length ? Math.round(chars / sentences.length * 10) / 10 : 0,
+      maxSentence: maxLen,
+      adverbs: adverbHits.length,
+      dialogueLines: dialogueLines.length
+    },
+    issues,
+    score,
+    brief
+  };
+}
+function textHealthBrief(health) {
+  return health && health.brief ? health.brief : "";
+}
+function writingStateBlock(s = {}) {
+  const lines = [];
+  const project = String(s.projectLabel || s.project || "").trim();
+  const file = String(s.fileLabel || s.filePath || "").trim();
+  if (project) lines.push(`- 作品：${project}`);
+  if (file) lines.push(`- 正在写：${file}`);
+  const cursor = Number(s.cursorChars);
+  if (Number.isFinite(cursor) && cursor >= 0) lines.push(`- 光标：第 ${cursor} 字处`);
+  if (s.selectionChars > 0) lines.push(`- 选区：${s.selectionChars} 字`);
+  if (typeof s.dirty === "boolean") lines.push(`- 未保存改动：${s.dirty ? "有" : "无"}`);
+  if (s.focus) lines.push("- 专注模式：开");
+  if (Number.isFinite(Number(s.todayChars))) {
+    lines.push(`- 今日净增：${s.todayChars >= 0 ? "+" : ""}${s.todayChars} 字${Number(s.dailyGoal) > 0 ? ` / 目标 ${s.dailyGoal}` : ""}`);
+  }
+  if (s.gate && s.gate.kind && s.gate.kind !== "none") {
+    lines.push(`- 成稿检查（${s.gate.kind}）：${s.gate.pass ? "全部通过" : `${s.gate.fail} 项未达标`}`);
+  }
+  if (s.health && Array.isArray(s.health.issues)) {
+    lines.push(`- 实时体检：${s.health.brief || textHealthBrief(s.health)}`);
+    const top = s.health.issues.slice(0, 3);
+    for (const it of top) lines.push(`  · ${it.hint}（「${it.excerpt}…」）`);
+  }
+  if (Array.isArray(s.chapterLines)) {
+    for (const line of s.chapterLines) if (line) lines.push(String(line));
+  }
+  if (s.paragraph) {
+    const p = String(s.paragraph).replace(/\s+/g, " ").slice(0, 240);
+    if (p) lines.push(`- 当前段落：${p}${String(s.paragraph).length > 240 ? "…" : ""}`);
+  }
+  if (!lines.length) return "";
+  return [
+    "【写作模式状态】（系统自动附带的事实，作者看不到这一段）",
+    ...lines,
+    "以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。"
+  ].join("\n");
+}
 
 // plugin/writing-mode/src/client/app/EmptyState.js
 var react3 = __toESM(require("react"), 1);
@@ -20812,166 +20999,6 @@ function companionCapability(caps) {
   };
 }
 
-// plugin/writing-mode/lib/writing-state.js
-var SENTENCE_END = /[。！？!?；;…]+[”」』）)]*/g;
-var ADVERBS = ["很", "非常", "十分", "特别", "真正", "确实", "极其", "格外", "异常", "相当", "几乎", "简直"];
-var WEAK_OPENERS = ["他", "她", "它", "我", "你", "他们", "我们", "这", "那"];
-var SEVERITY_WEIGHT = { high: 6, warn: 3, info: 1 };
-function splitSentences(text7) {
-  const src = String(text7 || "");
-  const out = [];
-  let start2 = 0;
-  SENTENCE_END.lastIndex = 0;
-  let m;
-  while ((m = SENTENCE_END.exec(src)) !== null) {
-    const end = m.index + m[0].length;
-    const chunk = src.slice(start2, end);
-    if (chunk.trim()) out.push({ at: start2, text: chunk.trim() });
-    start2 = end;
-  }
-  const tail = src.slice(start2);
-  if (tail.trim()) out.push({ at: start2, text: tail.trim() });
-  return out;
-}
-var countChar = (text7, ch) => String(text7).split(ch).length - 1;
-var excerpt = (text7, at, len = 34) => String(text7).slice(Math.max(0, at), Math.max(0, at) + len).replace(/\s+/g, " ");
-function textHealth(text7, opts = {}) {
-  const src = String(text7 || "");
-  const maxSentence = Number(opts.maxSentence) > 0 ? Number(opts.maxSentence) : 60;
-  const maxParagraph = Number(opts.maxParagraph) > 0 ? Number(opts.maxParagraph) : 300;
-  const issues = [];
-  const push3 = (kind, severity, at, hint, extra) => issues.push({ kind, severity, at, excerpt: excerpt(src, at), hint, ...extra || {} });
-  const sentences = splitSentences(src);
-  const paragraphs = src.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  let maxLen = 0;
-  for (const s of sentences) {
-    const len = s.text.replace(/\s+/g, "").length;
-    if (len > maxLen) maxLen = len;
-    if (len > maxSentence) {
-      push3(
-        len > 100 ? "sentence-too-long" : "sentence-long",
-        len > 100 ? "warn" : "info",
-        s.at,
-        `${len} 字一句；考虑在转折处断成两句`,
-        { length: len }
-      );
-    }
-  }
-  for (const p of paragraphs) {
-    const len = p.replace(/\s+/g, "").length;
-    if (len > maxParagraph) {
-      push3("paragraph-long", "info", src.indexOf(p), `${len} 字一段；长段落读者容易跳读`, { length: len });
-    }
-  }
-  const adverbHits = [];
-  for (const word of ADVERBS) {
-    let i = src.indexOf(word);
-    while (i >= 0 && adverbHits.length < 200) {
-      adverbHits.push({ word, at: i });
-      i = src.indexOf(word, i + word.length);
-    }
-  }
-  const chars = src.replace(/\s+/g, "").length;
-  const adverbPer1000 = chars ? adverbHits.length * 1e3 / chars : 0;
-  if (adverbHits.length >= 8 && adverbPer1000 > 4) {
-    push3(
-      "adverb-heavy",
-      "warn",
-      adverbHits[0].at,
-      `全文「${adverbHits[0].word}」这类程度副词 ${adverbHits.length} 处（每千字 ${adverbPer1000.toFixed(1)} 处）；删掉一半往往更有力`
-    );
-  }
-  for (const s of sentences) {
-    const n = countChar(s.text, "的");
-    if (n >= 5) push3("de-stack", "info", s.at, `这一句有 ${n} 个「的」；合并修饰语会更利落`, { count: n });
-  }
-  for (const s of sentences) {
-    const freq = /* @__PURE__ */ new Map();
-    for (const w of s.text.match(/[\u4e00-\u9fff]{2}/g) || []) {
-      if (/^(的|了|是|在|和|与|就|都|也|还|被|把|着|过|有|不|一|这|那|他|她|它|我|你)/.test(w)) continue;
-      freq.set(w, (freq.get(w) || 0) + 1);
-    }
-    const worst = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (worst && worst[1] >= 3) push3("word-repeat", "info", s.at, `「${worst[0]}」在一句里出现 ${worst[1]} 次`, { word: worst[0], count: worst[1] });
-  }
-  const openers = paragraphs.map((p) => p.slice(0, 2));
-  for (let i = 2; i < openers.length; i++) {
-    if (openers[i] && openers[i] === openers[i - 1] && openers[i] === openers[i - 2] && WEAK_OPENERS.includes(openers[i][0])) {
-      push3("same-opening", "info", src.indexOf(paragraphs[i]), `连续三段都以「${openers[i]}」开头`, { opener: openers[i] });
-      break;
-    }
-  }
-  const dialogueLines = src.split(/\r?\n/).filter((l) => /[「“"]/.test(l));
-  for (const line of dialogueLines) {
-    const open = countChar(line, "「") + countChar(line, "“");
-    const close = countChar(line, "」") + countChar(line, "”");
-    if (open !== close) {
-      push3("quote-unbalanced", "warn", src.indexOf(line), "这一行的引号开合不成对", { open, close });
-    }
-  }
-  const runMatch = src.match(/([，。！？、；：])\1{2,}/);
-  if (runMatch) push3("punctuation-run", "info", src.indexOf(runMatch[0]), `「${runMatch[0]}」标点连打`);
-  const gap = src.match(/\n{4,}/);
-  if (gap) push3("blank-run", "info", src.indexOf(gap[0]), "连续多个空行；排版交给样式即可");
-  const weight = issues.reduce((sum, it) => sum + (SEVERITY_WEIGHT[it.severity] || 1), 0);
-  const score = Math.max(0, 100 - weight);
-  const high = issues.filter((i) => i.severity === "warn").length;
-  const brief = issues.length === 0 ? "体检 ✓ 没有明显问题" : `体检 ${issues.length} 处提示${high ? `（${high} 处较明显）` : ""}`;
-  return {
-    metrics: {
-      chars,
-      sentences: sentences.length,
-      paragraphs: paragraphs.length,
-      avgSentence: sentences.length ? Math.round(chars / sentences.length * 10) / 10 : 0,
-      maxSentence: maxLen,
-      adverbs: adverbHits.length,
-      dialogueLines: dialogueLines.length
-    },
-    issues,
-    score,
-    brief
-  };
-}
-function textHealthBrief(health) {
-  return health && health.brief ? health.brief : "";
-}
-function writingStateBlock(s = {}) {
-  const lines = [];
-  const project = String(s.projectLabel || s.project || "").trim();
-  const file = String(s.fileLabel || s.filePath || "").trim();
-  if (project) lines.push(`- 作品：${project}`);
-  if (file) lines.push(`- 正在写：${file}`);
-  const cursor = Number(s.cursorChars);
-  if (Number.isFinite(cursor) && cursor >= 0) lines.push(`- 光标：第 ${cursor} 字处`);
-  if (s.selectionChars > 0) lines.push(`- 选区：${s.selectionChars} 字`);
-  if (typeof s.dirty === "boolean") lines.push(`- 未保存改动：${s.dirty ? "有" : "无"}`);
-  if (s.focus) lines.push("- 专注模式：开");
-  if (Number.isFinite(Number(s.todayChars))) {
-    lines.push(`- 今日净增：${s.todayChars >= 0 ? "+" : ""}${s.todayChars} 字${Number(s.dailyGoal) > 0 ? ` / 目标 ${s.dailyGoal}` : ""}`);
-  }
-  if (s.gate && s.gate.kind && s.gate.kind !== "none") {
-    lines.push(`- 成稿检查（${s.gate.kind}）：${s.gate.pass ? "全部通过" : `${s.gate.fail} 项未达标`}`);
-  }
-  if (s.health && Array.isArray(s.health.issues)) {
-    lines.push(`- 实时体检：${s.health.brief || textHealthBrief(s.health)}`);
-    const top = s.health.issues.slice(0, 3);
-    for (const it of top) lines.push(`  · ${it.hint}（「${it.excerpt}…」）`);
-  }
-  if (Array.isArray(s.chapterLines)) {
-    for (const line of s.chapterLines) if (line) lines.push(String(line));
-  }
-  if (s.paragraph) {
-    const p = String(s.paragraph).replace(/\s+/g, " ").slice(0, 240);
-    if (p) lines.push(`- 当前段落：${p}${String(s.paragraph).length > 240 ? "…" : ""}`);
-  }
-  if (!lines.length) return "";
-  return [
-    "【写作模式状态】（系统自动附带的事实，作者看不到这一段）",
-    ...lines,
-    "以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。"
-  ].join("\n");
-}
-
 // plugin/writing-mode/src/client/features/companion/index.js
 function buildLiveStateBlock(liveState) {
   const live = liveState || {};
@@ -22782,6 +22809,21 @@ function WritingModeApp() {
     void editor.open(path2);
   };
   const [chapterLines, setChapterLines] = react18.useState([]);
+  const [health, setHealth] = react18.useState(null);
+  react18.useEffect(() => {
+    if (!filePath) {
+      setHealth(null);
+      return void 0;
+    }
+    const timer = setTimeout(() => {
+      try {
+        setHealth(textHealth(content3));
+      } catch {
+        setHealth(null);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [content3, filePath]);
   react18.useEffect(() => {
     let alive = true;
     if (!filePath) {
@@ -23748,7 +23790,8 @@ function WritingModeApp() {
                     filePath,
                     stats,
                     dailyGoal,
-                    gate
+                    gate,
+                    health
                   }, "st"),
                   exportProj ? jsx38.jsx(ExportBookPanel, {
                     proj: exportProj,
