@@ -191,6 +191,10 @@ export function writingStateBlock(s = {}) {
     const top = s.health.issues.slice(0, 3)
     for (const it of top) lines.push(`  · ${it.hint}（「${it.excerpt}…」）`)
   }
+  if (Array.isArray(s.chapterLines)) {
+    // 章节上下文（host 的 route=chapter-context 产出：第几章/前后章/钩子/伏笔/在场人物）
+    for (const line of s.chapterLines) if (line) lines.push(String(line))
+  }
   if (s.paragraph) {
     const p = String(s.paragraph).replace(/\s+/g, ' ').slice(0, 240)
     if (p) lines.push(`- 当前段落：${p}${String(s.paragraph).length > 240 ? '…' : ''}`)

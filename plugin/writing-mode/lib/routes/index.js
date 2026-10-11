@@ -6,6 +6,7 @@
 import { getConfigList, getTree, postPrefs, postRoots } from './config.js'
 import { getDirs } from './fs.js'
 import { getHealth } from './health.js'
+import { getChapterContext } from './chapter.js'
 import { getDoc, saveDoc, deleteDocRoute, postGate, postLedger, getStats, getOutline, postReorder } from './docs.js'
 import { getTemplates, postProjectResource, postCreateProject, postCompile, postArchiveExport, getWiki } from './project.js'
 import { getMemory, postMemory, getMemoryOperation, settingProjectionRoute, maintenanceRoute, projectRecoveryRoute } from './memory.js'
@@ -28,6 +29,7 @@ export const ROUTE_HANDLERS = {
   tree: getTree,
   dirs: getDirs,
   health: getHealth,
+  'chapter-context': getChapterContext,
   prefs: postPrefs,
   roots: postRoots,
   get: getDoc,
