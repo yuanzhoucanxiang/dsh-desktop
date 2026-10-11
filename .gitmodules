@@ -1,0 +1,3 @@
+[submodule "plugin/writing-mode"]
+	path = plugin/writing-mode
+	url = git@github.com:yuanzhoucanxiang/dsh-writing-mode.git

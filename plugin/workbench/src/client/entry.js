@@ -20,6 +20,7 @@ import { fetchState, pushState } from './host-api.js'
 import { T } from './copy.js'
 import { WorkbenchEntry } from './FooterEntry.js'
 import { WorkbenchChrome } from './Chrome.js'
+import { WorkbenchDock } from './Dock.js'
 import { WorkbenchSettings } from './Settings.js'
 
 const __wbAlreadyLoaded = window.__dshWorkbenchLoaded === true
@@ -75,12 +76,14 @@ export function apply(ctx) {
     }
   }
 
-  // ② 统一入口 / 切换器 / 设置段
+  // ② 统一入口 / 切换器 / 辅助坞 / 设置段
   register('sidebar.footer.action', { name: 'sidebar.footer.action', id: 'workbench', order: 10, label: () => T.entry }, WorkbenchEntry, 'workbench: entry')
   register('shell.overlay', { name: 'shell.overlay', id: 'workbench', order: 10, label: () => T.entry }, WorkbenchChrome, 'workbench: switcher')
+  // 辅助坞（L2）：自己的浮层条目，order 比切换器小一点 → 渲染在它后面（坞是常驻面，切换器是临时面）
+  register('shell.overlay', { name: 'shell.overlay', id: 'workbench-dock', order: 11, label: () => T.entry }, WorkbenchDock, 'workbench: dock')
   register('settings.section', { name: 'settings.section', id: 'workbench', order: 45, label: () => T.settings }, WorkbenchSettings, 'workbench: settings')
 
-  console.info('[workbench] client ready · entry + switcher + settings（P0：无模式接入）')
+  console.info('[workbench] client ready · entry + switcher + dock + settings')
 }
 
 /** 测试钩子：让探针拿到活着的注册表（真实 Electron 验收脚本用）。 */

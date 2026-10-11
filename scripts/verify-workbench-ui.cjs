@@ -54,10 +54,16 @@ app.whenReady().then(async () => {
     const ReactDOM = require(${JSON.stringify(path.join(modules, 'react-dom/client'))});
     const mounted = {};
     function mount(id, Component){
-      const el = document.getElementById(id);
+      // 同一槽位可能注册多个条目（如 shell.overlay 的切换器 + 辅助坞）：每个条目一个独立容器，
+      // 否则第二次 createRoot 会报 "container has already been passed to createRoot"。
+      const host = document.getElementById(id);
+      const el = document.createElement('div');
+      el.setAttribute('data-mount', id + ':' + (host.childElementCount));
+      host.appendChild(el);
       const root = ReactDOM.createRoot(el);
       root.render(React.createElement(Component));
-      mounted[id] = root;
+      mounted[id] = mounted[id] || [];
+      mounted[id].push(root);
     }
     const provided = {};
     const ctx = {
@@ -125,7 +131,11 @@ app.whenReady().then(async () => {
   await waitFor(`!!window.__wbPlugin && !!window.__wbPlugin.__workbenchRegistry()`, 'client 未加载')
 
   const slots = await evaluate('JSON.stringify(window.__wbSlots)')
-  assert.equal(slots, JSON.stringify(['sidebar.footer.action', 'shell.overlay', 'settings.section']), '三个挂载点都要注册')
+  assert.equal(
+    slots,
+    JSON.stringify(['sidebar.footer.action', 'shell.overlay', 'shell.overlay', 'settings.section']),
+    '四个挂载点都要注册（shell.overlay 有两条：切换器 + 辅助坞）',
+  )
   assert.equal(await evaluate(`typeof (window.__wbService||{}).workbench`), 'object', '应把 workbench 服务 provide 出去')
 
   // ① 没有模式：入口不留死按钮
@@ -175,7 +185,9 @@ app.whenReady().then(async () => {
   await evaluate('window.__guardDemo = true')
   await click('[data-wb-mode="demo2"]')
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo2'`, '放行后应切换')
-  assert.equal(await count('[data-wb-switcher]'), 0, '切换成功后切换器应关闭')
+  // 注意：切换成功与切换器关闭不在同一个 tick（setActive 先落 activeId，随后才 setOpen(false)），
+  // 所以要**等**它消失——直接断言会撞上竞态（2026-10-11 实测）。
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '切换成功后切换器应关闭')
   await sleep(400) // 等 host 写盘
   const stateFile = path.join(process.env.DSH_HOME, 'workbench.json')
   assert.ok(fs.existsSync(stateFile), `host 应写下状态文件：${stateFile}`)

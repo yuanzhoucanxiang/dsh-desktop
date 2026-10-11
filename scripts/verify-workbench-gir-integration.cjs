@@ -42,6 +42,8 @@ app.whenReady().then(async () => {
   const root = path.join(temp, 'library')
   fs.mkdirSync(path.join(root, '演示作品', 'draft/novel'), { recursive: true })
   fs.writeFileSync(path.join(root, '演示作品', 'project.md'), '作品名：P2 验收')
+  // L1 交接要有一篇能打开的稿（写作侧「去生图」在开稿后才可用）
+  fs.writeFileSync(path.join(root, '演示作品', 'draft/novel/第1章-v1.md'), '第一章原文')
   store.writeConfig({ roots: [{ path: root, default: true }], activeRoot: root, prefs: { ...store.DEFAULT_PREFS, autoSaveMs: 5000 } })
 
   const handlers = { writing: null, workbench: null, gir: [] }
@@ -132,9 +134,30 @@ app.whenReady().then(async () => {
     }
     if (url.pathname === '/gir-ui/config') return json({ ok: true, apiBase: 'http://127.0.0.1:8787/api' })
     if (url.pathname === '/gir-ui/update/check') return json({ ok: true, mode: 'nogit', currentVersion: '0.38.0' })
-    // 出图服务不在跑：按真实代理的行为给非 2xx（插件对非 2xx 走 catch → 显示"出图服务未连接"）。
-    // 注意不要给 200 + 错误封套——那是不真实的响应形状（jget 只按 HTTP 状态判成败）。
-    if (url.pathname.startsWith('/gir-api')) return json({ ok: false, error: 'harness-no-backend' }, 502)
+    // 假 GIR 后端：够工作台把项目列表 → 详情 → 分步成像工作台渲染出来（L1 交接的落点在那里）。
+    // 注意响应形状要真实：jget 只按 HTTP 状态判成败，非 2xx 会被插件当"服务未连接"。
+    if (url.pathname.startsWith('/gir-api')) {
+      const p = url.pathname.slice('/gir-api'.length)
+      if (p === '/health') return json({ status: 'ok', service: 'gir-backend' })
+      if (p === '/backends') return json([{ name: 'harness-stub', status: 'ok' }])
+      if (p === '/projects') return json([{ id: 'p1', name: '演示项目' }])
+      if (p === '/projects/p1') {
+        return json({
+          project: { id: 'p1', name: '演示项目', current_version_id: null, imaging_selections: {} },
+          versions: [],
+          tasks: [],
+        })
+      }
+      if (p === '/projects/p1/layers') return json({})
+      if (p === '/projects/p1/imaging/contract') return json({ steps: [] })
+      if (p === '/canvas-presets') return json([])
+      if (p === '/layer-deps') return json([])
+      if (p === '/experiences') return json([])
+      if (p === '/settings') return json({})
+      if (p === '/workflow-templates') return json([])
+      if (p === '/workflows/runninghub/config') return json({ modes: [] })
+      return json({ ok: false, error: 'harness-no-endpoint', path: p }, 502)
+    }
     const file = url.pathname === '/writing-client.js'
       ? path.join(repo, 'plugin/writing-mode/client.js')
       : url.pathname === '/workbench-client.js'
@@ -213,6 +236,31 @@ app.whenReady().then(async () => {
   assert.ok(fs.existsSync(stateFile), 'host 应写下状态文件')
   assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).activeModeId, 'writing', 'W4：状态文件应记当前模式')
 
+  // ── L1 端到端：写作点「去生图」→ 工具台 → GIR 真接收端 ─────────────────
+  // 现在是写作在场：开一篇稿（空页 → 文库 → 第一篇），然后交接。
+  await waitFor(`document.querySelector('[data-wm-empty]')!==null`, 'L1：写作台空页未出现')
+  await evaluate(`Array.from(document.querySelectorAll('button')).find((b)=>b.textContent==='从库里打开').click()`)
+  await waitFor(`document.body.getAttribute('data-writing-lib')==='1'`, 'L1：文库未展开')
+  await waitFor(`document.querySelectorAll('.dshWmItem').length>0`, 'L1：文库未列出稿件')
+  await evaluate(`Array.from(document.querySelectorAll('.dshWmItem')).find((e)=>String(e.title||'').endsWith('第1章-v1.md')).click()`)
+  await waitFor(`document.querySelector('[data-wm-handoff="gir"]')?.disabled===false`, 'L1：交接按钮应在开稿后可用')
+  // 按钮可用只代表 filePath 就位；正文可能还在加载——交接取的是正文/选区，必须等它到位。
+  await waitFor(`Array.from(document.querySelectorAll('textarea')).some((t)=>String(t.value||'').includes('第一章原文'))`, 'L1：稿件正文未加载')
+  await click('[data-wm-handoff="gir"]')
+  await waitFor(`window.__plugins['@dsh-local/workbench'].__workbenchRegistry().getActive()==='gir'`, 'L1：交接应先切到 GIR')
+  await waitFor(`document.querySelector('.gir-ol')!==null`, 'L1：GIR 工作台应打开')
+  await waitFor(`document.querySelector('[data-gir-handoff]')!==null`, 'L1：GIR 应显示交接提示条')
+  const sketchText = await evaluate(`(document.querySelector('textarea[aria-label="画面怎么安排"]')||{}).value||''`)
+  assert.ok(sketchText.includes('第一章原文'), `L1：构图框应含交接过来的文字，实际 ${sketchText}`)
+  const handoffBanner = await evaluate(`document.querySelector('[data-gir-handoff]').textContent`)
+  assert.ok(handoffBanner.includes('写作模式'), `L1：提示条应说明来自写作模式，实际 ${handoffBanner}`)
+  assert.ok(handoffBanner.includes('填入'), `L1：提示条应说明是填入还是追加，实际 ${handoffBanner}`)
+  // GIR 的上下文上报（选中项目后）
+  await sleep(600)
+  const girCtx = JSON.parse(await evaluate(`JSON.stringify(window.__plugins['@gir/dsh-gir-ui'].__workbenchHandoff.context())`))
+  assert.equal(girCtx && girCtx.kind, 'image', `L1：GIR 应上报上下文，实际 ${JSON.stringify(girCtx)}`)
+  assert.equal(girCtx.title, '演示项目', `L1：GIR 上下文应是当前项目，实际 ${JSON.stringify(girCtx)}`)
+
   assert.equal(errors.length, 0, `主场景控制台不应有 error：${errors.join(' | ')}`)
 
   // W5：不加载工具台 → GIR 自己的入口照旧可用
@@ -226,7 +274,7 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('.gir-ol')!==null`, 'W5：GIR 自己的入口应能开工作台')
   assert.equal(errors.length, 0, `降级场景控制台不应有 error：${errors.join(' | ')}`)
 
-  console.log('WORKBENCH_GIR_OK W1/W2/W4/W5 通过（入口唯一 / 双模式互斥 / 状态落盘 / 降级）')
+  console.log('WORKBENCH_GIR_OK W1/W2/W4/W5 + L1 通过（入口唯一 / 双模式互斥 / 状态落盘 / 降级 / 写作→GIR 交接端到端）')
   await new Promise((resolve) => server.close(resolve))
   app.exit(0)
 }).catch(async (err) => {

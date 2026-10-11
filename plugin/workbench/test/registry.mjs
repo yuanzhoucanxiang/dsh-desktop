@@ -232,7 +232,127 @@ test('对外视图不带内部钩子（只有 UI 需要的字段）', () => {
   const r = createRegistry()
   r.registerMode({ id: 'a', label: 'A', onActivate: () => {}, canDeactivate: () => true })
   const view = r.list()[0]
-  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'id', 'label', 'mount', 'order'])
+  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'id', 'label', 'mount', 'order'])
+})
+
+test('辅助坞（L2）：dockViewOf 只认带 view 的声明；list() 如实标 hasDock', () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'plain', label: '没有坞' })
+  assert.equal(r.dockViewOf('plain'), null)
+  assert.equal(r.dockViewOf('nope'), null)
+  assert.equal(r.list()[0].hasDock, false)
+
+  const View = () => null
+  r.registerMode({ id: 'writing', label: '写作', dock: { label: () => '写作', view: View, order: 50 } })
+  const dock = r.dockViewOf('writing')
+  assert.equal(dock.id, 'writing')
+  assert.equal(dock.label, '写作')
+  assert.equal(dock.order, 50)
+  assert.equal(dock.view, View, '坞视图必须是同一个组件引用（不是复制）')
+  assert.equal(r.list().find((m) => m.id === 'writing').hasDock, true)
+
+  // 声明里没有 view 的不算坞（避免注册了一个点开是空白的坞）
+  r.registerMode({ id: 'halfbaked', label: '半个', dock: { label: 'x' } })
+  assert.equal(r.dockViewOf('halfbaked'), null)
+  assert.equal(r.list().find((m) => m.id === 'halfbaked').hasDock, false)
+})
+
+// ── L1：上下文 + 一键交接 ────────────────────────────────────────────────
+
+test('contextOf：没报上下文返回 null；报了就把 mode 一起带上；get 抛错也不炸', () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'plain', label: '没有上下文' })
+  assert.equal(r.contextOf('plain'), null)
+  assert.equal(r.contextOf('nope'), null)
+
+  r.registerMode({ id: 'writing', label: '写作', context: { get: () => ({ title: '归乡记 · 第2章', project: 'E:/novel' }) } })
+  assert.deepEqual(r.contextOf('writing'), { title: '归乡记 · 第2章', project: 'E:/novel', mode: 'writing' })
+
+  r.registerMode({ id: 'boom', label: '坏的', context: { get: () => { throw new Error('读不到') } } })
+  assert.equal(r.contextOf('boom'), null)
+})
+
+await test('context.subscribe：模式推上下文时工具台会广播（UI 跟着动）', async () => {
+  let hits = 0
+  let ctx = { title: '甲' }
+  const listeners = new Set()
+  const r = createRegistry()
+  const off = r.subscribe(() => hits++)
+  r.registerMode({ id: 'writing', label: '写作', context: { get: () => ctx, subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn) } } })
+  const before = hits
+  ctx = { title: '乙' }
+  for (const fn of listeners) fn()
+  assert.equal(hits, before + 1, '上下文变化应触发一次广播')
+  assert.equal(r.contextOf('writing').title, '乙')
+  off()
+  // 注销时解绑：不再有人听
+  r.list()
+  assert.equal(listeners.size, 1)
+})
+
+await test('handoff：目标没注册 → unknown-mode，什么都不发生', async () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'writing', label: '写作' })
+  const result = await r.handoff('gir', { text: '一段' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'unknown-mode')
+  assert.equal(r.getActive(), null)
+  assert.equal(r.lastHandoff(), null)
+})
+
+await test('handoff：先切过去再交付，载荷规范化（from/kind/title/refs 上限）', async () => {
+  const seen = []
+  const r = createRegistry({ now: () => 1234 })
+  r.registerMode({ id: 'writing', label: '写作' })
+  r.registerMode({ id: 'gir', label: 'GIR', onHandoff: (payload) => seen.push(payload) })
+  await r.setActive('writing')
+  const result = await r.handoff('gir', { text: '主体靠左', title: '第2章', refs: Array.from({ length: 30 }, (_, i) => `r${i}`) })
+  assert.equal(result.ok, true)
+  assert.equal(result.delivered, true)
+  assert.equal(r.getActive(), 'gir', '交接要先把目标切到前台')
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].from, 'writing', 'from 默认取发送方（当前模式）')
+  assert.equal(seen[0].kind, 'text')
+  assert.equal(seen[0].title, '第2章')
+  assert.equal(seen[0].text, '主体靠左')
+  assert.equal(seen[0].refs.length, 20, 'refs 上限 20')
+  assert.equal(seen[0].at, 1234)
+  assert.equal(r.lastHandoff().delivered, true)
+  assert.equal(r.lastHandoff().to, 'gir')
+})
+
+await test('handoff：目标没有接收端 → 如实 delivered:false（不假装送到）', async () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'writing', label: '写作' })
+  r.registerMode({ id: 'gir', label: 'GIR' })
+  const result = await r.handoff('gir', { text: 'x' })
+  assert.equal(result.ok, true)
+  assert.equal(result.delivered, false)
+  assert.equal(r.getActive(), 'gir')
+  assert.equal(r.lastHandoff().delivered, false)
+})
+
+await test('handoff：被当前模式的关闭守卫拦下 → 不切也不交付', async () => {
+  const seen = []
+  const r = createRegistry()
+  r.registerMode({ id: 'writing', label: '写作', canDeactivate: () => false })
+  r.registerMode({ id: 'gir', label: 'GIR', onHandoff: (p) => seen.push(p) })
+  await r.setActive('writing')
+  const result = await r.handoff('gir', { text: 'x' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'deactivate-refused')
+  assert.equal(r.getActive(), 'writing')
+  assert.deepEqual(seen, [], '被拦下时目标不该收到任何东西')
+})
+
+await test('handoff：接收端抛错 → delivered 仍为 true（调用过），但错误被记下来不炸', async () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'writing', label: '写作' })
+  r.registerMode({ id: 'gir', label: 'GIR', onHandoff: () => { throw new Error('接收端炸了') } })
+  const result = await r.handoff('gir', { text: 'x' })
+  assert.equal(result.ok, true)
+  assert.equal(result.delivered, false, '抛错不算成功交付')
+  assert.equal(r.lastHandoff().delivered, false)
 })
 
 console.log(`WORKBENCH_REGISTRY_OK ${passed} passed / ${failed} failed`)

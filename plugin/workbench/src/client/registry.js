@@ -37,6 +37,19 @@ function normalizeMode(descriptor, id) {
     context: descriptor.context && typeof descriptor.context === 'object' ? descriptor.context : null,
     health: descriptor.health && typeof descriptor.health === 'object' ? descriptor.health : null,
     refs: descriptor.refs && typeof descriptor.refs === 'object' ? descriptor.refs : null,
+    // 辅助坞视图（L2，可选）：别的模式当主视图时，工具台可以在右缘把这份"轻视图"显示出来。
+    // 组件引用是**运行时传过来的值**（不是 import 别的插件），所以不违反内核的 bundle 纯净门禁。
+    dock:
+      descriptor.dock && typeof descriptor.dock === 'object' && descriptor.dock.view
+        ? {
+            label: descriptor.dock.label,
+            view: descriptor.dock.view,
+            order: Number.isFinite(descriptor.dock.order) ? Number(descriptor.dock.order) : 100,
+          }
+        : null,
+    // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
+    // 会被如实标成 delivered:false（工具台不替它假装收到了）。
+    onHandoff: typeof descriptor.onHandoff === 'function' ? descriptor.onHandoff : null,
   }
 }
 
@@ -49,6 +62,7 @@ function publicView(mode, activeId) {
     mount: mode.mount,
     active: mode.id === activeId,
     hasContext: mode.context !== null,
+    hasDock: mode.dock !== null,
   }
 }
 
@@ -58,9 +72,11 @@ function sortModes(modes) {
 
 export function createRegistry(options = {}) {
   const onPersist = typeof options.onPersist === 'function' ? options.onPersist : null
+  const now = typeof options.now === 'function' ? options.now : () => Date.now()
   const modes = new Map()
   const listeners = new Set()
   let activeId = null
+  let lastHandoffRecord = null
 
   function notify() {
     for (const fn of [...listeners]) {
@@ -84,10 +100,23 @@ export function createRegistry(options = {}) {
     if (modes.has(id)) throw new Error(`workbench.registerMode: 重复的模式 id "${id}"`)
     const mode = normalizeMode(descriptor || {}, id)
     modes.set(id, mode)
+    // 上下文变化要让 UI 跟着动：模式提供 subscribe 就挂上（工具台只做汇总与展示，不解释内容）。
+    if (mode.context && typeof mode.context.subscribe === 'function') {
+      try {
+        mode.offContext = mode.context.subscribe(() => notify())
+      } catch (err) {
+        console.warn('[workbench] context.subscribe failed:', err)
+      }
+    }
     notify()
     return function unregister() {
       if (modes.get(id) !== mode) return
       modes.delete(id)
+      try {
+        mode.offContext?.()
+      } catch (err) {
+        console.warn('[workbench] context unsubscribe failed:', err)
+      }
       if (activeId === id) {
         activeId = null
         try {
@@ -197,5 +226,81 @@ export function createRegistry(options = {}) {
     return { ok: true, changed: true, active: activeId }
   }
 
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel }
+  /**
+   * 某个模式提供的辅助坞视图（L2）：`{ id, label, order, view }`；没提供 → null。
+   * 工具台只负责把它挂到右缘、给标题与收展，视图内容完全归模式。
+   */
+  function dockViewOf(id) {
+    const key = id === null || id === undefined ? null : String(id).trim()
+    const mode = key === null ? null : modes.get(key)
+    if (!mode || !mode.dock) return null
+    return { id: mode.id, label: normalizeLabel(mode.dock.label) || mode.id, order: mode.dock.order, view: mode.dock.view }
+  }
+
+  /**
+   * 当前上下文（工具台只做**汇总与展示**，不解释内容）：模式自己报"现在在做什么"
+   * （作品/场景/产物），工具台把它显示在入口与切换器上。模式没报或报错 → null（不编造）。
+   */
+  function contextOf(id) {
+    const key = id === null || id === undefined ? null : String(id).trim()
+    const mode = key === null ? null : modes.get(key)
+    if (!mode || !mode.context || typeof mode.context.get !== 'function') return null
+    try {
+      const value = mode.context.get()
+      if (!value || typeof value !== 'object') return null
+      return { ...value, mode: mode.id }
+    } catch (err) {
+      console.warn('[workbench] context.get failed:', err)
+      return null
+    }
+  }
+
+  /**
+   * 交接载荷：**不透明**——工具台只保证结构（谁给的、什么种类、标题、正文/路径、引用、时间），
+   * 不解释含义。这样"产物链"将来怎么变都不用改通道（用户 2026-10-11：产物链暂不定）。
+   */
+  function normalizePayload(payload, fallbackFrom) {
+    const p = payload && typeof payload === 'object' ? payload : {}
+    const str = (v) => (v === null || v === undefined ? null : String(v))
+    return {
+      from: String(p.from || fallbackFrom || ''),
+      kind: String(p.kind || 'text'),
+      title: p.title === undefined ? '' : String(p.title),
+      text: typeof p.text === 'string' ? p.text : null,
+      path: str(p.path),
+      refs: Array.isArray(p.refs) ? p.refs.slice(0, 20) : [],
+      at: now(),
+    }
+  }
+
+  /**
+   * 一键交接：把载荷交给另一个模式——**先切过去**（会过当前模式的关闭守卫），再调目标的 `onHandoff`。
+   * 目标没实现 `onHandoff` 时如实返回 `delivered:false`（不假装送到）。
+   */
+  async function handoff(to, payload) {
+    const targetId = String(to ?? '').trim()
+    const target = modes.get(targetId)
+    if (!target) return { ok: false, error: 'unknown-mode', to: targetId, active: activeId }
+    const envelope = normalizePayload(payload, activeId)
+    const switched = await setActive(targetId, 'handoff')
+    if (!switched.ok) return { ok: false, error: switched.error || 'switch-failed', to: targetId, active: activeId }
+    let delivered = false
+    if (target.onHandoff) {
+      try {
+        target.onHandoff(envelope)
+        delivered = true
+      } catch (err) {
+        console.warn('[workbench] onHandoff failed:', err)
+      }
+    }
+    lastHandoffRecord = { ...envelope, to: targetId, delivered }
+    notify()
+    return { ok: true, delivered, to: targetId, active: activeId, envelope: lastHandoffRecord }
+  }
+
+  function lastHandoff() {
+    return lastHandoffRecord
+  }
+
+  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf }
 }

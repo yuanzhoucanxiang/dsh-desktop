@@ -7,7 +7,35 @@
 
 let open = false
 let notice = null
+/** 辅助坞（L2）：开合、宽度、显示哪个模式的视图。都是**临时 UI 状态**，按文档 §7.1 落 localStorage。 */
+let dockOpen = false
+let dockWidth = 340
+let dockModeId = null
 const listeners = new Set()
+
+const LS_DOCK = 'dsh-workbench-dock'
+
+function readDockLS() {
+  try {
+    const raw = localStorage.getItem(LS_DOCK)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (typeof parsed?.open === 'boolean') dockOpen = parsed.open
+    if (Number.isFinite(parsed?.width)) dockWidth = Math.min(720, Math.max(240, Number(parsed.width)))
+    if (typeof parsed?.modeId === 'string' || parsed?.modeId === null) dockModeId = parsed.modeId
+  } catch {
+    /* 读不到就用默认（坞是纯 UI 状态，不值得为它报错） */
+  }
+}
+readDockLS()
+
+function persistDock() {
+  try {
+    localStorage.setItem(LS_DOCK, JSON.stringify({ open: dockOpen, width: dockWidth, modeId: dockModeId }))
+  } catch {
+    /* 隐私模式等场景忽略 */
+  }
+}
 
 function emit() {
   for (const fn of [...listeners]) {
@@ -49,4 +77,46 @@ export function subscribe(fn) {
   if (typeof fn !== 'function') return () => {}
   listeners.add(fn)
   return () => listeners.delete(fn)
+}
+
+// ── 辅助坞（L2）─────────────────────────────────────────────────────────
+
+export function isDockOpen() {
+  return dockOpen
+}
+
+export function setDockOpen(next) {
+  const value = next === true
+  if (dockOpen === value) return
+  dockOpen = value
+  persistDock()
+  emit()
+}
+
+export function toggleDock() {
+  setDockOpen(!dockOpen)
+}
+
+export function getDockWidth() {
+  return dockWidth
+}
+
+export function setDockWidth(next) {
+  const value = Math.min(720, Math.max(240, Number(next) || dockWidth))
+  if (dockWidth === value) return
+  dockWidth = value
+  persistDock()
+  emit()
+}
+
+export function getDockModeId() {
+  return dockModeId
+}
+
+export function setDockModeId(next) {
+  const value = next === null || next === undefined || next === '' ? null : String(next)
+  if (dockModeId === value) return
+  dockModeId = value
+  persistDock()
+  emit()
 }

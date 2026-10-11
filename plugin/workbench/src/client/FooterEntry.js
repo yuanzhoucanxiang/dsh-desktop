@@ -14,10 +14,12 @@ import { useWorkbench } from './use-workbench.js'
 import { switchMode } from './actions.js'
 
 export function WorkbenchEntry() {
-  const { modes, active, open, registry } = useWorkbench()
+  const { modes, active, context, open, registry } = useWorkbench()
   if (modes.length === 0) return null
 
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || ''
+  // 有上下文就显示"正在做什么"（L1：切模式不丢上下文，入口上也看得见）
+  const contextLabel = context ? context.title || context.project || context.path || '' : ''
   const only = modes.length === 1 ? modes[0] : null
 
   const onClick = () => {
@@ -35,13 +37,15 @@ export function WorkbenchEntry() {
       type: 'button',
       className: `dshWbEntry${open ? ' is-open' : ''}`,
       onClick,
-      title: activeLabel ? `${T.entry} · ${activeLabel}` : T.entry,
+      title: [T.entry, activeLabel, contextLabel].filter(Boolean).join(' · '),
       'aria-label': T.entry,
       'data-wb-entry': '',
       'data-wb-count': String(modes.length),
     },
     react.createElement('span', { className: 'dshWbEntryGlyph', 'aria-hidden': 'true' }, '◧'),
     react.createElement('span', { className: 'dshWbEntryLabel' }, T.entry),
-    activeLabel ? react.createElement('span', { className: 'dshWbEntryMode', 'data-wb-active-label': '' }, activeLabel) : null,
+    activeLabel
+      ? react.createElement('span', { className: 'dshWbEntryMode', 'data-wb-active-label': '' }, contextLabel ? `${activeLabel} · ${contextLabel}` : activeLabel)
+      : null,
   )
 }

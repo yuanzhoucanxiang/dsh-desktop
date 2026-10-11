@@ -24,6 +24,7 @@ app.setPath('userData', path.join(temp, 'user-data'))
 process.env.DSH_HOME = path.join(temp, 'home')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+let saveCalls = 0
 let win
 let server
 const errors = []
@@ -110,6 +111,7 @@ app.whenReady().then(async () => {
   server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     if (url.pathname.startsWith('/api/writing-mode')) {
+      if (url.searchParams.get('route') === 'save') saveCalls++
       return void writingHandler(req, res).catch((err) => { res.statusCode = 500; res.end(JSON.stringify({ ok: false, error: String(err?.message || err) })) })
     }
     if (url.pathname.startsWith('/api/workbench')) {
@@ -190,7 +192,9 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, 'W3：应能再次打开切换器')
   await click('[data-wb-mode="writing"]')
   await waitFor(`window.__plugins['@dsh-local/workbench'].__workbenchRegistry().getActive()==='writing'`, 'W3：应切回写作')
-  await evaluate(`(() => { window.__plugins['@dsh-local/writing-mode'].__setCloseGuard(async () => false); return 0 })()`)
+  // W3：临时换成"拒绝离开"的守卫。**必须存下旧守卫再还原**——直接 `__setCloseGuard(null)`
+  // 会把 WritingModeApp 注册的真守卫一起清掉，后面的交接就不会先落盘了（2026-10-11 踩过）。
+  await evaluate(`(() => { window.__prevCloseGuard = window.__plugins['@dsh-local/writing-mode'].__setCloseGuard(async () => false); return 0 })()`)
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, 'W3：应打开切换器')
   await click('[data-wb-mode="demo"]')
@@ -199,9 +203,86 @@ app.whenReady().then(async () => {
   assert.equal(await count('.dshWmRoot'), 1, 'W3：被拒后写作台仍在场')
   const switcherText = await evaluate(`(document.querySelector('[data-wb-switcher]')||{}).textContent||''`)
   assert.equal(/失败|出错|错误/.test(switcherText), false, `W3：工具台不得自造失败文案：${switcherText}`)
-  await evaluate(`(() => { window.__plugins['@dsh-local/writing-mode'].__setCloseGuard(null); return 0 })()`)
+  await evaluate(`(() => { window.__plugins['@dsh-local/writing-mode'].__setCloseGuard(window.__prevCloseGuard || null); return 0 })()`)
   await evaluate(`document.querySelector('[data-wb-close]').click()`)
   await sleep(200)
+
+  // ── L1：上下文上报 + 一键交接（写作 → 工具台 → 目标模式） ──────────────
+  // 先开一篇稿：交接按钮要有稿才可用，上下文也要有稿/作品才报得出来。
+  await evaluate(`(() => { window.__plugins['@dsh-local/workbench'].__workbenchRegistry().registerMode({ id:'gir', label:'GIR 生图', order:30, onHandoff:(p) => { window.__handoff = p } }); return 0 })()`)
+  await click('[data-slot="sidebar.footer.action"][data-entry="workbench"] [data-wb-entry]')
+  await waitFor(`window.__plugins['@dsh-local/workbench'].__workbenchRegistry().getActive()==='writing'`, 'L1：应能回到写作模式')
+  await click('[data-wb-close]').catch(() => {})
+  // 空页动作 → 文库 → 打开一篇
+  await waitFor(`document.querySelector('[data-wm-empty]')!==null`, 'L1：写作台空页未出现')
+  await evaluate(`Array.from(document.querySelectorAll('button')).find((b)=>b.textContent==='从库里打开').click()`)
+  await waitFor(`document.querySelectorAll('.dshWmItem').length>0`, 'L1：文库未列出稿件')
+  await click('.dshWmItem')
+  await waitFor(`document.querySelector('[data-wm-handoff="gir"]')?.disabled===false`, 'L1：交接按钮应在开稿后可用')
+  // L1.5：先把稿子改脏——交接应当"先落盘、不关稿"
+  await evaluate(`(() => {
+    const ta = Array.from(document.querySelectorAll('textarea')).find((t) => String(t.value || '').includes('第一章原文'))
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    setter.call(ta, '第一章原文（交接前改过）')
+    ta.dispatchEvent(new Event('input', { bubbles: true }))
+    return 0
+  })()`)
+  await sleep(400)
+  await sleep(500) // 等上下文 effect 推给工具台
+
+  const ctx = await evaluate(`JSON.stringify((window.__plugins['@dsh-local/workbench'].__workbenchRegistry().contextOf('writing'))||null)`)
+  assert.ok(ctx && ctx !== 'null', `L1：写作应上报上下文，实际 ${ctx}`)
+  const ctxObj = JSON.parse(ctx)
+  assert.equal(ctxObj.kind, 'writing')
+  assert.ok(String(ctxObj.title || '').length > 0, `L1：上下文应带标题，实际 ${JSON.stringify(ctxObj)}`)
+  assert.ok(String(ctxObj.doc || '').endsWith('第1章-v1.md'), `L1：上下文应带当前稿，实际 ${ctxObj.doc}`)
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-context]')!==null`, 'L1：切换器应显示上下文行')
+  assert.ok((await evaluate(`document.querySelector('[data-wb-context]').textContent`)).includes(ctxObj.title), 'L1：上下文行应含标题')
+  await evaluate(`document.querySelector('[data-wb-close]').click()`)
+  await sleep(150)
+
+  await click('[data-wm-handoff="gir"]')
+  await waitFor(`window.__plugins['@dsh-local/workbench'].__workbenchRegistry().getActive()==='gir'`, 'L1：交接应先切到目标模式')
+  // L1.5：交接会先过守卫（= 把未保存的改动 flush 落盘），但**不清空文稿**。
+  await sleep(800)
+  const onDisk = fs.readFileSync(path.join(root, '演示作品', 'draft/novel/第1章-v1.md'), 'utf8')
+  assert.ok(onDisk.includes('（交接前改过）'), `L1.5：交接前应把未保存的改动落盘（save 请求 ${saveCalls} 次），实际文件内容：${onDisk}`)
+  assert.equal(/未退出写作台/.test(await evaluate(`document.body.innerText||''`)), false, 'L1.5：交接路径不该喊"未退出写作台"')
+  const payload = await evaluate(`JSON.stringify(window.__handoff||null)`)
+  assert.ok(payload && payload !== 'null', 'L1：目标模式应收到载荷')
+  const got = JSON.parse(payload)
+  assert.equal(got.kind, 'text')
+  assert.equal(got.from, 'writing')
+  assert.ok(String(got.text || '').includes('第一章原文'), `L1：载荷应带选区/正文，实际 ${got.text}`)
+  await waitFor(`document.querySelector('[data-wb-notice]')!==null`, 'L1：工具台通知出口应显示交接结果')
+
+  // ── L2：辅助坞（主视图是 GIR 时，右缘显示写作的轻视图） ──────────────
+  await waitFor(`document.querySelector('[data-wb-dock-rail]')!==null`, 'L2：收起时应留右缘 rail')
+  await click('[data-wb-dock-rail]')
+  await waitFor(`document.querySelector('[data-wb-dock="writing"]')!==null`, 'L2：展开后应显示写作的坞')
+  await waitFor(`document.querySelector('[data-wm-dock-title]')!==null`, 'L2：坞里应渲染写作的视图')
+  const dockTitle = await evaluate(`document.querySelector('[data-wm-dock-title]').textContent`)
+  assert.ok(dockTitle.includes('第1章'), `L2：坞里应显示当前章节，实际 ${dockTitle}`)
+  assert.equal(
+    await evaluate(`document.documentElement.style.getPropertyValue('--dsh-wb-dock-width')`),
+    '340px',
+    'L2：展开时应给模式让位（--dsh-wb-dock-width）',
+  )
+  await waitFor(`document.querySelector('[data-wm-dock-back]')!==null`, 'L2：坞里应有「回到写作台」入口')
+  await click('[data-wb-dock-close]')
+  await waitFor(`document.querySelector('[data-wb-dock]')===null`, 'L2：收起后坞应消失')
+  assert.equal(
+    await evaluate(`document.documentElement.style.getPropertyValue('--dsh-wb-dock-width')`),
+    '0px',
+    'L2：收起后应把让位还回去',
+  )
+  // 写作自己当主视图时不该有坞（主视图已经有了，再显示一遍没意义）
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, 'L2：应能打开切换器')
+  await click('[data-wb-mode="writing"]')
+  await waitFor(`window.__plugins['@dsh-local/workbench'].__workbenchRegistry().getActive()==='writing'`, 'L2：应切回写作')
+  await waitFor(`document.querySelector('[data-wb-dock-rail]')===null`, 'L2：写作当主视图时不应有它自己的坞')
 
   assert.equal(errors.length, 0, `主场景控制台不应有 error：${errors.join(' | ')}`)
 
@@ -217,7 +298,7 @@ app.whenReady().then(async () => {
   assert.equal(await count('.dshWmRoot'), 1, 'W5：降级路径下写作台应正常渲染')
   assert.equal(errors.length, 0, `降级场景控制台不应有 error：${errors.join(' | ')}`)
 
-  console.log('WORKBENCH_WRITING_OK W1/W2/W3/W5 通过（入口唯一 / 互斥 / 守卫拒绝 / 降级）')
+  console.log('WORKBENCH_WRITING_OK W1/W2/W3/W5 + L1/L1.5/L2 通过（入口唯一 / 互斥 / 守卫拒绝 / 降级 / 上下文 / 交接 / 辅助坞）')
   await new Promise((resolve) => server.close(resolve))
   app.exit(0)
 }).catch(async (err) => {

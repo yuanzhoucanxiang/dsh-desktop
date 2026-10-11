@@ -9,6 +9,13 @@ export const T = {
   empty: '还没有可用的模式。',
   emptyHint: '写作模式与 GIR 生图模式接入后，会出现在这里。',
   current: '当前',
+  contextNow: '正在做',
+  noticeDismiss: '点击关闭',
+  // 辅助坞（L2）
+  dockTitle: (label) => `${label} · 辅助坞`,
+  dockOpen: (label) => `展开${label}的辅助坞`,
+  dockCollapse: '收起辅助坞',
+  dockPick: '选择坞里显示哪个模式',
   activeNone: '未进入任何模式',
   exit: '退出模式',
   switchTo: (label) => `切换到 ${label}`,

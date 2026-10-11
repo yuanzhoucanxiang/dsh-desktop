@@ -10,6 +10,8 @@
     "plugin/workbench/lib/http.js",
     "plugin/workbench/lib/state.js"
   ],
-  "docs": [],
+  "docs": [
+    "plugin/workbench/README.md"
+  ],
   "exclude": []
 }

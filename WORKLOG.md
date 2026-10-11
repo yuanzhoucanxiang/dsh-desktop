@@ -1,5 +1,7 @@
 # 工作日志 · 索引与协作规范
 
+2026-10-11 **创作工具台层（P0 → L2，一整条线）**：把"模式"变成一等公民——新增内置插件 `plugin/workbench`（统一入口 / 切换 / 互斥 / 上下文 / 一键交接 / 辅助坞 / 设置段 + host 状态 `$DSH_HOME/workbench.json`）与共享库 `packages/mode-kit`（把写作模式的**会话承载**抽出来：adapter / 投影 / 身份 / 协调客户端，写作侧留四个再导出 shim，审计探针与单测不受影响）；写作模式与 GIR 生图模式接入（各自侧栏入口让位；**工具台缺席时自动降级回自持入口**，官方壳兼容）；GIR 侧改动落在其源码线 `0.57.4-alpha` 并**冻结快照 r4**（两个 home 的 web profile 已切、带备份，官方桌面版的 profile 未动）。设计与契约见 [`docs/plans/workbench-layer-v1.md`](docs/plans/workbench-layer-v1.md)（**§0.1 现状一览**列了每一阶段的验收与"没做"）与 [`plugin/workbench/README.md`](plugin/workbench/README.md)；写作侧接入细节见 [`plugin/writing-mode/CONTRACT.md`](plugin/writing-mode/CONTRACT.md) 的 P1 / L1 / L2 三节。验收：`test:workbench` 27+20、`test:mode-kit` 8、`test:writing-bridge` 12、三个 Electron 探针（工具台 8 组 / 写作接入 W1-W5+L1/L1.5/L2 / GIR 三 client 同页）、全链 `verify:writing-quick` **QUICK_EXIT=0**。本轮踩的坑（electron 环境变量、大小写文件名、`jsx` 第三参、探针竞态等）已归入下方新增的 **踩坑速查**。— 署名：deepseek-v4.1-flash
+
 2026-10-03 → 10-05：**写作台前端重做 + 作品档案三连 + v0.1.48 发布**（Qoder / Kimi；ZCode 补索引）。10-03：档案五/六刀（wiki 独立窗口 + 窗口内作品切换条；顺带根治 `isKernelPageUrl` 对非标协议 origin 恒 `"null"` 的同源误判——0.1.45 起 will-navigate 拦自家链接/焦点发送静默失效的老 bug，新 `lib/url-origin.js`）；客户端重构 A1–A8 + 阶段 B 令牌层（45 内联样式→19 具名类）+ C 硬缺陷 11 项 + D 全链收口 + E/F/G 三轮视觉与文案收口（入口 11→7、密度/基线/对比度）。10-04：**修复主界面永久「重新连接中」**（scheme 模式 WS 握手剥 Origin/代注 Cookie，`db02776`）→ **发布 v0.1.48**（`2a200b8`；真包 9/9 + 冷启动 12/12、五件资产齐、Latest）→ H 轮降噪（`40a37f9`）→ 档案 wiki **站点化**（一页长滚动→多页站点：首页/分区/篇目/节/章；导出=单文件快照、站点=多页；新 `lib/archive-site.js`；纯函数 23→32）→ **纯写作第一屏**（右栏/文库默认收起 + 真空页「借库」，`db38e2c`）。10-05：纯写作第一屏隔离预览交付（保持运行、由用户关窗）。**当前主分支已入库未发布**：wiki 站点化 + H 轮 + 纯写作第一屏（三条提交，随下个版本走）。全链 `verify:writing-quick` 保持 QUICK_EXIT=0（站点化后 600 行 PASS/OK）。详见 logs/2026-10-03.md / 10-04.md / 10-05.md。— Qoder / Kimi（实现），ZCode（索引补记），2026-10-05
 
 2026-10-02 全天：**写作模式两次发布 + 四批改进**（ZCode）。上午先收账——把 09-26（kimi：0.1.7 适配 + 右栏三区 + 成书）与 10-02（Qoder：UX 收口）三轮在飞工作跑通 node 侧 15 套门禁后入库（7baf928），随即**发布 v0.1.46**（50d7f75；真包 9/9、冷启动 12/12、五件资产 sha 一致、mac CI 成功）。随后对照 GitHub 成熟作品评估清单连做四批并**发布 v0.1.47**（3d39431）：①码字统计与日更目标（`lib/writing-stats.js` 按作品记账、打开播种基线防虚增、`GET stats` + 状态条芯片 + 检查页码字区）；②编辑器基本功（Ctrl+F 查找替换、海明威模式禁退格、打字机滚动镜像层）；③改稿 diff 回路（替换选区→预览→采纳/丢弃）+ 伙伴 `[[文稿名]]` 跳回（点击制、库内解析）+ mention「正文提及」徽标；④文档库「大纲」第三态→**卡片看板 + 拖拽重排**（`lib/reorder.js` 重命名事务：项目锁 + 两阶段改名 + 回滚 + 绝不覆盖 + 遗留中间态拒绝）。四套新门禁（stats 23 / jump 21 / outline 10 / reorder 24）挂进 quick 链，全链 **544 项 PASS 0 非零**；v0.1.47 真包 9/9 + 冷启动 12/12、五件资产齐、Latest。**关键坑**：真包验收的 profile 逐文件比对在主仓跑必然假红（主仓 LF vs worktree CRLF，autocrlf=true）——从 worktree 跑即绿，已记日志。详见 logs/2026-10-02.md 与 docs/writing-mode-plan.md §21。— ZCode，2026-10-02
@@ -193,3 +195,30 @@ v2 交回复核：[`review.md`](docs/audits/writing-architecture/2026-09-14/v2-r
 2026-10-03 作品档案第五刀：wiki 改为独立窗口（新 GET route=wiki 与 archive-export 共用 assembleArchiveModel；外壳新增 shell:open-wiki，只收路径、URL 外壳拼、窗口上限 6、同作品复用、随内核重启收掉；无桥环境退回覆盖层）。shell-hardening S7 九条 + 零依赖 CDP 取证 verify-wiki-window.mjs 真点一次通过；纯函数 19→20 项。日志 logs/2026-10-03.md。— 署名：Qoder
 
 2026-10-03 作品档案第六刀：档案窗口里的作品切换条（≥2 部作品时页头一排同源相对链接，当前这部不可点，零脚本、CSP 不动；只列 resolveProjectDir 解析得出且仍在库根内的作品——库根散稿伪条目与 Windows `realpathSync('')===cwd` 造出的死链一并滤掉）。顺带修 0.1.45 起的外壳老 bug：`isKernelPageUrl` 比 `URL.origin`，而 dsh-app 这类非标协议 origin 恒为字符串 `"null"`，自家地址整片被判跨域（will-navigate 拦自家链接、sendToFocused 静默不发）→ 新增零依赖 `lib/url-origin.js` 作同源键。纯函数 20→23 项、档案门禁 13→15 段（含真点切换条换页）、hardening S8 八条行为断言、真实文库 CDP WIKI_WINDOW_OK；quick 全链 26 套件 566 段 PASS 0 非零。日志 logs/2026-10-03.md。— 署名：Qoder
+
+---
+
+## 踩坑速查（跨轮次复用）
+
+> `AGENTS.md` 一直指向这一节，但它此前**并不存在**（2026-10-11 补建）。只收"会咬人"的坑：症状 → 原因 → 对策。
+> 历史细节仍在各日 `logs/` 里。
+
+| # | 症状 | 原因 | 对策 |
+|---|---|---|---|
+| 1 | 跑 electron 脚本报 `app is undefined` / `Cannot read properties of undefined (reading 'setPath')` | 本机 agent 进程**继承了 `ELECTRON_RUN_AS_NODE=1`**（agent 自己就活在 Electron 里），electron 会以 node 模式启动 | 跑任何 electron 命令前 `Remove-Item Env:ELECTRON_RUN_AS_NODE`；或直接用 `node_modules\electron\dist\electron.exe` |
+| 2 | esbuild 报 `No matching export ... for import "X"`，明明文件里有 | **Windows 文件系统大小写不敏感**：`Entry.js` 与 `entry.js` 是同一个文件，写入其中一个会覆盖另一个 | 同目录不要放只差大小写的文件名；组件用 `FooterEntry.js` 这类明确命名 |
+| 3 | `node --check` 报 `Unexpected identifier '...'`，注释里明明是文字 | 块注释里写了路径通配（如 `docs/audits/**/probes.mjs`），其中的 `*/` **提前终止了注释** | 注释里不写 `*/`；要写就拆开或改描述 |
+| 4 | React 组件渲染成**空容器**（DOM 里有壳没内容） | `jsx(type, props, key)` / `jsxs(type, props, key)` 的**第三个参数是 key，不是 children** | children 一律放 `props.children`（本仓库既有代码就是这么写的） |
+| 5 | 同一容器第二次 `createRoot` 报 `container has already been passed to createRoot` | 探针 harness 把**多个槽位注册**渲染进同一个容器（例如新增一个 `shell.overlay` 条目后） | 每条注册一个独立容器（`document.createElement('div')` 再 append） |
+| 6 | 探针偶发失败，单跑又全绿 | **并行会话/负载下改文件或抢端口**，链路里某一步撞上瞬时状态 | 跑门禁期间**冻结写入**；假红先**单跑复核**再决定动不动代码 |
+| 7 | 探针"改完立刻断言"偶发失败 | 状态落定与 React 重渲染**不在同一个 tick**（如 `setActive` 先落 activeId、随后才关切换器） | 用 `waitFor(...)` 等目标状态，不要紧跟同步断言 |
+| 8 | 换过守卫之后功能静默失效（如交接不再落盘） | 探针用 `setCloseGuard(null)` 收尾，把**真守卫一起清空**了 | `setCloseGuard` 现在**返回旧守卫**；探针存下来原样还原 |
+| 9 | 改动 `delivery-manifest.json` 的定向替换总是匹配不上 | 该文件是 **CRLF**（且缩进未必是你以为的层数） | 按实际字节拼串（或写脚本读出来再 replace），别用 LF 手写 |
+| 10 | PowerShell 脚本报 `无法覆盖变量 HOME` | `$home` 与只读自动变量 `$HOME` 同名（大小写不敏感） | 循环变量换名（`$h` / `$item`） |
+| 11 | 验 app.asar 时仓库 `package.json` 被覆盖成 371 B 的精简版 | `asar extract-file <archive> <name>` **会把文件写到当前工作目录** | 一律用 `asar extract <archive> <目录>` 或 `asar list` |
+| 12 | 共享工作树里提交卷进别人的在飞改动 | `git add -A` | **禁 `git add -A`**：逐个列文件 + 提交前核对 changed 数量 |
+| 13 | 交接/切模式时以为"文稿被关掉了" | `editor.close()` 只是 **flush**（脏了就保存），**不清空会话** | 别按"关闭"理解它；要看语义读 `src/shared/editor-session.js` |
+| 14 | GIR 侧改接收端后"信箱被取空但输入框还是空的" | 分步成像工作台 `key={pid}`，项目详情到达时会**重挂载**，先挂载那次把载荷用掉又随状态丢掉 | 载荷由外层持有到浮层关闭；内层每次挂载补一次（同实例内用 ref 去重） |
+| 15 | GIR 侧改动后整块浮层不渲染、`props is not defined` | `ImagingWorkbench` 是**解构参数**组件，没有 `props` 绑定 | 新 prop 要写进参数列表，不能写 `props.xxx` |
+
+— 维护约定：新坑先记当日 `logs/`，确认会重复咬人再进本表；本表只增不删（过时的在"对策"里注明）。— 署名：deepseek-v4.1-flash（2026-10-11 建表）
