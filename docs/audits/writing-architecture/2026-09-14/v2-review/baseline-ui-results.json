@@ -65,12 +65,12 @@
         "visible": "NEW_DURING_RECOVERY",
         "disk": {
           "schemaVersion": 2,
-          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-wOL3cq\\library\\演示项目",
-          "windowId": "e3ce466b-e3d2-4a5b-960b-50a93a2d656a",
+          "project": "C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-EKxDkw\\library\\演示项目",
+          "windowId": "dc99926f-795f-4f06-9506-e4fe6c597398",
           "text": "NEW_DURING_RECOVERY",
           "reference": null,
           "rev": 8,
-          "updatedAt": "2026-10-11T08:48:27.796Z",
+          "updatedAt": "2026-10-11T09:39:11.112Z",
           "cleared": false
         }
       }
@@ -125,7 +125,7 @@
         "sent": [
           {
             "type": "text",
-            "text": "【写作模式状态】（系统自动附带的事实，作者看不到这一段）\n- 作品：library\n- 正在写：演示项目/draft/novel/第1章-v1.md\n- 光标：第 5 字处\n- 未保存改动：无\n- 今日净增：+0 字\n- 成稿检查（novel）：2 项未达标\n- 实时体检：体检 ✓ 没有明显问题\n- 章节定位：第 1/2 章「第1章」；下一章：第2章-v1；成稿检查 2 项未达标\n- 当前段落：第一章原文\n以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。\n\n【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-wOL3cq\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
+            "text": "【写作模式状态】（系统自动附带的事实，作者看不到这一段）\n- 作品：library\n- 正在写：演示项目/draft/novel/第1章-v1.md\n- 光标：第 5 字处\n- 未保存改动：无\n- 今日净增：+0 字\n- 成稿检查（novel）：2 项未达标\n- 实时体检：体检 ✓ 没有明显问题\n- 章节定位：第 1/2 章「第1章」；下一章：第2章-v1；成稿检查 2 项未达标\n- 当前段落：第一章原文\n以上是作者此刻的真实状态：请据此回答，不要臆造文件、进度或未列出的内容。\n\n【引用 · remote-ref · C:\\Users\\DL\\AppData\\Local\\Temp\\dsh-writing-chat-EKxDkw\\library\\演示项目\\draft\\novel\\第1章-v1.md】\nREMOTE_REFERENCE\n\nBOUND_REMOTE"
           }
         ]
       }
