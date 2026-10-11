@@ -2324,6 +2324,8 @@ var zh = {
   archiveNeedDoc: "先打开一篇稿件：作品档案跟着「当前文稿所属的作品」走；一个作品都没有时，先在库面板里新建或添加作品。",
   health: "体检",
   healthCompanion: "同一份体检也会随消息发给写作伙伴",
+  healthClean: "没有明显问题：长句、副词密度、「的」堆叠、引号开合这些都没踩到。",
+  healthJump: "跳到正文里这一处",
   noChapters: "还没有章节",
   firstChapter: "写第一章",
   newChapter: "新章节",
@@ -2445,6 +2447,8 @@ var en = {
   archiveNeedDoc: "Open a document first — the wiki follows the project of the open document. If you have no project yet, create or add one in the library pane.",
   health: "Checkup",
   healthCompanion: "the same checkup is sent to your writing partner with each message",
+  healthClean: "Nothing obvious: long sentences, adverb density, repeated 「的」 and unbalanced quotes all clear.",
+  healthJump: "Jump to this spot in the draft",
   noChapters: "No chapters yet",
   firstChapter: "Start chapter one",
   newChapter: "New chapter",
@@ -3223,9 +3227,18 @@ var CSS = [
   ".dshWmGateState.is-fail{color:var(--wm-err);}",
   /* 状态条元信息（字数/格式/今日净增）：降权，不与检查摘要抢读 */
   ".dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}",
-  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼 */
-  ".dshWmHealthChip{font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:default;}",
+  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼；点开列出每条提示 */
+  ".dshWmHealthChip{font:inherit;font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:pointer;background:none;border:0;padding:0 2px;border-radius:var(--wm-radius-s);}",
+  ".dshWmHealthChip:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));}",
   ".dshWmHealthChip.is-warn{color:var(--wm-warn);}",
+  ".dshWmHealthPop{position:absolute;bottom:calc(100% + 6px);right:12px;z-index:30;width:min(460px,70vw);max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 32px rgba(0,0,0,.28);}",
+  ".dshWmHealthPopHead{font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-primary);}",
+  ".dshWmHealthPopList{display:flex;flex-direction:column;gap:2px;}",
+  ".dshWmHealthRow{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;border:0;background:none;font:inherit;padding:6px 8px;border-radius:var(--wm-radius-s);cursor:pointer;color:var(--dsw-alias-label-primary);}",
+  ".dshWmHealthRow:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));}",
+  ".dshWmHealthRowHint{font-size:var(--wm-text-sm);}",
+  ".dshWmHealthRowEx{font-size:var(--wm-text-xs);color:var(--wm-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWmHealthPopFoot{font-size:var(--wm-text-xs);color:var(--wm-text-dim);border-top:1px solid var(--dsw-alias-border-l3);padding-top:6px;margin-top:2px;}",
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
   ".dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}",
   ".dshWmProjFormActions{display:flex;gap:6px;}",
@@ -3641,8 +3654,13 @@ var StatusBar = react2.memo(function StatusBar2({
   stats,
   dailyGoal,
   gate,
-  health
+  health,
+  onJumpToIssue
 }) {
+  const [healthOpen, setHealthOpen] = react2.useState(false);
+  react2.useEffect(() => {
+    if (!health) setHealthOpen(false);
+  }, [health]);
   return jsx3.jsx(
     "div",
     {
@@ -3688,12 +3706,42 @@ var StatusBar = react2.memo(function StatusBar2({
         /* 实时体检（2026-10-11）：本地毫秒级算出来的提示数，鼠标停上去看具体是哪几处；
            同一份结果也会随消息发给写作伙伴（所以它不用你复述问题）。 */
         health ? jsx3.jsx("span", { className: "dshWmStatusSep", children: "·" }, "hs") : null,
-        health ? jsx3.jsx("span", {
-          className: "dshWmHealthChip" + (health.issues.length ? " is-warn" : ""),
+        health ? jsx3.jsx("button", {
+          type: "button",
+          className: "dshWmHealthChip" + (health.issues.length ? " is-warn" : "") + (healthOpen ? " is-open" : ""),
           "data-wm-health": String(health.issues.length),
           title: healthTitle(health),
+          "aria-expanded": healthOpen ? "true" : "false",
+          onClick: () => setHealthOpen((v) => !v),
           children: health.issues.length ? T.health + " " + health.issues.length : T.health + " ✓"
-        }, "hv") : null
+        }, "hv") : null,
+        healthOpen && health ? jsx3.jsxs("div", {
+          className: "dshWmHealthPop",
+          "data-wm-health-pop": "1",
+          children: [
+            jsx3.jsx("div", { className: "dshWmHealthPopHead", children: health.brief || T.health }),
+            health.issues.length ? jsx3.jsx("div", {
+              className: "dshWmHealthPopList",
+              children: health.issues.map(
+                (it, i) => jsx3.jsxs("button", {
+                  type: "button",
+                  className: "dshWmHealthRow",
+                  "data-wm-health-row": it.kind,
+                  title: T.healthJump,
+                  onClick: () => {
+                    if (onJumpToIssue) onJumpToIssue(it);
+                    setHealthOpen(false);
+                  },
+                  children: [
+                    jsx3.jsx("span", { className: "dshWmHealthRowHint", children: it.hint }),
+                    jsx3.jsx("span", { className: "dshWmHealthRowEx", children: "「" + it.excerpt + "…」" })
+                  ]
+                }, it.kind + ":" + i)
+              )
+            }) : jsx3.jsx("div", { className: "dshWmHealthRowEx", children: T.healthClean }),
+            jsx3.jsx("div", { className: "dshWmHealthPopFoot", children: T.healthCompanion })
+          ]
+        }, "hp") : null
       ]
     },
     "st"
@@ -9401,11 +9449,11 @@ function addChildren(props, children) {
     }
   }
 }
-function productionCreate(_, jsx47, jsxs22) {
+function productionCreate(_, jsx47, jsxs23) {
   return create2;
   function create2(_2, type, props, key) {
     const isStaticChildren = Array.isArray(props.children);
-    const fn = isStaticChildren ? jsxs22 : jsx47;
+    const fn = isStaticChildren ? jsxs23 : jsx47;
     return key ? fn(type, props, key) : fn(type, props);
   }
 }
@@ -23791,7 +23839,16 @@ function WritingModeApp() {
                     stats,
                     dailyGoal,
                     gate,
-                    health
+                    health,
+                    // 点体检里的一条 → 光标跳到正文那一处（选区落在问题上，方便直接改）
+                    onJumpToIssue: (it) => {
+                      const ta = taRef.current;
+                      if (!ta) return;
+                      const at = Math.max(0, Math.min(ta.value.length, Number(it?.at) || 0));
+                      const end = Math.max(at, Math.min(ta.value.length, at + (Number(it?.length) || 8)));
+                      ta.focus();
+                      ta.setSelectionRange(at, end);
+                    }
                   }, "st"),
                   exportProj ? jsx38.jsx(ExportBookPanel, {
                     proj: exportProj,

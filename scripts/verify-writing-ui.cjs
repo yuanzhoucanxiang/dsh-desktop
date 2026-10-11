@@ -157,6 +157,13 @@ app.whenReady().then(async () => {
   assert.ok(Number.isInteger(healthCount) && healthCount >= 0, '体检计数应为非负整数：' + healthCount)
   assert.ok(String(await evaluate(`document.querySelector('[data-wm-health]').title`)).includes('体检'), '体检芯片应有说明 title')
   console.log(`PASS UI 实时体检芯片：data-wm-health=${healthCount}`)
+  // 可点开（2026-10-11）：点一下出浮层（干净正文时是"没有明显问题"），再点收起
+  await evaluate(`document.querySelector('[data-wm-health]').click()`)
+  await waitFor(`document.querySelector('[data-wm-health-pop]')!==null`)
+  assert.ok(String(await evaluate(`document.querySelector('[data-wm-health-pop]').textContent`)).includes('体检') || String(await evaluate(`document.querySelector('[data-wm-health-pop]').textContent`)).length > 4, '体检浮层应有内容')
+  await evaluate(`document.querySelector('[data-wm-health]').click()`)
+  await waitFor(`document.querySelector('[data-wm-health-pop]')===null`)
+  console.log('PASS UI 体检浮层可开可收')
   // 目标流程把右栏切到了「检查」；切回伙伴页，保住后续能力条/专注断言的前置状态
   await button('写作伙伴')
   await waitFor(`document.querySelector('[data-wm-capability="blocked"]')!==null`)

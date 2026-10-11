@@ -25,7 +25,11 @@ export const StatusBar = react.memo(function StatusBar({
   dailyGoal,
   gate,
   health,
+  onJumpToIssue,
 }) {
+  // 体检芯片可点开（2026-10-11）：列出每条提示，点一条把光标跳到正文里那一处。
+  const [healthOpen, setHealthOpen] = react.useState(false)
+  react.useEffect(() => { if (!health) setHealthOpen(false) }, [health])
   return jsx.jsx(
     'div',
     {
@@ -89,12 +93,46 @@ export const StatusBar = react.memo(function StatusBar({
           ? jsx.jsx('span', { className: 'dshWmStatusSep', children: '·' }, 'hs')
           : null,
         health
-          ? jsx.jsx('span', {
-              className: 'dshWmHealthChip' + (health.issues.length ? ' is-warn' : ''),
+          ? jsx.jsx('button', {
+              type: 'button',
+              className: 'dshWmHealthChip' + (health.issues.length ? ' is-warn' : '') + (healthOpen ? ' is-open' : ''),
               'data-wm-health': String(health.issues.length),
               title: healthTitle(health),
+              'aria-expanded': healthOpen ? 'true' : 'false',
+              onClick: () => setHealthOpen((v) => !v),
               children: health.issues.length ? T.health + ' ' + health.issues.length : T.health + ' ✓',
             }, 'hv')
+          : null,
+        healthOpen && health
+          ? jsx.jsxs('div', {
+              className: 'dshWmHealthPop',
+              'data-wm-health-pop': '1',
+              children: [
+                jsx.jsx('div', { className: 'dshWmHealthPopHead', children: health.brief || T.health }),
+                health.issues.length
+                  ? jsx.jsx('div', {
+                      className: 'dshWmHealthPopList',
+                      children: health.issues.map((it, i) =>
+                        jsx.jsxs('button', {
+                          type: 'button',
+                          className: 'dshWmHealthRow',
+                          'data-wm-health-row': it.kind,
+                          title: T.healthJump,
+                          onClick: () => {
+                            if (onJumpToIssue) onJumpToIssue(it)
+                            setHealthOpen(false)
+                          },
+                          children: [
+                            jsx.jsx('span', { className: 'dshWmHealthRowHint', children: it.hint }),
+                            jsx.jsx('span', { className: 'dshWmHealthRowEx', children: '「' + it.excerpt + '…」' }),
+                          ],
+                        }, it.kind + ':' + i)
+                      ),
+                    })
+                  : jsx.jsx('div', { className: 'dshWmHealthRowEx', children: T.healthClean }),
+                jsx.jsx('div', { className: 'dshWmHealthPopFoot', children: T.healthCompanion }),
+              ],
+            }, 'hp')
           : null,
       ],
     },

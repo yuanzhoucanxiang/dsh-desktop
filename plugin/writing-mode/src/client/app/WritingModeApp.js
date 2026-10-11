@@ -1151,6 +1151,15 @@ export function WritingModeApp() {
                     dailyGoal,
                     gate,
                     health,
+                    // 点体检里的一条 → 光标跳到正文那一处（选区落在问题上，方便直接改）
+                    onJumpToIssue: (it) => {
+                      const ta = taRef.current
+                      if (!ta) return
+                      const at = Math.max(0, Math.min(ta.value.length, Number(it?.at) || 0))
+                      const end = Math.max(at, Math.min(ta.value.length, at + (Number(it?.length) || 8)))
+                      ta.focus()
+                      ta.setSelectionRange(at, end)
+                    },
                   }, 'st'),
                   exportProj
                     ? jsx.jsx(ExportBookPanel, {

@@ -719,9 +719,18 @@ export const CSS = [
   '.dshWmGateState.is-fail{color:var(--wm-err);}',
   /* 状态条元信息（字数/格式/今日净增）：降权，不与检查摘要抢读 */
   '.dshWmStatusMeta{font-size:var(--wm-text-xs);color:var(--wm-text-dim);}',
-  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼 */
-  '.dshWmHealthChip{font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:default;}',
+  /* 实时体检芯片（2026-10-11）：没问题时降权成元信息，有问题才用警示色抢一眼；点开列出每条提示 */
+  '.dshWmHealthChip{font:inherit;font-size:var(--wm-text-xs);color:var(--wm-text-dim);cursor:pointer;background:none;border:0;padding:0 2px;border-radius:var(--wm-radius-s);}',
+  '.dshWmHealthChip:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));}',
   '.dshWmHealthChip.is-warn{color:var(--wm-warn);}',
+  '.dshWmHealthPop{position:absolute;bottom:calc(100% + 6px);right:12px;z-index:30;width:min(460px,70vw);max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:var(--wm-radius-m);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 32px rgba(0,0,0,.28);}',
+  '.dshWmHealthPopHead{font-size:var(--wm-text-sm);font-weight:var(--wm-weight-bold);color:var(--dsw-alias-label-primary);}',
+  '.dshWmHealthPopList{display:flex;flex-direction:column;gap:2px;}',
+  '.dshWmHealthRow{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;border:0;background:none;font:inherit;padding:6px 8px;border-radius:var(--wm-radius-s);cursor:pointer;color:var(--dsw-alias-label-primary);}',
+  '.dshWmHealthRow:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));}',
+  '.dshWmHealthRowHint{font-size:var(--wm-text-sm);}',
+  '.dshWmHealthRowEx{font-size:var(--wm-text-xs);color:var(--wm-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  '.dshWmHealthPopFoot{font-size:var(--wm-text-xs);color:var(--wm-text-dim);border-top:1px solid var(--dsw-alias-border-l3);padding-top:6px;margin-top:2px;}',
 
   /* 文档库：项目创建表单 / 新建文稿行 / 三视图切换 / 搜索框容器 */
   '.dshWmProjForm{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;}',
