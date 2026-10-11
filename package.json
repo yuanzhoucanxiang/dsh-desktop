@@ -96,7 +96,8 @@
     "remark-gfm": "^4.0.1"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "@dsh-local/mode-kit": "git+https://github.com/yuanzhoucanxiang/dsh-mode-kit.git#b16b1d4a633e8f506f86b442ccd1ae9c7b06fcfa"
   },
   "build": {
     "appId": "com.deepseek.dshdesktop",
