@@ -2077,6 +2077,8 @@ __export(entry_exports, {
   __draftConflict: () => companionDraftConflict,
   __draftDirty: () => companionDraftDirty,
   __draftStatus: () => companionDraftStatus,
+  __getModeActive: () => getModeActive,
+  __setCloseGuard: () => setCloseGuard,
   api: () => api,
   apply: () => apply,
   companionRows: () => companionRows,
@@ -2102,7 +2104,7 @@ function createEditorSession(io, recovered) {
   let generation = 0;
   let saving = null;
   let creating = false;
-  const listeners2 = /* @__PURE__ */ new Set();
+  const listeners3 = /* @__PURE__ */ new Set();
   const notify = (patch2) => {
     state = { ...state, ...patch2 };
     try {
@@ -2110,7 +2112,7 @@ function createEditorSession(io, recovered) {
     } catch {
       state = { ...state, error: "恢复草稿暂存失败，请保存后再退出。" };
     }
-    for (const fn of listeners2) fn(state);
+    for (const fn of listeners3) fn(state);
   };
   const errorText = (err) => {
     const code4 = err?.message || String(err);
@@ -2129,8 +2131,8 @@ function createEditorSession(io, recovered) {
   const session = {
     get: () => state,
     subscribe(fn) {
-      listeners2.add(fn);
-      return () => listeners2.delete(fn);
+      listeners3.add(fn);
+      return () => listeners3.delete(fn);
     },
     change(value) {
       if (state.loading || !state.path) return;
@@ -3939,7 +3941,7 @@ var EmptyState = react3.memo(function EmptyState2({ onNew, onBrowse }) {
   });
 });
 
-// plugin/writing-mode/src/client/adapters/harness/identity.js
+// packages/mode-kit/src/harness/identity.js
 function canonicalProjectKey(input) {
   const raw = String(input || "").trim();
   if (!raw) return "";
@@ -3951,7 +3953,7 @@ function projectIdentityOf(binding, fallbackPath) {
   return { key: canonicalProjectKey(fallbackPath), authoritative: false, display: String(fallbackPath || "") };
 }
 
-// plugin/writing-mode/src/client/adapters/harness/projection.js
+// packages/mode-kit/src/harness/projection.js
 var REFERENCE_SEPARATOR = "\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n";
 function textOf(parts) {
   return (parts || []).filter((p) => p && (p.kind === "text" || p.type === "text")).map((p) => p.text || "").join("");
@@ -4086,9 +4088,10 @@ function createSnapshotCache() {
   };
 }
 
-// plugin/writing-mode/src/client/adapters/harness/coordination-client.js
+// packages/mode-kit/src/harness/coordination-client.js
 var JSON_POST = { method: "POST", headers: { "content-type": "application/json" } };
-function httpCoordination(api2 = api) {
+function httpCoordination(api2) {
+  if (typeof api2 !== "function") throw new Error("httpCoordination: api 必填（由模式注入自己的 HTTP 入口）");
   const post2 = async (op, body) => {
     const res = await api2("coordination", { ...JSON_POST, body: JSON.stringify({ op, ...body }) });
     return {
@@ -4112,7 +4115,7 @@ function httpCoordination(api2 = api) {
   };
 }
 
-// plugin/writing-mode/src/client/adapters/harness/adapter.js
+// packages/mode-kit/src/harness/adapter.js
 var PEER_WAIT = { attempts: 40, intervalMs: 250 };
 var FOCUS_SIGNAL = new AbortController().signal;
 function adapterError(code4, message, extra = {}) {
@@ -4388,7 +4391,7 @@ function createHarnessAdapter(deps = {}) {
       wrongness: bound.wrongness || null
     };
     const snapshotCache = createSnapshotCache();
-    const listeners2 = /* @__PURE__ */ new Set();
+    const listeners3 = /* @__PURE__ */ new Set();
     const nativeUnsubs = [];
     let attachedSessionId = null;
     let attachedInputId = null;
@@ -4424,7 +4427,7 @@ function createHarnessAdapter(deps = {}) {
     };
     function notify() {
       if (disposed) return;
-      for (const fn of [...listeners2]) {
+      for (const fn of [...listeners3]) {
         try {
           fn();
         } catch (err) {
@@ -4685,9 +4688,9 @@ function createHarnessAdapter(deps = {}) {
       );
     }
     function subscribe(fn) {
-      listeners2.add(fn);
+      listeners3.add(fn);
       ensureAttached();
-      return () => listeners2.delete(fn);
+      return () => listeners3.delete(fn);
     }
     function getDraft() {
       return currentInputSnap()?.draft ?? "";
@@ -4775,7 +4778,7 @@ function createHarnessAdapter(deps = {}) {
         } catch {
         }
       }
-      listeners2.clear();
+      listeners3.clear();
     }
     async function recover(reason = "author-requested") {
       if (state.status !== "missing" && state.status !== "uncertain" && state.status !== "waiting") {
@@ -5026,10 +5029,20 @@ var closeGuard = null;
 function setCloseGuard(fn) {
   closeGuard = fn;
 }
+async function askCloseGuard() {
+  if (!closeGuard) return true;
+  try {
+    return await closeGuard() !== false;
+  } catch {
+    return false;
+  }
+}
 var modeListeners = /* @__PURE__ */ new Set();
 function setModeActive(next) {
   if (!next && modeActive && closeGuard) {
-    void closeGuard();
+    void askCloseGuard().then((ok3) => {
+      if (ok3) commitModeActive(false);
+    });
     return;
   }
   commitModeActive(next);
@@ -6682,20 +6695,52 @@ function rankWorldSettingIds(items, turnText, pinnedIds = [], excludedIds = []) 
   scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return scored;
 }
+function extractFirstJsonObject(text7) {
+  const src = String(text7 || "");
+  const start2 = src.indexOf("{");
+  if (start2 < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start2; i < src.length; i++) {
+    const ch = src[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return src.slice(start2, i + 1);
+    }
+  }
+  return null;
+}
 function parseOrganizeResult(raw) {
   let data = raw;
   if (typeof raw === "string") {
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-      if (!m) return { ok: false, error: "organize-parse-failed" };
+    const attempts = [];
+    attempts.push(raw);
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) attempts.push(fenced[1]);
+    const balanced = extractFirstJsonObject(raw);
+    if (balanced) attempts.push(balanced);
+    let parsed = false;
+    for (const candidate of attempts) {
       try {
-        data = JSON.parse(m[1]);
+        data = JSON.parse(candidate);
+        parsed = true;
+        break;
       } catch {
-        return { ok: false, error: "organize-parse-failed" };
       }
     }
+    if (!parsed) return { ok: false, error: "organize-parse-failed" };
   }
   if (!data || typeof data !== "object") return { ok: false, error: "organize-parse-failed" };
   if (data.schemaVersion != null && Number(data.schemaVersion) !== 1) {
@@ -23207,11 +23252,9 @@ function WritingModeApp() {
   }, [active, editor]);
   react18.useEffect(() => {
     setCloseGuard(async () => {
-      if (await editor.close()) {
-        commitModeActive(false);
-        return;
-      }
+      if (await editor.close()) return true;
       flashMsg("保存失败，未退出写作台：当前文字还压在本地，可点稿面下方「重试保存」或「另存新版」");
+      return false;
     });
     const protect = (e) => {
       if (!editor.get().dirty && editor.get().status !== "saving") return;
@@ -24690,9 +24733,72 @@ function WritingModeSettings() {
   );
 }
 
+// plugin/writing-mode/src/client/adapters/workbench-bridge.js
+var MODE_ID = "writing";
+var service = null;
+var listeners2 = /* @__PURE__ */ new Set();
+function emit() {
+  for (const fn of [...listeners2]) {
+    try {
+      fn();
+    } catch (err) {
+      console.warn("[writing-mode] workbench listener failed:", err);
+    }
+  }
+}
+function hasWorkbench() {
+  return service !== null;
+}
+function subscribeWorkbench(fn) {
+  if (typeof fn !== "function") return () => {
+  };
+  listeners2.add(fn);
+  return () => listeners2.delete(fn);
+}
+function bindWorkbench(ctx) {
+  if (!ctx || typeof ctx.inject !== "function") return void 0;
+  return ctx.inject(["workbench"], (scope) => {
+    const wb = scope && scope.workbench;
+    if (!wb || typeof wb.registerMode !== "function") return void 0;
+    service = wb;
+    const disposeMode = wb.registerMode({
+      id: MODE_ID,
+      label: () => T.toggle,
+      order: 20,
+      mount: "overlay",
+      // 被问一次就够：允许时由 onDeactivate 落状态（见 mode-store.askCloseGuard 的注释）
+      canDeactivate: () => askCloseGuard(),
+      onActivate: () => commitModeActive(true),
+      onDeactivate: () => commitModeActive(false)
+    });
+    const offMode = subscribeMode(() => {
+      const local = getModeActive();
+      const remote = typeof wb.getActive === "function" && wb.getActive() === MODE_ID;
+      if (local && !remote) {
+        if (typeof wb.setActive === "function") void wb.setActive(MODE_ID, "mode-local");
+      } else if (!local && remote) {
+        if (typeof wb.setActive === "function") void wb.setActive(null, "mode-local");
+      }
+    });
+    emit();
+    console.info("[writing-mode] 已接入工具台：两个自持入口让位，切换与守卫交给工具台");
+    return () => {
+      offMode();
+      if (typeof disposeMode === "function") disposeMode();
+      if (service === wb) service = null;
+      emit();
+    };
+  });
+}
+
 // plugin/writing-mode/src/client/features/settings/entries.js
 var react21 = __toESM(require("react"), 1);
 var jsx44 = __toESM(require("react/jsx-runtime"), 1);
+function useWorkbenchOwned() {
+  const [owned, setOwned] = react21.useState(hasWorkbench);
+  react21.useEffect(() => subscribeWorkbench(() => setOwned(hasWorkbench())), []);
+  return owned;
+}
 function WritingModeIcon({ size = 16 }) {
   return jsx44.jsxs("svg", {
     width: size,
@@ -24724,8 +24830,10 @@ function WritingModeIconButton({ on, onToggle, extraClass }) {
   });
 }
 function WritingModeFooterEntry({ wide } = {}) {
+  const owned = useWorkbenchOwned();
   const [on, setOn] = react21.useState(getModeActive);
   react21.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  if (owned) return null;
   return jsx44.jsx(WritingModeIconButton, {
     on,
     onToggle: () => setModeActive(!on),
@@ -24733,8 +24841,10 @@ function WritingModeFooterEntry({ wide } = {}) {
   });
 }
 function WritingModeHeaderEntry() {
+  const owned = useWorkbenchOwned();
   const [on, setOn] = react21.useState(getModeActive);
   react21.useEffect(() => subscribeMode(() => setOn(getModeActive())), []);
+  if (owned) return null;
   return jsx44.jsx(WritingModeIconButton, { on, onToggle: () => setModeActive(!on) });
 }
 
@@ -24747,6 +24857,11 @@ var inject = __wmAlreadyLoaded ? [] : ["slots", "sessions", "connection", "works
 function apply(ctx) {
   if (__wmAlreadyLoaded) return;
   bindHarness(ctx);
+  try {
+    bindWorkbench(ctx);
+  } catch (err) {
+    console.warn("[writing-mode] workbench bridge failed:", err);
+  }
   try {
     ensureDomFloat();
   } catch (err) {

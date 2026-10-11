@@ -152,24 +152,61 @@ export function rankWorldSettingIds(items, turnText, pinnedIds = [], excludedIds
 }
 
 /**
+ * 从自由文本里抽第一个**配对完整**的 JSON 对象（2026-10-11 真机实测补）。
+ *
+ * 为什么需要：真机会话里模型经常把 JSON 夹在解释里、而且不带 ```围栏——
+ * 原实现只认"整段 JSON"或"围栏 JSON"，于是整条整理结果被丢掉
+ * （面板只报「无法解析整理结果；原文已保留」）。这里做字符串感知的配对扫描：
+ * 遇 `"` 进字符串态、处理 `\` 转义，只在字符串外计 `{}` 深度。
+ * @returns {string|null} 配对完整的子串；找不到返回 null
+ */
+export function extractFirstJsonObject(text) {
+  const src = String(text || '')
+  const start = src.indexOf('{')
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < src.length; i++) {
+    const ch = src[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return src.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+/**
  * 解析「整理为设定」的模型结构化结果（allowlist）。
  * 模型输出永远不能带 confirmed/targetPath/actor 作为权威。
  */
 export function parseOrganizeResult(raw) {
   let data = raw
   if (typeof raw === 'string') {
-    try {
-      data = JSON.parse(raw)
-    } catch {
-      // 允许 ```json 围栏
-      const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
-      if (!m) return { ok: false, error: 'organize-parse-failed' }
+    const attempts = []
+    attempts.push(raw)
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+    if (fenced) attempts.push(fenced[1])
+    const balanced = extractFirstJsonObject(raw)
+    if (balanced) attempts.push(balanced)
+    let parsed = false
+    for (const candidate of attempts) {
       try {
-        data = JSON.parse(m[1])
-      } catch {
-        return { ok: false, error: 'organize-parse-failed' }
-      }
+        data = JSON.parse(candidate)
+        parsed = true
+        break
+      } catch { /* 试下一个候选 */ }
     }
+    if (!parsed) return { ok: false, error: 'organize-parse-failed' }
   }
   if (!data || typeof data !== 'object') return { ok: false, error: 'organize-parse-failed' }
   if (data.schemaVersion != null && Number(data.schemaVersion) !== 1) {
