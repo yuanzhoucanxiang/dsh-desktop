@@ -1,31 +1,9 @@
 /**
- * 协调协议的 HTTP 客户端（host 侧实现见 plugin/writing-mode/lib/coordination.js）。
- * 只依赖 services/writing-api 的 api()；不做任何本地判定——本地判定一律以 host 记录为准。
+ * 协调协议 HTTP 客户端 —— 实现已抽到共享库 `@dsh-local/mode-kit`（2026-10-11 P3）。
+ * 这里只做再导出；实现见 `packages/mode-kit/src/harness/coordination-client.js`。
+ *
+ * 注意：抽库后 `httpCoordination(api)` 的 `api` 变成**必填**（库不再默认 import 写作模式的
+ * writing-api）。写作模式自己的调用点（`runtime.js` → adapter 的 `api` 依赖）本来就显式传，
+ * 所以这里不需要额外适配。
  */
-import { api as defaultApi } from '../../services/writing-api.js'
-
-const JSON_POST = { method: 'POST', headers: { 'content-type': 'application/json' } }
-
-export function httpCoordination(api = defaultApi) {
-  const post = async (op, body) => {
-    const res = await api('coordination', { ...JSON_POST, body: JSON.stringify({ op, ...body }) })
-    return {
-      ok: Boolean(res?.ok),
-      outcome: res?.outcome || null,
-      record: res?.record || null,
-      error: res?.error || null,
-    }
-  }
-  return {
-    claim: (body) => post('claim', body),
-    creating: (body) => post('creating', body),
-    confirm: (body) => post('confirm', body),
-    uncertain: (body) => post('uncertain', body),
-    release: (body) => post('release', body),
-    forget: (body) => post('forget', body),
-    read: async (body) => {
-      const res = await api('coordination', undefined, { path: body.path })
-      return { ok: Boolean(res?.ok), record: res?.record || null, error: res?.error || null }
-    },
-  }
-}
+export { httpCoordination } from '../../../../../../packages/mode-kit/src/harness/coordination-client.js'

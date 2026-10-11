@@ -40,12 +40,12 @@ function timeOf(iso) {
 /* ─────────────────────────────── 页签 ─────────────────────────────────── */
 
 function switchTab(tab) {
-  const target = ['plugins', 'update', 'notify', 'appear'].includes(tab) ? tab : 'plugins'
+  const target = ['plugins', 'update', 'notify', 'appear', 'data'].includes(tab) ? tab : 'plugins'
   for (const btn of document.querySelectorAll('.tab')) {
     btn.classList.toggle('active', btn.dataset.tab === target)
   }
   // 页面清单与白名单同源：新增页签时只改这一处数组，漏了就会出现“点不动”的页签
-  const pages = ['plugins', 'update', 'notify', 'appear']
+  const pages = ['plugins', 'update', 'notify', 'appear', 'data']
   for (const p of pages) {
     const el = document.getElementById('page-' + p)
     if (el) el.classList.toggle('hidden', p !== target)
@@ -579,4 +579,55 @@ if (window.dshShell && window.dshShell.setAppIcon) {
   const btnReset = $('btn-appicon-reset')
   if (btnReset) btnReset.addEventListener('click', () => setAppIcon('default'))
   loadAppIcons()
+}
+
+/* ─────────────────────────── 数据目录（设置 → 数据） ─────────────────────────── */
+
+/** 数据目录页：只读展示当前 $DSH_HOME + 模式（私有/共用/自定义），打开走专用 IPC。 */
+function renderDataHome(state) {
+  const pathEl = $('data-home-path')
+  if (!pathEl) return
+  const mode = state && state.dataHomeMode
+  const MODE_TEXT = {
+    private: '私有目录（与官方桌面版隔离）',
+    shared: '与官方桌面版 / CLI 共用同一目录',
+    custom: '自定义目录（来自 DSH_DESKTOP_HOME）',
+  }
+  pathEl.value = (state && state.dataHome) || '（未知）'
+  const modeEl = $('data-home-mode')
+  if (modeEl) modeEl.textContent = MODE_TEXT[mode] || (mode ? String(mode) : '未知模式')
+  const sharedEl = $('data-home-shared')
+  if (sharedEl) sharedEl.textContent = (state && state.dataHomeShared) || '~/.dsh'
+  const hint = $('data-home-hint')
+  if (hint) {
+    hint.textContent = mode === 'private'
+      ? '首次启动已把原目录整份复制到这里（源目录只读）；此后本应用与官方桌面版各写各的，互不可见。'
+      : mode === 'shared'
+        ? '当前与官方桌面版共用同一份数据：两边的会话记录会互相看到。'
+        : '当前使用的是指定目录，与官方桌面版相互独立。'
+  }
+}
+
+async function loadDataHome() {
+  if (!window.dshShell || !window.dshShell.status) return
+  try {
+    renderDataHome(await window.dshShell.status())
+  } catch {}
+}
+
+if (window.dshShell && window.dshShell.status) {
+  const btnOpenHome = $('btn-open-home')
+  if (btnOpenHome) {
+    btnOpenHome.addEventListener('click', async () => {
+      const hint = $('data-home-hint')
+      if (!window.dshShell.openDataHome) { if (hint) hint.textContent = '此外壳版本不支持打开数据目录'; return }
+      try {
+        const r = await window.dshShell.openDataHome()
+        if (hint && r && !r.ok) hint.textContent = '打开失败：' + ((r && r.error) || '未知原因')
+      } catch (err) {
+        if (hint) hint.textContent = '打开失败：' + err.message
+      }
+    })
+  }
+  loadDataHome()
 }

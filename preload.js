@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('dshShell', {
   pickAppIcon: () => ipcRenderer.invoke('shell:pick-app-icon'),
   setAppIcon: (key, customPath) => ipcRenderer.invoke('shell:set-app-icon', key, customPath),
   openFile: (p) => ipcRenderer.invoke('shell:open-file', p),
+  // 数据目录：状态经 status() 的 dataHome / dataHomeMode 下发（仅设置窗口）；
+  // 打开走这个专用通道（主进程校验发送方，只 shell.openPath 目录、不给执行面）。
+  openDataHome: () => ipcRenderer.invoke('shell:open-data-home'),
   // 作品档案窗口：只递作品路径，URL 由主进程用内核地址拼（这里开不了任意地址）
   openWiki: (p) => ipcRenderer.invoke('shell:open-wiki', p),
   readFile: (p) => ipcRenderer.invoke('shell:read-file', p),

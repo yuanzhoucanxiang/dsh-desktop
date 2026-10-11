@@ -15,6 +15,7 @@ import { WritingModeSettings } from './features/settings/WritingModeSettings.js'
 import { WritingModeFooterEntry, WritingModeHeaderEntry } from './features/settings/entries.js'
 import { companionRows } from './features/companion/index.js'
 import { bindHarness } from './adapters/harness/runtime.js'
+import { bindWorkbench } from './adapters/workbench-bridge.js'
 import {
   companionDrafts,
   loadCompanionDraft,
@@ -41,6 +42,12 @@ export const inject = __wmAlreadyLoaded ? [] : ['slots', 'sessions', 'connection
 export function apply(ctx) {
   if (__wmAlreadyLoaded) return
   bindHarness(ctx)
+  // 可选：装了工具台就把"写作"注册成它的一个模式，并让出两个自持入口（降级路径见 workbench-bridge.js）。
+  try {
+    bindWorkbench(ctx)
+  } catch (err) {
+    console.warn('[writing-mode] workbench bridge failed:', err)
+  }
   try {
     ensureDomFloat()
   } catch (err) {
@@ -134,3 +141,9 @@ export { loadCompanionDraft, resolveDraftConflict, retryDraftConflictRemote, sub
 // 测试钩子（P2）：让 host 回归能在同一个 sandbox 里直接驱动 adapter（真实 HTTP 路由 + 真协调协议）
 export { createHarnessAdapter } from './adapters/harness/adapter.js'
 export { newOperationToken } from './adapters/harness/adapter.js'
+// 工具台接入的验收钩子：让隔离探针能装一个"拒绝离开"的守卫，验"被拒就不切"（见
+// scripts/verify-workbench-writing-integration.cjs）。真实守卫仍由 WritingModeApp 注册。
+// 注意写法：必须 `import` 之后再 `export { x as __x }`——R7 静态检查器（verify-writing-imports.mjs）
+// 对 `export { a as b } from '…'` 只登记别名 b，会把原名 a 误判成"用了却没导入"。
+import { getModeActive, setCloseGuard } from './state/mode-store.js'
+export { setCloseGuard as __setCloseGuard, getModeActive as __getModeActive }

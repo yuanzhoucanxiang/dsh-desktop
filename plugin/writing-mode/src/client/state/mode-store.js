@@ -27,11 +27,30 @@ export function readActiveLS() {
 export let modeActive = readActiveLS()
 let closeGuard = null
 
-/** 外部（工作台）注册关闭守卫：正在编辑时切走要先过它。 */
+/** 关闭守卫由写作台自己注册（`WritingModeApp`）：正在编辑时切走要先过它。 */
 export function setCloseGuard(fn) { closeGuard = fn }
+
+/**
+ * 问一次守卫"能不能走"——**纯判定，不改状态**；守卫抛错按拒绝处理（绝不"因为守卫坏了就放行"）。
+ *
+ * 工具台接入（2026-10-11）后用它做模式的 `canDeactivate`：这样"要不要拦"与"谁改状态"分开，
+ * 守卫对一次切换只会被问**一次**（工具台问 → 允许则调 onDeactivate → 用 commitModeActive 落状态）。
+ */
+export async function askCloseGuard() {
+  if (!closeGuard) return true
+  try {
+    return (await closeGuard()) !== false
+  } catch {
+    return false
+  }
+}
+
 export const modeListeners = new Set()
 export function setModeActive(next) {
-  if (!next && modeActive && closeGuard) { void closeGuard(); return }
+  if (!next && modeActive && closeGuard) {
+    void askCloseGuard().then((ok) => { if (ok) commitModeActive(false) })
+    return
+  }
   commitModeActive(next)
 }
 export function commitModeActive(next) {

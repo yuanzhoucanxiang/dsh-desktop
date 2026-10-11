@@ -1,0 +1,16 @@
+{
+  "name": "@dsh-local/mode-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "创作模式共用库：会话承载（唯一 native 接触面）、会话投影、项目身份、协调客户端。构建期内联进各模式的 client bundle，不是运行期共享模块。",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./harness/adapter.js": "./src/harness/adapter.js",
+    "./harness/projection.js": "./src/harness/projection.js",
+    "./harness/identity.js": "./src/harness/identity.js",
+    "./harness/coordination-client.js": "./src/harness/coordination-client.js",
+    "./package.json": "./package.json"
+  }
+}

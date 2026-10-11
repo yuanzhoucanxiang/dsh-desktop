@@ -1,0 +1,15 @@
+{
+  "note": "工具台运行时文件清单（repo → 安装包 → profile 逐文件比对用）。构建产物 client.js 与 src/ 源码分列：client.js 是发布物，src/ 不入清单（它由构建脚本消费）。读取方：lib/plugin-sync.js —— entry/files/docs 里的路径以 root 为基准。",
+  "root": "plugin/workbench",
+  "entry": [
+    "plugin/workbench/index.js",
+    "plugin/workbench/client.js",
+    "plugin/workbench/package.json"
+  ],
+  "files": [
+    "plugin/workbench/lib/http.js",
+    "plugin/workbench/lib/state.js"
+  ],
+  "docs": [],
+  "exclude": []
+}

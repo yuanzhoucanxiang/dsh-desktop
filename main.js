@@ -12,7 +12,9 @@
  *
  * 可用的环境开关（全部可选）：
  *   DSH_LAUNCHER     内核入口 bin.js 的完整路径（默认自动从 npm root -g 解析）
- *   DSH_DESKTOP_HOME 桌面实例专属 DSH_HOME（默认与 CLI 共享 ~/.dsh）
+ *   DSH_DESKTOP_HOME 内核 DSH_HOME：`shared` = 与官方桌面版/CLI 共用（目标由 DSH_HOME 定义，
+ *                    默认 ~/.dsh）；其它值 = 用该目录。默认私有 ~/.dsh-desktop（首启从共用 home 只读复制一份）
+ *   DSH_DESKTOP_MIGRATE=1|0  强制 / 关闭「首启整份迁移」（默认只在私有 home 上跑）
  *   DSH_DESKTOP_CWD  内核工作目录（优先于设置里的"工作目录"）
  *   DSH_DESKTOP_SCHEME=0  关闭应用协议（退回"窗口直连内核端口 + token"的旧方式，见 APP_SCHEME）
  */
@@ -44,6 +46,7 @@ const { expandNotifyCommand } = require('./lib/shell-quote')
 const { readNdjsonTail } = require('./lib/ndjson-tail')
 const { parsePatchList, effectiveDisabled, entryIdsForPackage, setEntryDisabled } = require('./lib/plugin-manager')
 const pluginSync = require('./lib/plugin-sync')
+const privateHome = require('./lib/private-home')
 
 const isWin = process.platform === 'win32'
 const SMOKE = process.argv.includes('--smoke') // 冒烟测试：完成"拉起→就绪"后打印结果并退出
@@ -417,11 +420,20 @@ function pluginRoot() {
   return path.join(__dirname, 'plugin')
 }
 
-/** 内核 DSH_HOME：与 kernelEnv() 的判定保持一致（桌面专属优先，其次环境，最后默认 ~/.dsh）。 */
+/** 本轮 home 解析结果（进程内缓存：一次启动内不随环境漂移；见 lib/private-home.js）。 */
+let homePlanCache = null
+function homePlan() {
+  if (!homePlanCache) homePlanCache = privateHome.resolveHome()
+  return homePlanCache
+}
+
+/**
+ * 内核 DSH_HOME。默认 = 私有 `~/.dsh-desktop`（首启从 `~/.dsh` 只读复制一份，
+ * 之后与官方桌面版各写各的）；`DSH_DESKTOP_HOME=shared` 显式回到共用 `~/.dsh`。
+ * 判定全部收在 lib/private-home.js 的 resolveHome()，本函数只做缓存。
+ */
 function dshHome() {
-  if (process.env.DSH_DESKTOP_HOME) return process.env.DSH_DESKTOP_HOME
-  if (process.env.DSH_HOME) return process.env.DSH_HOME
-  return path.join(os.homedir(), '.dsh')
+  return homePlan().home
 }
 
 /**
@@ -440,7 +452,7 @@ function dshHome() {
  * 启动即崩（2026-08-24 实测）。皮肤联动的内核侧归属 = palis-theme-panel bundle，
  * 扁平内置版（plugin/palis-theme/ 源码保留）只是未启用的备选实现。
  */
-const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings', 'writing-mode']
+const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings', 'writing-mode', 'workbench']
 
 function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)
@@ -728,13 +740,16 @@ function freePort() {
   })
 }
 
-/** 给内核一个干净的环境：剥离本会话的 DSH_* 注入，只保留数据目录与自定义项。 */
+/** 给内核一个干净的环境：剥离本会话的 DSH_* 注入，并**钉死**本轮 DSH_HOME。
+ *  为什么必须钉：内核的会话库 / 账号 / profile 全挂在 home 下（root 由 dsh-base 写死为
+ *  dshHomePath('sessions')），外壳是 home 的唯一权威；一旦漏传、让子进程从环境里继承到
+ *  别的值，就又会回到"官方版和本应用互看会话"的状态（见 lib/private-home.js 头注）。 */
 function kernelEnv() {
   const env = { ...process.env }
   for (const key of Object.keys(env)) {
     if (key.startsWith('DSH_') && key !== 'DSH_HOME') delete env[key]
   }
-  if (process.env.DSH_DESKTOP_HOME) env.DSH_HOME = process.env.DSH_DESKTOP_HOME
+  env.DSH_HOME = dshHome()
   return env
 }
 
@@ -1096,9 +1111,9 @@ function isSettingsSender(event) {
   }
 }
 
-/** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update'。 */
+/** 「设置」面板窗口（照启动画面预览的窗口配方）。tab: 'plugins' | 'update' | 'notify' | 'appear' | 'data'。 */
 function openSettingsPanel(tab) {
-  const target = ['update', 'notify', 'plugins', 'appear'].includes(tab) ? tab : 'plugins'
+  const target = ['update', 'notify', 'plugins', 'appear', 'data'].includes(tab) ? tab : 'plugins'
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.show()
     settingsWin.focus()
@@ -1597,7 +1612,7 @@ async function waitReady() {
 async function seedBuiltinsIfNeeded() {
   try {
     const seedDir = path.join(process.resourcesPath, 'builtin-plugins')
-    const profileDir = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'profiles', 'web')
+    const profileDir = path.join(dshHome(), 'profiles', 'web')
     const stampPath = path.join(app.getPath('userData'), 'builtin-plugins-seeded.json')
     if (!builtinNeedsSeed({ seedDir, profileDir, stampPath, quarantineNames: readQuarantine() })) return
     const r = builtinRunSeed({ seedDir, profileDir, stampPath })
@@ -2810,6 +2825,11 @@ function registerIpc() {
       // 设置面板靠它把“被占用/无效/重试中”说清楚，而不是让用户对着没反应的键盘猜。
       hotkey: state.hotkey,
       hotkeyPresets: HOTKEY_PRESETS,
+      // 数据目录：本机个人路径，与 notifyCommand 同一收口策略——只给设置窗口
+      // （内核页面里跑着第三方插件 client 代码，不需要知道用户 home 在哪）。
+      dataHome: privileged ? dshHome() : undefined,
+      dataHomeMode: privileged ? homePlan().mode : undefined,
+      dataHomeShared: privileged ? homePlan().sharedHome : undefined,
     }
   })
   ipcMain.handle('shell:changes', () => collectChanges())
@@ -2865,6 +2885,22 @@ function registerIpc() {
     }
     runNotifyHook(0)
     return { ok: true, command: settings.notifyCommand || '' }
+  })
+  // 数据目录：只在资源管理器里打开（不给执行面），且只有设置窗口能调——
+  // 与 open-file / notify-command 同一收口策略（内核页面里的插件 JS 不该拿到这条通道）。
+  ipcMain.handle('shell:open-data-home', async (event) => {
+    if (!isSettingsSender(event)) {
+      log('open-data-home: rejected（发送方不是设置窗口）')
+      return { ok: false, error: 'only-settings-window' }
+    }
+    const dir = dshHome()
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      const err = await shell.openPath(dir)
+      return err ? { ok: false, error: err } : { ok: true, path: dir }
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) }
+    }
   })
   // B：改键入口。以前只能在托盘里开关、不能换键，一旦 Control+Alt+D 被别的程序占住，
   // 用户就没有自救出口（只能手改 settings.json）。同样**只允许设置窗口**调用：
@@ -3148,8 +3184,35 @@ function registerIpc() {
 
 /* ─────────────────────────────── 启动流程 ─────────────────────────────────── */
 
+/**
+ * 首启：把共享 home 整份复制到私有 home（**只读源目录**，官方版正在用 ~/.dsh）。
+ *
+ * 必须在任何读写 dshHome() 的动作之前跑：启动体检、profile 内核链接对齐、
+ * 内置插件同步、补丁写入都直接读 home。幂等——跑完写 marker，之后每次启动只做一次
+ * existsSync；中断/失败不写 marker，下次启动续跑（已存在的条目一律保留）。
+ */
+async function ensurePrivateHome() {
+  const plan = homePlan()
+  log(`dsh home: ${plan.home} (mode=${plan.mode}, shared=${plan.sharedHome})`)
+  if (!privateHome.migrationNeeded(plan)) return
+  setStatus('kernel', '首次启动：正在把数据复制到私有目录…')
+  const r = await privateHome.migrateHome({
+    src: plan.sharedHome,
+    dest: plan.home,
+    onLog: log,
+  })
+  if (r.ok) {
+    log(`私有 home 就绪：${plan.home}（源 ${plan.sharedHome} 未改动）`)
+  } else {
+    // 迁移失败不阻断启动：内核会在私有 home 里自行初始化（历史暂时看不到），
+    // 下次启动自动重试——绝不为了"迁移成功"去动共享 home。
+    log(`WARN: 私有 home 迁移未完成（${r.errors.length} 个错误），本次按空库启动`)
+  }
+}
+
 async function bootKernel() {
   const t0 = Date.now()
+  await ensurePrivateHome() // 先落定数据目录，再体检/拉内核（顺序不能反）
   // 启动恢复链：坏插件隔离（≤4 轮）→ 补丁降级（full→bridge→none）。
   // 任何插件更新把内核搞崩，都会被降级成"禁用坏插件 + 通知"，应用本体永远可启动。
   await startKernelUntilReady({ degradePatch: true })
@@ -3451,17 +3514,21 @@ if (!gotLock) {
       log(`tray unavailable: ${err.message}`)
     }
     // 启动静默体检：纯只读、失败不影响启动。有异常时托盘亮入口、左下角插件入口带红点。
-    try {
-      const report = runPluginInspection()
-      if (report.problems.length) {
-        log(`plugin inspect: 共 ${report.problems.length} 项异常（托盘/主界面左下角可查看）`)
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('shell:plugin-health', { problems: report.problems.length })
+    // 私有 home 首启迁移还没跑时 profile 尚不存在，此时体检只会误报一片"缺失"——跳过，
+    // 等 bootKernel 里的迁移完成后再由界面/托盘刷新。
+    if (!privateHome.migrationNeeded(homePlan())) {
+      try {
+        const report = runPluginInspection()
+        if (report.problems.length) {
+          log(`plugin inspect: 共 ${report.problems.length} 项异常（托盘/主界面左下角可查看）`)
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('shell:plugin-health', { problems: report.problems.length })
+          }
         }
+        refreshTray()
+      } catch (err) {
+        log(`plugin inspect failed: ${err && err.message ? err.message : err}`)
       }
-      refreshTray()
-    } catch (err) {
-      log(`plugin inspect failed: ${err && err.message ? err.message : err}`)
     }
     // 调试口：DSH_DESKTOP_SETTINGS_PANEL=1 启动时自动打开设置面板（验证 UI 用）；
     // DSH_DESKTOP_SETTINGS_SHOT=<目录> 再补两张截图（主窗=内核页左下角入口、面板页）后自动退出，

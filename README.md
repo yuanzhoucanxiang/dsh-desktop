@@ -208,12 +208,44 @@ bash update-macos.sh
 > 未签名版无法走 electron-updater 自动更新；`update-macos.sh` 提供等效的一键手动更新。
 > 需 Mac 上已 `gh auth login`（私有仓库）。
 
+## 数据目录（默认与官方桌面版隔离）
+
+内核把所有用户数据放在单一根 `$DSH_HOME` 下：会话正文（`$DSH_HOME/sessions/…`）、账号、
+插件 profile、技能、preset 全在这里。**官方桌面版用 `~/.dsh`**；本应用默认改用私有目录：
+
+```
+~/.dsh-desktop          # 本应用的私有 $DSH_HOME（Windows: C:\Users\<你>\.dsh-desktop）
+├── sessions/           # 会话记录（与官方版从此各写各的）
+├── .credentials.yaml   # 账号登录态
+├── profiles/           # 插件 profile（本应用固定用 web）
+└── .migrated-from-dsh.json   # 首次迁移的标记（含来源/统计）
+```
+
+**首次启动**会把共用 home（`~/.dsh`）整份复制一份过来——**只读复制，源目录一个字节都不动**
+（官方版正在用它）。之后两个应用各写各的，不再互相看到对方的会话。跳过不搬的只有派生缓存与
+官方专属 profile：`dsh-runtimes/`、`cache/`、`logs/`、`profiles/desktop/`。
+
+想确认当前用的是哪个目录：**设置 → 数据**（显示路径与模式，并可一键打开目录）。
+
+| 想要的效果 | 做法 |
+|---|---|
+| 默认：与官方版隔离（推荐） | 什么都不用设 |
+| 回到与官方版/CLI 共用 `~/.dsh` | 设 `DSH_DESKTOP_HOME=shared` |
+| 换到别的目录 | 设 `DSH_DESKTOP_HOME=<路径>` |
+| 把共用 home 里**新增**的内容再合并进来 | 设 `DSH_DESKTOP_MIGRATE=1` 后启动一次（只补缺失、绝不覆盖私有库里已有条目） |
+| 关掉自动迁移 | 设 `DSH_DESKTOP_MIGRATE=0` |
+
+> 迁移是幂等的：中断/失败不写标记，下次启动自动续跑；私有库里已存在的文件一律保留。
+> 桌面端 home **只认 `DSH_DESKTOP_HOME`**——`DSH_HOME` 是内核/CLI 的约定，会被从 DSH
+> 会话里拉起的子进程继承，若让它参与判定，从终端/预览启动就会静默回到共用目录。
+
 ## 可选环境开关
 
 | 变量 | 作用 | 默认 |
 |---|---|---|
 | `DSH_LAUNCHER` | 内核入口 `bin.js` 的完整路径（覆盖内置运行时） | 自动解析：内置 runtime → 全局 |
-| `DSH_DESKTOP_HOME` | 桌面实例专属 `DSH_HOME`（独立会话/配置） | 与 CLI 共享 `~/.dsh` |
+| `DSH_DESKTOP_HOME` | 内核 `DSH_HOME`：`shared` = 与官方版/CLI 共用；其它值 = 用该目录 | 私有 `~/.dsh-desktop` |
+| `DSH_DESKTOP_MIGRATE` | `1` = 再补一次迁移（忽略标记，只补缺失）；`0` = 关闭自动迁移 | 私有 home 首启自动跑一次 |
 | `DSH_DESKTOP_CWD` | 内核工作目录（优先于设置里的工作目录） | 用户主目录 |
 | `DSH_DESKTOP_UPDATE_REPO` | GitHub 更新源 owner/repo | `yuanzhoucanxiang/dsh-desktop` |
 | `DSH_DESKTOP_UPDATE_URL` | generic 更新源 URL（备选） | 无 |
@@ -256,8 +288,9 @@ dsh-desktop/
 
 - 内核本体由全局安装的 `@deepseek-ai/dsh` 提供；本外壳不捆绑、不修改它。
   如果全局 CLI 升级后行为变化，外壳会如实反映（这正是"内核不动"的代价与好处）。
-- 默认与 CLI 共享 `DSH_HOME`，两边看到的会话/设置一致；如需完全隔离，
-  设 `DSH_DESKTOP_HOME` 指向独立目录。
+- 默认使用私有 `DSH_HOME`（`~/.dsh-desktop`，首启从 `~/.dsh` 只读复制一份），
+  与官方桌面版互不可见；想回到共用 `~/.dsh` 设 `DSH_DESKTOP_HOME=shared`（见「数据目录」）。
+  注意：`~/.dsh-desktop` 与 `~/.dsh` 是两份独立数据，账号 token 也会各自独立刷新。
 - 关闭窗口即退出应用（含内核）；托盘菜单可显式"重启内核"。
 
 ### 打开已有写作项目（开发中）

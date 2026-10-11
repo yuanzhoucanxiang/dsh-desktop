@@ -218,7 +218,8 @@
 | `src/shared/reference.js` | 引用身份与状态（纯函数） | IO、UI |
 | `src/shared/filename.js` | 版本号/文件名/章节题纯函数（VERSION_RE/versionOf/stemOf/chapterTitleOf 等） | IO/DOM |
 | `src/client/state/*` | prefs 与 library 的模块级缓存 + 订阅广播（prefs-store / library-store） | 直接渲染、React 组件 |
-| `src/client/adapters/harness/*` | 唯一 native 接触面 + 会话投影 + 协调客户端 | React/JSX/组件/样式 |
+| `src/client/adapters/harness/*` | **再导出 shim**：实现已移到共享库 `packages/mode-kit`（2026-10-11 P3），老路径保留给审计探针/单测/src 内部 | 在此文件里写实现（实现属 mode-kit） |
+| `src/client/adapters/workbench-bridge.js` | 工具台（可选服务 `workbench`）绑定：注册模式、入口让位、状态回灌、关闭守卫接线 | React/DOM、内核会话调用（全部经 mode-store 与 harness adapter） |
 | `runtime-manifest.json` | 发布集合唯一来源（repo→包→profile 逐文件比对） | — |
 | `client.js` | 编辑器、HTTP；native 接触已收进 `adapters/harness` | 直连 fs / 外部 LLM；在组件里直接读 `chat.nodes/order` |
 
@@ -281,3 +282,41 @@ POST create-project 默认仅生成 project.md 与首篇正文；fullTemplate:tr
 - 左右栏均可就地收展：收起时身体边缘留 26px 竖排 rail 入口；展开时面板头有 ⟨/⟩ 折钮；顶栏不再有库/AI 开关；专注模式藏全部侧栏与 rail，退出走顶栏「专注」钮。
 - 左栏：作品导航视图里项目下只列章节（2026-10-10 第六轮定稿，「资料与设定 · N」次级容器随之撤销）——资料的阅读归顶栏「档案」wiki（图标作用于当前文稿所属项目），编辑走文件视图；搜索时全量列出（命中可见）。零章节项目显示「还没有章节 + 写第一章」，章节列表尾部挂「＋ 新章节」（save revision:null 独占创建，缺 draft/novel/ 由 host 补建）。操作行（成书/添加资料）只随当前项目出现；散稿桶沉底、默认收起、不挂操作行。文件/大纲视图维持平铺。
 - 用户面术语：门禁 → 检查（成稿检查 / 检查一遍 / 状态条「检查 ✓」），台账速览 → 伏笔与线索。内部工程词（gate/ledger 路由、数据字段、验证脚本语境）不变。
+
+## 接入工具台（workbench，2026-10-11 P1）
+
+设计依据 `dsh-desktop/docs/plans/workbench-layer-v1.md`；验收 `test:writing-bridge` + `verify:workbench-writing`（都在 `verify:writing-quick` 链里）。
+
+- **可选依赖，不是硬依赖**：`src/client/adapters/workbench-bridge.js` 用 `ctx.inject(['workbench'], …)` 等一个**可能不存在**的服务。
+  没装工具台（或跑在官方壳上）时它什么都不做——写作模式照旧自持入口（侧栏图标钮 / 会话顶栏钮 / 隐藏浮钮 / Ctrl+Shift+W），
+  行为与接入前逐字一致（既有全链门禁即回归网）。
+- **装了工具台时**：把「写作」注册成一个模式（id `writing`、`mount: 'overlay'`、`order: 20`、`label` 取 `T.toggle`）；
+  两个自持入口**让位**（`features/settings/entries.js` 订阅 `hasWorkbench()` 后渲染 `null`）→ 侧栏底部只剩**一个**工具台入口。
+- **状态同步（两套状态不许分叉）**：工具台切换时由 `onActivate/onDeactivate` 落模式状态（`commitModeActive`）；
+  模式自己开的（设置页「进入写作模式」/ 热键 / 浮钮）经 `subscribeMode` **回灌**工具台（原因 `mode-local`）。
+  回灌不会成环：工具台切换时先落 activeId 再调钩子，回灌检查发现两边已一致就静默。
+- **关闭守卫改为纯判定**：`mode-store.askCloseGuard()` 返回 boolean、**不改状态**；落状态由调用方做——
+  本地路径 `setModeActive(false)` 自己 commit，工具台路径由 `onDeactivate` commit。好处是一次切换守卫**只被问一次**；
+  守卫抛错按**拒绝**处理（绝不放行）。`WritingModeApp` 的守卫随之改为 `return true/false`（失败时照旧 `flashMsg` 说明）。
+- **被拒时工具台不自造文案**（验收 W3）：守卫属于模式，工具台只保持不切；说明由写作模式自己给。
+- **测试钩子**：`client.js` 额外导出 `__setCloseGuard` / `__getModeActive`（隔离探针装「拒绝离开」的守卫用），
+  与既有 P2 测试钩子同类。写法必须是 `import` 后 `export { x as __x }`——R7 检查器对 `export { a as b } from '…'`
+  只登记别名，会把原名误判成漏 import。
+
+## 抽库：harness 移入共享库 mode-kit（2026-10-11 P3）
+
+`packages/mode-kit/` 是写作模式与 GIR 生图模式的共用底座；本次把**会话承载**整体搬过去：
+
+- 移走：`adapter.js`（唯一 native 接触面）、`projection.js`、`identity.js`、`coordination-client.js`
+  → `packages/mode-kit/src/harness/*`（内容逐字节相同，除下面这一处）。
+- **一处真实改动**：`coordination-client.js` 原先 `import { api as defaultApi } from '../../services/writing-api.js'`
+  给 `httpCoordination(api = defaultApi)` 当默认值——抽库后这条会**让库反向依赖宿主插件**（解析不到，也违背库边界）。
+  现在 `api` **必填**；写作模式的调用点本来就显式传（`runtime.js` → adapter 的 `api` 依赖），行为不变。
+- **四个再导出 shim**：写作模式仍保留老路径的四个文件，逐名再导出库里的实现。理由不是好看——
+  `docs/audits/**/probes.mjs`（历史审计探针，仍在 `verify:writing-review-probes` 链里跑）、
+  `test/adapter-coordination.mjs`、`test/projection-strip.mjs` 与 `src/` 内部都按老路径 import，
+  换路径会同时打断它们。`npm run test:mode-kit` 断言 shim 与库**逐名一致且是同一函数引用**（不是各复制一份）。
+- **构建期共享，不是运行期模块**：内核客户端 bundle 纯净门禁禁止跨插件值导入，所以 esbuild 把库内联进
+  `client.js`；运行期不存在 `@dsh-local/mode-kit`。GIR 侧要接入得自己加构建或 vendor（属 GIR 仓库决定）。
+- 门禁：`test:mode-kit`（导出面 + shim 漂移 + 结构边界"库内不得出现裸包名/越界 import" + `api` 必填），
+  已接进 `verify:writing-quick` / `verify:writing-all`；全链零回归（`QUICK_EXIT=0`）。

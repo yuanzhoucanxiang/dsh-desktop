@@ -19,7 +19,7 @@ import { harnessAdapter } from '../adapters/harness/runtime.js'
 import { newOperationToken } from '../adapters/harness/adapter.js'
 import { createEditorSession } from '../../shared/editor-session.js'
 import { versionOf, stemOf, basenameOf, folderOf } from '../../shared/filename.js'
-import { applyBodyAttr, setCloseGuard, commitModeActive, getModeActive, subscribeMode, setModeActive } from '../state/mode-store.js'
+import { applyBodyAttr, setCloseGuard, getModeActive, subscribeMode, setModeActive } from '../state/mode-store.js'
 import { getPrefs, subscribePrefs, loadPrefs, savePrefs } from '../state/prefs-store.js'
 import { getLibrary, subscribeLibrary, refreshLibrary } from '../state/library-store.js'
 import { groupFiles, navigationGroups, maxVersionInGroup, resourceChoices } from '../features/library/grouping.js'
@@ -452,9 +452,12 @@ export function WritingModeApp() {
 
   react.useEffect(() => {
     setCloseGuard(async () => {
-      if (await editor.close()) { commitModeActive(false); return }
+      // 守卫 = 纯判定（返回 true/false），落状态由调用方做：
+      //   本地路径 setModeActive(false) 自己 commit；工具台路径由 onDeactivate commit。
+      if (await editor.close()) return true
       // 退出被守卫拦下时必须说话：此前失败就静默留在写作台，作者以为「退出键坏了」
       flashMsg('保存失败，未退出写作台：当前文字还压在本地，可点稿面下方「重试保存」或「另存新版」')
+      return false
     })
     const protect = e => {
       if (!editor.get().dirty && editor.get().status !== 'saving') return

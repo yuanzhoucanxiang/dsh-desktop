@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-local/workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "创作工具台：模式注册表 / 统一入口 / 切换器 / 互斥与共享上下文（写作模式与 GIR 生图模式的门面层）",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+/** 工具台文案（单一出口；将来本地化时只改这里）。 */
+
+export const T = {
+  entry: '工具台',
+  settings: '工具台',
+  switcherTitle: '创作工具台',
+  switcherHint: '选择一个模式进入；切走时模式自己的守卫会先被问一次。',
+  close: '关闭',
+  empty: '还没有可用的模式。',
+  emptyHint: '写作模式与 GIR 生图模式接入后，会出现在这里。',
+  current: '当前',
+  activeNone: '未进入任何模式',
+  exit: '退出模式',
+  switchTo: (label) => `切换到 ${label}`,
+  settingsIntro: '工具台是模式的统一门面：入口、切换、互斥与共享上下文都在这里，模式自己的实现不受影响。',
+  settingsModes: '已注册的模式',
+  settingsNone: '当前没有模式向工具台注册（写作模式与 GIR 生图模式尚未接入，见 docs/plans/workbench-layer-v1.md 的 P1/P2）。',
+  settingsActive: '当前模式',
+  settingsHost: '状态文件',
+  settingsHostHint: '状态权威在 host（$DSH_HOME/workbench.json）：跨窗口一致，壳侧热键可读。',
+  settingsRevision: (n) => `revision ${n}`,
+  settingsUnreachable: '读不到工具台状态（host 路由不可用或状态文件损坏）。',
+  settingsDegraded: '未挂载工具台时，各模式保留自己的入口（官方壳兼容路径）。',
+}

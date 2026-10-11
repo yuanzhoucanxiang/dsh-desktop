@@ -10,9 +10,20 @@
  *   元素与 id 保留：既有验证脚本用 `.click()` 程序化进入，仍然可用。
  */
 import { getModeActive, subscribeMode, setModeActive } from '../../state/mode-store.js'
+import { hasWorkbench, subscribeWorkbench } from '../../adapters/workbench-bridge.js'
 import * as react from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { T } from '../../copy.js'
+
+/**
+ * 工具台接管后，写作模式自己的入口让位（验收 W1：侧栏底部只剩一个工具台入口）。
+ * 未装工具台时返回 false，行为与接入前逐字一致——官方壳 / 单装写作模式都不受影响。
+ */
+function useWorkbenchOwned() {
+  const [owned, setOwned] = react.useState(hasWorkbench)
+  react.useEffect(() => subscribeWorkbench(() => setOwned(hasWorkbench())), [])
+  return owned
+}
 
 /** 入口图标（笔）：与官方侧栏图标的描边风格一致，随 currentColor 取色。 */
 export function WritingModeIcon({ size = 16 }) {
@@ -43,8 +54,10 @@ function WritingModeIconButton({ on, onToggle, extraClass }) {
 
 /** 侧栏底部入口（官方槽位；官方会传 `wide` 表示侧栏展开态）。 */
 export function WritingModeFooterEntry({ wide } = {}) {
+  const owned = useWorkbenchOwned()
   const [on, setOn] = react.useState(getModeActive)
   react.useEffect(() => subscribeMode(() => setOn(getModeActive())), [])
+  if (owned) return null
   return jsx.jsx(WritingModeIconButton, {
     on,
     onToggle: () => setModeActive(!on),
@@ -54,7 +67,9 @@ export function WritingModeFooterEntry({ wide } = {}) {
 
 /** 会话顶栏工具区入口（次要，槽位缺失时静默）。 */
 export function WritingModeHeaderEntry() {
+  const owned = useWorkbenchOwned()
   const [on, setOn] = react.useState(getModeActive)
   react.useEffect(() => subscribeMode(() => setOn(getModeActive())), [])
+  if (owned) return null
   return jsx.jsx(WritingModeIconButton, { on, onToggle: () => setModeActive(!on) })
 }
