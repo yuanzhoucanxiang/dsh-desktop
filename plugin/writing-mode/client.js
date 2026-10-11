@@ -3959,6 +3959,17 @@ function textOf(parts) {
 function normalizeForMatch(text7) {
   return String(text7 || "").replace(/\s+/g, " ").trim();
 }
+var INJECTED_PREFIXES = ["【写作模式状态】", "【项目备忘"];
+function stripInjectedBlocks(text7) {
+  let out = String(text7 || "");
+  for (let i = 0; i < 4; i++) {
+    const trimmed = out.replace(/^\s+/, "");
+    if (!INJECTED_PREFIXES.some((p) => trimmed.startsWith(p))) break;
+    const nl = trimmed.indexOf("\n\n");
+    out = nl < 0 ? "" : trimmed.slice(nl + 2);
+  }
+  return out.trim();
+}
 function projectChat(chat) {
   if (!chat) return { messages: [], hasUnknown: false };
   const nodes = chat.nodes;
@@ -3972,7 +3983,7 @@ function projectChat(chat) {
     if (node2.kind === "user" || node2.kind === "steering") {
       const raw = textOf(data.content);
       const idx = raw.indexOf(REFERENCE_SEPARATOR);
-      const text7 = idx >= 0 ? raw.slice(0, idx) : raw;
+      const text7 = stripInjectedBlocks(idx >= 0 ? raw.slice(0, idx) : raw);
       const reference = idx >= 0 ? raw.slice(idx + REFERENCE_SEPARATOR.length) : void 0;
       messages.push({ key, kind: "user", text: text7 || "附件消息（在完整会话中查看）", reference });
       continue;

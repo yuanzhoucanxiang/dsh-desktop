@@ -21,6 +21,30 @@ function normalizeForMatch(text) {
 }
 
 /**
+ * 插件替作者发给模型的**上下文块**起手标记（2026-10-11 实测缺陷）。
+ *
+ * 背景：这些块是拼进 prompt body 的（写作模式状态 / 项目备忘），而内核把 body 当作
+ * **作者消息**存进转录——于是作者在写作伙伴面板里看到一大段系统文字。这里在**投影层**
+ * 把它们剥掉，只留作者自己写的话（官方完整会话视图仍显示原文，属已知限制）。
+ */
+const INJECTED_PREFIXES = ['【写作模式状态】', '【项目备忘']
+
+/**
+ * 去掉开头的注入块（每个块以空行结束），返回作者真正写的内容。
+ * 只剥**开头**连续出现的块：正文里作者自己引用这些字样的段落不受影响。
+ */
+export function stripInjectedBlocks(text) {
+  let out = String(text || '')
+  for (let i = 0; i < 4; i++) {
+    const trimmed = out.replace(/^\s+/, '')
+    if (!INJECTED_PREFIXES.some((p) => trimmed.startsWith(p))) break
+    const nl = trimmed.indexOf('\n\n')
+    out = nl < 0 ? '' : trimmed.slice(nl + 2)
+  }
+  return out.trim()
+}
+
+/**
  * 把 chat 图投影成消息行。
  * 未知节点**保留可见摘要**（不隐藏）：方案要求未识别内容仍可见且可进完整会话。
  */
@@ -37,7 +61,7 @@ export function projectChat(chat) {
     if (node.kind === 'user' || node.kind === 'steering') {
       const raw = textOf(data.content)
       const idx = raw.indexOf(REFERENCE_SEPARATOR)
-      const text = idx >= 0 ? raw.slice(0, idx) : raw
+      const text = stripInjectedBlocks(idx >= 0 ? raw.slice(0, idx) : raw)
       const reference = idx >= 0 ? raw.slice(idx + REFERENCE_SEPARATOR.length) : undefined
       messages.push({ key, kind: 'user', text: text || '附件消息（在完整会话中查看）', reference })
       continue
