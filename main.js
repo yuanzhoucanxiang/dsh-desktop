@@ -2329,12 +2329,61 @@ function shapeState() {
     bounds: win && !win.isDestroyed() ? win.getBounds() : null,
     contentBounds: win && !win.isDestroyed() ? win.getContentBounds() : null,
     minSize: SHAPE_MIN_SIZE[shape],
+    // 自报进程号：实机门禁按它过滤窗口，避免读到**另一个实例**（比如常驻的预览实例）的同名窗口
+    pid: process.pid,
     overlay: overlayVisible(),
     // 浮标是 focusable:false 的窗：主窗焦点应当**一点不受影响**（探针就断言这条）
     mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
+    // **OS 真值**（Windows 上 isAlwaysOnTop() 读的就是 GWL_EXSTYLE 的 WS_EX_TOPMOST 位），
+    // 与上面那个"申请值"alwaysOnTop 分开报——只报申请值会骗过门禁（2026-10-12 的实锤）。
+    topmostOs: win && !win.isDestroyed() ? win.isAlwaysOnTop() : null,
     frameless: false, // 这一刀仍是原生边框；下一刀做无边框时这里才变
   }
 }
+
+/* ─────────── 置顶：申请之后用 OS 真值复核，没落地就补刀 ───────────
+ *
+ * 为什么需要这一层（2026-10-12 用 probe2/3/4/5/6/7 在真机上实测，判据一律读 Win32 GWL_EXSTYLE，
+ * 不看应用自报）：
+ *   · **level 必须是 'screen-saver'**：'screen-saver' 与 'pop-up-menu' 会置 WS_EX_TOPMOST；
+ *     'floating'（= 省略 level 时的默认值）、torn-off-menu、modal-panel、main-menu、status
+ *     五个一律不置位（Electron 43.4.0，7 个 level × 2 轮的矩阵实测）。当初用 'floating' 的后果：
+ *     别的应用在前台时长条与浮标**完全看不见**，而门禁读自报值一路绿。
+ *   · **一次调用有概率整个窗口生命周期都不落地**：连采 3 秒（50ms 一次）全是 0；首窗尤其容易
+ *     抓到（probe3/probe4/probe7 各一次）。而置位成功之后**能扛住**别的应用抢前台、focus/blur、
+ *     minimize/restore、setBounds（probe7 的 ST 段全绿）——所以只有"落地"这一关需要重试，
+ *     不需要常驻看门狗。
+ *   · `win.isAlwaysOnTop()` 在 Windows 上就是这个 OS 位的读数（每次采样与 GWL_EXSTYLE 一致），
+ *     所以主进程能自校验：没落地就按 0/120/300/700/1500ms 补刀，全部失败则记日志（不静默）。
+ */
+const TOPMOST_LEVEL = 'screen-saver'
+const TOPMOST_RETRY_MS = [0, 120, 300, 700, 1500]
+
+function enforceTopmost(target, want, label) {
+  const attempt = (i) => {
+    if (!target || target.isDestroyed()) return
+    try {
+      target.setAlwaysOnTop(want, TOPMOST_LEVEL)
+    } catch {
+      return
+    }
+    if (target.isAlwaysOnTop() === want) {
+      // 第一刀就中是常态；补刀成功要留痕，方便实机日志里数到底 flakes 了几次
+      if (i > 0) {
+        log(`置顶第 ${i + 1} 次才落到 OS（${label}，want=${want}）`)
+        broadcastShape()
+      }
+      return
+    }
+    if (i + 1 >= TOPMOST_RETRY_MS.length) {
+      log(`置顶始终没落到 OS（${label}，want=${want}）——已试 ${TOPMOST_RETRY_MS.length} 次`)
+      return
+    }
+    setTimeout(() => attempt(i + 1), TOPMOST_RETRY_MS[i + 1] - TOPMOST_RETRY_MS[i])
+  }
+  attempt(0)
+}
+
 
 function applyWorkbenchShape(shape) {
   if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' }
@@ -2349,7 +2398,8 @@ function applyWorkbenchShape(shape) {
   const b = shapeBounds(shape)
   win.setBounds(b)
   const onTop = shape !== 'normal' && settings.workbenchStripOnTop !== false
-  win.setAlwaysOnTop(onTop, 'floating')
+  // 置顶走统一入口：申请 → 读 OS 真值复核 → 没落地就补刀（理由见 enforceTopmost 的实测注释）
+  enforceTopmost(win, onTop, `主窗/${shape}`)
   broadcastShape()
   log(`工作台形态 → ${shape}（${b.width}×${b.height} @${b.x ?? '?'},${b.y ?? '?'}，最小 ${minW}×${minH}，置顶=${onTop}）`)
   return { ok: true, ...shapeState() }
@@ -2434,7 +2484,9 @@ function showWorkbenchOverlay() {
         sandbox: true,
       },
     })
-    overlayWin.setAlwaysOnTop(true, 'floating')
+    // 构造参数里的 alwaysOnTop:true 走的是默认 level（floating），实测**不会**置 OS 位；
+    // 显式走统一入口，申请完读 OS 真值复核。
+    enforceTopmost(overlayWin, true, '浮标')
     try {
       overlayWin.setParentWindow(win) // 随主窗最小化/关闭一起走（Windows 上由 OS 保证）
     } catch {}
@@ -3184,11 +3236,12 @@ function registerIpc() {
     return hideWorkbenchOverlay()
   })
 
-  ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+  ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {
+    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     settings.workbenchStripOnTop = Boolean(on)
     saveSettings()
     if (win && !win.isDestroyed() && currentShape() !== 'normal') {
-      win.setAlwaysOnTop(settings.workbenchStripOnTop, 'floating')
+      enforceTopmost(win, settings.workbenchStripOnTop, '置顶开关')
     }
     broadcastShape()
     log(`长条置顶 → ${settings.workbenchStripOnTop ? '开' : '关'}`)

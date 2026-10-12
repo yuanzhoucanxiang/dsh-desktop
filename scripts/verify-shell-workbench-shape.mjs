@@ -12,7 +12,8 @@
  *   E 还原 normal：alwaysOnTop=false、宽度回弹，settings 里形态回到 normal
  *
  * 诚实边界（本脚本**不**声称验了的事）：
- *  - 置顶只能信主进程返回的 `alwaysOnTop`（页面读不到 OS 层 z-order）；
+ *  - 置顶**不**只看自报：H 段用 Win32 `GWL_EXSTYLE & WS_EX_TOPMOST` 判（读自报值会被骗，
+ *    2026-10-12 实锤过一次），并按外壳的补刀节奏轮询到落定；
  *  - 「非内核页面被拒」这条走的是源码断言 + `lib/shell-hardening.test.js`（S9），
  *    真实例里没法凭空造出一个外来帧；
  *  - 无边框 / 自绘顶栏**这一刀没做**（Electron 43 的 frame 只能构造时设），故不验。
@@ -26,7 +27,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -50,6 +51,94 @@ const freePort = () =>
     })
   })
 
+
+/**
+ * Win32 级判据：读每个顶层窗口的 GWL_EXSTYLE，看 WS_EX_TOPMOST(0x8) 到底置没置位。
+ * 为什么必须读 OS 而不是问应用——2026-10-12 实锤：应用自报 alwaysOnTop=true、
+ * `isAlwaysOnTop()` 也返回 true，但 OS 位是 0x00200100（没有 0x8），
+ * 结果别的应用在前台时长条与浮标**完全看不见**，而门禁读自报值一路绿。
+ *
+ * 两条探针自身的纪律（都是这一轮被抓到的）：
+ *  · 枚举回调委托要挂在**静态字段**上：只当参数传进去的临时委托可能被 GC 收掉，
+ *    EnumWindows 于是静默返回半截或空——把探针的假阴性读成产品缺陷更糟；
+ *  · 内联 C# 里**只写 ASCII**：Add-Type 把源码交给编译器时按本机 ANSI 代码页落盘，
+ *    中文注释会把相邻的字段声明一起吞掉（实测整个类编译失败、枚举恒为 0 条）。
+ */
+const PS_TOPMOST = `
+$OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -TypeDefinition @"
+using System; using System.Text; using System.Runtime.InteropServices; using System.Collections.Generic;
+public class TopmostProbe {
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  static EnumProc proc = OnEnum;
+  static List<string> outp = new List<string>();
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  public static uint PidFilter = 0;
+  static bool OnEnum(IntPtr h, IntPtr l) {
+    if (!IsWindowVisible(h)) return true;
+    uint ownPid; GetWindowThreadProcessId(h, out ownPid);
+    if (PidFilter != 0 && ownPid != PidFilter) return true;
+    var sb = new StringBuilder(512); GetWindowText(h, sb, sb.Capacity);
+    int ex = GetWindowLong(h, -20);
+    outp.Add(sb.ToString() + "~" + ex.ToString("X8"));
+    return true;
+  }
+  public static List<string> Run() {
+    outp = new List<string>();
+    EnumWindows(proc, IntPtr.Zero);
+    return outp;
+  }
+}
+"@
+[TopmostProbe]::Run() | ForEach-Object { Write-Output $_ }
+`
+function winStyles(pid = 0) {
+  const ps = path.join(os.tmpdir(), `dsh-topmost-${process.pid}.ps1`)
+  fs.writeFileSync(ps, `$TopmostPid = ${pid | 0}` + String.fromCharCode(10) + PS_TOPMOST.replace('PidFilter = 0', 'PidFilter = $TopmostPid'))
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps], { encoding: 'utf8', timeout: 20000 })
+    const NL = String.fromCharCode(10)
+    const rows = out.split(NL).map((l) => l.trim()).filter((l) => l.includes('~')).map((l) => {
+      const i = l.lastIndexOf('~')
+      return { title: l.slice(0, i), ex: parseInt(l.slice(i + 1), 16) }
+    })
+    if (!rows.length) return { error: '枚举到 0 个窗口（探针自检：node scripts/verify-shell-workbench-shape.mjs --selftest）' }
+    return rows
+  } catch (err) {
+    return { error: String(err.message || err) }
+  } finally {
+    try { fs.unlinkSync(ps) } catch {}
+  }
+}
+const dumpWins = (wins) => (Array.isArray(wins) ? (wins.length ? wins.slice(0, 12).map((w) => `${w.title}<${w.ex.toString(16)}>`).join(' , ') : '该 PID 名下 0 个可见窗口（枚举本身没抓到东西，先怀疑探针）') : `读不到窗口列表：${wins.error}`)
+const topmostOf = (wins, needle) => {
+  if (!Array.isArray(wins)) return null
+  const hit = wins.find((w) => (w.title || '').includes(needle))
+  return hit ? { title: hit.title, topmost: (hit.ex & 0x8) !== 0, ex: hit.ex.toString(16) } : null
+}
+
+/**
+ * `--selftest`：先验探针本身（"检查本身要验收"）。两件事：
+ *  ① 掩码逻辑：0x…108 判置顶、0x…100 判不置顶；
+ *  ② 枚举真的能抓到桌面上正在显示的窗口（内联 C# 编译失败时会静默返回 0 条，
+ *     那样整条 H 段会一路"没找到窗口"，看起来像产品缺陷——所以这一步必须单独能跑）。
+ */
+if (process.argv.includes('--selftest')) {
+  const maskOk = topmostOf([{ title: 'x', ex: 0x00200108 }], 'x')?.topmost === true &&
+    topmostOf([{ title: 'x', ex: 0x00200100 }], 'x')?.topmost === false
+  console.log(`${maskOk ? 'PASS' : 'FAIL'} selftest WS_EX_TOPMOST 掩码判据`)
+  const all = winStyles(0)
+  const enumOk = Array.isArray(all) && all.length > 0
+  console.log(`${enumOk ? 'PASS' : 'FAIL'} selftest EnumWindows 抓到可见窗口 ${enumOk ? all.length + ' 个' : JSON.stringify(all)}`)
+  if (enumOk) console.log('  样例: ' + dumpWins(all))
+  console.log(maskOk && enumOk ? 'SHELL_SHAPE_SELFTEST_OK' : 'SHELL_SHAPE_SELFTEST_FAIL')
+  process.exit(maskOk && enumOk ? 0 : 1)
+}
+
 const cdpPort = await freePort()
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-shape-verify-'))
 const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '1', DSH_DESKTOP_USER_DATA: userData }
@@ -65,9 +154,12 @@ child.on('exit', (code, signal) => {
   childExit = { code, signal }
 })
 const stderrTail = []
+const topmostLog = [] // 外壳自己对置顶落地的判决日志（enforceTopmost 会记补刀/失败）
 child.stderr.on('data', (b) => {
-  stderrTail.push(String(b))
+  const s = String(b)
+  stderrTail.push(s)
   if (stderrTail.length > 30) stderrTail.shift()
+  for (const line of s.split(/\r?\n/)) if (line.includes('置顶')) topmostLog.push(line.trim())
 })
 
 const mk = async (url) => {
@@ -204,16 +296,72 @@ try {
   // 已经实测过的属性，见 logs/2026-10-12.md 的 B 方案评估表。
   await ev(`window.dshShell.setWorkbenchShape('strip')`)
   await sleep(700)
+  // 焦点判据只在"开浮标之前主窗确实有焦点"时成立：整台机器的前台归谁不由本脚本决定，
+  // 主窗本来在后台时这条断言无法证伪（实测会随机红），改显式 SKIP——与 F 的遮挡 SKIP 同一纪律。
+  const focusBefore = (await ev(`window.dshShell.getWorkbenchShape()`))?.mainFocused
   const opened = await ev(`window.dshShell.openWorkbenchOverlay()`)
   await sleep(700)
   check('G 浮标能开（主进程侧可见）', opened?.ok === true && opened?.visible === true, JSON.stringify(opened?.bounds))
   const withOverlay = await ev(`window.dshShell.getWorkbenchShape()`)
   check('G 状态回读说浮标在位', withOverlay?.overlay === true, JSON.stringify({ overlay: withOverlay?.overlay }))
-  check('G 浮标开着时主窗焦点没被抢（focusable:false）', withOverlay?.mainFocused === true, JSON.stringify({ mainFocused: withOverlay?.mainFocused }))
+  if (focusBefore === true) {
+    check('G 浮标开着时主窗焦点没被抢（focusable:false）', withOverlay?.mainFocused === true,
+      JSON.stringify({ before: focusBefore, after: withOverlay?.mainFocused }))
+  } else {
+    console.log(`SKIP G 焦点判据（开浮标前主窗 mainFocused=${JSON.stringify(focusBefore)}，本来就不在前台，无法判"没被抢"）`)
+  }
   const closedOv = await ev(`window.dshShell.closeWorkbenchOverlay()`)
   await sleep(400)
   const afterClose = await ev(`window.dshShell.getWorkbenchShape()`)
   check('G 浮标关得掉、不残留', closedOv?.ok === true && afterClose?.overlay === false, JSON.stringify({ closed: closedOv?.ok, overlay: afterClose?.overlay }))
+
+  // H：置顶必须落到 **OS 的 WS_EX_TOPMOST 位**上（读自报值会被骗，见上面的注释）。
+  // 外壳的申请是"申请 → 读 OS 真值 → 没落地补刀"（最多 2.2s，见 main.js 的 enforceTopmost），
+  // 所以门禁轮询等落定；等满仍不对就是真缺陷。
+  const waitWin32 = async (needle, want, budget = 4000) => {
+    const t0 = Date.now()
+    let last = null
+    for (;;) {
+      const wins = winStyles(appPid)
+      last = topmostOf(wins, needle)
+      if (last && last.topmost === want) return { hit: last, ms: Date.now() - t0, wins }
+      if (Date.now() - t0 > budget) return { hit: last, ms: Date.now() - t0, wins, timeout: true }
+      await sleep(200)
+    }
+  }
+  await ev(`window.dshShell.setWorkbenchShape('strip')`)
+  await sleep(300)
+  const appState = (await ev(`window.dshShell.getWorkbenchShape()`))
+  const appPid = appState?.pid || 0
+  check('H 主进程自报 PID（门禁按它锁定自己的窗口）', Number.isInteger(appPid) && appPid > 0, String(appPid))
+  const stripTop = await waitWin32('DeepSeek Harness', true)
+  const stripState = await ev(`window.dshShell.getWorkbenchShape()`)
+  check('H 长条在主窗上真的置顶（Win32 WS_EX_TOPMOST）', Boolean(stripTop.hit) && stripTop.hit.topmost === true,
+    JSON.stringify({ ...stripTop.hit, 等了: `${stripTop.ms}ms`, 自报OS真值: stripState?.topmostOs }) +
+      (stripTop.timeout ? ' 现场: ' + dumpWins(stripTop.wins) : '') + ' 外壳置顶日志: ' + topmostLog.slice(-4).join(' / '))
+  check('H 应用自报的 OS 真值与 Win32 读数一致（外壳的复核探针可信）', stripState?.topmostOs === stripTop.hit?.topmost,
+    JSON.stringify({ topmostOs: stripState?.topmostOs, win32: stripTop.hit?.topmost, 申请值: stripState?.alwaysOnTop }))
+  const ovOpen = await ev(`window.dshShell.openWorkbenchOverlay()`)
+  await sleep(300)
+  const ovTop = await waitWin32('工作台浮标', true)
+  check('H 浮标也真的置顶', Boolean(ovTop.hit) && ovTop.hit.topmost === true,
+    JSON.stringify({ opened: ovOpen?.ok, ...ovTop.hit, 等了: `${ovTop.ms}ms` }) + (ovTop.timeout ? ' 现场: ' + dumpWins(ovTop.wins) : ''))
+  // 先关浮标再测"取消置顶"：浮标是主窗的 owned 窗，开着它测主窗的置顶位会串台
+  await ev(`window.dshShell.closeWorkbenchOverlay()`)
+  await sleep(600)
+  const afterOverlayClose = topmostOf(winStyles(appPid), '工作台浮标')
+  check('H 浮标关掉后 OS 里查不到这个窗口（无残留）', afterOverlayClose === null, JSON.stringify(afterOverlayClose))
+  await ev(`window.dshShell.setWorkbenchStripOnTop(false)`)
+  await sleep(300)
+  const offState = await ev(`window.dshShell.getWorkbenchShape()`)
+  const unpinned = await waitWin32('DeepSeek Harness', false)
+  check('H 关掉置顶开关后 OS 位也落下', Boolean(unpinned.hit) && unpinned.hit.topmost === false,
+    JSON.stringify({ ...unpinned.hit, 等了: `${unpinned.ms}ms`, 自报OS真值: offState?.topmostOs }) + (unpinned.timeout ? ' 现场: ' + dumpWins(unpinned.wins) : ''))
+  check('H 取消置顶后应用自报与 Win32 一致', offState?.topmostOs === unpinned.hit?.topmost,
+    JSON.stringify({ topmostOs: offState?.topmostOs, win32: unpinned.hit?.topmost }))
+  await ev(`window.dshShell.setWorkbenchStripOnTop(true)`)
+  await sleep(500)
+
   await ev(`window.dshShell.setWorkbenchShape('normal')`)
   await sleep(500)
 

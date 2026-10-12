@@ -46,8 +46,13 @@ v2.2 长条对话窗设想（窗口收成「手机微信式」长条 + 模式从
 排期见 §12-8。
 
 **2026-10-12 刀 2 更新**：门面**接线第一口已落地并用户可见**——主屏打开时申请 `strip`（窗口收成 420 宽竖条、
-主屏走既有 <900px 竖排），关闭时还原 `normal`；桥缺席（官方壳/老包）自动退回全屏主屏。
-详见 §6.4.3。**仍未做**：`mini`、无边框自绘顶栏、扇形呼出、模式拼接、真聊天瓷砖、状态条真数据源。
+主屏走既有 <900px 竖排），关闭时还原 `normal`；桥缺席（官方壳/老包）自动退回全屏主屏。详见 §6.4.3。
+
+**2026-10-12 深夜复核（刀 4–7 之后，把上面那句"仍未做"改准）**：`mini` 已是真档位（`verify:shell-shape`
+F 段按主进程 `getContentBounds()` 判）、真聊天瓷砖与输入框已接（只读转录 + 发送，见 §6.4.4）、
+状态条三个指标已在**真内核**上读出过真值（走会话句柄 `retain → binding(id).session.projections`）。
+**仍未做**：无边框与自绘顶栏（要重建窗口）、三钮（`—` / `⎋` / `✕`）、扇形呼出 UI、模式界面拼接。
+置顶这一关的实测与修法见 §12-9 末段（踩坑 #29）。
 
 **怎么跑**（在 `dsh-desktop/` 下；跑 electron 探针前先 `Remove-Item Env:ELECTRON_RUN_AS_NODE`）：
 
@@ -710,7 +715,7 @@ client 侧只做乐观更新 + 订阅；跨窗口同步 v1 用轮询/聚焦刷�
 
    **最小浮标切片已落地（2026-10-12 晚，上面第 1 步做完了）**：壳侧 `showWorkbenchOverlay()` /
    `hideWorkbenchOverlay()`（`transparent` + `frame:false` + `focusable:false` + `skipTaskbar` +
-   `alwaysOnTop('floating')` + `setParentWindow(主窗)`），位置由主窗 bounds 推、放不下自动翻另一侧；
+   置顶走 `enforceTopmost`（见下一段）+ `setParentWindow(主窗)`），位置由主窗 bounds 推、放不下自动翻另一侧；
    主窗 move/resize 跟随，hide/minimize/close 一律 `destroy()`（不留孤儿浮标）。
    **辅助窗刻意不带 preload** ⇒ 它拿不到 `dshShell`，没有新增 IPC 攻击面。
    门面接线：主屏收成 strip 后自动开浮标、还原 normal 时关掉（桥没这个方法就什么都不做）。
@@ -719,6 +724,29 @@ client 侧只做乐观更新 + 订阅；跨窗口同步 v1 用轮询/聚焦刷�
    **仍差项目所有者目检两件事**：透明画得对不对（这台机器 `capturePage` 判不了，见踩坑 #28）、
    物理点击是否真的不抢键盘焦点（探针里是主进程 `isFocused` + 独立实验的合成点击，不是手指）。
    目检过了才做扇形 UI（图标、错峰滑入、点外收起并吞点击）；不过就退 A。
+
+   **置顶这一关的实测与修法（2026-10-12 深夜，项目所有者目检报告"置顶从没生效过"之后）**：
+   应用自报 `alwaysOnTop=true`、`isAlwaysOnTop()` 也说 true，但 Win32 `GWL_EXSTYLE` 恒是
+   `0x00200100`（没 `WS_EX_TOPMOST`）——门禁读自报值，所以一路绿；用户实机上长条与浮标被别的应用
+   整个盖住。六轮实验（probe2–probe7，判据一律读 OS）定死三条：
+
+   | 实测 | 结论 |
+   |---|---|
+   | 七个 `alwaysOnTopLevel` 各置位一次 ×2 轮 | **只有 `screen-saver` 与 `pop-up-menu` 会置 `0x8`**；`floating`（省略 level 时的默认值）、torn-off-menu、modal-panel、main-menu、status 一律不置位 |
+   | 窗形消融（frame / 透明 / focusable / skipTaskbar / resizable 单独与全套） | **与窗形无关**——任何形状的窗都能置上；先前"浮标能、主窗不能"的差别在调用时机，不在窗形 |
+   | 置位成功后经历 别的应用抢前台（真起 notepad）/ focus / blur / minimize+restore / setBounds | **全部扛住** ⇒ 只有"落地"这一关需要重试，不需要常驻看门狗 |
+   | 单次调用后 50ms 一次连采 3.3 秒 | 抓到一次**整个窗口生命周期都没落地**（三次独立复现） ⇒ 一次调用不可信 |
+
+   `isAlwaysOnTop()` 在 Windows 上就是这个 OS 位的读数（每次采样与 `GetWindowLong(-20)` 一致）
+   ⇒ 主进程有**免费的自校验探针**。据此壳侧新增 `enforceTopmost(target, want, label)`：
+   申请 → 读 OS 真值 → 没落地按 `0/120/300/700/1500ms` 补刀，仍不成**记日志不静默**；
+   全文件只留这一处 `setAlwaysOnTop`（S9 用反例守卫钉住），`shapeState()` 把**申请值**
+   （`alwaysOnTop`）与**系统真值**（`topmostOs`）分开报。验收侧 H 段改判 OS 位并轮询等落定，
+   G 段焦点判据只在"开浮标前主窗本来有焦点"时成立、否则显式 SKIP；
+   探针新增 `--selftest`（掩码判据 + 真枚举桌面窗口）——**读 OS 的判据自己也要被验一次**
+   （这轮差点把探针的假阴性当成"置顶修不好"，见踩坑 #30）。
+   对 B 方案的账：评估表里 ③（不破坏"一个应用一个窗口"）这轮第一次拿到 **OS 级证据**
+   （浮标在 OS 里确实置顶、关掉后查不到该窗口、主窗焦点没被抢）；② 透明**仍未测**，仍等人眼确认。
 
 ---
 
