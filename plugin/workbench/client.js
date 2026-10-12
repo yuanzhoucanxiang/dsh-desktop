@@ -1120,6 +1120,17 @@ function getShapeBridge(globalThisRef = typeof window === "undefined" ? null : w
   if (!bridge || typeof bridge.setWorkbenchShape !== "function" || typeof bridge.getWorkbenchShape !== "function") return null;
   return bridge;
 }
+async function requestOverlay(open2) {
+  const bridge = getShapeBridge();
+  const fn = bridge && (open2 ? bridge.openWorkbenchOverlay : bridge.closeWorkbenchOverlay);
+  if (typeof fn !== "function") return { ok: false, error: "no-shell-bridge" };
+  try {
+    const result = await fn.call(bridge);
+    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
 async function requestShape(shape) {
   const bridge = getShapeBridge();
   if (!bridge) return { ok: false, error: "no-shell-bridge" };
@@ -1165,7 +1176,10 @@ function WorkbenchChrome() {
         return;
       }
       const result = await requestShape(next);
-      if (!cancelled) setShape(result.ok ? next : `failed:${result.error}`);
+      if (cancelled) return;
+      setShape(result.ok ? next : `failed:${result.error}`);
+      if (next === "strip" && result.ok) void requestOverlay(true);
+      else if (next === "normal") void requestOverlay(false);
     };
     if (open2) {
       askedForStrip.current = true;

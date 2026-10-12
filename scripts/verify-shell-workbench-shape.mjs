@@ -199,6 +199,24 @@ try {
   const saved3 = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
   check('F mini 也没污染 windowBounds', (saved3.windowBounds?.width || 0) > 600 && (saved3.windowBounds?.height || 0) > 400, JSON.stringify(saved3.windowBounds))
 
+  // G：浮标辅助窗（扇形呼出 B 方案的最小切片）。验三件事：开得了、**开着的时候主窗焦点不受影响**、
+  // 关得掉且不残留。至于"点它会不会抢键盘焦点"，那是独立实验（focusable:false + sendInputEvent）
+  // 已经实测过的属性，见 logs/2026-10-12.md 的 B 方案评估表。
+  await ev(`window.dshShell.setWorkbenchShape('strip')`)
+  await sleep(700)
+  const opened = await ev(`window.dshShell.openWorkbenchOverlay()`)
+  await sleep(700)
+  check('G 浮标能开（主进程侧可见）', opened?.ok === true && opened?.visible === true, JSON.stringify(opened?.bounds))
+  const withOverlay = await ev(`window.dshShell.getWorkbenchShape()`)
+  check('G 状态回读说浮标在位', withOverlay?.overlay === true, JSON.stringify({ overlay: withOverlay?.overlay }))
+  check('G 浮标开着时主窗焦点没被抢（focusable:false）', withOverlay?.mainFocused === true, JSON.stringify({ mainFocused: withOverlay?.mainFocused }))
+  const closedOv = await ev(`window.dshShell.closeWorkbenchOverlay()`)
+  await sleep(400)
+  const afterClose = await ev(`window.dshShell.getWorkbenchShape()`)
+  check('G 浮标关得掉、不残留', closedOv?.ok === true && afterClose?.overlay === false, JSON.stringify({ closed: closedOv?.ok, overlay: afterClose?.overlay }))
+  await ev(`window.dshShell.setWorkbenchShape('normal')`)
+  await sleep(500)
+
   view.ws.close()
 } catch (err) {
   check('脚本自身跑通', false, String(err?.message || err))

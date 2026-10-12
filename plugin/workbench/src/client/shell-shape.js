@@ -16,6 +16,19 @@ export function getShapeBridge(globalThisRef = typeof window === 'undefined' ? n
   return bridge
 }
 
+/** 浮标辅助窗（扇形呼出 B 方案的最小切片）：桥没这个方法就什么都不做。 */
+export async function requestOverlay(open) {
+  const bridge = getShapeBridge()
+  const fn = bridge && (open ? bridge.openWorkbenchOverlay : bridge.closeWorkbenchOverlay)
+  if (typeof fn !== 'function') return { ok: false, error: 'no-shell-bridge' }
+  try {
+    const result = await fn.call(bridge)
+    return result && typeof result === 'object' ? result : { ok: false, error: 'bad-response' }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}
+
 /** 申请档位。桥缺席 → `{ok:false, error:'no-shell-bridge'}`；IPC 抛错 → 错误文本原样带回。 */
 export async function requestShape(shape) {
   const bridge = getShapeBridge()

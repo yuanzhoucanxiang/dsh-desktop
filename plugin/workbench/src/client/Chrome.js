@@ -20,7 +20,7 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
-import { getShapeBridge, requestShape } from './shell-shape.js'
+import { getShapeBridge, requestOverlay, requestShape } from './shell-shape.js'
 
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
@@ -69,7 +69,12 @@ export function WorkbenchChrome() {
         return
       }
       const result = await requestShape(next)
-      if (!cancelled) setShape(result.ok ? next : `failed:${result.error}`)
+      if (cancelled) return
+      setShape(result.ok ? next : `failed:${result.error}`)
+      // 浮标（B 方案最小切片）：收成条之后在主窗外侧挂一个浮标，供项目所有者目检
+      // "透明画得对不对 / 点它会不会抢焦点 / 关主屏它跟不跟着没"。扇形 UI 落地前它就是个标记。
+      if (next === 'strip' && result.ok) void requestOverlay(true)
+      else if (next === 'normal') void requestOverlay(false)
     }
     if (open) {
       askedForStrip.current = true

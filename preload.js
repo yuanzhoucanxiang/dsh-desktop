@@ -67,8 +67,10 @@ contextBridge.exposeInMainWorld('dshShell', {
   getWorkbenchShape: () => ipcRenderer.invoke('shell:get-workbench-shape'),
   setWorkbenchShape: (shape) => ipcRenderer.invoke('shell:set-workbench-shape', String(shape ?? '')),
   setWorkbenchStripOnTop: (on) => ipcRenderer.invoke('shell:set-workbench-strip-on-top', Boolean(on)),
-  onWorkbenchShape: (cb) => {
-    const h = (_e, s) => cb(s)
+  // 工作台浮标辅助窗（扇形呼出 B 方案）：只能开/关，位置由主窗推出来，页面传不进坐标
+  openWorkbenchOverlay: () => ipcRenderer.invoke('shell:open-workbench-overlay'),
+  closeWorkbenchOverlay: () => ipcRenderer.invoke('shell:close-workbench-overlay'),
+  onWorkbenchShape: (cb) => {    const h = (_e, s) => cb(s)
     ipcRenderer.on('shell:workbench-shape', h)
     return () => ipcRenderer.removeListener('shell:workbench-shape', h)
   },

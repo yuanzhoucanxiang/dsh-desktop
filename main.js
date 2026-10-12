@@ -2241,6 +2241,12 @@ function createWindow() {
   }
   win.on('resize', scheduleSaveBounds)
   win.on('move', scheduleSaveBounds)
+  // 浮标（工作台辅助窗）跟着主窗走：主窗动它就动，主窗藏/最小化它就一起没（不留孤儿浮标）
+  win.on('move', syncWorkbenchOverlay)
+  win.on('resize', syncWorkbenchOverlay)
+  win.on('hide', hideWorkbenchOverlay)
+  win.on('minimize', hideWorkbenchOverlay)
+  win.on('restore', syncWorkbenchOverlay)
   win.on('maximize', () => { settings.windowBounds.maximized = true; saveSettings() })
   win.on('unmaximize', () => { settings.windowBounds.maximized = false; saveSettings() })
 
@@ -2263,7 +2269,10 @@ function createWindow() {
   // 否则带 dshShell 的 preload 会跟着导航落到任意本地/远程页面）
   hardenWindow(win)
 
-  win.on('closed', () => { win = null })
+  win.on('closed', () => {
+    hideWorkbenchOverlay() // 主窗没了，浮标绝不能留成孤儿
+    win = null
+  })
   return win
 }
 
@@ -2320,6 +2329,9 @@ function shapeState() {
     bounds: win && !win.isDestroyed() ? win.getBounds() : null,
     contentBounds: win && !win.isDestroyed() ? win.getContentBounds() : null,
     minSize: SHAPE_MIN_SIZE[shape],
+    overlay: overlayVisible(),
+    // 浮标是 focusable:false 的窗：主窗焦点应当**一点不受影响**（探针就断言这条）
+    mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
     frameless: false, // 这一刀仍是原生边框；下一刀做无边框时这里才变
   }
 }
@@ -2347,6 +2359,110 @@ function broadcastShape() {
   if (!win || win.isDestroyed()) return
   try {
     win.webContents.send('shell:workbench-shape', shapeState())
+  } catch {}
+}
+
+/* ─────────── 工作台浮标辅助窗（扇形呼出 B 方案；plan §12-9 评估后的最小切片） ───────────
+ *
+ * 这一片**只做一件事**：证明"能开一个浮在长条外侧、点它不抢键盘焦点、随主窗一起消失"的窗
+ * 在这台机器上画得出来。三条硬约束来自 2026-10-12 的实测与 API 核对：
+ *   · `skipTaskbar` + `focusable:false` ⇒ 任务栏与 Alt-Tab 里仍然只有一个窗口（不破坏
+ *     "一个应用一个窗口"的基本预期），且点击它不会把长条输入框的焦点抢走（实测：主窗
+ *     `isFocused()` 在辅助窗收到点击后仍为 true）；
+ *   · 位置**由主窗 bounds 推出来**，页面传不进任意坐标；超出当前显示器工作区时自动翻到另一侧；
+ *   · 随主窗 move/resize 跟随，主窗 hide/minimize/close/quit 时**必须一起没**（不留孤儿浮标，
+ *     免得喂大"关窗≠退出、托盘堆积"那个老毛病）。
+ *
+ * 辅助窗里跑的是**我们自己给的本地字符串**，不带 preload、不接任何页面脚本 ⇒ 它拿不到
+ * dshShell，没有新的 IPC 攻击面；开关这两个通道仍只认内核页面主帧（isKernelPageSender）。
+ */
+const OVERLAY_W = 300
+const OVERLAY_H = 360
+let overlayWin = null
+
+function overlayHtml() {
+  return `<!doctype html><meta charset="utf-8"><style>
+    html,body{margin:0;background:transparent;font:13px system-ui;color:#eceae2}
+    .card{margin:10px;padding:10px 12px;border-radius:12px;background:rgba(20,22,17,.82);border:1px solid rgba(143,179,122,.5)}
+    .dot{width:64px;height:64px;border-radius:50%;background:#8fb37a;margin:10px 0;cursor:pointer}
+    .hint{opacity:.75;font-size:11px;line-height:15px}
+  </style><body><div class="card">
+    <b>工作台浮标（B 方案最小切片）</b>
+    <div class="dot" id="dot" title="点我：验证点击不会抢走长条输入框的焦点"></div>
+    <div class="hint">点上面的圆点：若长条那边还在输入焦点里，就说明没抢焦点。<br>已点 <span id="n">0</span> 次。</div>
+  </div><script>
+    var n = 0, el = document.getElementById('n');
+    document.getElementById('dot').addEventListener('click', function () { el.textContent = String(++n); });
+  </script></body>`
+}
+
+/** 浮标该摆哪儿：贴着主窗（长条）外侧；放不下就翻到另一边。 */
+function overlayBounds() {
+  const b = win.getBounds()
+  const area = screen.getDisplayMatching(b).workArea
+  const afterX = b.x + b.width + 8
+  const beforeX = b.x - OVERLAY_W - 8
+  const x = afterX + OVERLAY_W <= area.x + area.width ? afterX : Math.max(area.x, beforeX)
+  const y = Math.min(Math.max(area.y + 8, b.y + 12), area.y + area.height - OVERLAY_H - 8)
+  return { x, y, width: OVERLAY_W, height: OVERLAY_H }
+}
+
+function overlayVisible() {
+  return Boolean(overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible())
+}
+
+function showWorkbenchOverlay() {
+  if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' }
+  if (!overlayWin || overlayWin.isDestroyed()) {
+    overlayWin = new BrowserWindow({
+      ...overlayBounds(),
+      show: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      frame: false,
+      resizable: false,
+      movable: true,
+      focusable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      title: '工作台浮标',
+      webPreferences: {
+        // 刻意不带 preload：浮标里跑的是本地字符串，拿不到 dshShell，也就没有新的 IPC 面
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+    overlayWin.setAlwaysOnTop(true, 'floating')
+    try {
+      overlayWin.setParentWindow(win) // 随主窗最小化/关闭一起走（Windows 上由 OS 保证）
+    } catch {}
+    overlayWin.on('closed', () => {
+      overlayWin = null
+    })
+    overlayWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(overlayHtml())}`)
+  } else {
+    overlayWin.setBounds(overlayBounds())
+  }
+  overlayWin.show()
+  log('工作台浮标：开（贴在主窗外侧）')
+  return { ok: true, visible: true, bounds: overlayWin.getBounds() }
+}
+
+function hideWorkbenchOverlay() {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.destroy() // 直接 destroy：隐藏留着也是残留窗口，正是要避免的那种脏东西
+    overlayWin = null
+  }
+  log('工作台浮标：关')
+  return { ok: true, visible: false }
+}
+
+function syncWorkbenchOverlay() {
+  if (!overlayWin || overlayWin.isDestroyed() || !win || win.isDestroyed()) return
+  try {
+    overlayWin.setBounds(overlayBounds())
   } catch {}
 }
 
@@ -3055,8 +3171,20 @@ function registerIpc() {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     return { ok: true, ...shapeState() }
   })
-  ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {
+  // 工作台浮标辅助窗（B 方案最小切片）：只"开/关"，**位置由主窗推**，页面传不进坐标
+  ipcMain.handle('shell:open-workbench-overlay', (event) => {
+    if (!isKernelPageSender(event)) {
+      log('open-workbench-overlay: rejected（发送方不是内核页面主帧）')
+      return { ok: false, error: 'only-kernel-page' }
+    }
+    return showWorkbenchOverlay()
+  })
+  ipcMain.handle('shell:close-workbench-overlay', (event) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+    return hideWorkbenchOverlay()
+  })
+
+  ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     settings.workbenchStripOnTop = Boolean(on)
     saveSettings()
     if (win && !win.isDestroyed() && currentShape() !== 'normal') {
