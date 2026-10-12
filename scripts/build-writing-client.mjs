@@ -49,7 +49,13 @@ export async function buildWritingClient(outFile) {
   const code = result.outputFiles[0].text.replace(/\n*$/, '\n')
   // The parser is bundled into the single published client. Carry the notices
   // of exactly those packages whose sources esbuild included, in stable order.
+  //
+  // 自家库（`@dsh-local/*`，如 `@dsh-local/mode-kit`）**豁免第三方归属**：它与插件同源同许可，
+  // 内联它不需要归属声明，也不要求它有 LICENSE 文件（那个包没有，见 WORKLOG 踩坑速查 #25）。
+  // 豁免只限这个 scope；判定与插件仓库的 build-client.mjs 保持一致（两份脚本是副本，改一处要改两处）。
+  const isFirstPartyPackage = (name) => /^@dsh-local\/.+/.test(String(name || ''))
   const notices = new Map()
+  const firstParty = new Set()
   for (const input of Object.keys(result.metafile.inputs)) {
     if (!input.replace(/\\/g, '/').includes('node_modules/')) continue
     let dir = path.dirname(path.resolve(root, input))
@@ -59,6 +65,10 @@ export async function buildWritingClient(outFile) {
         const pkg = JSON.parse(fs.readFileSync(metadata, 'utf8'))
         const key = `${pkg.name}@${pkg.version}`
         if (!notices.has(key)) {
+          if (isFirstPartyPackage(pkg.name)) {
+            firstParty.add(pkg.name)
+            break
+          }
           const license = fs.readdirSync(dir).sort().find(name => /^licen[cs]e(?:\.md|\.txt)?$/i.test(name))
           if (!license) throw new Error(`Missing bundled license: ${key}`)
           notices.set(key, fs.readFileSync(path.join(dir, license), 'utf8').replace(/\r\n/g, '\n').trim())
@@ -67,6 +77,9 @@ export async function buildWritingClient(outFile) {
       }
       dir = path.dirname(dir)
     }
+  }
+  for (const name of firstParty) {
+    if (!isFirstPartyPackage(name)) throw new Error(`First-party exemption leaked: ${name}`)
   }
   const attribution = [...notices].sort(([a], [b]) => a.localeCompare(b, 'en')).map(([name, text]) =>
     `/*! Bundled dependency: ${name}\n${text.replace(/\*\//g, '* /')}\n*/\n`).join('')
