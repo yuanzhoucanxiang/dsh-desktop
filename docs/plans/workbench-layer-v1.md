@@ -689,6 +689,25 @@ client 侧只做乐观更新 + 订阅；跨窗口同步 v1 用轮询/聚焦刷�
      不是图标扇形，也拿不到我们想要的动效。
    **要项目所有者定**：为这个手感付不付 B 的代价；不付就走 A（我倾向先 A，手感不满意再升 B）。
 
+   **B 方案可行性评估（2026-10-12 晚，项目所有者选 B 之后做的实测，不是纸面推演）**：
+
+   | 风险 | 怎么测的 | 结果 |
+   |---|---|---|
+   | ① 非激活辅助窗会不会抢走长条的键盘焦点 / 能不能收到点击 | 真起 Electron：主窗 + `focusable:false` 无边框辅助窗，向辅助窗里的红块发 `sendInputEvent` 点击，前后比对 `isFocused()` | **通过**：`{mainFocusedBefore:true, overlayFocused:false, overlayClicked:'clicked', mainStillFocused:true}` —— 辅助窗收得到 DOM 点击，主窗焦点一点没丢。`setParentWindow` 也在（可让辅助窗随主窗生死） |
+   | ② `transparent:true` 到底画不画得透明 | 截 `capturePage()` 看角落与色块的 alpha | **这台机器上测不了**：连**对照组**（`transparent:false` 的实心窗）截回来也是整片 alpha=0 → 截图路径本身不可信，不能拿它判透明与否。顺带一次合并实验里还见过 `Network service crashed` / GPU 进程退出，透明 + 本机 GPU 的组合需要人眼确认一次 |
+   | ③ 会不会破坏"一个应用一个窗口"的基本预期 | API 面核对（`electron.d.ts`：`transparent` / `skipTaskbar` / `focusable` / `setIgnoreMouseEvents(…, {forward})` 标注 `@platform darwin,win32` / `setParentWindow`） | **不破坏**（设计上可保证）：`skipTaskbar` ⇒ 任务栏与 Alt-Tab 里仍只有一个窗口；非激活 ⇒ 不抢键盘；不注册托盘 ⇒ 不喂"托盘堆积"那个老毛病；随主窗 move/close/hide 联动 ⇒ 主窗一关它必须一起没 |
+
+   **结论**：B **可以做**，但**必须先做一次人眼确认**再往上盖扇形 UI——透明与本机 GPU 合成这一条
+   （②）在无人值守下测不出来，硬盖就是拿用户的机器赌。落地顺序定死：
+   1. **最小浮标切片**：壳加一个"能开/能关/跟着主窗走"的辅助窗（先只画一个明显的色块 + 一个可点区域），
+      拉预览实例请项目所有者看一眼：**看不看得见、点它会不会让长条输入框失焦、关掉长条它有没有跟着没**。
+   2. 三条都过了才做扇形 UI（模式图标、错峰滑入、点外收起吞点击——展开期间**不穿透**，
+      避免误点到别的应用）。
+   3. 任一条不过就退回 A（窗内贴右缘一列），代价是"朝窗外张开"的手感变淡，写进 CHANGELOG 与契约。
+   **新增壳能力的形态**（第 1 步就要定）：`shell:open-workbench-overlay` / `shell:close-workbench-overlay`
+   + 状态回读，同样**只收枚举与语义参数、不收任意几何**（辅助窗的位置由主窗 bounds 推出来），
+   发送方仍过 `isKernelPageSender`；`shell-hardening-test` 补断言，实机探针验"关掉后不残留窗口"。
+
 ---
 
 署名：deepseek-v4.1-flash（依据 2026-10-11 项目所有者"先立工具台这一层架构"的决定整理）；§0.1 原型轮与决策点 8 补充：Kimi（2026-10-12）；决策点 8 于 2026-10-12 由项目所有者拍板（内容见上），壳层代价调查与 ⑤ 修复：Qoder（2026-10-12）。
