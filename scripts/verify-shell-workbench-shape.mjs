@@ -10,6 +10,7 @@
  *   C strip 生效：主进程返回 shape=strip / alwaysOnTop=true，渲染侧布局视口真的窄下来
  *   D 形态期不污染 windowBounds：settings.json 里的 windowBounds 没被写成条状尺寸
  *   E 还原 normal：alwaysOnTop=false、宽度回弹，settings 里形态回到 normal
+ *   F mini 是真档位 · G 浮标开得了/不抢焦点/无残留 · H **置顶落到 Win32 WS_EX_TOPMOST** · I ✕ 复用既有关窗语义
  *
  * 诚实边界（本脚本**不**声称验了的事）：
  *  - 置顶**不**只看自报：H 段用 Win32 `GWL_EXSTYLE & WS_EX_TOPMOST` 判（读自报值会被骗，
@@ -365,6 +366,20 @@ try {
   await ev(`window.dshShell.setWorkbenchShape('normal')`)
   await sleep(500)
 
+  // I：自绘三钮的 `✕` **复用既有关窗语义**（`closeToTray` 默认开着 → 收进托盘：窗口没了、进程还在、
+  // 形态不被顺手改）。这条放在最后做——窗一藏，后面的判据就没法指望了。
+  await ev(`window.dshShell.setWorkbenchShape('strip')`)
+  await sleep(600)
+  const closed = await ev(`window.dshShell.closeWorkbenchWindow()`)
+  await sleep(700)
+  const pageVis = JSON.parse(await ev(`JSON.stringify({ hidden: document.hidden, vis: document.visibilityState })`))
+  check('I `✕` 走既有关窗语义：窗口收进托盘（页面转 hidden）而进程还活着',
+    closed?.ok === true && closed?.visible === false && pageVis.hidden === true && childExit === null,
+    JSON.stringify({ ok: closed?.ok, visible: closed?.visible, ...pageVis, 实例退出: childExit }))
+  check('I `✕` 不顺手改形态与置顶（窗口只是藏起来，回来还是长条）',
+    closed?.shape === 'strip' && closed?.alwaysOnTop === true,
+    JSON.stringify({ shape: closed?.shape, onTop: closed?.alwaysOnTop }))
+
   view.ws.close()
 } catch (err) {
   check('脚本自身跑通', false, String(err?.message || err))
@@ -376,5 +391,5 @@ if (failures.length) {
   console.log(`SHELL_SHAPE_FAIL ${failures.length} 项未过：${failures.join(', ')}`)
   process.exitCode = 1
 } else {
-  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原）')
+  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标不抢焦点 / H 置顶落到 Win32 / I ✕ 走既有关窗语义）')
 }

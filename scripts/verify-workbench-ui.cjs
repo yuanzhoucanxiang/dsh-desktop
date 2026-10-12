@@ -148,12 +148,18 @@ app.whenReady().then(async () => {
     // 探针里窗口不会真变形（那是外壳的活），验的是**门面有没有正确地申请/还原**与
     // **长条几何下主屏是否竖排不破版**（后者靠真改窗宽）。
     window.__shapeLog = [];
+    window.__overlayLog = [];
+    window.__closeCalls = 0;
     window.dshShell = {
       getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false }),
       setWorkbenchShape: async (s) => {
         window.__shapeLog.push(s);
         return { ok: true, shape: s, alwaysOnTop: s !== 'normal' };
       },
+      // 浮标与关窗两条也是壳的能力：探针只记"门面调没调、按什么顺序调"
+      openWorkbenchOverlay: async () => { window.__overlayLog.push('open'); return { ok: true, visible: true } },
+      closeWorkbenchOverlay: async () => { window.__overlayLog.push('close'); return { ok: true, visible: false } },
+      closeWorkbenchWindow: async () => { window.__closeCalls += 1; return { ok: true } },
     };
     const ctx = {
       effect: (fn) => { fn(); return () => {}; },
@@ -363,6 +369,86 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-active-label]')!==null`, '入口应显示当前模式名')
   assert.equal(await text('[data-wb-active-label]'), '演示模式')
 
+  // ③e 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出并还原 / `✕` 走既有关窗语义）。
+  // 三条纪律各自都有对应断言：门面**只申请档位**（不自己搬窗口）、`✕` **不顺手改形态**（窗口只是藏起来）、
+  // 三钮是**原生 button 且带 title**（键盘可达、说不清就可见）。档位判据用"本组起点之后的尾巴"，
+  // 免得被前面 ③d 的申请史干扰（也提醒后来人：这一组往 shapeLog 里加的是 mini/strip/normal）。
+  // 先重新打开主屏（③d 收尾时已经进入 demo、主屏关着），并等壳回读把形态定下来再判三钮
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '重新打开主屏')
+  await waitFor(`document.querySelector('[data-wb-bar]')!==null`, '条状形态应自绘顶栏三钮')
+  const shapeBase = await evaluate('window.__shapeLog.length')
+  const overlayBase = await evaluate('window.__overlayLog.length')
+  const shapeTail = async () => (await evaluate('window.__shapeLog')).slice(shapeBase)
+  const overlayTail = async () => (await evaluate('window.__overlayLog')).slice(overlayBase)
+  const barInfo = JSON.parse(
+    await evaluate(
+      `(() => { const b=[...document.querySelectorAll('[data-wb-btn]')];
+        return JSON.stringify({ kinds: b.map((x) => x.getAttribute('data-wb-btn')), tags: b.map((x) => x.tagName), titles: b.map((x) => x.title) }); })()`,
+    ),
+  )
+  assert.deepEqual(barInfo.kinds, ['mini', 'exit', 'close'], `三钮齐备且语义可辨：${JSON.stringify(barInfo.kinds)}`)
+  assert.ok(barInfo.tags.every((t) => t === 'BUTTON'), `三钮必须是原生 button（Tab 可达）：${JSON.stringify(barInfo.tags)}`)
+  assert.ok(barInfo.titles.every((t) => t && t.length > 3), `三钮都要有说得清的 title：${JSON.stringify(barInfo.titles)}`)
+  assert.equal(await evaluate(`(document.querySelector('[data-wb-bar]')||{}).getAttribute?.('data-wb-bar-shape')`), 'strip')
+
+  // 先在输入框里留一段**没发出去**的字：`—` 会整块卸载对话列，这正是最容易吞字的地方。
+  // 必须走**原型上的原生 setter** 再派发 input：React 在无控组件上装了 value tracker，
+  // 直接 `el.value = x` 会把 tracker 一起改掉，于是 onChange 被判定"没变化"而根本不触发
+  // （③f 那种直写 DOM 的打法在这里不够用——那里 send() 是直接读 DOM 的）。
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-wb-composer]');
+       const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+       setter.call(b, '打到一半先收一下'); b.dispatchEvent(new Event('input', { bubbles: true })); return 0 })()`,
+  )
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-composer]').value`),
+    '打到一半先收一下',
+    '合成输入应真的落到输入框里',
+  )
+  await click('[data-wb-btn="mini"]')
+  await waitFor(`document.querySelector('[data-wb-mini]')!==null`, '点 `—` 应换成小条门面')
+  assert.deepEqual(await shapeTail(), ['mini'], '小条只申请档位，窗口几何归壳')
+  assert.equal(await count('[data-wb-tiles],[data-wb-chat]'), 0, '小条里不该留对话列与瓷砖格（168px 高塞不下就是破版）')
+  assert.deepEqual(await overlayTail(), ['close'], '收成小条时浮标该跟着收起')
+  await click('[data-wb-btn="mini"]')
+  await waitFor(`document.querySelector('[data-wb-mini]')===null`, '再点一次 `—` 应展开回长条')
+  assert.deepEqual(await shapeTail(), ['mini', 'strip'], '展开回 strip')
+  assert.equal(await count('[data-wb-tiles]'), 1, '展开后瓷砖格回来')
+  assert.deepEqual(await overlayTail(), ['close', 'open'], '展开后浮标回来')
+  assert.equal(
+    await evaluate(`(document.querySelector('[data-wb-composer]')||{}).value`),
+    '打到一半先收一下',
+    '收成小条再展开，没发出去的字一个字都不能丢',
+  )
+  // 收尾把草稿清掉：模块级草稿是跨挂载的，留着会让后面各组一进来就看见上一组打的字
+  await evaluate(
+    `(() => { const b = document.querySelector('[data-wb-composer]');
+       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(b, '');
+       b.dispatchEvent(new Event('input', { bubbles: true })); return 0 })()`,
+  )
+
+  await evaluate(`document.querySelector('[data-wb-btn="close"]').focus()`)
+  assert.equal(
+    await evaluate(`document.activeElement && document.activeElement.getAttribute('data-wb-btn')`),
+    'close',
+    '焦点应能落在三钮上（键盘可达不能只靠注释承诺）',
+  )
+  await click('[data-wb-btn="close"]')
+  await sleep(250)
+  assert.equal(await evaluate('window.__closeCalls'), 1, '`✕` 只说"用户按了关闭"，进托盘/退出由壳的既有关窗语义定')
+  assert.deepEqual(await shapeTail(), ['mini', 'strip'], '`✕` 不该顺手还原窗口形态或关掉主屏')
+
+  await click('[data-wb-btn="exit"]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '`⎋` 应退出工具台')
+  assert.deepEqual(await shapeTail(), ['mini', 'strip', 'normal'], '`⎋` 退出要把窗口还原成 normal')
+  // 收尾把状态交还给后续各组：重新进入 demo（④ 断言"任何时刻只有一个当前模式"要它在场）
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '重新打开主屏')
+  await click('[data-wb-mode="demo"]')
+  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '重进 demo 模式')
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
+
   // ④ 多模式：切换器列出全部，当前项有标记
   await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({ id:'demo2', label:'第二个模式', order:30 }); return 0 })()`)
   await waitFor(`document.querySelector('[data-wb-entry]').getAttribute('data-wb-count')==='2'`, '入口计数应更新')
@@ -422,7 +508,7 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入后主屏应关闭')
 
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
-  console.log('WORKBENCH_UI_OK 9 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/瓷砖/切换/守卫/host 状态/设置段）')
+  console.log('WORKBENCH_UI_OK 9 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段）')
   await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {

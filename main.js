@@ -2337,6 +2337,9 @@ function shapeState() {
     // **OS 真值**（Windows 上 isAlwaysOnTop() 读的就是 GWL_EXSTYLE 的 WS_EX_TOPMOST 位），
     // 与上面那个"申请值"alwaysOnTop 分开报——只报申请值会骗过门禁（2026-10-12 的实锤）。
     topmostOs: win && !win.isDestroyed() ? win.isAlwaysOnTop() : null,
+    // 按 `✕` 之后窗口应当"没了但进程还在"（closeToTray）——门禁按这条判既有关窗语义被复用，
+    // 而不是被插件自己绕过（visible 只在这条回读里出现，不给页面任何控制能力）
+    visible: win && !win.isDestroyed() ? win.isVisible() : null,
     frameless: false, // 这一刀仍是原生边框；下一刀做无边框时这里才变
   }
 }
@@ -3234,6 +3237,19 @@ function registerIpc() {
   ipcMain.handle('shell:close-workbench-overlay', (event) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     return hideWorkbenchOverlay()
+  })
+
+  // 自绘三钮里的 `✕`（2026-10-12 拍板：走**既有关窗语义**，不是退出应用）：只发 `win.close()`，
+  // 由 `win.on('close')` 那份逻辑决定"进托盘"还是真关（`closeToTray` 开关说了算）。
+  // 刻意不提供 quit/hide 的独立通道——页面能表达的意图只有"用户按了关闭"。
+  ipcMain.handle('shell:close-window', (event) => {
+    if (!isKernelPageSender(event)) {
+      log('close-window: rejected（发送方不是内核页面主帧）')
+      return { ok: false, error: 'only-kernel-page' }
+    }
+    if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' }
+    win.close()
+    return { ok: true, ...shapeState() }
   })
 
   ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {

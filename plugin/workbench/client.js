@@ -319,7 +319,7 @@ var CSS = [
   ".dshWbEntryMode{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-tertiary);font-size:12px;}",
   // 主屏（L2 主屏，2026-10-11 项目所有者定形态）：全屏门面——左列对话 + 右侧模式瓷砖格；
   // z 层 2200：盖过模式浮层（写作 2000 / GIR 60）与辅助坞（2100），打开时盖住、关闭后原样回到。
-  ".dshWbHome{position:fixed;inset:0;z-index:2200;display:flex;background:var(--dsw-alias-bg-base);animation:dshWbIn .16s ease-out;}",
+  ".dshWbHome{position:fixed;inset:0;z-index:2200;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);animation:dshWbIn .16s ease-out;}",
   "@keyframes dshWbIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
   "@media (prefers-reduced-motion:reduce){.dshWbHome{animation:none}}",
   ".dshWbHomePanel{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;padding:20px 24px;overflow:auto;}",
@@ -362,6 +362,17 @@ var CSS = [
   ".dshWbTitle{flex:1;font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary);}",
   ".dshWbClose{border:none;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:6px;}",
   ".dshWbClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  // 长条自绘顶栏三钮（2026-10-12 拍板）：只在条状形态出现；normal 仍走原生标题栏，两套并排就是混乱。
+  // 刻意**不写 -webkit-app-region**——这一刀窗口还有原生边框，拖拽归原生标题栏；无边框那一刀再补。
+  ".dshWbBar{flex:none;display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);}",
+  ".dshWbBarTitle{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}",
+  ".dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbBarBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
+  ".dshWbBarBtn.is-close:hover{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);}",
+  // `—` 收到小条：整块门面只剩顶栏 + 一行"正在做什么"（168px 高塞对话与瓷砖就是破版）
+  ".dshWbMini{position:fixed;inset:0;z-index:2200;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);}",
+  ".dshWbMiniLine{flex:1;min-height:0;display:flex;align-items:center;padding:0 14px;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWbHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
   // 模式卡片（2026-10-11 前端轮，中央面板版）：大徽标 + 名称 + 该模式自己上报的「正在做什么」；当前模式品牌色描边
   ".dshWbList{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}",
@@ -504,6 +515,10 @@ var T = {
   dockResize: "拖拽调整辅助坞宽度",
   activeNone: "未进入任何模式",
   exit: "退出模式",
+  // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
+  btnMini: (back) => back ? "展开成长条" : "收成小条",
+  btnExit: "退出工具台（窗口还原成正常大小）",
+  btnClose: "关闭这个窗口（按应用的关窗设置走：默认收进托盘，不会退出应用）",
   switchTo: (label) => `切换到 ${label}`,
   settingsIntro: "工具台是模式的统一门面：入口、切换、互斥与共享上下文都在这里，模式自己的实现不受影响。",
   settingsModes: "已注册的模式",
@@ -544,6 +559,13 @@ function persistDock() {
     localStorage.setItem(LS_DOCK, JSON.stringify({ open: dockOpen, width: dockWidth, modeId: dockModeId }));
   } catch {
   }
+}
+var chatDraft = "";
+function getChatDraft() {
+  return chatDraft;
+}
+function setChatDraft(text) {
+  chatDraft = String(text ?? "");
 }
 function emit() {
   for (const fn of [...listeners]) {
@@ -1055,6 +1077,7 @@ function ConversationTile({ onBack }) {
     setSending(false);
     if (out.result === "accepted") {
       if (box) box.value = "";
+      setChatDraft("");
       return;
     }
     setNotice({
@@ -1068,6 +1091,10 @@ function ConversationTile({ onBack }) {
     react3.createElement("textarea", {
       className: "dshWbComposerInput",
       ref: draftRef,
+      // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
+      // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
+      defaultValue: getChatDraft(),
+      onChange: (event) => setChatDraft(event.target.value),
       rows: 2,
       placeholder: surface.canSend ? "接着和 agent 说…（Enter 发送，Shift+Enter 换行）" : "现在还不能在这里发送",
       disabled: !surface.canSend,
@@ -1136,6 +1163,16 @@ async function requestShape(shape) {
   if (!bridge) return { ok: false, error: "no-shell-bridge" };
   try {
     const result = await bridge.setWorkbenchShape(shape);
+    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+async function requestWindowClose(globalThisRef = typeof window === "undefined" ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell;
+  if (!bridge || typeof bridge.closeWorkbenchWindow !== "function") return { ok: false, error: "no-shell-bridge" };
+  try {
+    const result = await bridge.closeWorkbenchWindow();
     return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
   } catch (err) {
     return { ok: false, error: String(err && err.message || err) };
@@ -1224,6 +1261,86 @@ function WorkbenchChrome() {
     }
     setOpen(false);
   };
+  const isStrip = shape === "strip" || shape === "mini";
+  const toggleMini = async () => {
+    const next = shape === "mini" ? "strip" : "mini";
+    const result = await requestShape(next);
+    setShape(result.ok ? next : `failed:${result.error}`);
+    if (result.ok) void requestOverlay(next === "strip");
+  };
+  const exitWorkbench = async () => {
+    if (active) {
+      const result = await exitMode(registry2);
+      if (!result.ok) return;
+    }
+    setOpen(false);
+  };
+  const bar = !isStrip ? null : react4.createElement(
+    "div",
+    { className: "dshWbBar", "data-wb-bar": "", "data-wb-bar-shape": shape },
+    react4.createElement("span", { className: "dshWbBarTitle" }, T.homeTitle),
+    react4.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBarBtn",
+        onClick: () => void toggleMini(),
+        title: T.btnMini(shape === "mini"),
+        "aria-label": T.btnMini(shape === "mini"),
+        "data-wb-btn": "mini"
+      },
+      shape === "mini" ? "▢" : "—"
+    ),
+    react4.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBarBtn",
+        onClick: () => void exitWorkbench(),
+        title: T.btnExit,
+        "aria-label": T.btnExit,
+        "data-wb-btn": "exit"
+      },
+      "⎋"
+    ),
+    react4.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBarBtn is-close",
+        onClick: () => void requestWindowClose(),
+        title: T.btnClose,
+        "aria-label": T.btnClose,
+        "data-wb-btn": "close"
+      },
+      "✕"
+    )
+  );
+  if (shape === "mini") {
+    return react4.createElement(
+      react4.Fragment,
+      null,
+      react4.createElement(
+        "div",
+        {
+          className: "dshWbMini",
+          // Escape 在小条下等价于 `⎋`（长条那套键盘出口不能因为换形态就断掉）
+          onKeyDown: (event) => {
+            if (event.key === "Escape") void exitWorkbench();
+          },
+          "data-wb-mini": "",
+          "data-wb-shape": shape
+        },
+        bar,
+        react4.createElement(
+          "div",
+          { className: "dshWbMiniLine", "data-wb-mini-line": "" },
+          (active && contextLabel ? `${activeLabel} · ${contextLabel}` : activeLabel) || T.chatOpenHint
+        )
+      ),
+      toast
+    );
+  }
   const onKeyDown = (event) => {
     if (event.key === "Escape") {
       setOpen(false);
@@ -1298,6 +1415,7 @@ function WorkbenchChrome() {
   return react4.createElement(
     "div",
     { className: "dshWbHome", onKeyDown, "data-wb-switcher": "", "data-wb-shape": shape || "none" },
+    bar,
     react4.createElement(
       "div",
       { className: "dshWbHomePanel", ref: panelRef, role: "dialog", "aria-label": T.homeTitle },

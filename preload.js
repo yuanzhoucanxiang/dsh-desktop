@@ -70,7 +70,10 @@ contextBridge.exposeInMainWorld('dshShell', {
   // 工作台浮标辅助窗（扇形呼出 B 方案）：只能开/关，位置由主窗推出来，页面传不进坐标
   openWorkbenchOverlay: () => ipcRenderer.invoke('shell:open-workbench-overlay'),
   closeWorkbenchOverlay: () => ipcRenderer.invoke('shell:close-workbench-overlay'),
-  onWorkbenchShape: (cb) => {    const h = (_e, s) => cb(s)
+  // 自绘三钮的 `✕`：只表达"用户按了关闭"，具体是进托盘还是退出，由主进程既有关窗语义决定
+  closeWorkbenchWindow: () => ipcRenderer.invoke('shell:close-window'),
+  onWorkbenchShape: (cb) => {
+    const h = (_e, s) => cb(s)
     ipcRenderer.on('shell:workbench-shape', h)
     return () => ipcRenderer.removeListener('shell:workbench-shape', h)
   },

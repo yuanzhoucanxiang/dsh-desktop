@@ -40,3 +40,18 @@ export async function requestShape(shape) {
     return { ok: false, error: String((err && err.message) || err) }
   }
 }
+
+/**
+ * `✕` 这一钮：只说"用户按了关闭"，**语义由壳里既有的关窗逻辑定**（`closeToTray` 开着就进托盘，
+ * 关掉就是真关）。门面刻意不请求 quit/hide——那两条会把"关窗"变成"退出应用"，与拍板不符。
+ */
+export async function requestWindowClose(globalThisRef = typeof window === 'undefined' ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell
+  if (!bridge || typeof bridge.closeWorkbenchWindow !== 'function') return { ok: false, error: 'no-shell-bridge' }
+  try {
+    const result = await bridge.closeWorkbenchWindow()
+    return result && typeof result === 'object' ? result : { ok: false, error: 'bad-response' }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}

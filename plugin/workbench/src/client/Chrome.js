@@ -12,7 +12,8 @@
  *
  * 探针钩子保留：data-wb-switcher / data-wb-mode / data-wb-mode-active / data-wb-context /
  * data-wb-exit / data-wb-close / data-wb-empty / data-wb-notice；新增 data-wb-chat / data-wb-tiles /
- * data-wb-tile / data-wb-tile-enter。
+ * data-wb-tile / data-wb-tile-enter；长条三钮：data-wb-bar / data-wb-bar-shape /
+ * data-wb-btn="mini|exit|close" / data-wb-mini / data-wb-mini-line。
  */
 import * as react from 'react'
 import { T } from './copy.js'
@@ -20,7 +21,7 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
-import { getShapeBridge, requestOverlay, requestShape } from './shell-shape.js'
+import { getShapeBridge, requestOverlay, requestShape, requestWindowClose } from './shell-shape.js'
 
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
@@ -130,6 +131,100 @@ export function WorkbenchChrome() {
     setOpen(false)
   }
 
+  /* ── 长条自绘顶栏三钮（2026-10-12 项目所有者拍板的语义） ──────────────────
+   * `—` 收成小条（再点展开回长条）· `⎋` 退出工具台并还原窗口 · `✕` 走**既有关窗语义**
+   * （壳里 `closeToTray` 说了算：默认进托盘，不退出应用）。
+   * 三条纪律：① 只在条状形态出现——normal 还有原生标题栏，两套按钮并排就是自找混乱；
+   * ② 桥缺席（官方壳 / 老安装包）时 `—` 与 `✕` 什么都不做（不弹自造错误文案），`⎋` 退化成
+   *    "关主屏"这个插件自己做得到的动作；③ 三钮都是真 `<button>`：Tab 可达、带 title 与
+   *    aria-label，并挂 `data-wb-btn` 供实机与探针自查。无边框那一刀落地前，拖动仍走原生标题栏。
+   */
+  const isStrip = shape === 'strip' || shape === 'mini'
+  const toggleMini = async () => {
+    const next = shape === 'mini' ? 'strip' : 'mini'
+    const result = await requestShape(next)
+    setShape(result.ok ? next : `failed:${result.error}`)
+    // 收成小条时浮标该跟着没（它挨着长条摆，mini 下只会挡地方）；展开再叫回来
+    if (result.ok) void requestOverlay(next === 'strip')
+  }
+  const exitWorkbench = async () => {
+    if (active) {
+      const result = await exitMode(registry)
+      if (!result.ok) return
+    }
+    setOpen(false)
+  }
+  const bar = !isStrip
+    ? null
+    : react.createElement(
+        'div',
+        { className: 'dshWbBar', 'data-wb-bar': '', 'data-wb-bar-shape': shape },
+        react.createElement('span', { className: 'dshWbBarTitle' }, T.homeTitle),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBarBtn',
+            onClick: () => void toggleMini(),
+            title: T.btnMini(shape === 'mini'),
+            'aria-label': T.btnMini(shape === 'mini'),
+            'data-wb-btn': 'mini',
+          },
+          shape === 'mini' ? '▢' : '—',
+        ),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBarBtn',
+            onClick: () => void exitWorkbench(),
+            title: T.btnExit,
+            'aria-label': T.btnExit,
+            'data-wb-btn': 'exit',
+          },
+          '⎋',
+        ),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBarBtn is-close',
+            onClick: () => void requestWindowClose(),
+            title: T.btnClose,
+            'aria-label': T.btnClose,
+            'data-wb-btn': 'close',
+          },
+          '✕',
+        ),
+      )
+
+  // 小条形态：只留顶栏 + 一行"正在做什么"，对话与瓷砖格整体让位（168px 高塞不下，硬塞就是破版）
+  if (shape === 'mini') {
+    return react.createElement(
+      react.Fragment,
+      null,
+      react.createElement(
+        'div',
+        {
+          className: 'dshWbMini',
+          // Escape 在小条下等价于 `⎋`（长条那套键盘出口不能因为换形态就断掉）
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') void exitWorkbench()
+          },
+          'data-wb-mini': '',
+          'data-wb-shape': shape,
+        },
+        bar,
+        react.createElement(
+          'div',
+          { className: 'dshWbMiniLine', 'data-wb-mini-line': '' },
+          (active && contextLabel ? `${activeLabel} · ${contextLabel}` : activeLabel) || T.chatOpenHint,
+        ),
+      ),
+      toast,
+    )
+  }
+
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
       setOpen(false)
@@ -212,6 +307,7 @@ export function WorkbenchChrome() {
   return react.createElement(
     'div',
     { className: 'dshWbHome', onKeyDown, 'data-wb-switcher': '', 'data-wb-shape': shape || 'none' },
+    bar,
     react.createElement(
       'div',
       { className: 'dshWbHomePanel', ref: panelRef, role: 'dialog', 'aria-label': T.homeTitle },

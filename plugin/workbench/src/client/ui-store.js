@@ -37,6 +37,18 @@ function persistDock() {
   }
 }
 
+/**
+ * 对话列里**还没发出去**的正文。`—` 收成小条会整块卸载对话列，字不能跟着丢；
+ * 刻意只放内存（**不落盘**）——那是一段没发送的作者草稿，没必要留在磁盘上。
+ */
+let chatDraft = ''
+export function getChatDraft() {
+  return chatDraft
+}
+export function setChatDraft(text) {
+  chatDraft = String(text ?? '')
+}
+
 function emit() {
   for (const fn of [...listeners]) {
     try {

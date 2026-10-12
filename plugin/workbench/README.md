@@ -60,7 +60,7 @@ ctx.inject(['workbench'], (scope) => {
 | 面 | 位置 | 行为 |
 |---|---|---|
 | 统一入口 | `sidebar.footer.action`（order 10） | 侧栏底部**一个**「工具台」按钮；**没有任何模式注册时渲染 `null`**（不留死按钮） |
-| 主屏 | `shell.overlay`（id `workbench`，order 10） | 点入口打开主屏（参考多窗口预览）：**自研壳上先申请把窗口收成 `strip` 长条再打开**（壳能力缺席时就直接开全屏主屏，行为一字不变），关闭时还原。左列「对话」瓷砖（会话标题 + **最近 6 条真实转录（只读）** + 状态条三指标 + 「回到完整会话」；读不到会话服务就如实说明）+ 右侧**模式瓷砖格**——提供了 `tile` 的模式渲染自己的内容窗口，没提供的退化为大按钮卡（保证可达）；顶部「正在做」上下文行、激活时有退出钮；↑↓ 选择、回车进入、Esc 关闭。**主屏本身不改当前模式**，点瓷砖上的「进入」/按钮卡才切换（同一套守卫）；平时渲染 `null`，不占屏 |
+| 主屏 | `shell.overlay`（id `workbench`，order 10） | 点入口打开主屏（参考多窗口预览）：**自研壳上先申请把窗口收成 `strip` 长条再打开**（壳能力缺席时就直接开全屏主屏，行为一字不变），关闭时还原。左列「对话」瓷砖（会话标题 + **最近 6 条真实转录（只读）** + 状态条三指标 + 「回到完整会话」；读不到会话服务就如实说明）+ 右侧**模式瓷砖格**——提供了 `tile` 的模式渲染自己的内容窗口，没提供的退化为大按钮卡（保证可达）；顶部「正在做」上下文行、激活时有退出钮；↑↓ 选择、回车进入、Esc 关闭。**主屏本身不改当前模式**，点瓷砖上的「进入」/按钮卡才切换（同一套守卫）；平时渲染 `null`，不占屏。**条状形态下顶部另有一行自绘三钮 `—`/`⎋`/`✕`**（见 §六） |
 | 通知出口 | 同上（帧级 toast） | 交接结果等统一走这里；6 秒自动消失、点一下即关 |
 | 辅助坞 | `shell.overlay`（id `workbench-dock`，order 11） | 右缘显示**非当前主视图**的模式的轻视图；收起留竖排 rail；展开写 `--dsh-wb-dock-width`；左缘可拖拽调宽（240–720px，localStorage 记忆） |
 | 设置段 | `settings.section`（id `workbench`，order 45） | 已注册模式、当前模式、host 状态 revision；读不到就明说 |
@@ -130,8 +130,19 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   **主屏打开 → 申请 `strip`；主屏关闭（含进入模式）→ 还原 `normal`**，且"从没收成条过就绝不发还原"
   （否则会把用户的窗口尺寸/最大化状态乱改回去）。桥缺席（官方壳 / 老安装包 / 探针环境）→
   一个字都不做，主屏照旧全屏（§3.3 降级）。主屏在窄窗下走**既有 <900px 竖排**（对话列在上、瓷砖格在下），
-  探针按 420 宽断言竖排 + 零横向溢出。**仍未接**：`mini`（`—` 收小条）、无边框与自绘顶栏、
-  扇形呼出、模式拼接、状态条三指标真数据源。纪律不变：形态只发档位枚举，**绝不把任意几何传给壳**。
+  探针按 420 宽断言竖排 + 零横向溢出。**仍未接**：无边框与自绘顶栏（要重建窗口）、扇形呼出 UI、
+  模式拼接。纪律不变：形态只发档位枚举，**绝不把任意几何传给壳**。
+- **长条自绘顶栏三钮已接**（2026-10-12 刀 8，语义按项目所有者拍板）：条状形态（`strip`/`mini`）下
+  门面顶部渲染 `—` / `⎋` / `✕` 三个真 `<button>`（带 `title` + `aria-label`，Tab 可达）：
+  `—` 在 `strip ↔ mini` 之间切（小条只留顶栏 + 一行"正在做什么"，浮标跟着收起，Esc 等价 `⎋`）；
+  `⎋` 退出工具台并还原 `normal`（有模式在场时先走同一套关闭守卫，被拦下就留在原地不自造文案）；
+  `✕` 只说"用户按了关闭"——走壳里**既有的关窗语义**（`shell:close-window` → `win.close()`，
+  进托盘还是退出由 `closeToTray` 那份逻辑定），**不顺手改形态、不改置顶**。
+  正常宽窗形态下这套按钮不渲染（那时还有系统标题栏）。桥缺席时 `—` 与 `✕` 什么都不做、
+  `⎋` 退化成"关主屏"。自查钩子：`data-wb-bar` / `data-wb-bar-shape` / `data-wb-btn="mini|exit|close"` /
+  `data-wb-mini` / `data-wb-mini-line`。**拖动仍走系统标题栏**（无边框那一刀再补 app-region）。
+  另：`—` 会卸载整块对话列，所以**没发出去的正文**记在 `ui-store.js` 的内存级 `chatDraft` 里
+  （刻意不落盘），展开回来字还在——探针的"`—` ⇄ 展开不吞字"那条断言就是在盯这件事。
 - **对话列下的状态条已接内核真投影**（2026-10-12 刀 3 + 3b 修正）：三条指标 = `sessionStats`
   （tok/s = `decodeTokens/(decodeMs/1000)`）、`tokenUsage`（缓存命中 = `cacheRead ÷ (uncached+cacheRead+cacheWrite)`）、
   `contextPressure`（上下文 = `pressureTokens/contextWindow`）。
@@ -195,7 +206,7 @@ plugin/workbench/
   src/client/Chrome.js  主屏（左列对话 + 右侧模式瓷砖格）+ 上下文行 + 通知出口
   src/client/ConversationTile.js  主屏左列「对话」瓷砖（读内核会话服务，缺失如实降级）
   src/client/Dock.js    辅助坞（rail / 面板 / CSS 变量）
-  src/client/shell-shape.js  壳「窗口形态」能力探测 + 申请（缺席返回 null，门面自动退回全屏主屏）
+  src/client/shell-shape.js  壳「窗口形态」能力探测 + 申请档位/浮标/关窗（缺席返回 null，门面自动退回全屏主屏）
   src/client/FooterEntry.js / Settings.js / ui-store.js / use-workbench.js / host-api.js / styles.js / copy.js
   test/registry.mjs · test/host-state.mjs
   client.js             构建产物（esbuild，勿手改；npm run build:workbench）

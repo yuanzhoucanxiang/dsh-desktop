@@ -18,7 +18,7 @@ import { getSessions, getChatService } from './runtime.js'
 import { formatTelemetry, telemetryOf, watchSessionProjections } from './session-telemetry.js'
 import { tailMessages, watchTranscript } from './chat-transcript.js'
 import { dispatchMessage, sendSurface } from './chat-send.js'
-import { setNotice } from './ui-store.js'
+import { getChatDraft, setChatDraft, setNotice } from './ui-store.js'
 
 /** 转录行的角色标签：状态不只靠颜色（guide §5）。 */
 const WHO = { user: '作者', assistant: '助手', detail: '活动', error: '出错' }
@@ -133,6 +133,7 @@ export function ConversationTile({ onBack }) {
     setSending(false)
     if (out.result === 'accepted') {
       if (box) box.value = ''
+      setChatDraft('')
       return
     }
     // 非 accepted：**作者写的字一个字都不丢**，说清状态与出路
@@ -151,6 +152,10 @@ export function ConversationTile({ onBack }) {
         react.createElement('textarea', {
           className: 'dshWbComposerInput',
           ref: draftRef,
+          // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
+          // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
+          defaultValue: getChatDraft(),
+          onChange: (event) => setChatDraft(event.target.value),
           rows: 2,
           placeholder: surface.canSend ? '接着和 agent 说…（Enter 发送，Shift+Enter 换行）' : '现在还不能在这里发送',
           disabled: !surface.canSend,
