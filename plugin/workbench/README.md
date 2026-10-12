@@ -134,7 +134,7 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   模式拼接。纪律不变：形态只发档位枚举，**绝不把任意几何传给壳**。
 - **长条自绘顶栏三钮已接**（2026-10-12 刀 8，语义按项目所有者拍板）：条状形态（`strip`/`mini`）下
   门面顶部渲染 `—` / `⎋` / `✕` 三个真 `<button>`（带 `title` + `aria-label`，Tab 可达）：
-  `—` 在 `strip ↔ mini` 之间切（小条只留顶栏 + 一行"正在做什么"，浮标跟着收起，Esc 等价 `⎋`）；
+  `—` 在 `strip ↔ mini` 之间切（小条只留顶栏 + 一行"正在做什么"，Esc 等价 `⎋`）；
   `⎋` 退出工具台并还原 `normal`（有模式在场时先走同一套关闭守卫，被拦下就留在原地不自造文案）；
   `✕` 只说"用户按了关闭"——走壳里**既有的关窗语义**（`shell:close-window` → `win.close()`，
   进托盘还是退出由 `closeToTray` 那份逻辑定），**不顺手改形态、不改置顶**。
@@ -162,14 +162,13 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   算术已在两种形状上验算出 `⚡ 38 tok/s | 缓存 92% | 上下文 23%`；
   **已证实（2026-10-12 晚，项目所有者实机截图）**：换到一条有生成记录的会话读出
   `⚡ 47 tok/s｜缓存 38%｜上下文 1%`，转录同时给出作者/活动/出错各行——状态条与真聊天瓷砖在真内核上都是活的。
-- **扇形呼出的浮标辅助窗（B 方案）已落最小切片**（2026-10-12 刀 6）：壳另有
-  `shell:open-workbench-overlay` / `shell:close-workbench-overlay`（同样只认内核页面主帧、
-  **只认开/关语义、位置由主窗 bounds 推出来，页面传不进坐标**）。工具台接线：收成 `strip` 后自动开浮标、
-  还原 `normal` 时关掉；桥没这两个方法就什么都不做。浮标窗**刻意不带 preload**（拿不到 `dshShell`，
-  零新增攻击面），`focusable:false + skipTaskbar` ⇒ 点它不抢长条键盘焦点、任务栏/Alt-Tab 里仍只有一个窗口，
-  主窗 hide/minimize/close 时它必须一起 `destroy()`。**它现在只是一个圆点标记，不是最终扇形菜单**——
-  透明绘制与物理点击两项待人眼目检（本机 `capturePage` 判不了透明，见踩坑 #28），
-  目检不过就退回"窗内一列"方案。见 plan §12-9。
+- ~~**扇形呼出的浮标辅助窗（B 方案）最小切片**~~ —— **已于 2026-10-13 移除**（项目所有者目检后：
+  "这个浮标没有用就去掉"）。当初它只证明了三件事（透明、无边框、点它不抢长条输入焦点、关主屏跟着没），
+  但**对用户没有用处**，扇形菜单又还没做，所以在桌面上只是多一块东西。壳侧两条通道
+  （`shell:open-workbench-overlay` / `shell:close-workbench-overlay`）、preload 的两个方法、
+  门面调用与相关断言一并删掉；**反向守卫留在门禁里**（`verify:shell-shape` 的 G 段判"dshShell 上没有任何
+  `*Overlay*` 方法且 OS 里没有残留窗"，`verify:workbench-ui` 的假桥不再提供这两个方法 + 断言"一次都没调过"）。
+  扇形呼出若要做，回到 plan §12-9 重新拍板。
 - **最近打开**、**健康总览**：契约里留了 `recent` / `health`，**未实现**。
 - **主屏对话列（2026-10-12 刀 4 起）**：显示顶部那条会话的标题 + **最近 6 条真实转录**（只读）+
   状态条三指标 + 「回到完整会话」。转录走 `chat-transcript.js`：0.2.0 用
@@ -206,7 +205,7 @@ plugin/workbench/
   src/client/Chrome.js  主屏（左列对话 + 右侧模式瓷砖格）+ 上下文行 + 通知出口
   src/client/ConversationTile.js  主屏左列「对话」瓷砖（读内核会话服务，缺失如实降级）
   src/client/Dock.js    辅助坞（rail / 面板 / CSS 变量）
-  src/client/shell-shape.js  壳「窗口形态」能力探测 + 申请档位/浮标/关窗（缺席返回 null，门面自动退回全屏主屏）
+  src/client/shell-shape.js  壳「窗口形态」能力探测 + 申请档位 / 读当前形态（挂载对账）/ 关窗（缺席返回 null，门面自动退回全屏主屏）
   src/client/FooterEntry.js / Settings.js / ui-store.js / use-workbench.js / host-api.js / styles.js / copy.js
   test/registry.mjs · test/host-state.mjs
   client.js             构建产物（esbuild，勿手改；npm run build:workbench）

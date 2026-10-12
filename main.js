@@ -2250,16 +2250,17 @@ function createWindow() {
   }
   win.on('resize', scheduleSaveBounds)
   win.on('move', scheduleSaveBounds)
-  // 浮标（工作台辅助窗）跟着主窗走：主窗动它就动，主窗藏/最小化它就一起没（不留孤儿浮标）
-  // 2026-10-13：去抖后再摆——拖动时 move 事件很密，逐次 setBounds 会抖；
-  // 且 `setBounds` 与 OS 真正落位之间有时序，拖尾补一次更稳。
-  win.on('move', () => syncWorkbenchOverlaySoon())
-  win.on('resize', () => syncWorkbenchOverlaySoon())
-  win.on('hide', hideWorkbenchOverlay)
-  win.on('minimize', hideWorkbenchOverlay)
-  win.on('restore', () => syncWorkbenchOverlaySoon(0))
   win.on('maximize', () => { settings.windowBounds.maximized = true; saveSettings() })
   win.on('unmaximize', () => { settings.windowBounds.maximized = false; saveSettings() })
+  // 藏过/最小化过之后 OS 的置顶位可能丢：条状形态下再断言一次（2026-10-13 加固，见 enforceTopmost 注释）
+  const reassertTopmost = () => {
+    if (!win || win.isDestroyed()) return
+    const shape = currentShape()
+    if (shape === 'normal') return
+    enforceTopmost(win, settings.workbenchStripOnTop !== false, `主窗/${shape}/reassert`)
+  }
+  win.on('show', reassertTopmost)
+  win.on('restore', reassertTopmost)
 
   // 关闭 → 最小化到托盘（可选），真正的退出走托盘"退出"
   win.on('close', (e) => {
@@ -2281,7 +2282,6 @@ function createWindow() {
   hardenWindow(win)
 
   win.on('closed', () => {
-    hideWorkbenchOverlay() // 主窗没了，浮标绝不能留成孤儿
     win = null
   })
   return win
@@ -2342,8 +2342,6 @@ function shapeState() {
     minSize: SHAPE_MIN_SIZE[shape],
     // 自报进程号：实机门禁按它过滤窗口，避免读到**另一个实例**（比如常驻的预览实例）的同名窗口
     pid: process.pid,
-    overlay: overlayVisible(),
-    // 浮标是 focusable:false 的窗：主窗焦点应当**一点不受影响**（探针就断言这条）
     mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
     // **OS 真值**（Windows 上 isAlwaysOnTop() 读的就是 GWL_EXSTYLE 的 WS_EX_TOPMOST 位），
     // 与上面那个"申请值"alwaysOnTop 分开报——只报申请值会骗过门禁（2026-10-12 的实锤）。
@@ -2368,16 +2366,35 @@ function shapeState() {
  *     minimize/restore、setBounds（probe7 的 ST 段全绿）——所以只有"落地"这一关需要重试，
  *     不需要常驻看门狗。
  *   · `win.isAlwaysOnTop()` 在 Windows 上就是这个 OS 位的读数（每次采样与 GWL_EXSTYLE 一致），
- *     所以主进程能自校验：没落地就按 0/120/300/700/1500ms 补刀，全部失败则记日志（不静默）。
+ *     所以主进程能自校验：没落地就补刀，全部失败则记日志（不静默）。
+ *   · **2026-10-13 加固**（实机门禁连跑时又抓到一次"整条阶梯都没落地"）：原来只用一个 level、
+ *     阶梯到 1500ms 就收手；现在**两个会置位的 level 轮换**（'screen-saver' ⇄ 'pop-up-menu'，
+ *     矩阵实测只有这两个会置位）、阶梯延长到 2500ms，并在 `show`/`restore` 时**再断言一次**
+ *     （窗口藏过/最小化过之后 OS 位可能丢）。
+ *   · **2026-10-13 根因修复：阶梯之间会互相打架**。连续切形态时（门禁的 B→C→E→F→H 就是连着切），
+ *     上一次"取消置顶"的阶梯可能**在后一次"置顶"之后**才落地，把刚置上的位清掉——阶梯越长、
+ *     重叠窗口越大（延长到 2500ms 后这条立刻在实机门禁里现形）。现在**同一窗口只允许最新一次意图
+ *     的阶梯存活**：发起新申请时取消旧的（`topmostJobs` 里的 token + 定时器一起清）。
  */
-const TOPMOST_LEVEL = 'screen-saver'
-const TOPMOST_RETRY_MS = [0, 120, 300, 700, 1500]
+const TOPMOST_LEVELS = ['screen-saver', 'pop-up-menu']
+const TOPMOST_RETRY_MS = [0, 120, 300, 700, 1500, 2500]
+/** target → { token, timers }：同一窗口只保留最新一次置顶意图的阶梯。 */
+const topmostJobs = new WeakMap()
 
 function enforceTopmost(target, want, label) {
+  if (!target || target.isDestroyed()) return
+  const prev = topmostJobs.get(target)
+  if (prev) {
+    prev.token.cancelled = true
+    for (const t of prev.timers) clearTimeout(t)
+  }
+  const token = { cancelled: false }
+  const timers = []
+  topmostJobs.set(target, { token, timers })
   const attempt = (i) => {
-    if (!target || target.isDestroyed()) return
+    if (token.cancelled || !target || target.isDestroyed()) return
     try {
-      target.setAlwaysOnTop(want, TOPMOST_LEVEL)
+      target.setAlwaysOnTop(want, TOPMOST_LEVELS[i % TOPMOST_LEVELS.length])
     } catch {
       return
     }
@@ -2387,13 +2404,26 @@ function enforceTopmost(target, want, label) {
         log(`置顶第 ${i + 1} 次才落到 OS（${label}，want=${want}）`)
         broadcastShape()
       }
+      // **落地之后的有界复核**（2026-10-13）：实机门禁里抓到过"调用当场自报成功、几秒后 OS 位没了"
+      // 的情况（日志为空正是因为阶梯在第一次就收手了）。条状期间按固定几个时点复核，落上就停；
+      // 换形态/新申请会取消本 token，不会互相打架。**有界**，不做常驻看门狗。
+      if (want && i === 0) {
+        for (const ms of [1500, 3000, 5000, 8000]) {
+          timers.push(setTimeout(() => {
+            if (token.cancelled || !target || target.isDestroyed()) return
+            if (target.isAlwaysOnTop() === true) return
+            log(`置顶在 ${ms}ms 复核时发现丢了，重新申请（${label}）`)
+            enforceTopmost(target, true, `${label}/recheck`)
+          }, ms))
+        }
+      }
       return
     }
     if (i + 1 >= TOPMOST_RETRY_MS.length) {
       log(`置顶始终没落到 OS（${label}，want=${want}）——已试 ${TOPMOST_RETRY_MS.length} 次`)
       return
     }
-    setTimeout(() => attempt(i + 1), TOPMOST_RETRY_MS[i + 1] - TOPMOST_RETRY_MS[i])
+    timers.push(setTimeout(() => attempt(i + 1), TOPMOST_RETRY_MS[i + 1] - TOPMOST_RETRY_MS[i]))
   }
   attempt(0)
 }
@@ -2414,9 +2444,6 @@ function applyWorkbenchShape(shape) {
   const onTop = shape !== 'normal' && settings.workbenchStripOnTop !== false
   // 置顶走统一入口：申请 → 读 OS 真值复核 → 没落地就补刀（理由见 enforceTopmost 的实测注释）
   enforceTopmost(win, onTop, `主窗/${shape}`)
-  // 形态变了，贴在主窗外侧的浮标要跟着挪（2026-10-13 实机抓到：不补这一下，浮标会停在旧位置）
-  syncWorkbenchOverlaySoon(0)
-  syncWorkbenchOverlaySoon(160)
   broadcastShape()
   log(`工作台形态 → ${shape}（${b.width}×${b.height} @${b.x ?? '?'},${b.y ?? '?'}，最小 ${minW}×${minH}，置顶=${onTop}）`)
   return { ok: true, ...shapeState() }
@@ -2429,126 +2456,6 @@ function broadcastShape() {
   } catch {}
 }
 
-/* ─────────── 工作台浮标辅助窗（扇形呼出 B 方案；plan §12-9 评估后的最小切片） ───────────
- *
- * 这一片**只做一件事**：证明"能开一个浮在长条外侧、点它不抢键盘焦点、随主窗一起消失"的窗
- * 在这台机器上画得出来。三条硬约束来自 2026-10-12 的实测与 API 核对：
- *   · `skipTaskbar` + `focusable:false` ⇒ 任务栏与 Alt-Tab 里仍然只有一个窗口（不破坏
- *     "一个应用一个窗口"的基本预期），且点击它不会把长条输入框的焦点抢走（实测：主窗
- *     `isFocused()` 在辅助窗收到点击后仍为 true）；
- *   · 位置**由主窗 bounds 推出来**，页面传不进任意坐标；超出当前显示器工作区时自动翻到另一侧；
- *   · 随主窗 move/resize 跟随，主窗 hide/minimize/close/quit 时**必须一起没**（不留孤儿浮标，
- *     免得喂大"关窗≠退出、托盘堆积"那个老毛病）。
- *
- * 辅助窗里跑的是**我们自己给的本地字符串**，不带 preload、不接任何页面脚本 ⇒ 它拿不到
- * dshShell，没有新的 IPC 攻击面；开关这两个通道仍只认内核页面主帧（isKernelPageSender）。
- */
-const OVERLAY_W = 300
-const OVERLAY_H = 360
-let overlayWin = null
-
-function overlayHtml() {
-  return `<!doctype html><meta charset="utf-8"><style>
-    html,body{margin:0;background:transparent;font:13px system-ui;color:#eceae2}
-    .card{margin:10px;padding:10px 12px;border-radius:12px;background:rgba(20,22,17,.82);border:1px solid rgba(143,179,122,.5)}
-    .dot{width:64px;height:64px;border-radius:50%;background:#8fb37a;margin:10px 0;cursor:pointer}
-    .hint{opacity:.75;font-size:11px;line-height:15px}
-  </style><body><div class="card">
-    <b>工作台浮标（B 方案最小切片）</b>
-    <div class="dot" id="dot" title="点我：验证点击不会抢走长条输入框的焦点"></div>
-    <div class="hint">点上面的圆点：若长条那边还在输入焦点里，就说明没抢焦点。<br>已点 <span id="n">0</span> 次。</div>
-  </div><script>
-    var n = 0, el = document.getElementById('n');
-    document.getElementById('dot').addEventListener('click', function () { el.textContent = String(++n); });
-  </script></body>`
-}
-
-/** 浮标该摆哪儿：贴着主窗（长条）外侧；放不下就翻到另一边。 */
-function overlayBounds() {
-  const b = win.getBounds()
-  const area = screen.getDisplayMatching(b).workArea
-  const afterX = b.x + b.width + 8
-  const beforeX = b.x - OVERLAY_W - 8
-  const x = afterX + OVERLAY_W <= area.x + area.width ? afterX : Math.max(area.x, beforeX)
-  const y = Math.min(Math.max(area.y + 8, b.y + 12), area.y + area.height - OVERLAY_H - 8)
-  return { x, y, width: OVERLAY_W, height: OVERLAY_H }
-}
-
-function overlayVisible() {
-  return Boolean(overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible())
-}
-
-function showWorkbenchOverlay() {
-  if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' }
-  if (!overlayWin || overlayWin.isDestroyed()) {
-    overlayWin = new BrowserWindow({
-      ...overlayBounds(),
-      show: false,
-      transparent: true,
-      backgroundColor: '#00000000',
-      frame: false,
-      resizable: false,
-      movable: true,
-      focusable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      hasShadow: false,
-      title: '工作台浮标',
-      webPreferences: {
-        // 刻意不带 preload：浮标里跑的是本地字符串，拿不到 dshShell，也就没有新的 IPC 面
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    })
-    // 构造参数里的 alwaysOnTop:true 走的是默认 level（floating），实测**不会**置 OS 位；
-    // 显式走统一入口，申请完读 OS 真值复核。
-    enforceTopmost(overlayWin, true, '浮标')
-    try {
-      overlayWin.setParentWindow(win) // 随主窗最小化/关闭一起走（Windows 上由 OS 保证）
-    } catch {}
-    overlayWin.on('closed', () => {
-      overlayWin = null
-    })
-    overlayWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(overlayHtml())}`)
-  } else {
-    overlayWin.setBounds(overlayBounds())
-  }
-  overlayWin.show()
-  // **摆位竞态**（2026-10-13 实机抓到）：浮标由门面在"主屏打开"时申请，而主屏打开与
-  // `setWorkbenchShape('strip')` 是两条通道——浮标可能先于形态落定被创建，于是
-  // `overlayBounds()` 读到的是**还是宽窗**的主窗几何，浮标被摆到屏幕最左（x=0）而不是贴着长条。
-  // 这里在创建后补摆几次，等形态落定；无论门面那边的顺序如何都能收敛。
-  for (const ms of [0, 120, 400]) setTimeout(syncWorkbenchOverlay, ms)
-  log('工作台浮标：开（贴在主窗外侧）')
-  return { ok: true, visible: true, bounds: overlayWin.getBounds() }
-}
-
-function hideWorkbenchOverlay() {
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.destroy() // 直接 destroy：隐藏留着也是残留窗口，正是要避免的那种脏东西
-    overlayWin = null
-  }
-  log('工作台浮标：关')
-  return { ok: true, visible: false }
-}
-
-function syncWorkbenchOverlay() {
-  if (!overlayWin || overlayWin.isDestroyed() || !win || win.isDestroyed()) return
-  try {
-    overlayWin.setBounds(overlayBounds())
-  } catch {}
-}
-
-/** 去抖版：拖动/缩放时 move·resize 很密，逐次 setBounds 会抖；拖尾补一次覆盖时序差。 */
-let overlaySyncTimer = null
-function syncWorkbenchOverlaySoon(delay = 60) {
-  if (overlaySyncTimer) clearTimeout(overlaySyncTimer)
-  overlaySyncTimer = setTimeout(() => {
-    overlaySyncTimer = null
-    syncWorkbenchOverlay()
-  }, delay)
-}
 
 /** 托盘用官方鲸鱼：深色任务栏用白鲸，浅色用黑鲸。 */
 function trayIconPath() {
@@ -3254,18 +3161,6 @@ function registerIpc() {
   ipcMain.handle('shell:get-workbench-shape', (event) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     return { ok: true, ...shapeState() }
-  })
-  // 工作台浮标辅助窗（B 方案最小切片）：只"开/关"，**位置由主窗推**，页面传不进坐标
-  ipcMain.handle('shell:open-workbench-overlay', (event) => {
-    if (!isKernelPageSender(event)) {
-      log('open-workbench-overlay: rejected（发送方不是内核页面主帧）')
-      return { ok: false, error: 'only-kernel-page' }
-    }
-    return showWorkbenchOverlay()
-  })
-  ipcMain.handle('shell:close-workbench-overlay', (event) => {
-    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
-    return hideWorkbenchOverlay()
   })
 
   // 自绘三钮里的 `✕`（2026-10-12 拍板：走**既有关窗语义**，不是退出应用）：只发 `win.close()`，

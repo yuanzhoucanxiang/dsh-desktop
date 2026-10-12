@@ -21,7 +21,7 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
-import { getShapeBridge, requestOverlay, requestShape, requestWindowClose } from './shell-shape.js'
+import { getShapeBridge, readShape, requestShape, requestWindowClose } from './shell-shape.js'
 
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
@@ -72,10 +72,6 @@ export function WorkbenchChrome() {
       const result = await requestShape(next)
       if (cancelled) return
       setShape(result.ok ? next : `failed:${result.error}`)
-      // 浮标（B 方案最小切片）：收成条之后在主窗外侧挂一个浮标，供项目所有者目检
-      // "透明画得对不对 / 点它会不会抢焦点 / 关主屏它跟不跟着没"。扇形 UI 落地前它就是个标记。
-      if (next === 'strip' && result.ok) void requestOverlay(true)
-      else if (next === 'normal') void requestOverlay(false)
     }
     if (open) {
       askedForStrip.current = true
@@ -88,6 +84,25 @@ export function WorkbenchChrome() {
       cancelled = true
     }
   }, [open])
+
+  // **挂载时对账**（2026-10-13，用户实报"竖直长条里面的前端内容不对"）：
+  // 页面重载 / 插件重挂之后 `open` 是 false、`askedForStrip` 也归零，而壳可能**还停在条状**——
+  // 那时长条里就只剩内核自己的界面（侧栏 + hero + 会话），门面一行都没画。这里读一次壳的形态，
+  // 非 normal 且主屏没开就还回去。**只对账一次**（挂载），不常驻轮询。
+  react.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (open || !getShapeBridge()) return
+      const now = await readShape()
+      if (cancelled || !now || now.shape === 'normal' || now.shape === undefined) return
+      const result = await requestShape('normal')
+      if (!cancelled && result.ok) setShape('normal')
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 打开时把焦点交给当前模式（没有当前模式就交给第一个可达模式）：↑↓/回车 立即可用
   react.useEffect(() => {
@@ -144,8 +159,6 @@ export function WorkbenchChrome() {
     const next = shape === 'mini' ? 'strip' : 'mini'
     const result = await requestShape(next)
     setShape(result.ok ? next : `failed:${result.error}`)
-    // 收成小条时浮标该跟着没（它挨着长条摆，mini 下只会挡地方）；展开再叫回来
-    if (result.ok) void requestOverlay(next === 'strip')
   }
   const exitWorkbench = async () => {
     if (active) {

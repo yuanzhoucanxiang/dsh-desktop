@@ -549,7 +549,7 @@ export function apply(ctx) {
 - **`✕` 不给插件 quit/hide**：新增 `shell:close-window`（过 `isKernelPageSender`）里只做 `win.close()`，
   是"进托盘"还是"真退出"由既有 `closeToTray` 那份逻辑定——页面能表达的意图只有"用户按了关闭"。
   回读新增 `visible` 字段专给实机门禁判这条（S9 钉住：关窗通道过同一道发送方闸、且没有 quit/hide 旁路）。
-- **小条只留一行**：`mini` 下不渲染对话列与瓷砖格（`300×168` 塞不下就是破版），浮标跟着收起，
+- **小条只留一行**：`mini` 下不渲染对话列与瓷砖格（`300×168` 塞不下就是破版），
   Esc 等价 `⎋`。桥缺席（官方壳/老包）时 `—` 与 `✕` 什么都不做、`⎋` 退化成"关主屏"，不自造错误文案。
 
 验收：`verify:workbench-ui` ③e 一组（三钮齐备且都是原生 button + title、`—` 的档位申请尾巴、
@@ -752,7 +752,11 @@ client 侧只做乐观更新 + 订阅；跨窗口同步 v1 用轮询/聚焦刷�
    + 状态回读，同样**只收枚举与语义参数、不收任意几何**（辅助窗的位置由主窗 bounds 推出来），
    发送方仍过 `isKernelPageSender`；`shell-hardening-test` 补断言，实机探针验"关掉后不残留窗口"。
 
-   **最小浮标切片已落地（2026-10-12 晚，上面第 1 步做完了）**：壳侧 `showWorkbenchOverlay()` /
+   **最小浮标切片已落地（2026-10-12 晚，上面第 1 步做完了）** —— **⛔ 已于 2026-10-13 整体移除**
+   （项目所有者目检后："这个浮标没有用就去掉"）。下面这段保留为历史记录；实现与通道、门面调用、
+   相关断言都已删掉，反向守卫见 `verify:shell-shape` 的 G 段与 `verify:workbench-ui` 的假桥。
+   扇形呼出若要做，**回到 §12-9 重新拍板**（不要拿这份历史当"已完成"）。
+   壳侧 `showWorkbenchOverlay()` /
    `hideWorkbenchOverlay()`（`transparent` + `frame:false` + `focusable:false` + `skipTaskbar` +
    置顶走 `enforceTopmost`（见下一段）+ `setParentWindow(主窗)`），位置由主窗 bounds 推、放不下自动翻另一侧；
    主窗 move/resize 跟随，hide/minimize/close 一律 `destroy()`（不留孤儿浮标）。

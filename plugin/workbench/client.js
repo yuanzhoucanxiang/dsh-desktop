@@ -1147,17 +1147,6 @@ function getShapeBridge(globalThisRef = typeof window === "undefined" ? null : w
   if (!bridge || typeof bridge.setWorkbenchShape !== "function" || typeof bridge.getWorkbenchShape !== "function") return null;
   return bridge;
 }
-async function requestOverlay(open2) {
-  const bridge = getShapeBridge();
-  const fn = bridge && (open2 ? bridge.openWorkbenchOverlay : bridge.closeWorkbenchOverlay);
-  if (typeof fn !== "function") return { ok: false, error: "no-shell-bridge" };
-  try {
-    const result = await fn.call(bridge);
-    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
-  } catch (err) {
-    return { ok: false, error: String(err && err.message || err) };
-  }
-}
 async function requestShape(shape) {
   const bridge = getShapeBridge();
   if (!bridge) return { ok: false, error: "no-shell-bridge" };
@@ -1166,6 +1155,16 @@ async function requestShape(shape) {
     return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
   } catch (err) {
     return { ok: false, error: String(err && err.message || err) };
+  }
+}
+async function readShape() {
+  const bridge = getShapeBridge();
+  if (!bridge) return null;
+  try {
+    const state = await bridge.getWorkbenchShape();
+    return state && typeof state === "object" ? state : null;
+  } catch {
+    return null;
   }
 }
 async function requestWindowClose(globalThisRef = typeof window === "undefined" ? null : window) {
@@ -1215,8 +1214,6 @@ function WorkbenchChrome() {
       const result = await requestShape(next);
       if (cancelled) return;
       setShape(result.ok ? next : `failed:${result.error}`);
-      if (next === "strip" && result.ok) void requestOverlay(true);
-      else if (next === "normal") void requestOverlay(false);
     };
     if (open2) {
       askedForStrip.current = true;
@@ -1229,6 +1226,19 @@ function WorkbenchChrome() {
       cancelled = true;
     };
   }, [open2]);
+  react4.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (open2 || !getShapeBridge()) return;
+      const now = await readShape();
+      if (cancelled || !now || now.shape === "normal" || now.shape === void 0) return;
+      const result = await requestShape("normal");
+      if (!cancelled && result.ok) setShape("normal");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   react4.useEffect(() => {
     if (!open2) return;
     const panel = panelRef.current;
@@ -1266,7 +1276,6 @@ function WorkbenchChrome() {
     const next = shape === "mini" ? "strip" : "mini";
     const result = await requestShape(next);
     setShape(result.ok ? next : `failed:${result.error}`);
-    if (result.ok) void requestOverlay(next === "strip");
   };
   const exitWorkbench = async () => {
     if (active) {

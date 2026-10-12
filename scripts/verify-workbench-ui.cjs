@@ -156,9 +156,8 @@ app.whenReady().then(async () => {
         window.__shapeLog.push(s);
         return { ok: true, shape: s, alwaysOnTop: s !== 'normal' };
       },
-      // 浮标与关窗两条也是壳的能力：探针只记"门面调没调、按什么顺序调"
-      openWorkbenchOverlay: async () => { window.__overlayLog.push('open'); return { ok: true, visible: true } },
-      closeWorkbenchOverlay: async () => { window.__overlayLog.push('close'); return { ok: true, visible: false } },
+      // 浮标已于 2026-10-13 移除（用户："这个浮标没有用就去掉"）：假桥**不再提供**这两个方法，
+      // 门面若还偷偷调用会当场抛错；下面另有守卫断言钉"一次都没调过"。
       closeWorkbenchWindow: async () => { window.__closeCalls += 1; return { ok: true } },
     };
     const ctx = {
@@ -410,12 +409,12 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-mini]')!==null`, '点 `—` 应换成小条门面')
   assert.deepEqual(await shapeTail(), ['mini'], '小条只申请档位，窗口几何归壳')
   assert.equal(await count('[data-wb-tiles],[data-wb-chat]'), 0, '小条里不该留对话列与瓷砖格（168px 高塞不下就是破版）')
-  assert.deepEqual(await overlayTail(), ['close'], '收成小条时浮标该跟着收起')
+  assert.deepEqual(await overlayTail(), [], '浮标已移除：收成小条时门面不该再申请任何浮标')
   await click('[data-wb-btn="mini"]')
   await waitFor(`document.querySelector('[data-wb-mini]')===null`, '再点一次 `—` 应展开回长条')
   assert.deepEqual(await shapeTail(), ['mini', 'strip'], '展开回 strip')
   assert.equal(await count('[data-wb-tiles]'), 1, '展开后瓷砖格回来')
-  assert.deepEqual(await overlayTail(), ['close', 'open'], '展开后浮标回来')
+  assert.deepEqual(await overlayTail(), [], '浮标已移除：展开后也不该申请浮标')
   assert.equal(
     await evaluate(`(document.querySelector('[data-wb-composer]')||{}).value`),
     '打到一半先收一下',

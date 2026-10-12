@@ -192,7 +192,7 @@ npm run build:workbench ; npm run build:writing ; npm run verify:workbench-build
 npm run verify:workbench-ui ; npm run verify:workbench-writing
 npm run verify:workbench-gir      # 跨仓：找不到 GIR 客户端会 SKIP 退出 0
 npm run verify:shell-shape        # 外壳形态能力（真起隔离实例 + CDP；改 main.js/preload.js 后必跑）
-                                  # G=浮标不抢焦点 H=置顶读 **Win32 WS_EX_TOPMOST**（不信自报）
+                                  # G=浮标通道已移除（反向守卫） H=置顶读 **Win32 WS_EX_TOPMOST**（不信自报）
 node scripts/verify-shell-workbench-shape.mjs --selftest   # 先验这条 OS 探针本身（内联 C# 很容易写坏）
 npm run shell-hardening-test      # 含 S9：形态通道只收枚举、只认内核页面、不污染 windowBounds
 

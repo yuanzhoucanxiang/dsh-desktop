@@ -10,7 +10,7 @@
  *   C strip 生效：主进程返回 shape=strip / alwaysOnTop=true，渲染侧布局视口真的窄下来
  *   D 形态期不污染 windowBounds：settings.json 里的 windowBounds 没被写成条状尺寸
  *   E 还原 normal：alwaysOnTop=false、宽度回弹，settings 里形态回到 normal
- *   F mini 是真档位 · G 浮标开得了/不抢焦点/无残留 · H **置顶落到 Win32 WS_EX_TOPMOST** · I ✕ 复用既有关窗语义
+ *   F mini 是真档位 · G 浮标通道已移除（反向守卫）· H **置顶落到 Win32 WS_EX_TOPMOST** · I ✕ 复用既有关窗语义
  *
  * 诚实边界（本脚本**不**声称验了的事）：
  *  - 置顶**不**只看自报：H 段用 Win32 `GWL_EXSTYLE & WS_EX_TOPMOST` 判（读自报值会被骗，
@@ -316,76 +316,16 @@ try {
   const saved3 = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
   check('F mini 也没污染 windowBounds', (saved3.windowBounds?.width || 0) > 600 && (saved3.windowBounds?.height || 0) > 400, JSON.stringify(saved3.windowBounds))
 
-  // G：浮标辅助窗（扇形呼出 B 方案的最小切片）。验三件事：开得了、**开着的时候主窗焦点不受影响**、
-  // 关得掉且不残留。至于"点它会不会抢键盘焦点"，那是独立实验（focusable:false + sendInputEvent）
-  // 已经实测过的属性，见 logs/2026-10-12.md 的 B 方案评估表。
-  await ev(`window.dshShell.setWorkbenchShape('strip')`)
-  await sleep(700)
-  // 焦点判据只在"开浮标之前主窗确实有焦点"时成立：整台机器的前台归谁不由本脚本决定，
-  // 主窗本来在后台时这条断言无法证伪（实测会随机红），改显式 SKIP——与 F 的遮挡 SKIP 同一纪律。
-  const focusBefore = (await ev(`window.dshShell.getWorkbenchShape()`))?.mainFocused
-  const opened = await ev(`window.dshShell.openWorkbenchOverlay()`)
-  await sleep(700)
-  check('G 浮标能开（主进程侧可见）', opened?.ok === true && opened?.visible === true, JSON.stringify(opened?.bounds))
-  const withOverlay = await ev(`window.dshShell.getWorkbenchShape()`)
-  check('G 状态回读说浮标在位', withOverlay?.overlay === true, JSON.stringify({ overlay: withOverlay?.overlay }))
-  // G2：浮标必须**贴着长条外侧**。2026-10-13 实机抓到摆位竞态：浮标由门面在"主屏打开"时申请，
-  // 而主屏打开与 setWorkbenchShape('strip') 是两条通道——浮标先创建时 overlayBounds() 读到的是
-  // **还是宽窗**的主窗几何，于是被摆到屏幕最左（x=0），离长条几百像素。这条断言就是钉它。
+  // G：**浮标辅助窗已移除**（2026-10-13 用户："这个浮标没有用就去掉"）。
+  // 原来这一段的三条断言（能开 / 贴外侧 / 先于形态创建也贴住）随功能一起删；
+  // 改判"通道确实没了"——留一条反向守卫，免得将来有人把它加回来却不知道当初为什么删。
   {
-    // 用状态回读里的 pid（appPid 在 H 段才定义，这里先用得上）
-    const pidNow = withOverlay?.pid || 0
-    const wins = winStyles(pidNow)
-    const main = Array.isArray(wins) ? wins.find((w) => w.title.includes('Harness') && w.rect && w.rect.width > 300 && w.rect.width < 1300) : null
-    const ov = Array.isArray(wins) ? wins.find((w) => w.title.includes('浮标') && w.rect) : null
-    if (main && ov) {
-      const gapLeft = main.rect.x - (ov.rect.x + ov.rect.width)      // 浮标在长条左侧时的缝
-      const gapRight = ov.rect.x - (main.rect.x + main.rect.width)   // 浮标在长条右侧时的缝
-      const glued = (gapLeft >= -12 && gapLeft <= 60) || (gapRight >= -12 && gapRight <= 60)
-      check('G 浮标贴着长条外侧（不是被摆到屏幕边缘）', glued,
-        JSON.stringify({ main: main.rect, overlay: ov.rect, gapLeft, gapRight }))
-    } else {
-      check('G 浮标贴着长条外侧（不是被摆到屏幕边缘）', false,
-        `枚举不到可判的窗口：main=${JSON.stringify(main?.rect || null)} overlay=${JSON.stringify(ov?.rect || null)}`)
-    }
-  }
-  if (focusBefore === true) {
-    check('G 浮标开着时主窗焦点没被抢（focusable:false）', withOverlay?.mainFocused === true,
-      JSON.stringify({ before: focusBefore, after: withOverlay?.mainFocused }))
-  } else {
-    console.log(`SKIP G 焦点判据（开浮标前主窗 mainFocused=${JSON.stringify(focusBefore)}，本来就不在前台，无法判"没被抢"）`)
-  }
-  const closedOv = await ev(`window.dshShell.closeWorkbenchOverlay()`)
-  await sleep(400)
-  const afterClose = await ev(`window.dshShell.getWorkbenchShape()`)
-  check('G 浮标关得掉、不残留', closedOv?.ok === true && afterClose?.overlay === false, JSON.stringify({ closed: closedOv?.ok, overlay: afterClose?.overlay }))
-
-  // G3：**摆位竞态**（2026-10-13 实机抓到）。门面（插件）是在"主屏打开"时申请浮标的，而主屏打开与
-  // `setWorkbenchShape('strip')` 是两条通道——浮标可能**先于形态落定**被创建，此时 overlayBounds()
-  // 读到的是"还是宽窗"的主窗几何，浮标被摆到屏幕最左（x=0）。上面那条 G2 按"先形态后浮标"的顺序跑，
-  // 复现不了它；这里按**真实顺序**复现：先开浮标 → 再收形态 → 必须仍然贴着长条。
-  await ev(`window.dshShell.closeWorkbenchOverlay()`)
-  await ev(`window.dshShell.setWorkbenchShape('normal')`)
-  await sleep(700)
-  // **同一 tick 内**先申请形态、紧接着开浮标：这正是门面的真实顺序（主屏打开时两件事一起发），
-  // 而 `win.setBounds()` 之后主进程的 getBounds() 可能还是旧值 → overlayBounds() 用旧几何算出错位置。
-  await ev(`(async () => { await window.dshShell.setWorkbenchShape('strip'); return await window.dshShell.openWorkbenchOverlay() })()`)
-  await sleep(1200)
-  {
+    const keys = await ev(`JSON.stringify(Object.keys(window.dshShell).filter((k) => /Overlay/i.test(k)))`)
+    check('G 浮标通道已移除（dshShell 上没有任何 *Overlay* 方法）', keys === '[]', keys)
     const st = await ev(`window.dshShell.getWorkbenchShape()`)
     const wins = winStyles(st?.pid || 0)
-    const main = Array.isArray(wins) ? wins.find((w) => w.title.includes('Harness') && w.rect && w.rect.width > 300 && w.rect.width < 1300) : null
-    const ov = Array.isArray(wins) ? wins.find((w) => w.title.includes('浮标') && w.rect) : null
-    if (main && ov) {
-      const gapLeft = main.rect.x - (ov.rect.x + ov.rect.width)
-      const gapRight = ov.rect.x - (main.rect.x + main.rect.width)
-      const glued = (gapLeft >= -12 && gapLeft <= 60) || (gapRight >= -12 && gapRight <= 60)
-      check('G 浮标先于形态创建也能贴住长条（摆位竞态）', glued,
-        JSON.stringify({ main: main.rect, overlay: ov.rect, gapLeft, gapRight }))
-    } else {
-      check('G 浮标先于形态创建也能贴住长条（摆位竞态）', false,
-        `枚举不到可判的窗口：main=${JSON.stringify(main?.rect || null)} overlay=${JSON.stringify(ov?.rect || null)}`)
-    }
+    const stray = Array.isArray(wins) ? wins.find((w) => w.title.includes('浮标')) : null
+    check('G OS 里也没有残留的浮标窗', !stray, JSON.stringify(stray?.title || null))
   }
 
   // H：置顶必须落到 **OS 的 WS_EX_TOPMOST 位**上（读自报值会被骗，见上面的注释）。
@@ -414,16 +354,6 @@ try {
       (stripTop.timeout ? ' 现场: ' + dumpWins(stripTop.wins) : '') + ' 外壳置顶日志: ' + topmostLog.slice(-4).join(' / '))
   check('H 应用自报的 OS 真值与 Win32 读数一致（外壳的复核探针可信）', stripState?.topmostOs === stripTop.hit?.topmost,
     JSON.stringify({ topmostOs: stripState?.topmostOs, win32: stripTop.hit?.topmost, 申请值: stripState?.alwaysOnTop }))
-  const ovOpen = await ev(`window.dshShell.openWorkbenchOverlay()`)
-  await sleep(300)
-  const ovTop = await waitWin32('工作台浮标', true)
-  check('H 浮标也真的置顶', Boolean(ovTop.hit) && ovTop.hit.topmost === true,
-    JSON.stringify({ opened: ovOpen?.ok, ...ovTop.hit, 等了: `${ovTop.ms}ms` }) + (ovTop.timeout ? ' 现场: ' + dumpWins(ovTop.wins) : ''))
-  // 先关浮标再测"取消置顶"：浮标是主窗的 owned 窗，开着它测主窗的置顶位会串台
-  await ev(`window.dshShell.closeWorkbenchOverlay()`)
-  await sleep(600)
-  const afterOverlayClose = topmostOf(winStyles(appPid), '工作台浮标')
-  check('H 浮标关掉后 OS 里查不到这个窗口（无残留）', afterOverlayClose === null, JSON.stringify(afterOverlayClose))
   await ev(`window.dshShell.setWorkbenchStripOnTop(false)`)
   await sleep(300)
   const offState = await ev(`window.dshShell.getWorkbenchShape()`)
@@ -463,5 +393,5 @@ if (failures.length) {
   console.log(`SHELL_SHAPE_FAIL ${failures.length} 项未过：${failures.join(', ')}`)
   process.exitCode = 1
 } else {
-  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标不抢焦点 / H 置顶落到 Win32 / I ✕ 走既有关窗语义）')
+  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标已移除 / H 置顶落到 Win32 / I ✕ 走既有关窗语义）')
 }
