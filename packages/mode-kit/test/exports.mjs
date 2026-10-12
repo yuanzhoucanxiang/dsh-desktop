@@ -91,5 +91,5 @@ await test('coordination-client 的 api 是必填（不再偷偷默认到某个�
   assert.throws(() => httpCoordination(), /api 必填/)
 })
 
-console.log(`MODE_KIT_OK ${passed} passed / ${failed} failed`)
+console.log(`${failed ? 'MODE_KIT_FAIL' : 'MODE_KIT_OK'} ${passed} passed / ${failed} failed`)
 if (failed > 0) process.exit(1)
