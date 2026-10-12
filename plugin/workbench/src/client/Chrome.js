@@ -367,12 +367,16 @@ export function WorkbenchChrome() {
     react.createElement(
       'div',
       { className: 'dshWbHomePanel', ref: panelRef, role: 'dialog', 'aria-label': T.homeTitle },
-      react.createElement(
-        'div',
-        { className: 'dshWbHead' },
-        react.createElement('span', { className: 'dshWbTitle' }, isStrip ? T.chatTitle : T.homeTitle),
-        react.createElement('button', { type: 'button', className: 'dshWbClose', onClick: () => setOpen(false), 'data-wb-close': '' }, T.close),
-      ),
+      // 长条形态**不摆第二层标题**（原型只有一条 `.topbar`：← / 工作台·当前 / ⚙ / 三钮）——
+      // 两层标题在 412px 宽里纯属浪费；主屏（宽窗）才需要"创作工具台 + 关闭"这一行。
+      isStrip
+        ? null
+        : react.createElement(
+            'div',
+            { className: 'dshWbHead' },
+            react.createElement('span', { className: 'dshWbTitle' }, T.homeTitle),
+            react.createElement('button', { type: 'button', className: 'dshWbClose', onClick: () => setOpen(false), 'data-wb-close': '' }, T.close),
+          ),
       isStrip ? null : react.createElement('div', { className: 'dshWbHint' }, T.homeHint),
       active
         ? react.createElement(
@@ -387,7 +391,8 @@ export function WorkbenchChrome() {
         react.createElement(
           'aside',
           { className: 'dshWbChat', 'data-wb-chat': '', 'aria-label': T.chatTitle },
-          react.createElement('div', { className: 'dshWbChatHead' }, T.chatTitle),
+          // 长条下不摆"对话"小标题（顶栏已说明这是什么）；宽窗主屏才需要这一行分区标题
+          isStrip ? null : react.createElement('div', { className: 'dshWbChatHead' }, T.chatTitle),
           react.createElement(ConversationTile, {
             onBack: backToChat,
             modes,

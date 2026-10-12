@@ -354,7 +354,13 @@ app.whenReady().then(async () => {
   await waitFor(`(document.querySelector('[data-wb-notice]')||{}).textContent?.includes('没能核对')`, '不可核要有说法')
   assert.equal(await evaluate(`document.querySelector('[data-wb-composer]').value`), '这段必须留着', '不可核时正文必须留着')
   await evaluate(`document.querySelector('[data-wb-notice]').click(); window.__wbSessions.__promptMode = 'ok'`)
-  assert.ok((await evaluate(`document.querySelector('[data-wb-send]').title`)) === '', '可发送时按钮不该带拒绝理由')
+  // 可发送时 title 允许是**操作提示**（"发送（Enter）"），但不许出现拒绝理由的措辞
+  // （2026-10-13：按钮从输入框外侧挪进框内后，title 顺手改成快捷键提示——断言按"意图"判，不写死空串）
+  assert.equal(
+    /不能|不可|未接|无法|拒绝/.test(await evaluate(`document.querySelector('[data-wb-send]').title`)),
+    false,
+    '可发送时按钮不该带拒绝理由',
+  )
 
   // ③d 长条接线（2026-10-12 刀 2）：主屏一打开就该请壳收成 strip；然后把探针窗口**真**收到 420 宽，
   // 主屏必须竖排（对话列在瓷砖格之上）且不出现横向溢出——这是"长条门面不破版"的几何断言，

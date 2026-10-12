@@ -331,22 +331,33 @@ var CSS = [
   ".dshWbChatSession{min-width:0;flex:1;}",
   ".dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWbChatBody{flex:1;min-height:0;display:flex;flex-direction:column;}",
+  ".dshWbChatBody.is-empty{justify-content:center;align-items:center;text-align:center;padding:0 8px;}",
   // 状态条（输入框下那条窄条）：三指标 + 上下文进度条 + 模型名；读不到就如实写"还没数据"+原因（title）
   // （类名 2026-10-13 从 `.dshWbStrip*` 改成 `.dshWbMeter*`，对齐原型 `.meter` 的形状）
   ".dshWbMeter{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}",
   ".dshWbMeterItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}",
-  // 真聊天瓷砖（只读转录）：最多几条 + 角色标签，长文截断，绝不撑破窄窗
-  ".dshWbChatLog{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:auto;margin-top:8px;padding-right:2px;}",
-  ".dshWbChatLine{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:17px;}",
-  ".dshWbChatWho{flex:none;padding:1px 5px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;}",
-  ".dshWbChatLine.is-user .dshWbChatWho{color:var(--dsw-alias-brand-primary);}",
-  ".dshWbChatLine.is-error .dshWbChatWho{color:var(--dsw-alias-state-error-primary);}",
-  ".dshWbChatText{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-word;}",
-  // 输入框那一行（长条底部）：文本域 + 发送钮，禁用时靠 placeholder/title 说清出路
+  // 真聊天瓷砖（只读转录）：**气泡**布局（原型 `.msg.user` / `.msg.agent`），长文截断，绝不撑破窄窗
+  ".dshWbChatLog{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:auto;margin-top:4px;padding-right:2px;}",
+  ".dshWbMsg{display:flex;flex-direction:column;gap:2px;max-width:86%;}",
+  ".dshWbMsg.is-user{align-self:flex-end;align-items:flex-end;}",
+  ".dshWbMsgWho{padding:0 2px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWbMsgBody{padding:7px 10px;border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;white-space:pre-wrap;word-break:break-word;}",
+  ".dshWbMsg.is-user .dshWbMsgBody{border-bottom-right-radius:4px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbMsg.is-assistant .dshWbMsgBody{border-bottom-left-radius:4px;}",
+  ".dshWbMsg.is-error .dshWbMsgBody{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);}",
+  ".dshWbMsg.is-detail .dshWbMsgBody{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}",
+  // 输入区（长条底部，原型 `.composer`）：文本域与发送**同框**，`+` 在左侧圆形
   ".dshWbComposer{flex:none;display:flex;gap:8px;align-items:flex-end;margin-top:8px;}",
-  ".dshWbComposerInput{flex:1;min-width:0;resize:none;padding:7px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;}",
+  ".dshWbInputWrap{position:relative;flex:1;min-width:0;display:flex;}",
+  ".dshWbComposerInput{flex:1;min-width:0;resize:none;padding:7px 62px 7px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;}",
   ".dshWbComposerInput:disabled{opacity:.55;cursor:not-allowed;}",
-  ".dshWbComposer .dshWbBtn:disabled{opacity:.55;cursor:not-allowed;}",
+  ".dshWbSendIn{position:absolute;right:6px;bottom:6px;padding:5px 12px;border:1px solid transparent;border-radius:9px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:12px;cursor:pointer;}",
+  ".dshWbSendIn:disabled{opacity:.5;cursor:not-allowed;}",
+  // 输入区下方的次要出口（「回到完整会话」从整行大按钮收成一条小链接，别再抢视觉）
+  ".dshWbChatFoot{flex:none;display:flex;justify-content:flex-end;margin-top:6px;}",
+  ".dshWbLinkBtn{border:none;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px;line-height:16px;padding:2px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}",
+  ".dshWbLinkBtn:hover{color:var(--dsw-alias-label-primary);}",
   // 右侧：瓷砖格（提供 tile 的模式渲染内容窗口；没提供的退化为大按钮卡，保证可达）
   ".dshWbTiles{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-content:start;overflow:auto;padding-bottom:4px;}",
   ".dshWbTile{position:relative;display:flex;flex-direction:column;min-height:220px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden;}",
@@ -367,6 +378,11 @@ var CSS = [
   // 刻意**不写 -webkit-app-region**——这一刀窗口还有原生边框，拖拽归原生标题栏；无边框那一刀再补。
   ".dshWbBar{flex:none;display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);}",
   ".dshWbBarTitle{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  // 长条形态的收紧：412px 宽里 20/24 的内边距太奢侈；对话列撑满、输入区钉底（原型是一列到底）
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomePanel{padding:10px 12px;gap:8px;}',
+  '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
+  '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   ".dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}",
   ".dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbBarBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
@@ -424,7 +440,8 @@ var CSS = [
   // 窗外画不了（窗口边界是硬的），所以是**窗内扇形**：收起态 opacity+visibility 双保险
   // （只靠 opacity 还会吃点击），展开态按 --wb-delay 逐颗错峰。
   ".dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}",
-  ".dshWbSeamGrip{flex:none;padding:10px 3px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}",
+  ".dshWbSeamGrip{flex:none;padding:16px 6px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:9px 0 0 9px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}",
+  ".dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
   ".dshWbSeamFan{position:absolute;right:0;top:50%;width:0;height:0;}",
   ".dshWbSeamItem{position:absolute;right:0;top:0;margin-top:-14px;display:flex;align-items:center;gap:0;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translate(0,calc(var(--wb-y) * 1px));transition:transform .18s ease-out,opacity .18s ease-out,visibility .18s;}",
   ".dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:translate(calc(var(--wb-out) * -1px),calc(var(--wb-y) * 1px));transition-delay:var(--wb-delay);}",
@@ -1101,12 +1118,13 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     { className: "dshWbChatLog", "data-wb-chat-log": "", "data-wb-chat-source": transcript.source },
     // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
     react3.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
+    // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧
     transcript.messages.map(
       (m) => react3.createElement(
         "div",
-        { key: m.key, className: `dshWbChatLine is-${m.kind}`, "data-wb-chat-line": m.kind },
-        react3.createElement("span", { className: "dshWbChatWho" }, WHO[m.kind] || "会话"),
-        react3.createElement("span", { className: "dshWbChatText" }, String(m.text || "").slice(0, 160))
+        { key: m.key, className: `dshWbMsg is-${m.kind}`, "data-wb-chat-line": m.kind },
+        m.kind !== "user" ? react3.createElement("span", { className: "dshWbMsgWho" }, WHO[m.kind] || "会话") : null,
+        react3.createElement("span", { className: "dshWbMsgBody" }, String(m.text || "").slice(0, 160))
       )
     )
   ) : null;
@@ -1114,7 +1132,14 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     "div",
     { className: "dshWbChatHint", "data-wb-chat-log-empty": transcript.source },
     "这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。"
-  ) : null;
+  ) : (
+    // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）
+    !transcript.messages.length && sessionId ? react3.createElement(
+      "div",
+      { className: "dshWbChatHint", "data-wb-chat-log-empty": "no-messages" },
+      "这条会话还没有消息。在下面发一条，或点「回到完整会话」看历史。"
+    ) : null
+  );
   const strip = react3.createElement(
     "div",
     {
@@ -1192,51 +1217,71 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     )
   ) : null;
   const composer = first ? react3.createElement(
-    "div",
-    { className: "dshWbComposer", "data-wb-composer-row": "" },
+    react3.Fragment,
+    null,
     react3.createElement(
-      "button",
-      {
-        type: "button",
-        className: "dshWbPlus",
-        title: "上传文件和更多工具",
-        "aria-expanded": sheetOpen ? "true" : "false",
-        onClick: () => setSheetOpen((v) => !v),
-        "data-wb-plus": ""
-      },
-      "+"
+      "div",
+      { className: "dshWbComposer", "data-wb-composer-row": "" },
+      react3.createElement(
+        "button",
+        {
+          type: "button",
+          className: "dshWbPlus",
+          title: "上传文件和更多工具",
+          "aria-expanded": sheetOpen ? "true" : "false",
+          onClick: () => setSheetOpen((v) => !v),
+          "data-wb-plus": ""
+        },
+        "+"
+      ),
+      sheet,
+      // 输入框与发送**同框**（原型把发送放在输入框内右下），textarea 右侧留出按钮的位置
+      react3.createElement(
+        "div",
+        { className: "dshWbInputWrap" },
+        react3.createElement("textarea", {
+          className: "dshWbComposerInput",
+          ref: draftRef,
+          // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
+          // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
+          defaultValue: getChatDraft(),
+          onChange: (event) => setChatDraft(event.target.value),
+          rows: 2,
+          placeholder: surface.canSend ? "发消息……" : "现在还不能在这里发送",
+          disabled: !surface.canSend,
+          title: surface.canSend ? "Enter 发送，Shift+Enter 换行" : surface.reason,
+          "data-wb-composer": "",
+          onKeyDown: (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void send();
+            }
+          }
+        }),
+        react3.createElement(
+          "button",
+          {
+            type: "button",
+            className: "dshWbSendIn",
+            disabled: !surface.canSend || sending,
+            title: surface.canSend ? "发送（Enter）" : surface.reason,
+            onClick: () => void send(),
+            "data-wb-send": ""
+          },
+          sending ? "发送中…" : "发送"
+        )
+      )
     ),
-    sheet,
-    react3.createElement("textarea", {
-      className: "dshWbComposerInput",
-      ref: draftRef,
-      // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
-      // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
-      defaultValue: getChatDraft(),
-      onChange: (event) => setChatDraft(event.target.value),
-      rows: 2,
-      placeholder: surface.canSend ? "接着和 agent 说…（Enter 发送，Shift+Enter 换行）" : "现在还不能在这里发送",
-      disabled: !surface.canSend,
-      title: surface.canSend ? "" : surface.reason,
-      "data-wb-composer": "",
-      onKeyDown: (event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          void send();
-        }
-      }
-    }),
+    // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）
+    first ? strip : null,
     react3.createElement(
-      "button",
-      {
-        type: "button",
-        className: "dshWbBtn is-primary",
-        disabled: !surface.canSend || sending,
-        title: surface.canSend ? "" : surface.reason,
-        onClick: () => void send(),
-        "data-wb-send": ""
-      },
-      sending ? "发送中…" : "发送"
+      "div",
+      { className: "dshWbChatFoot" },
+      react3.createElement(
+        "button",
+        { type: "button", className: "dshWbLinkBtn", onClick: () => void onBack(), "data-wb-chat-back": "" },
+        T.chatBack
+      )
     )
   ) : null;
   return react3.createElement(
@@ -1247,16 +1292,18 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       { className: "dshWbChatSession", "data-wb-chat-session": "" },
       react3.createElement("div", { className: "dshWbChatSessionTitle", title }, title)
     ),
-    log,
-    logHint,
-    // 没有会话时不摆三条"还没数据"——那时该说的只有上面那句空状态，窄条只会添噪。
-    first ? strip : null,
-    composer,
+    // 对话主体：有消息就是可滚动的气泡列；没消息就把说明**居中**（贴在底部会显得像页脚）
     react3.createElement(
-      "button",
-      { type: "button", className: "dshWbBtn is-primary", onClick: () => void onBack(), "data-wb-chat-back": "" },
-      T.chatBack
-    )
+      "div",
+      {
+        className: `dshWbChatBody${transcript.messages.length ? "" : " is-empty"}`,
+        "data-wb-chat-body": transcript.messages.length ? "filled" : "empty"
+      },
+      log,
+      logHint
+    ),
+    // 输入区（含状态条与次要出口）钉在**底部**：上面是对话，下面这一块不参与滚动
+    composer
   );
 }
 
@@ -1593,10 +1640,12 @@ function WorkbenchChrome() {
     react4.createElement(
       "div",
       { className: "dshWbHomePanel", ref: panelRef, role: "dialog", "aria-label": T.homeTitle },
-      react4.createElement(
+      // 长条形态**不摆第二层标题**（原型只有一条 `.topbar`：← / 工作台·当前 / ⚙ / 三钮）——
+      // 两层标题在 412px 宽里纯属浪费；主屏（宽窗）才需要"创作工具台 + 关闭"这一行。
+      isStrip ? null : react4.createElement(
         "div",
         { className: "dshWbHead" },
-        react4.createElement("span", { className: "dshWbTitle" }, isStrip ? T.chatTitle : T.homeTitle),
+        react4.createElement("span", { className: "dshWbTitle" }, T.homeTitle),
         react4.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
       ),
       isStrip ? null : react4.createElement("div", { className: "dshWbHint" }, T.homeHint),
@@ -1611,7 +1660,8 @@ function WorkbenchChrome() {
         react4.createElement(
           "aside",
           { className: "dshWbChat", "data-wb-chat": "", "aria-label": T.chatTitle },
-          react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
+          // 长条下不摆"对话"小标题（顶栏已说明这是什么）；宽窗主屏才需要这一行分区标题
+          isStrip ? null : react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
           react4.createElement(ConversationTile, {
             onBack: backToChat,
             modes,

@@ -89,12 +89,15 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
         { className: 'dshWbChatLog', 'data-wb-chat-log': '', 'data-wb-chat-source': transcript.source },
         // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
         react.createElement('div', { className: 'dshWbChatDay', 'data-wb-chat-day': '' }, '今天'),
+        // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧
         transcript.messages.map((m) =>
           react.createElement(
             'div',
-            { key: m.key, className: `dshWbChatLine is-${m.kind}`, 'data-wb-chat-line': m.kind },
-            react.createElement('span', { className: 'dshWbChatWho' }, WHO[m.kind] || '会话'),
-            react.createElement('span', { className: 'dshWbChatText' }, String(m.text || '').slice(0, 160)),
+            { key: m.key, className: `dshWbMsg is-${m.kind}`, 'data-wb-chat-line': m.kind },
+            m.kind !== 'user'
+              ? react.createElement('span', { className: 'dshWbMsgWho' }, WHO[m.kind] || '会话')
+              : null,
+            react.createElement('span', { className: 'dshWbMsgBody' }, String(m.text || '').slice(0, 160)),
           ),
         ),
       )
@@ -107,7 +110,14 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
           { className: 'dshWbChatHint', 'data-wb-chat-log-empty': transcript.source },
           '这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。',
         )
-      : null
+      : // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）
+        !transcript.messages.length && sessionId
+        ? react.createElement(
+            'div',
+            { className: 'dshWbChatHint', 'data-wb-chat-log-empty': 'no-messages' },
+            '这条会话还没有消息。在下面发一条，或点「回到完整会话」看历史。',
+          )
+        : null
   const strip = react.createElement(
     'div',
     {
@@ -200,51 +210,71 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
 
   const composer = first
     ? react.createElement(
-        'div',
-        { className: 'dshWbComposer', 'data-wb-composer-row': '' },
+        react.Fragment,
+        null,
         react.createElement(
-          'button',
-          {
-            type: 'button',
-            className: 'dshWbPlus',
-            title: '上传文件和更多工具',
-            'aria-expanded': sheetOpen ? 'true' : 'false',
-            onClick: () => setSheetOpen((v) => !v),
-            'data-wb-plus': '',
-          },
-          '+',
+          'div',
+          { className: 'dshWbComposer', 'data-wb-composer-row': '' },
+          react.createElement(
+            'button',
+            {
+              type: 'button',
+              className: 'dshWbPlus',
+              title: '上传文件和更多工具',
+              'aria-expanded': sheetOpen ? 'true' : 'false',
+              onClick: () => setSheetOpen((v) => !v),
+              'data-wb-plus': '',
+            },
+            '+',
+          ),
+          sheet,
+          // 输入框与发送**同框**（原型把发送放在输入框内右下），textarea 右侧留出按钮的位置
+          react.createElement(
+            'div',
+            { className: 'dshWbInputWrap' },
+            react.createElement('textarea', {
+              className: 'dshWbComposerInput',
+              ref: draftRef,
+              // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
+              // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
+              defaultValue: getChatDraft(),
+              onChange: (event) => setChatDraft(event.target.value),
+              rows: 2,
+              placeholder: surface.canSend ? '发消息……' : '现在还不能在这里发送',
+              disabled: !surface.canSend,
+              title: surface.canSend ? 'Enter 发送，Shift+Enter 换行' : surface.reason,
+              'data-wb-composer': '',
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void send()
+                }
+              },
+            }),
+            react.createElement(
+              'button',
+              {
+                type: 'button',
+                className: 'dshWbSendIn',
+                disabled: !surface.canSend || sending,
+                title: surface.canSend ? '发送（Enter）' : surface.reason,
+                onClick: () => void send(),
+                'data-wb-send': '',
+              },
+              sending ? '发送中…' : '发送',
+            ),
+          ),
         ),
-        sheet,
-        react.createElement('textarea', {
-          className: 'dshWbComposerInput',
-          ref: draftRef,
-          // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
-          // 只靠 DOM 就会把作者打到一半的字吞掉。刻意不落盘。
-          defaultValue: getChatDraft(),
-          onChange: (event) => setChatDraft(event.target.value),
-          rows: 2,
-          placeholder: surface.canSend ? '接着和 agent 说…（Enter 发送，Shift+Enter 换行）' : '现在还不能在这里发送',
-          disabled: !surface.canSend,
-          title: surface.canSend ? '' : surface.reason,
-          'data-wb-composer': '',
-          onKeyDown: (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              void send()
-            }
-          },
-        }),
+        // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）
+        first ? strip : null,
         react.createElement(
-          'button',
-          {
-            type: 'button',
-            className: 'dshWbBtn is-primary',
-            disabled: !surface.canSend || sending,
-            title: surface.canSend ? '' : surface.reason,
-            onClick: () => void send(),
-            'data-wb-send': '',
-          },
-          sending ? '发送中…' : '发送',
+          'div',
+          { className: 'dshWbChatFoot' },
+          react.createElement(
+            'button',
+            { type: 'button', className: 'dshWbLinkBtn', onClick: () => void onBack(), 'data-wb-chat-back': '' },
+            T.chatBack,
+          ),
         ),
       )
     : null
@@ -263,15 +293,17 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
               { className: 'dshWbChatSession', 'data-wb-chat-session': '' },
               react.createElement('div', { className: 'dshWbChatSessionTitle', title }, title),
             ),
-    log,
-    logHint,
-    // 没有会话时不摆三条"还没数据"——那时该说的只有上面那句空状态，窄条只会添噪。
-    first ? strip : null,
-    composer,
+    // 对话主体：有消息就是可滚动的气泡列；没消息就把说明**居中**（贴在底部会显得像页脚）
     react.createElement(
-      'button',
-      { type: 'button', className: 'dshWbBtn is-primary', onClick: () => void onBack(), 'data-wb-chat-back': '' },
-      T.chatBack,
+      'div',
+      {
+        className: `dshWbChatBody${transcript.messages.length ? '' : ' is-empty'}`,
+        'data-wb-chat-body': transcript.messages.length ? 'filled' : 'empty',
+      },
+      log,
+      logHint,
     ),
+    // 输入区（含状态条与次要出口）钉在**底部**：上面是对话，下面这一块不参与滚动
+    composer,
   )
 }
