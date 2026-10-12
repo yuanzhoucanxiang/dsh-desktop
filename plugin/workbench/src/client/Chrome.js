@@ -22,6 +22,7 @@ import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
 import { getShapeBridge, openSettings, readShape, requestShape, requestWindowClose } from './shell-shape.js'
+import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
 
 /** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
 const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
@@ -66,6 +67,10 @@ export function WorkbenchChrome() {
   // 长条门面接线（2026-10-12 刀 2）：主屏打开 → 请壳把窗口收成条；**收过条才**在关闭时还原
   // （没收成过就发 normal 会把用户的窗口尺寸/最大化状态乱改回去）。桥缺席 → 主屏照旧全屏。
   const [shape, setShape] = react.useState('')
+  // 小条（mini）显示**同一份**状态数据（原型 `.mini` 不是"少画点东西"，是换个尺寸显示同一份）：
+  // 读取逻辑与长条共用 use-session.js，这里只负责摆位置。
+  const sessionState = useSessionSnapshot()
+  const telemetry = useSessionTelemetry(sessionState.sessions, sessionState.sessionId)
   // 接缝扇形的开合（悬停/聚焦）。用 React 状态而不是纯 CSS `:hover`：探针能直接读
   // `data-wb-seam-open` 与逐颗的几何属性，不必去合成鼠标事件猜样式。
   const [seamOpen, setSeamOpen] = react.useState(false)
@@ -278,6 +283,13 @@ export function WorkbenchChrome() {
           { className: 'dshWbMiniLine', 'data-wb-mini-line': '' },
           (active && contextLabel ? `${activeLabel} · ${contextLabel}` : activeLabel) || T.chatOpenHint,
         ),
+        // 小条也显示**同一份**状态数据（原型 `.mini` 的语义）：紧凑版，去掉进度条
+        react.createElement(TelemetryMeter, {
+          metrics: telemetry.metrics,
+          source: telemetry.source,
+          values: telemetry.values,
+          compact: true,
+        }),
       ),
       toast,
     )

@@ -15,7 +15,7 @@
 import * as react from 'react'
 import { T } from './copy.js'
 import { getSessions, getChatService } from './runtime.js'
-import { formatTelemetry, telemetryOf, watchSessionProjections } from './session-telemetry.js'
+import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
 import { tailMessages, watchTranscript } from './chat-transcript.js'
 import { dispatchMessage, sendSurface } from './chat-send.js'
 import { getChatDraft, setChatDraft, setNotice } from './ui-store.js'
@@ -26,55 +26,20 @@ const WHO = { user: '作者', assistant: '助手', detail: '活动', error: '出
 /** 超过这个长度的气泡默认折三行（点「展开全文」看全文；不再硬截断，一个字都不丢）。 */
 const LONG_TEXT = 180
 
-/** 读会话列表快照（防御：快照Store形状不符就返回 null，组件层如实显示）。 */
-function readSnapshot(sessions) {
-  try {
-    const store = sessions?.list
-    if (!store || typeof store.getSnapshot !== 'function') return null
-    const snap = store.getSnapshot()
-    if (!snap || !Array.isArray(snap.ids) || typeof snap.byId !== 'object' || !snap.byId) return null
-    return snap
-  } catch {
-    return null
-  }
-}
-
 export function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions = getSessions()
-  const [snap, setSnap] = react.useState(() => readSnapshot(sessions))
+  // 快照与遥测都走共享 hook（小条用同一份数据，见 use-session.js）
+  const { snap, first, sessionId, running } = useSessionSnapshot(sessions)
+  const { metrics, source: telemetrySource, values: projValues } = useSessionTelemetry(sessions, sessionId)
   const [sheetOpen, setSheetOpen] = react.useState(false)
   // 展开过的长消息（按 key 记）：长文默认折三行，点「展开」看全文
   const [expanded, setExpanded] = react.useState({})
 
-  react.useEffect(() => {
-    const store = sessions?.list
-    if (!store || typeof store.subscribe !== 'function') return undefined
-    const sync = () => setSnap(readSnapshot(sessions))
-    try {
-      return store.subscribe(sync)
-    } catch {
-      return undefined
-    }
-  }, [sessions])
-
   // 真实内核客户端侧的列表快照记录是 {id, displayTitle, running, retainedBy, blank, updatedAt, title?}
   // （runtime/.../dsh-api-session-controller/lib/types/client/sessions/service.js:491-512）：
   // displayTitle 恒有值（有持久标题就用标题，否则按工作目录/会话 id 派生），而 title 只在会话
-  // 确有持久标题时才存在——读 title 会让没起过名字的会话这一行空白。
-  const first = snap && snap.ids.length > 0 ? snap.byId[snap.ids[0]] : null
-  const sessionId = snap && snap.ids.length > 0 ? snap.ids[0] : null
-
-  // 状态条三指标：投影要**从会话句柄上读**（列表行那条 RPC 不带这三个键，见 session-telemetry.js 的注释）。
-  // 环境没有 retain 能力（老内核 / 探针假宿主）→ 退回读列表行；两个都没有就是"还没数据"，不编造。
-  const [projValues, setProjValues] = react.useState(null)
-  const [telemetrySource, setTelemetrySource] = react.useState('no-session')
-  react.useEffect(() => {
-    const watch = watchSessionProjections(sessions, sessionId, setProjValues)
-    setTelemetrySource(watch.source)
-    return watch.dispose
-  }, [sessionId, sessions])
-
-  const metrics = formatTelemetry(telemetryOf(projValues))
+  // 确有持久标题时才存在——读 title 会让没起过名字的会话这一行空白。`first/sessionId` 现在由
+  // useSessionSnapshot 给出（2026-10-13 抽出共享 hook，小条复用同一份）。
 
   // 真聊天瓷砖（只读转录）。订阅回调里重读一次——图变了就跟着变；组件卸载时解订阅。
   const [transcript, setTranscript] = react.useState({ source: 'no-session', messages: [] })
@@ -88,8 +53,6 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
     setTranscript({ source: watch.source, messages: tailMessages(watch.messages) })
     return watch.dispose
   }, [sessionId, sessions])
-  // 会话是不是**正在生成**（列表快照记录上的 running）：流式态与"还没有消息"互斥
-  const running = Boolean(first?.running)
   // 工具活动行（转录投影给的是结构化 tool：{name, phase, isError}）——不套气泡，压成一行，
   // 免得"调用了个工具"在窄条里跟作者的话一样占地方
   const actLine = (m) => {
@@ -158,9 +121,15 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
           : null,
       )
     : null
-  // 有会话但读不到图（老内核 / 通道形状不符）：说清"读不到"与出路，不留一块空白。
+  // 三态说清（空 / 正在读 / 读不到）——`pending` 是**正在读**，不能错报成"还没有消息"
   const logHint =
-    !transcript.messages.length && sessionId && (transcript.source === 'none' || transcript.source === 'no-service')
+    transcript.source === 'pending' && !transcript.messages.length
+      ? react.createElement(
+          'div',
+          { className: 'dshWbChatHint', 'data-wb-chat-log-empty': 'pending' },
+          '正在读取这条会话的内容…',
+        )
+      : !transcript.messages.length && sessionId && (transcript.source === 'none' || transcript.source === 'no-service')
       ? react.createElement(
           'div',
           { className: 'dshWbChatHint', 'data-wb-chat-log-empty': transcript.source },
@@ -175,29 +144,8 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
             '这条会话还没有消息。在下面发一条，或点「回到完整会话」看历史。',
           )
         : null
-  const strip = react.createElement(
-    'div',
-    {
-      className: 'dshWbMeter',
-      'data-wb-strip': '',
-      'data-wb-meter': '',
-      'data-wb-telemetry': telemetrySource,
-      // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
-      'data-wb-telemetry-keys': Object.keys(projValues || {}).sort().join(','),
-    },
-    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.speed.title, 'data-wb-metric': 'speed' }, metrics.speed.text),
-    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.cache.title, 'data-wb-metric': 'cache' }, metrics.cache.text),
-    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.context.title, 'data-wb-metric': 'context' }, metrics.context.text),
-    // 上下文进度条（原型里的 `.ctxbar`）：宽度按 ratio，ratio 为 0 时不显示填充
-    react.createElement(
-      'span',
-      { className: 'dshWbMeterBar', 'data-wb-meter-bar': '', title: metrics.context.title, 'aria-hidden': 'true' },
-      react.createElement('i', { style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` }, 'data-wb-meter-fill': String(Math.round((metrics.context.ratio || 0) * 100)) }),
-    ),
-    metrics.model
-      ? react.createElement('span', { className: 'dshWbMeterModel', title: metrics.model.title, 'data-wb-metric': 'model' }, metrics.model.text)
-      : null,
-  )
+  // 状态条走共享组件（小条用的是同一个，见 use-session.js 的 TelemetryMeter）
+  const strip = react.createElement(TelemetryMeter, { metrics, source: telemetrySource, values: projValues })
   const title = first?.displayTitle ? String(first.displayTitle) : ''
 
   // 输入框 + 发送（刀 5）。发送面来自会话句柄的 prompt 原语；没有面就禁用并把出路写在 title 上。

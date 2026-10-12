@@ -311,6 +311,23 @@ app.whenReady().then(async () => {
   assert.equal(telemetrySource, 'list-row', `本假宿主没有 retain/binding，应退回读列表行投影：${telemetrySource}`)
   // ③e 真聊天瓷砖（只读）：喂一条 0.2.0 形状的会话图（nodes 是 Map、order 是数组），
   // 转录必须经 mode-kit projectChat 投影出带角色的行——**未知内容保留可见摘要**，不藏。
+  // 先验**三态里的加载态**：通道在、图还没送到（source=pending）时必须说"正在读取"，
+  // 不能错报成"还没有消息"（2026-10-13 补）。
+  await evaluate(`window.__wbChat.set('s2', null)`)
+  await waitFor(
+    `document.querySelector('[data-wb-chat-log-empty]')?.getAttribute('data-wb-chat-log-empty')==='pending'`,
+    '图还没送到时应显示加载态',
+  )
+  assert.ok((await text('[data-wb-chat-log-empty]')).includes('正在读取'), '加载态文案要说"正在读取"')
+  // 再验**空态**：图在位但一条消息都没有。注意 s2 是 running=true，而流式态与空态**互斥**
+  // （正在生成时该出现的是流式态）——所以验空态前先把 running 关掉，验完再开回来。
+  await evaluate(`window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:false, retainedBy:'none', blank:false, updatedAt:Date.now() }])`)
+  await evaluate(`window.__wbChat.set('s2', { order:[], nodes:new Map() })`)
+  await waitFor(
+    `document.querySelector('[data-wb-chat-log-empty]')?.getAttribute('data-wb-chat-log-empty')==='no-messages'`,
+    '空图 + 不在生成时应显示"还没有消息"',
+  )
+  await evaluate(`window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:true, retainedBy:'none', blank:false, updatedAt:Date.now() }])`)
   await evaluate(
     `window.__wbChat.set('s2', { order:['m1','m2','m3','m4'], nodes: new Map([
       ['m1',{kind:'user',data:{content:[{kind:'text',text:'把第二章的结尾改冷一点'}]}}],
@@ -488,6 +505,17 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-mini]')!==null`, '点 `—` 应换成小条门面')
   assert.deepEqual(await shapeTail(), ['mini'], '小条只申请档位，窗口几何归壳')
   assert.equal(await count('[data-wb-tiles],[data-wb-chat]'), 0, '小条里不该留对话列与瓷砖格（168px 高塞不下就是破版）')
+  // 但**状态数据要在**：原型 `.mini` 不是"少画点东西"，而是同一条数据换个尺寸（2026-10-13 补齐）
+  assert.equal(await count('[data-wb-mini] [data-wb-meter]'), 1, '小条也要显示同一份状态数据')
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-mini] [data-wb-meter]').getAttribute('data-wb-meter')`),
+    'compact',
+    '小条的状态条应是紧凑版（去掉进度条）',
+  )
+  assert.ok(
+    (await text('[data-wb-mini] [data-wb-metric="speed"]')).length > 0,
+    '小条状态条要真的渲染出指标文案',
+  )
   assert.deepEqual(await overlayTail(), [], '浮标已移除：收成小条时门面不该再申请任何浮标')
   await click('[data-wb-btn="mini"]')
   await waitFor(`document.querySelector('[data-wb-mini]')===null`, '再点一次 `—` 应展开回长条')

@@ -48,7 +48,7 @@ __export(entry_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(entry_exports);
-var react7 = __toESM(require("react"), 1);
+var react8 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/registry.js
 var MOUNTS = /* @__PURE__ */ new Set(["overlay", "panel"]);
@@ -483,6 +483,8 @@ var CSS = [
   ".dshWbMeterBar{flex:none;width:56px;height:4px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;}",
   ".dshWbMeterBar i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;}",
   ".dshWbMeterModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;}",
+  // 小条的紧凑状态条（原型 `.mini` 就是"同一条数据换个尺寸"）：贴底、更小字号、去掉进度条
+  ".dshWbMeter.is-compact{flex:none;margin:0;padding:6px 14px 8px;border-top:1px solid var(--dsw-alias-border-l1);gap:4px 8px;font-size:10px;line-height:14px;}",
   // 输入区左侧「+」与其弹层（原型 `.plus` / `.sheet`）
   ".dshWbComposer{position:relative;display:flex;align-items:flex-end;gap:8px;}",
   ".dshWbPlus{flex:none;width:30px;height:30px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:16px;line-height:1;cursor:pointer;}",
@@ -780,7 +782,7 @@ function WorkbenchEntry() {
 }
 
 // plugin/workbench/src/client/Chrome.js
-var react4 = __toESM(require("react"), 1);
+var react5 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/actions.js
 async function switchMode(registry2, id, reason = "switch") {
@@ -793,6 +795,9 @@ function exitMode(registry2) {
 }
 
 // plugin/workbench/src/client/ConversationTile.js
+var react4 = __toESM(require("react"), 1);
+
+// plugin/workbench/src/client/use-session.js
 var react3 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/session-telemetry.js
@@ -906,6 +911,71 @@ function formatTelemetry(t) {
   } : { text: "上下文 未上报", ratio: 0, title: "内核还没给出这条会话的上下文占用或窗口大小，所以不显示用量" };
   const model = t?.model ? { text: t.model, title: "当前会话选用的模型（内核 modelSelection 投影）" } : null;
   return { speed, cache, context, model };
+}
+
+// plugin/workbench/src/client/use-session.js
+function readSessionSnapshot(sessions2) {
+  try {
+    const store = sessions2?.list;
+    if (!store || typeof store.getSnapshot !== "function") return null;
+    const snap = store.getSnapshot();
+    if (!snap || !Array.isArray(snap.ids) || typeof snap.byId !== "object" || !snap.byId) return null;
+    return snap;
+  } catch {
+    return null;
+  }
+}
+function useSessionSnapshot(sessions2 = getSessions()) {
+  const [snap, setSnap] = react3.useState(() => readSessionSnapshot(sessions2));
+  react3.useEffect(() => {
+    const store = sessions2?.list;
+    if (!store || typeof store.subscribe !== "function") return void 0;
+    const sync = () => setSnap(readSessionSnapshot(sessions2));
+    try {
+      return store.subscribe(sync);
+    } catch {
+      return void 0;
+    }
+  }, [sessions2]);
+  const first = snap && snap.ids.length > 0 ? snap.byId[snap.ids[0]] : null;
+  const sessionId = snap && snap.ids.length > 0 ? snap.ids[0] : null;
+  return { sessions: sessions2, snap, first, sessionId, running: Boolean(first?.running) };
+}
+function useSessionTelemetry(sessions2, sessionId) {
+  const [values, setValues] = react3.useState(null);
+  const [source, setSource] = react3.useState("no-session");
+  react3.useEffect(() => {
+    const watch = watchSessionProjections(sessions2, sessionId, setValues);
+    setSource(watch.source);
+    return watch.dispose;
+  }, [sessionId, sessions2]);
+  return { metrics: formatTelemetry(telemetryOf(values)), source, values };
+}
+function TelemetryMeter({ metrics, source, values, compact = false }) {
+  if (!metrics) return null;
+  return react3.createElement(
+    "div",
+    {
+      className: `dshWbMeter${compact ? " is-compact" : ""}`,
+      "data-wb-strip": "",
+      "data-wb-meter": compact ? "compact" : "",
+      "data-wb-telemetry": source,
+      // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
+      "data-wb-telemetry-keys": Object.keys(values || {}).sort().join(",")
+    },
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text),
+    compact ? null : react3.createElement(
+      "span",
+      { className: "dshWbMeterBar", "data-wb-meter-bar": "", title: metrics.context.title, "aria-hidden": "true" },
+      react3.createElement("i", {
+        style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` },
+        "data-wb-meter-fill": String(Math.round((metrics.context.ratio || 0) * 100))
+      })
+    ),
+    metrics.model ? react3.createElement("span", { className: "dshWbMeterModel", title: metrics.model.title, "data-wb-metric": "model" }, metrics.model.text) : null
+  );
 }
 
 // packages/mode-kit/src/harness/projection.js
@@ -1089,44 +1159,14 @@ async function dispatchMessage(session, text) {
 // plugin/workbench/src/client/ConversationTile.js
 var WHO = { user: "作者", assistant: "助手", detail: "活动", error: "出错" };
 var LONG_TEXT = 180;
-function readSnapshot(sessions2) {
-  try {
-    const store = sessions2?.list;
-    if (!store || typeof store.getSnapshot !== "function") return null;
-    const snap = store.getSnapshot();
-    if (!snap || !Array.isArray(snap.ids) || typeof snap.byId !== "object" || !snap.byId) return null;
-    return snap;
-  } catch {
-    return null;
-  }
-}
 function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions2 = getSessions();
-  const [snap, setSnap] = react3.useState(() => readSnapshot(sessions2));
-  const [sheetOpen, setSheetOpen] = react3.useState(false);
-  const [expanded, setExpanded] = react3.useState({});
-  react3.useEffect(() => {
-    const store = sessions2?.list;
-    if (!store || typeof store.subscribe !== "function") return void 0;
-    const sync = () => setSnap(readSnapshot(sessions2));
-    try {
-      return store.subscribe(sync);
-    } catch {
-      return void 0;
-    }
-  }, [sessions2]);
-  const first = snap && snap.ids.length > 0 ? snap.byId[snap.ids[0]] : null;
-  const sessionId = snap && snap.ids.length > 0 ? snap.ids[0] : null;
-  const [projValues, setProjValues] = react3.useState(null);
-  const [telemetrySource, setTelemetrySource] = react3.useState("no-session");
-  react3.useEffect(() => {
-    const watch = watchSessionProjections(sessions2, sessionId, setProjValues);
-    setTelemetrySource(watch.source);
-    return watch.dispose;
-  }, [sessionId, sessions2]);
-  const metrics = formatTelemetry(telemetryOf(projValues));
-  const [transcript, setTranscript] = react3.useState({ source: "no-session", messages: [] });
-  react3.useEffect(() => {
+  const { snap, first, sessionId, running } = useSessionSnapshot(sessions2);
+  const { metrics, source: telemetrySource, values: projValues } = useSessionTelemetry(sessions2, sessionId);
+  const [sheetOpen, setSheetOpen] = react4.useState(false);
+  const [expanded, setExpanded] = react4.useState({});
+  const [transcript, setTranscript] = react4.useState({ source: "no-session", messages: [] });
+  react4.useEffect(() => {
     const watch = watchTranscript(
       sessions2,
       getChatService(),
@@ -1136,24 +1176,23 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     setTranscript({ source: watch.source, messages: tailMessages(watch.messages) });
     return watch.dispose;
   }, [sessionId, sessions2]);
-  const running = Boolean(first?.running);
   const actLine = (m) => {
     const tool = m.tool;
     if (!tool) return null;
     const phase = tool.phase === "result" ? tool.isError ? "失败" : "完成" : "进行中";
-    return react3.createElement(
+    return react4.createElement(
       "div",
       { key: m.key, className: `dshWbAct${tool.isError ? " is-error" : ""}`, "data-wb-chat-act": tool.phase || "call" },
-      react3.createElement("span", { className: "dshWbActIcon", "aria-hidden": "true" }, "⚙"),
-      react3.createElement("span", { className: "dshWbActName", title: tool.argsRaw || "" }, tool.name || "工具"),
-      react3.createElement("span", { className: "dshWbActPhase" }, phase)
+      react4.createElement("span", { className: "dshWbActIcon", "aria-hidden": "true" }, "⚙"),
+      react4.createElement("span", { className: "dshWbActName", title: tool.argsRaw || "" }, tool.name || "工具"),
+      react4.createElement("span", { className: "dshWbActPhase" }, phase)
     );
   };
-  const log = transcript.messages.length ? react3.createElement(
+  const log = transcript.messages.length ? react4.createElement(
     "div",
     { className: "dshWbChatLog", "data-wb-chat-log": "", "data-wb-chat-source": transcript.source },
     // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
-    react3.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
+    react4.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
     // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧；
     // 工具调用走活动行（上面 actLine），不套气泡
     transcript.messages.map((m) => {
@@ -1161,11 +1200,11 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       const full = String(m.text || "");
       const isLong = full.length > LONG_TEXT;
       const open2 = expanded[m.key] === true;
-      return react3.createElement(
+      return react4.createElement(
         "div",
         { key: m.key, className: `dshWbMsg is-${m.kind}`, "data-wb-chat-line": m.kind },
-        m.kind !== "user" ? react3.createElement("span", { className: "dshWbMsgWho" }, WHO[m.kind] || "会话") : null,
-        react3.createElement(
+        m.kind !== "user" ? react4.createElement("span", { className: "dshWbMsgWho" }, WHO[m.kind] || "会话") : null,
+        react4.createElement(
           "span",
           {
             className: `dshWbMsgBody${isLong && !open2 ? " is-clamped" : ""}`,
@@ -1174,7 +1213,7 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
           full
         ),
         // 长文折叠：默认三行，点一下展开全文（比原来"硬截断 160 字"诚实——一个字都不丢）
-        isLong ? react3.createElement(
+        isLong ? react4.createElement(
           "button",
           {
             type: "button",
@@ -1187,52 +1226,36 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       );
     }),
     // 流式态：正在生成时把这一行挂在最下面（带实时 tok/s，读不到就不显示那一段）
-    running ? react3.createElement(
+    running ? react4.createElement(
       "div",
       { className: "dshWbStreaming", "data-wb-chat-streaming": "" },
-      react3.createElement("span", { className: "dshWbStreamDot", "aria-hidden": "true" }),
-      react3.createElement("span", null, "正在生成…"),
-      metrics.speed.text.includes("还没数据") ? null : react3.createElement("span", { className: "dshWbStreamSpeed", "data-wb-chat-stream-speed": "" }, metrics.speed.text)
+      react4.createElement("span", { className: "dshWbStreamDot", "aria-hidden": "true" }),
+      react4.createElement("span", null, "正在生成…"),
+      metrics.speed.text.includes("还没数据") ? null : react4.createElement("span", { className: "dshWbStreamSpeed", "data-wb-chat-stream-speed": "" }, metrics.speed.text)
     ) : null
   ) : null;
-  const logHint = !transcript.messages.length && sessionId && (transcript.source === "none" || transcript.source === "no-service") ? react3.createElement(
+  const logHint = transcript.source === "pending" && !transcript.messages.length ? react4.createElement(
+    "div",
+    { className: "dshWbChatHint", "data-wb-chat-log-empty": "pending" },
+    "正在读取这条会话的内容…"
+  ) : !transcript.messages.length && sessionId && (transcript.source === "none" || transcript.source === "no-service") ? react4.createElement(
     "div",
     { className: "dshWbChatHint", "data-wb-chat-log-empty": transcript.source },
     "这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。"
   ) : (
     // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）。
     // 正在生成时不摆这句——那时该出现的是下面的流式态，不是"还没有消息"。
-    !transcript.messages.length && sessionId && !running ? react3.createElement(
+    !transcript.messages.length && sessionId && !running ? react4.createElement(
       "div",
       { className: "dshWbChatHint", "data-wb-chat-log-empty": "no-messages" },
       "这条会话还没有消息。在下面发一条，或点「回到完整会话」看历史。"
     ) : null
   );
-  const strip = react3.createElement(
-    "div",
-    {
-      className: "dshWbMeter",
-      "data-wb-strip": "",
-      "data-wb-meter": "",
-      "data-wb-telemetry": telemetrySource,
-      // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
-      "data-wb-telemetry-keys": Object.keys(projValues || {}).sort().join(",")
-    },
-    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
-    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
-    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text),
-    // 上下文进度条（原型里的 `.ctxbar`）：宽度按 ratio，ratio 为 0 时不显示填充
-    react3.createElement(
-      "span",
-      { className: "dshWbMeterBar", "data-wb-meter-bar": "", title: metrics.context.title, "aria-hidden": "true" },
-      react3.createElement("i", { style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` }, "data-wb-meter-fill": String(Math.round((metrics.context.ratio || 0) * 100)) })
-    ),
-    metrics.model ? react3.createElement("span", { className: "dshWbMeterModel", title: metrics.model.title, "data-wb-metric": "model" }, metrics.model.text) : null
-  );
+  const strip = react4.createElement(TelemetryMeter, { metrics, source: telemetrySource, values: projValues });
   const title = first?.displayTitle ? String(first.displayTitle) : "";
   const surface = sendSurface(sessions2, sessionId);
-  const draftRef = react3.useRef(null);
-  const [sending, setSending] = react3.useState(false);
+  const draftRef = react4.useRef(null);
+  const [sending, setSending] = react4.useState(false);
   const send = async () => {
     const box = draftRef.current;
     const text = box ? String(box.value || "") : "";
@@ -1250,11 +1273,11 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       text: out.result === "uncertain" ? `这条消息的发送结果没能核对（${out.error}）——你写的内容还留着，可重试；不放心就点「回到完整会话」在原处发。` : `这条消息没发出去（${out.error}）——你写的内容还留着。`
     });
   };
-  const sheet = sheetOpen ? react3.createElement(
+  const sheet = sheetOpen ? react4.createElement(
     "div",
     { className: "dshWbSheet", "data-wb-sheet": "", role: "menu" },
-    react3.createElement("div", { className: "dshWbSheetCap" }, "上传"),
-    react3.createElement(
+    react4.createElement("div", { className: "dshWbSheetCap" }, "上传"),
+    react4.createElement(
       "button",
       {
         type: "button",
@@ -1265,10 +1288,10 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       },
       "📎 上传文件"
     ),
-    react3.createElement("div", { className: "dshWbSheetSep" }),
-    react3.createElement("div", { className: "dshWbSheetCap" }, "更多工具"),
-    modes.length === 0 ? react3.createElement("div", { className: "dshWbSheetEmpty" }, T.seamEmpty) : modes.map(
-      (m) => react3.createElement(
+    react4.createElement("div", { className: "dshWbSheetSep" }),
+    react4.createElement("div", { className: "dshWbSheetCap" }, "更多工具"),
+    modes.length === 0 ? react4.createElement("div", { className: "dshWbSheetEmpty" }, T.seamEmpty) : modes.map(
+      (m) => react4.createElement(
         "button",
         {
           key: m.id,
@@ -1284,13 +1307,13 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       )
     )
   ) : null;
-  const composer = first ? react3.createElement(
-    react3.Fragment,
+  const composer = first ? react4.createElement(
+    react4.Fragment,
     null,
-    react3.createElement(
+    react4.createElement(
       "div",
       { className: "dshWbComposer", "data-wb-composer-row": "" },
-      react3.createElement(
+      react4.createElement(
         "button",
         {
           type: "button",
@@ -1304,10 +1327,10 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
       ),
       sheet,
       // 输入框与发送**同框**（原型把发送放在输入框内右下），textarea 右侧留出按钮的位置
-      react3.createElement(
+      react4.createElement(
         "div",
         { className: "dshWbInputWrap" },
-        react3.createElement("textarea", {
+        react4.createElement("textarea", {
           className: "dshWbComposerInput",
           ref: draftRef,
           // 未发送正文记在模块级（见 ui-store.js 的 getChatDraft）：`—` 收小条会卸载这一整块，
@@ -1326,7 +1349,7 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
             }
           }
         }),
-        react3.createElement(
+        react4.createElement(
           "button",
           {
             type: "button",
@@ -1342,26 +1365,26 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     ),
     // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）
     first ? strip : null,
-    react3.createElement(
+    react4.createElement(
       "div",
       { className: "dshWbChatFoot" },
-      react3.createElement(
+      react4.createElement(
         "button",
         { type: "button", className: "dshWbLinkBtn", onClick: () => void onBack(), "data-wb-chat-back": "" },
         T.chatBack
       )
     )
   ) : null;
-  return react3.createElement(
+  return react4.createElement(
     "div",
     { className: "dshWbChatCard", "data-wb-chat-card": "", "data-wb-chat-source": transcript.source },
-    !sessions2 ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "noservice" }, T.chatNoService) : !snap ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "unreadable" }, T.chatNoService) : !first ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "empty" }, T.chatEmpty) : react3.createElement(
+    !sessions2 ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "noservice" }, T.chatNoService) : !snap ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "unreadable" }, T.chatNoService) : !first ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "empty" }, T.chatEmpty) : react4.createElement(
       "div",
       { className: "dshWbChatSession", "data-wb-chat-session": "" },
-      react3.createElement("div", { className: "dshWbChatSessionTitle", title }, title)
+      react4.createElement("div", { className: "dshWbChatSessionTitle", title }, title)
     ),
     // 对话主体：有消息就是可滚动的气泡列；没消息就把说明**居中**（贴在底部会显得像页脚）
-    react3.createElement(
+    react4.createElement(
       "div",
       {
         className: `dshWbChatBody${transcript.messages.length ? "" : " is-empty"}`,
@@ -1434,9 +1457,9 @@ function contextLabelOf(registry2, id) {
 }
 function WorkbenchChrome() {
   const { modes, active, context, lastHandoff, open: open2, notice: notice2, registry: registry2 } = useWorkbench();
-  const panelRef = react4.useRef(null);
-  const seenHandoffAt = react4.useRef(0);
-  react4.useEffect(() => {
+  const panelRef = react5.useRef(null);
+  const seenHandoffAt = react5.useRef(0);
+  react5.useEffect(() => {
     if (!lastHandoff || lastHandoff.at === seenHandoffAt.current) return;
     seenHandoffAt.current = lastHandoff.at;
     const from = registry2.resolveLabel(lastHandoff.from);
@@ -1444,15 +1467,17 @@ function WorkbenchChrome() {
     if (lastHandoff.delivered) setNotice({ kind: "info", text: `已把「${from}」的引用交给「${to}」` });
     else setNotice({ kind: "warn", text: `「${to}」还没有接收端，引用没有送出去` });
   }, [lastHandoff, registry2]);
-  react4.useEffect(() => {
+  react5.useEffect(() => {
     if (!notice2) return void 0;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [notice2]);
-  const [shape, setShape] = react4.useState("");
-  const [seamOpen, setSeamOpen] = react4.useState(false);
-  const askedForStrip = react4.useRef(false);
-  react4.useEffect(() => {
+  const [shape, setShape] = react5.useState("");
+  const sessionState = useSessionSnapshot();
+  const telemetry = useSessionTelemetry(sessionState.sessions, sessionState.sessionId);
+  const [seamOpen, setSeamOpen] = react5.useState(false);
+  const askedForStrip = react5.useRef(false);
+  react5.useEffect(() => {
     let cancelled = false;
     const apply2 = async (next) => {
       if (!getShapeBridge()) {
@@ -1474,7 +1499,7 @@ function WorkbenchChrome() {
       cancelled = true;
     };
   }, [open2]);
-  react4.useEffect(() => {
+  react5.useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (open2 || !getShapeBridge()) return;
@@ -1487,7 +1512,7 @@ function WorkbenchChrome() {
       cancelled = true;
     };
   }, []);
-  react4.useEffect(() => {
+  react5.useEffect(() => {
     if (!open2) return;
     const panel = panelRef.current;
     if (!panel) return;
@@ -1500,7 +1525,7 @@ function WorkbenchChrome() {
   if (!open2 && !notice2) return null;
   const contextLabel = context ? context.title || context.project || context.path || "" : "";
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || "";
-  const toast = notice2 ? react4.createElement(
+  const toast = notice2 ? react5.createElement(
     "div",
     {
       className: `dshWbToast${notice2.kind === "warn" ? " is-warn" : ""}`,
@@ -1511,7 +1536,7 @@ function WorkbenchChrome() {
     },
     notice2.text
   ) : null;
-  if (!open2) return react4.createElement(react4.Fragment, null, toast);
+  if (!open2) return react5.createElement(react5.Fragment, null, toast);
   const backToChat = async () => {
     if (active) {
       const result = await exitMode(registry2);
@@ -1536,10 +1561,10 @@ function WorkbenchChrome() {
     const result = await requestShape("normal");
     if (result.ok) setShape("normal");
   };
-  const bar = !isStrip ? null : react4.createElement(
+  const bar = !isStrip ? null : react5.createElement(
     "div",
     { className: "dshWbBar", "data-wb-bar": "", "data-wb-bar-shape": shape },
-    react4.createElement(
+    react5.createElement(
       "button",
       {
         type: "button",
@@ -1551,12 +1576,12 @@ function WorkbenchChrome() {
       },
       "←"
     ),
-    react4.createElement(
+    react5.createElement(
       "span",
       { className: "dshWbBarTitle", "data-wb-bar-who": "" },
       `${T.entry}${active ? ` · ${activeLabel}` : ""}`
     ),
-    react4.createElement(
+    react5.createElement(
       "button",
       {
         type: "button",
@@ -1568,7 +1593,7 @@ function WorkbenchChrome() {
       },
       "⚙"
     ),
-    react4.createElement(
+    react5.createElement(
       "button",
       {
         type: "button",
@@ -1580,7 +1605,7 @@ function WorkbenchChrome() {
       },
       shape === "mini" ? "▢" : "—"
     ),
-    react4.createElement(
+    react5.createElement(
       "button",
       {
         type: "button",
@@ -1594,7 +1619,7 @@ function WorkbenchChrome() {
       },
       T.btnExitShort
     ),
-    react4.createElement(
+    react5.createElement(
       "button",
       {
         type: "button",
@@ -1608,10 +1633,10 @@ function WorkbenchChrome() {
     )
   );
   if (shape === "mini") {
-    return react4.createElement(
-      react4.Fragment,
+    return react5.createElement(
+      react5.Fragment,
       null,
-      react4.createElement(
+      react5.createElement(
         "div",
         {
           className: "dshWbMini",
@@ -1623,11 +1648,18 @@ function WorkbenchChrome() {
           "data-wb-shape": shape
         },
         bar,
-        react4.createElement(
+        react5.createElement(
           "div",
           { className: "dshWbMiniLine", "data-wb-mini-line": "" },
           (active && contextLabel ? `${activeLabel} · ${contextLabel}` : activeLabel) || T.chatOpenHint
-        )
+        ),
+        // 小条也显示**同一份**状态数据（原型 `.mini` 的语义）：紧凑版，去掉进度条
+        react5.createElement(TelemetryMeter, {
+          metrics: telemetry.metrics,
+          source: telemetry.source,
+          values: telemetry.values,
+          compact: true
+        })
       ),
       toast
     );
@@ -1659,15 +1691,15 @@ function WorkbenchChrome() {
     const tile = mode.hasTile ? registry2.tileViewOf(mode.id) : null;
     if (tile) {
       const TileView = tile.view;
-      return react4.createElement(
+      return react5.createElement(
         "div",
         { key: mode.id, className: `dshWbTile${mode.active ? " is-active" : ""}`, "data-wb-tile": mode.id },
-        react4.createElement(
+        react5.createElement(
           "div",
           { className: "dshWbTileHead" },
-          react4.createElement("span", { className: "dshWbTileLabel" }, tile.label),
-          mode.active ? react4.createElement("span", { className: "dshWbRowMark" }, T.current) : null,
-          react4.createElement(
+          react5.createElement("span", { className: "dshWbTileLabel" }, tile.label),
+          mode.active ? react5.createElement("span", { className: "dshWbRowMark" }, T.current) : null,
+          react5.createElement(
             "button",
             {
               type: "button",
@@ -1678,10 +1710,10 @@ function WorkbenchChrome() {
             T.tileEnter(tile.label)
           )
         ),
-        react4.createElement("div", { className: "dshWbTileBody" }, react4.createElement(TileView))
+        react5.createElement("div", { className: "dshWbTileBody" }, react5.createElement(TileView))
       );
     }
-    return react4.createElement(
+    return react5.createElement(
       "button",
       {
         key: mode.id,
@@ -1693,69 +1725,69 @@ function WorkbenchChrome() {
         "data-wb-mode-active": mode.active ? "1" : "0",
         "aria-current": mode.active ? "true" : void 0
       },
-      react4.createElement("span", { className: "dshWbModeGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
-      react4.createElement(
+      react5.createElement("span", { className: "dshWbModeGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
+      react5.createElement(
         "span",
         { className: "dshWbModeBody" },
-        react4.createElement("span", { className: "dshWbModeLabel" }, mode.label),
-        ctxLabel ? react4.createElement("span", { className: "dshWbModeCtx", title: ctxLabel }, ctxLabel) : react4.createElement("span", { className: "dshWbModeCtx" }, T.tileEmpty)
+        react5.createElement("span", { className: "dshWbModeLabel" }, mode.label),
+        ctxLabel ? react5.createElement("span", { className: "dshWbModeCtx", title: ctxLabel }, ctxLabel) : react5.createElement("span", { className: "dshWbModeCtx" }, T.tileEmpty)
       ),
-      mode.active ? react4.createElement("span", { className: "dshWbRowMark" }, T.current) : null
+      mode.active ? react5.createElement("span", { className: "dshWbRowMark" }, T.current) : null
     );
   });
-  return react4.createElement(
+  return react5.createElement(
     "div",
     { className: "dshWbHome", onKeyDown, "data-wb-switcher": "", "data-wb-shape": shape || "none" },
     bar,
-    react4.createElement(
+    react5.createElement(
       "div",
       { className: "dshWbHomePanel", ref: panelRef, role: "dialog", "aria-label": T.homeTitle },
       // 长条形态**不摆第二层标题**（原型只有一条 `.topbar`：← / 工作台·当前 / ⚙ / 三钮）——
       // 两层标题在 412px 宽里纯属浪费；主屏（宽窗）才需要"创作工具台 + 关闭"这一行。
-      isStrip ? null : react4.createElement(
+      isStrip ? null : react5.createElement(
         "div",
         { className: "dshWbHead" },
-        react4.createElement("span", { className: "dshWbTitle" }, T.homeTitle),
-        react4.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
+        react5.createElement("span", { className: "dshWbTitle" }, T.homeTitle),
+        react5.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
       ),
-      isStrip ? null : react4.createElement("div", { className: "dshWbHint" }, T.homeHint),
-      active ? react4.createElement(
+      isStrip ? null : react5.createElement("div", { className: "dshWbHint" }, T.homeHint),
+      active ? react5.createElement(
         "div",
         { className: "dshWbCtx", "data-wb-context": active },
         `${T.contextNow}：${activeLabel}${contextLabel ? ` · ${contextLabel}` : ""}`
       ) : null,
-      react4.createElement(
+      react5.createElement(
         "div",
         { className: "dshWbHomeBody" },
-        react4.createElement(
+        react5.createElement(
           "aside",
           { className: "dshWbChat", "data-wb-chat": "", "aria-label": T.chatTitle },
           // 长条下不摆"对话"小标题（顶栏已说明这是什么）；宽窗主屏才需要这一行分区标题
-          isStrip ? null : react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
-          react4.createElement(ConversationTile, {
+          isStrip ? null : react5.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
+          react5.createElement(ConversationTile, {
             onBack: backToChat,
             modes,
             onPickMode: (id) => void switchMode(registry2, id)
           })
         ),
         // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
-        isStrip ? null : modes.length === 0 ? react4.createElement(
+        isStrip ? null : modes.length === 0 ? react5.createElement(
           "div",
           { className: "dshWbEmpty", "data-wb-empty": "" },
-          react4.createElement("div", null, T.empty),
-          react4.createElement("div", null, T.emptyHint)
-        ) : react4.createElement("section", { className: "dshWbTiles", "data-wb-tiles": "" }, tiles)
+          react5.createElement("div", null, T.empty),
+          react5.createElement("div", null, T.emptyHint)
+        ) : react5.createElement("section", { className: "dshWbTiles", "data-wb-tiles": "" }, tiles)
       ),
-      active ? react4.createElement(
+      active ? react5.createElement(
         "div",
         { className: "dshWbFoot" },
-        react4.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
+        react5.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
       ) : null
     ),
     // 接缝呼出·扇形（原型 v2.2：**以接缝为轴心、中间那颗顶到最外**，逐颗错峰滑入）。
     // 几何在 JS 里算好、用 CSS 变量摆位——探针可直接读 data-wb-seam-out / -delay 验证这两条。
     // 窗外画不了（窗口边界是硬的，plan §12-9 的 A/B/C 里已选"收在窗口内贴右缘"），所以是**窗内扇形**。
-    isStrip ? react4.createElement(
+    isStrip ? react5.createElement(
       "div",
       {
         className: `dshWbSeam${seamOpen ? " is-open" : ""}`,
@@ -1770,8 +1802,8 @@ function WorkbenchChrome() {
         onFocus: () => setSeamOpen(true),
         onBlur: () => setSeamOpen(false)
       },
-      react4.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }, "⋮"),
-      modes.length === 0 ? react4.createElement("div", { className: "dshWbSeamEmpty", "data-wb-seam-empty": "" }, T.seamEmpty) : react4.createElement(
+      react5.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }, "⋮"),
+      modes.length === 0 ? react5.createElement("div", { className: "dshWbSeamEmpty", "data-wb-seam-empty": "" }, T.seamEmpty) : react5.createElement(
         "div",
         { className: "dshWbSeamFan", "data-wb-seam-fan": "" },
         modes.map((mode, i) => {
@@ -1780,7 +1812,7 @@ function WorkbenchChrome() {
           const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t)));
           const y = Math.round((i - mid) * SEAM_FAN_GAP);
           const delay = i * SEAM_FAN_STAGGER;
-          return react4.createElement(
+          return react5.createElement(
             "button",
             {
               key: mode.id,
@@ -1794,15 +1826,15 @@ function WorkbenchChrome() {
               "data-wb-seam-y": String(y),
               "data-wb-seam-delay": String(delay)
             },
-            react4.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
+            react5.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
             // 状态点（原型 `.st`）：当前模式实心，其余空心——状态不只靠颜色，旁边还有 tag 文字
-            react4.createElement("span", {
+            react5.createElement("span", {
               className: `dshWbSeamSt${mode.active ? " is-active" : ""}`,
               "data-wb-seam-st": mode.active ? "active" : "ready",
               "aria-hidden": "true"
             }),
-            react4.createElement("span", { className: "dshWbSeamText" }, mode.label),
-            mode.active ? react4.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
+            react5.createElement("span", { className: "dshWbSeamText" }, mode.label),
+            mode.active ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
           );
         })
       )
@@ -1812,9 +1844,9 @@ function WorkbenchChrome() {
 }
 
 // plugin/workbench/src/client/Dock.js
-var react5 = __toESM(require("react"), 1);
+var react6 = __toESM(require("react"), 1);
 function useDockInset(open2, width) {
-  react5.useEffect(() => {
+  react6.useEffect(() => {
     try {
       document.documentElement.style.setProperty("--dsh-wb-dock-width", open2 ? `${width}px` : "0px");
     } catch {
@@ -1834,7 +1866,7 @@ function WorkbenchDock() {
   if (candidates.length === 0) return null;
   const chosen = candidates.find((c) => c.id === dockModeId2) || candidates[0];
   if (!dockOpen2) {
-    return react5.createElement(
+    return react6.createElement(
       "button",
       {
         type: "button",
@@ -1844,7 +1876,7 @@ function WorkbenchDock() {
         "aria-label": T.dockOpen(chosen.label),
         "data-wb-dock-rail": ""
       },
-      react5.createElement("span", { className: "dshWbDockRailText" }, chosen.label)
+      react6.createElement("span", { className: "dshWbDockRailText" }, chosen.label)
     );
   }
   const DockView = chosen.view;
@@ -1860,7 +1892,7 @@ function WorkbenchDock() {
     document.addEventListener("mousemove", onMove, true);
     document.addEventListener("mouseup", onUp, true);
   };
-  return react5.createElement(
+  return react6.createElement(
     "aside",
     {
       className: "dshWbDock",
@@ -1868,17 +1900,17 @@ function WorkbenchDock() {
       "data-wb-dock": chosen.id,
       "aria-label": T.dockTitle(chosen.label)
     },
-    react5.createElement("div", {
+    react6.createElement("div", {
       className: "dshWbDockGrip",
       onMouseDown: onGripDown,
       title: T.dockResize,
       "aria-hidden": "true",
       "data-wb-dock-resize": ""
     }),
-    react5.createElement(
+    react6.createElement(
       "div",
       { className: "dshWbDockHead" },
-      candidates.length > 1 ? react5.createElement(
+      candidates.length > 1 ? react6.createElement(
         "select",
         {
           className: "dshWbDockPick",
@@ -1887,24 +1919,24 @@ function WorkbenchDock() {
           title: T.dockPick,
           "data-wb-dock-pick": ""
         },
-        candidates.map((c) => react5.createElement("option", { key: c.id, value: c.id }, c.label))
-      ) : react5.createElement("span", { className: "dshWbDockTitle" }, chosen.label),
-      react5.createElement(
+        candidates.map((c) => react6.createElement("option", { key: c.id, value: c.id }, c.label))
+      ) : react6.createElement("span", { className: "dshWbDockTitle" }, chosen.label),
+      react6.createElement(
         "button",
         { type: "button", className: "dshWbDockClose", onClick: () => setDockOpen(false), title: T.dockCollapse, "data-wb-dock-close": "" },
         "⟩"
       )
     ),
-    react5.createElement("div", { className: "dshWbDockBody", "data-wb-dock-body": chosen.id }, react5.createElement(DockView))
+    react6.createElement("div", { className: "dshWbDockBody", "data-wb-dock-body": chosen.id }, react6.createElement(DockView))
   );
 }
 
 // plugin/workbench/src/client/Settings.js
-var react6 = __toESM(require("react"), 1);
+var react7 = __toESM(require("react"), 1);
 function WorkbenchSettings() {
   const { modes, active } = useWorkbench();
-  const [host, setHost] = react6.useState({ loading: true });
-  react6.useEffect(() => {
+  const [host, setHost] = react7.useState({ loading: true });
+  react7.useEffect(() => {
     let dead = false;
     void fetchState().then((result) => {
       if (!dead) setHost({ loading: false, ...result });
@@ -1914,25 +1946,25 @@ function WorkbenchSettings() {
     };
   }, []);
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || T.activeNone;
-  return react6.createElement(
+  return react7.createElement(
     "div",
     { className: "dshWbSet", "data-wb-settings": "" },
-    react6.createElement(
+    react7.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react6.createElement("div", { className: "dshWbSetTitle" }, T.settings),
-      react6.createElement("div", { className: "dshWbSetLine" }, T.settingsIntro),
-      react6.createElement("div", { className: "dshWbSetMuted" }, T.settingsDegraded)
+      react7.createElement("div", { className: "dshWbSetTitle" }, T.settings),
+      react7.createElement("div", { className: "dshWbSetLine" }, T.settingsIntro),
+      react7.createElement("div", { className: "dshWbSetMuted" }, T.settingsDegraded)
     ),
-    react6.createElement(
+    react7.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsModes),
-      modes.length === 0 ? react6.createElement("div", { className: "dshWbSetMuted", "data-wb-settings-none": "" }, T.settingsNone) : react6.createElement(
+      react7.createElement("div", { className: "dshWbSetTitle" }, T.settingsModes),
+      modes.length === 0 ? react7.createElement("div", { className: "dshWbSetMuted", "data-wb-settings-none": "" }, T.settingsNone) : react7.createElement(
         "div",
         { className: "dshWbSetLine", style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
         modes.map(
-          (mode) => react6.createElement(
+          (mode) => react7.createElement(
             "span",
             { key: mode.id, className: `dshWbSetChip${mode.active ? " is-active" : ""}`, "data-wb-settings-mode": mode.id },
             mode.label
@@ -1940,23 +1972,23 @@ function WorkbenchSettings() {
         )
       )
     ),
-    react6.createElement(
+    react7.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsActive),
-      react6.createElement("div", { className: "dshWbSetLine", "data-wb-settings-active": active || "" }, activeLabel)
+      react7.createElement("div", { className: "dshWbSetTitle" }, T.settingsActive),
+      react7.createElement("div", { className: "dshWbSetLine", "data-wb-settings-active": active || "" }, activeLabel)
     ),
-    react6.createElement(
+    react7.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsHost),
-      react6.createElement("div", { className: "dshWbSetMuted" }, T.settingsHostHint),
-      host.loading ? react6.createElement("div", { className: "dshWbSetMuted" }, "…") : host.ok ? react6.createElement(
+      react7.createElement("div", { className: "dshWbSetTitle" }, T.settingsHost),
+      react7.createElement("div", { className: "dshWbSetMuted" }, T.settingsHostHint),
+      host.loading ? react7.createElement("div", { className: "dshWbSetMuted" }, "…") : host.ok ? react7.createElement(
         "div",
         { className: "dshWbSetLine", "data-wb-settings-rev": String(host.state?.revision ?? "") },
         T.settingsRevision(host.state?.revision ?? 0),
         host.state?.activeModeId ? ` · ${host.state.activeModeId}` : ""
-      ) : react6.createElement("div", { className: "dshWbSetLine", "data-wb-settings-error": host.error || "error" }, T.settingsUnreachable)
+      ) : react7.createElement("div", { className: "dshWbSetLine", "data-wb-settings-error": host.error || "error" }, T.settingsUnreachable)
     )
   );
 }

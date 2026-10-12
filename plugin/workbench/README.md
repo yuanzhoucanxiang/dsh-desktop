@@ -158,6 +158,16 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   **时间戳没做**：内核 chat 节点只有 `seq`（序列）与 `data.step`，**没有墙钟时间**——不编造，
   真需要就等内核给字段（或由壳侧在收到消息时自己记，但那是另一条路）。
   探针：长文默认折叠且正文长度 ≥ 200（锁住"不再截断"）、点开后 `is-clamped` 消失。
+- **小条显示同一份状态数据（2026-10-13 前端深入优化第四刀）**：原型 `.mini` 不是"少画点东西"，
+  而是**同一条状态数据换个尺寸**。所以把会话快照 / 遥测订阅 / 状态条抽成 `src/client/use-session.js`
+  （`useSessionSnapshot` / `useSessionTelemetry` / `TelemetryMeter`），长条与小条共用一份；
+  小条用 `compact`（去掉进度条，字号 10px，贴底加分隔线），指标文案一个字不改。
+  探针：`[data-wb-mini] [data-wb-meter]` 在位且是 `compact`、指标文案非空。
+- **对话三态说清（空 / 正在读 / 读不到，2026-10-13）**：`data-wb-chat-log-empty` 区分
+  `pending`（通道在、图还没送到 → "正在读取这条会话的内容…"）/ `no-messages`（"还没有消息…"）/
+  `none`·`no-service`（"暂时读不到…"）。**加载态与空态不能混**：`pending` 错报成"还没有消息"
+  会让作者以为会话是空的（2026-10-13 修）。**流式态与空态互斥**：正在生成时摆流式态。
+  探针按 fixture 逐个验（先 `null` 图验加载态、再空图 + `running:false` 验空态）。
 - **长条右缘接缝·扇形（2026-10-13，原型 v2.2）**：条状形态下渲染 `.dshWbSeam`——贴右缘的把手
   （`⋮`）+ 悬停/聚焦展开的**扇形模式列**（`data-wb-seam` / `data-wb-seam-mode` / `data-wb-seam-fan`）。
   几何按原型：**以接缝为轴心、中间那颗顶到最外**（`SEAM_FAN_OUT=46`，两端按 |t| 线性收窄）、

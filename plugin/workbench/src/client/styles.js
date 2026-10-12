@@ -179,6 +179,8 @@ export const CSS = [
   '.dshWbMeterBar{flex:none;width:56px;height:4px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;}',
   '.dshWbMeterBar i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;}',
   '.dshWbMeterModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;}',
+  // 小条的紧凑状态条（原型 `.mini` 就是"同一条数据换个尺寸"）：贴底、更小字号、去掉进度条
+  '.dshWbMeter.is-compact{flex:none;margin:0;padding:6px 14px 8px;border-top:1px solid var(--dsw-alias-border-l1);gap:4px 8px;font-size:10px;line-height:14px;}',
   // 输入区左侧「+」与其弹层（原型 `.plus` / `.sheet`）
   '.dshWbComposer{position:relative;display:flex;align-items:flex-end;gap:8px;}',
   '.dshWbPlus{flex:none;width:30px;height:30px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:16px;line-height:1;cursor:pointer;}',
