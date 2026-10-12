@@ -708,6 +708,18 @@ client 侧只做乐观更新 + 订阅；跨窗口同步 v1 用轮询/聚焦刷�
    + 状态回读，同样**只收枚举与语义参数、不收任意几何**（辅助窗的位置由主窗 bounds 推出来），
    发送方仍过 `isKernelPageSender`；`shell-hardening-test` 补断言，实机探针验"关掉后不残留窗口"。
 
+   **最小浮标切片已落地（2026-10-12 晚，上面第 1 步做完了）**：壳侧 `showWorkbenchOverlay()` /
+   `hideWorkbenchOverlay()`（`transparent` + `frame:false` + `focusable:false` + `skipTaskbar` +
+   `alwaysOnTop('floating')` + `setParentWindow(主窗)`），位置由主窗 bounds 推、放不下自动翻另一侧；
+   主窗 move/resize 跟随，hide/minimize/close 一律 `destroy()`（不留孤儿浮标）。
+   **辅助窗刻意不带 preload** ⇒ 它拿不到 `dshShell`，没有新增 IPC 攻击面。
+   门面接线：主屏收成 strip 后自动开浮标、还原 normal 时关掉（桥没这个方法就什么都不做）。
+   `verify:shell-shape` 新增 G 段 4 条全过：开得了 / 状态回读 `overlay:true` /
+   **开着时主窗 `isFocused()` 仍为 true** / 关得掉且 `overlay:false` 不残留。
+   **仍差项目所有者目检两件事**：透明画得对不对（这台机器 `capturePage` 判不了，见踩坑 #28）、
+   物理点击是否真的不抢键盘焦点（探针里是主进程 `isFocused` + 独立实验的合成点击，不是手指）。
+   目检过了才做扇形 UI（图标、错峰滑入、点外收起并吞点击）；不过就退 A。
+
 ---
 
 署名：deepseek-v4.1-flash（依据 2026-10-11 项目所有者"先立工具台这一层架构"的决定整理）；§0.1 原型轮与决策点 8 补充：Kimi（2026-10-12）；决策点 8 于 2026-10-12 由项目所有者拍板（内容见上），壳层代价调查与 ⑤ 修复：Qoder（2026-10-12）。
