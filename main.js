@@ -150,6 +150,9 @@ const DEFAULT_SETTINGS = {
   notifyOnTurnEnd: true,  // 回合完成时发系统通知（仅在主窗口失焦时）
   notifyCommand: '',      // 回合完成时执行的外部命令（空=不执行）；支持 {files} {cwd} 占位
   globalHotkey: 'Control+Alt+D', // 全局唤起热键（空字符串 = 关闭）
+  workbenchShape: 'normal',     // 工作台窗口形态：normal / strip（长条）/ mini（小条）；只由工具台申请
+  workbenchStripOnTop: true,    // 长条/小条是否浮在最前（可关）；normal 形态一律不置顶
+  workbenchShapeBounds: null,   // { strip:{x,y}, mini:{x,y} } 拖过的位置记忆——**绝不写进 windowBounds**
   appIcon: 'default',     // 应用图标：default（鲸鱼）/ 内置预设 key / custom（userData 里的副本）
 }
 
@@ -2211,10 +2214,26 @@ function createWindow() {
 
   // 记住窗口位置/大小（防抖落盘）
   let saveTimer = null
+  let shapeSaveTimer = null
   const scheduleSaveBounds = () => {
     if (!win || win.isDestroyed() || win.isMaximized() || win.isMinimized()) return
+    // 形态期间（长条/小条）**不能**把几何写进 windowBounds——那是"普通窗口"的记忆，
+    // 写进去会让下次启动直接停在长条尺寸（plan §6.4.1 的坑）。只记它拖到了哪儿。
+    if (currentShape() !== 'normal') {
+      clearTimeout(shapeSaveTimer)
+      shapeSaveTimer = setTimeout(() => {
+        if (!win || win.isDestroyed() || currentShape() === 'normal') return
+        const b = win.getBounds()
+        const shape = currentShape()
+        settings.workbenchShapeBounds = { ...(settings.workbenchShapeBounds || {}), [shape]: { x: b.x, y: b.y } }
+        saveSettings()
+      }, 500)
+      return
+    }
     clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
+      // 防抖到点时**再判一次**形态：切换过程中排进来的这一发，绝不能把条状尺寸写进普通窗口记忆
+      if (!win || win.isDestroyed() || currentShape() !== 'normal') return
       const b = win.getNormalBounds()
       settings.windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height, maximized: false }
       saveSettings()
@@ -2246,6 +2265,89 @@ function createWindow() {
 
   win.on('closed', () => { win = null })
   return win
+}
+
+/* ─────────────── 工作台窗口形态（工具台"长条"门面；2026-10-12 项目所有者获准改外壳） ───────────────
+ *
+ * 三条纪律（依据 docs/plans/workbench-layer-v1.md §6.4.1 与
+ * docs/audits/shell-hardening/2026-09-21/report.md:17「内核页面能调 IPC 是要紧的」）：
+ *  ① **只收档位枚举**（normal / strip / mini），几何一律由主进程按当前显示器工作区算——
+ *     页面传不进任意 x/y/w/h，避免任何页面脚本随意摆布本机窗口；
+ *  ② 只有**内核页面的主帧**能改形态（第三方 iframe、导航到别处的窗口一律拒）；
+ *  ③ 形态期间的几何**绝不写进 `settings.windowBounds`**——那是普通窗口的记忆，
+ *     写进去会让下次启动直接停在长条尺寸。位置记忆另存 `workbenchShapeBounds`。
+ *
+ * 为什么这一刀**不做无边框**：Electron 43 的 `frame` 只能构造时设定（`electron.d.ts:3848`
+ * 只有构造参数 `frame?: boolean`，运行时没有 `setFrame`），要无边框就得重建窗口
+ * （内核页面会重载）。那条路要不要走、怎么走，留到下一刀连同顶栏按钮一起定。
+ */
+const WORKBENCH_SHAPES = ['normal', 'strip', 'mini']
+const SHAPE_MIN_SIZE = { normal: [980, 640], strip: [320, 320], mini: [240, 120] }
+const SHAPE_GEOMETRY = {
+  strip: { width: 420, heightFactor: 0.86, corner: 'top-right' },
+  mini: { width: 300, height: 168, corner: 'bottom-right' },
+}
+
+function currentShape() {
+  return WORKBENCH_SHAPES.includes(settings.workbenchShape) ? settings.workbenchShape : 'normal'
+}
+
+/** 按档位算目标几何；用户拖过的位置从 workbenchShapeBounds 里取（越出工作区就回落到默认角）。 */
+function shapeBounds(shape) {
+  const anchor = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds
+  const area = screen.getDisplayMatching(anchor).workArea
+  const g = SHAPE_GEOMETRY[shape]
+  if (!g) {
+    const saved = validBounds(settings.windowBounds)
+    return saved || { width: 1360, height: 920 }
+  }
+  const width = g.width
+  const height = g.height || Math.round(area.height * g.heightFactor)
+  const mem = settings.workbenchShapeBounds && settings.workbenchShapeBounds[shape]
+  const corner =
+    g.corner === 'bottom-right'
+      ? { x: area.x + area.width - width - 16, y: area.y + area.height - height - 16 }
+      : { x: area.x + area.width - width - 16, y: area.y + 16 }
+  const usable = mem && validBounds({ x: mem.x, y: mem.y, width, height })
+  return { ...(usable ? { x: mem.x, y: mem.y } : corner), width, height }
+}
+
+function shapeState() {
+  const shape = currentShape()
+  return {
+    shape,
+    alwaysOnTop: shape !== 'normal' && settings.workbenchStripOnTop !== false,
+    bounds: win && !win.isDestroyed() ? win.getBounds() : null,
+    contentBounds: win && !win.isDestroyed() ? win.getContentBounds() : null,
+    minSize: SHAPE_MIN_SIZE[shape],
+    frameless: false, // 这一刀仍是原生边框；下一刀做无边框时这里才变
+  }
+}
+
+function applyWorkbenchShape(shape) {
+  if (!win || win.isDestroyed()) return { ok: false, error: 'no-window' }
+  const [minW, minH] = SHAPE_MIN_SIZE[shape]
+  // **先记形态、再动窗口**：setBounds 触发的 resize 事件可能在本轮就投递给 scheduleSaveBounds，
+  // 那时若 settings.workbenchShape 还是旧值，长条尺寸就会被当成"用户手动改了普通窗口"写进
+  // windowBounds（2026-10-12 实机验收抓到：D 污染 + E 还原回不到宽窗，同一个根因）。
+  settings.workbenchShape = shape
+  saveSettings()
+  win.setMinimumSize(minW, minH)
+  if (win.isMaximized()) win.unmaximize()
+  const b = shapeBounds(shape)
+  win.setBounds(b)
+  const onTop = shape !== 'normal' && settings.workbenchStripOnTop !== false
+  win.setAlwaysOnTop(onTop, 'floating')
+  broadcastShape()
+  log(`工作台形态 → ${shape}（${b.width}×${b.height} @${b.x ?? '?'},${b.y ?? '?'}，最小 ${minW}×${minH}，置顶=${onTop}）`)
+  return { ok: true, ...shapeState() }
+}
+
+function broadcastShape() {
+  if (!win || win.isDestroyed()) return
+  try {
+    win.webContents.send('shell:workbench-shape', shapeState())
+  } catch {}
 }
 
 /** 托盘用官方鲸鱼：深色任务栏用白鲸，浅色用黑鲸。 */
@@ -2929,6 +3031,42 @@ function registerIpc() {
     }
     return setAppIconSetting(String(key || 'default'))
   })
+  // ── 工作台窗口形态（工具台长条门面；见 §6.4.1 的三条纪律）────────────────────
+  /** 只有**内核页面的主帧**能申请改形态：不是本主窗的 webContents、或发帧 URL 不是内核页 → 拒。 */
+  function isKernelPageSender(event) {
+    if (!win || win.isDestroyed()) return false
+    if (event.sender !== win.webContents) return false
+    const frameUrl = event.senderFrame && event.senderFrame.url ? event.senderFrame.url : event.sender.getURL()
+    return isKernelPageUrl(frameUrl)
+  }
+  ipcMain.handle('shell:set-workbench-shape', (event, raw) => {
+    if (!isKernelPageSender(event)) {
+      log('set-workbench-shape: rejected（发送方不是内核页面主帧）')
+      return { ok: false, error: 'only-kernel-page' }
+    }
+    const next = String(raw ?? '')
+    if (!WORKBENCH_SHAPES.includes(next)) {
+      log(`set-workbench-shape: rejected（未知档位 ${JSON.stringify(next)}）`)
+      return { ok: false, error: 'unknown-shape', allowed: WORKBENCH_SHAPES }
+    }
+    return applyWorkbenchShape(next)
+  })
+  ipcMain.handle('shell:get-workbench-shape', (event) => {
+    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+    return { ok: true, ...shapeState() }
+  })
+  ipcMain.handle('shell:set-workbench-strip-on-top', (event, on) => {
+    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+    settings.workbenchStripOnTop = Boolean(on)
+    saveSettings()
+    if (win && !win.isDestroyed() && currentShape() !== 'normal') {
+      win.setAlwaysOnTop(settings.workbenchStripOnTop, 'floating')
+    }
+    broadcastShape()
+    log(`长条置顶 → ${settings.workbenchStripOnTop ? '开' : '关'}`)
+    return { ok: true, ...shapeState() }
+  })
+
   ipcMain.handle('shell:set-global-hotkey', (event, raw) => {
     if (!isSettingsSender(event)) {
       log('set-global-hotkey: rejected（发送方不是设置窗口）')

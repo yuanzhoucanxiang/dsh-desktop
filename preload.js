@@ -62,6 +62,16 @@ contextBridge.exposeInMainWorld('dshShell', {
   // 全局热键：状态经 status() 的 hotkey / hotkeyPresets 字段下发，改键走这个专用通道
   // （主进程会再校一次发送方是否为设置窗口，并过 accelerator 白名单校验）。
   setGlobalHotkey: (acc) => ipcRenderer.invoke('shell:set-global-hotkey', acc),
+  // 工作台窗口形态（工具台"长条"门面）：**只发档位枚举**，几何由主进程按显示器算，
+  // 页面传不进任意 x/y/w/h；主进程还会校验发送方是内核页面主帧。见 plan §6.4.1。
+  getWorkbenchShape: () => ipcRenderer.invoke('shell:get-workbench-shape'),
+  setWorkbenchShape: (shape) => ipcRenderer.invoke('shell:set-workbench-shape', String(shape ?? '')),
+  setWorkbenchStripOnTop: (on) => ipcRenderer.invoke('shell:set-workbench-strip-on-top', Boolean(on)),
+  onWorkbenchShape: (cb) => {
+    const h = (_e, s) => cb(s)
+    ipcRenderer.on('shell:workbench-shape', h)
+    return () => ipcRenderer.removeListener('shell:workbench-shape', h)
+  },
   // 应用图标：预设/状态经 status() 的 appIcon / appIconPresets 下发（仅设置窗口）；
   // 选择文件与生效走这两个专用通道（主进程校验发送方并负责复制/生成/改写快捷方式）。
   pickAppIcon: () => ipcRenderer.invoke('shell:pick-app-icon'),
