@@ -2189,6 +2189,15 @@ function showMainWindow() {
 }
 
 function createWindow() {
+  // 形态是**门面申请出来的**（主屏开着才有 strip / mini），而"主屏开着"只活在内存里：
+  // 重启后没有任何地方会再申请形态。这里把它落回 normal——否则 `currentShape()` 会与实际窗口
+  // 说谎（窗口明明是宽窗，状态说 strip），而 `scheduleSaveBounds` 按"形态期不污染 windowBounds"
+  // 的规矩跳过写入，用户的窗口记忆从此不再更新，直到下次进出工具台。
+  // 拖过的位置记忆 `workbenchShapeBounds` 是拍板要留着的，这里不动。
+  if (settings.workbenchShape !== 'normal') {
+    settings.workbenchShape = 'normal'
+    saveSettings()
+  }
   const bounds = validBounds(settings.windowBounds)
   win = new BrowserWindow({
     width: bounds?.width || 1360,

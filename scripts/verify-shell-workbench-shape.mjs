@@ -142,6 +142,13 @@ if (process.argv.includes('--selftest')) {
 
 const cdpPort = await freePort()
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-shape-verify-'))
+// **故意把上一次会话留在"长条态"**：`settings.workbenchShape` 是持久化的，而形态只有"主屏开着"
+// 才有意义，主屏开合只活在内存里 ⇒ 重启后必须落回 normal（否则 `currentShape()` 与实际窗口说谎，
+// `scheduleSaveBounds` 会永远跳过写 windowBounds，用户的窗口记忆冻住）。下面 A 段就是验这件事。
+fs.writeFileSync(
+  path.join(userData, 'settings.json'),
+  JSON.stringify({ workbenchShape: 'strip', windowBounds: { x: 120, y: 90, width: 1360, height: 900, maximized: false } }),
+)
 const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '1', DSH_DESKTOP_USER_DATA: userData }
 delete env.ELECTRON_RUN_AS_NODE // 带着它 electron 会以 node 模式启动（踩坑速查 #1）
 
@@ -222,6 +229,12 @@ try {
 
   const initial = await ev(`window.dshShell.getWorkbenchShape()`)
   check('A 初态是 normal 且读得到', initial?.ok === true && initial?.shape === 'normal', JSON.stringify({ ok: initial?.ok, shape: initial?.shape, minSize: initial?.minSize }))
+  check('A 带着上次的 strip 记忆启动：窗口仍然是宽窗（几何没被旧档位带跑）',
+    (initial?.bounds?.width || 0) > 1200, JSON.stringify(initial?.bounds))
+  const afterBoot = JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf8'))
+  check('A 启动把持久化的形态落回 normal（位置记忆 workbenchShapeBounds 不动）',
+    afterBoot.workbenchShape === 'normal',
+    JSON.stringify({ workbenchShape: afterBoot.workbenchShape, 位置记忆: afterBoot.workbenchShapeBounds }))
 
   // 尺寸判据用**渲染侧布局视口**（clientWidth）：`window.outerWidth` 在程序化改窗后可能是滞后读数
   // （2026-10-12 实测：主进程 getBounds 已回 1363，页面 outerWidth 仍报 421）。
