@@ -44,6 +44,21 @@ export async function readShape() {
 }
 
 /**
+ * 顶栏 `⚙`：打开外壳的设置窗口（`shell:open-settings` 早就在 preload 上，工具台只是接上它）。
+ * 能力探测：官方壳/老包没有这个方法就什么都不做（门面不因此崩）。
+ */
+export async function openSettings(globalThisRef = typeof window === 'undefined' ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell
+  if (!bridge || typeof bridge.openSettings !== 'function') return { ok: false, error: 'no-shell-bridge' }
+  try {
+    const result = await bridge.openSettings()
+    return result && typeof result === 'object' ? result : { ok: true }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}
+
+/**
  * `✕` 这一钮：只说"用户按了关闭"，**语义由壳里既有的关窗逻辑定**（`closeToTray` 开着就进托盘，
  * 关掉就是真关）。门面刻意不请求 quit/hide——那两条会把"关窗"变成"退出应用"，与拍板不符。
  */

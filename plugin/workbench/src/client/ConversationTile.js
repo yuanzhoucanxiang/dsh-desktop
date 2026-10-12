@@ -36,9 +36,10 @@ function readSnapshot(sessions) {
   }
 }
 
-export function ConversationTile({ onBack }) {
+export function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions = getSessions()
   const [snap, setSnap] = react.useState(() => readSnapshot(sessions))
+  const [sheetOpen, setSheetOpen] = react.useState(false)
 
   react.useEffect(() => {
     const store = sessions?.list
@@ -86,6 +87,8 @@ export function ConversationTile({ onBack }) {
     ? react.createElement(
         'div',
         { className: 'dshWbChatLog', 'data-wb-chat-log': '', 'data-wb-chat-source': transcript.source },
+        // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
+        react.createElement('div', { className: 'dshWbChatDay', 'data-wb-chat-day': '' }, '今天'),
         transcript.messages.map((m) =>
           react.createElement(
             'div',
@@ -108,15 +111,25 @@ export function ConversationTile({ onBack }) {
   const strip = react.createElement(
     'div',
     {
-      className: 'dshWbStrip',
+      className: 'dshWbMeter',
       'data-wb-strip': '',
+      'data-wb-meter': '',
       'data-wb-telemetry': telemetrySource,
       // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
       'data-wb-telemetry-keys': Object.keys(projValues || {}).sort().join(','),
     },
-    react.createElement('span', { className: 'dshWbStripItem', title: metrics.speed.title, 'data-wb-metric': 'speed' }, metrics.speed.text),
-    react.createElement('span', { className: 'dshWbStripItem', title: metrics.cache.title, 'data-wb-metric': 'cache' }, metrics.cache.text),
-    react.createElement('span', { className: 'dshWbStripItem', title: metrics.context.title, 'data-wb-metric': 'context' }, metrics.context.text),
+    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.speed.title, 'data-wb-metric': 'speed' }, metrics.speed.text),
+    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.cache.title, 'data-wb-metric': 'cache' }, metrics.cache.text),
+    react.createElement('span', { className: 'dshWbMeterItem', title: metrics.context.title, 'data-wb-metric': 'context' }, metrics.context.text),
+    // 上下文进度条（原型里的 `.ctxbar`）：宽度按 ratio，ratio 为 0 时不显示填充
+    react.createElement(
+      'span',
+      { className: 'dshWbMeterBar', 'data-wb-meter-bar': '', title: metrics.context.title, 'aria-hidden': 'true' },
+      react.createElement('i', { style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` }, 'data-wb-meter-fill': String(Math.round((metrics.context.ratio || 0) * 100)) }),
+    ),
+    metrics.model
+      ? react.createElement('span', { className: 'dshWbMeterModel', title: metrics.model.title, 'data-wb-metric': 'model' }, metrics.model.text)
+      : null,
   )
   const title = first?.displayTitle ? String(first.displayTitle) : ''
 
@@ -145,10 +158,63 @@ export function ConversationTile({ onBack }) {
           : `这条消息没发出去（${out.error}）——你写的内容还留着。`,
     })
   }
+  // 「+」弹层（原型 `.sheet`）：上传（还没接，如实禁用并说明）+ 更多工具（= 模式入口，与接缝同一批）
+  const sheet = sheetOpen
+    ? react.createElement(
+        'div',
+        { className: 'dshWbSheet', 'data-wb-sheet': '', role: 'menu' },
+        react.createElement('div', { className: 'dshWbSheetCap' }, '上传'),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbSheetItem',
+            disabled: true,
+            title: '附件上传还没接（内核的文件通道尚未接入工具台）',
+            'data-wb-sheet-upload': '',
+          },
+          '📎 上传文件',
+        ),
+        react.createElement('div', { className: 'dshWbSheetSep' }),
+        react.createElement('div', { className: 'dshWbSheetCap' }, '更多工具'),
+        modes.length === 0
+          ? react.createElement('div', { className: 'dshWbSheetEmpty' }, T.seamEmpty)
+          : modes.map((m) =>
+              react.createElement(
+                'button',
+                {
+                  key: m.id,
+                  type: 'button',
+                  className: `dshWbSheetItem${m.active ? ' is-active' : ''}`,
+                  onClick: () => {
+                    setSheetOpen(false)
+                    onPickMode?.(m.id)
+                  },
+                  'data-wb-sheet-mode': m.id,
+                },
+                m.label,
+              ),
+            ),
+      )
+    : null
+
   const composer = first
     ? react.createElement(
         'div',
         { className: 'dshWbComposer', 'data-wb-composer-row': '' },
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbPlus',
+            title: '上传文件和更多工具',
+            'aria-expanded': sheetOpen ? 'true' : 'false',
+            onClick: () => setSheetOpen((v) => !v),
+            'data-wb-plus': '',
+          },
+          '+',
+        ),
+        sheet,
         react.createElement('textarea', {
           className: 'dshWbComposerInput',
           ref: draftRef,

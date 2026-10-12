@@ -331,9 +331,10 @@ var CSS = [
   ".dshWbChatSession{min-width:0;flex:1;}",
   ".dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
-  // 状态条（输入框下那条窄条）：三个指标各占一段，读不到就如实写"还没数据"+原因（title）
-  ".dshWbStrip{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}",
-  ".dshWbStripItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}",
+  // 状态条（输入框下那条窄条）：三指标 + 上下文进度条 + 模型名；读不到就如实写"还没数据"+原因（title）
+  // （类名 2026-10-13 从 `.dshWbStrip*` 改成 `.dshWbMeter*`，对齐原型 `.meter` 的形状）
+  ".dshWbMeter{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}",
+  ".dshWbMeterItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}",
   // 真聊天瓷砖（只读转录）：最多几条 + 角色标签，长文截断，绝不撑破窄窗
   ".dshWbChatLog{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:auto;margin-top:8px;padding-right:2px;}",
   ".dshWbChatLine{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:17px;}",
@@ -430,10 +431,35 @@ var CSS = [
   ".dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}",
   ".dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
   ".dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}",
+  // 状态点（原型 `.st`）+ 当前标记：点表示状态、文字再说明一次（状态不只靠颜色）
+  ".dshWbSeamSt{flex:none;width:6px;height:6px;margin-left:6px;border-radius:999px;border:1px solid var(--dsw-alias-label-tertiary);}",
+  ".dshWbSeamSt.is-active{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}",
+  ".dshWbSeamTag{flex:none;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}",
+  ".dshWbSeam.is-open .dshWbSeamItem .dshWbSeamTag{display:none;}",
   ".dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}",
   ".dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}",
   ".dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}",
-  ".dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}"
+  ".dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}",
+  // 状态条（原型 `.meter`）：三指标 + 上下文进度条 + 模型名
+  ".dshWbMeter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}",
+  ".dshWbMeterItem{white-space:nowrap;}",
+  ".dshWbMeterBar{flex:none;width:56px;height:4px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;}",
+  ".dshWbMeterBar i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;}",
+  ".dshWbMeterModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;}",
+  // 输入区左侧「+」与其弹层（原型 `.plus` / `.sheet`）
+  ".dshWbComposer{position:relative;display:flex;align-items:flex-end;gap:8px;}",
+  ".dshWbPlus{flex:none;width:30px;height:30px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:16px;line-height:1;cursor:pointer;}",
+  ".dshWbPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbSheet{position:absolute;left:0;bottom:38px;z-index:2;display:flex;flex-direction:column;gap:2px;min-width:180px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.28);}",
+  ".dshWbSheetCap{padding:2px 6px;font-size:11px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWbSheetItem{display:block;width:100%;padding:6px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;text-align:left;cursor:pointer;}",
+  ".dshWbSheetItem:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbSheetItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
+  ".dshWbSheetItem:disabled{opacity:.5;cursor:not-allowed;}",
+  ".dshWbSheetSep{height:1px;margin:6px 4px;background:var(--dsw-alias-border-l1);}",
+  ".dshWbSheetEmpty{padding:4px 8px;font-size:12px;color:var(--dsw-alias-label-tertiary);}",
+  // 对话里的日期分隔（原型 `.day`）
+  ".dshWbChatDay{align-self:center;padding:2px 10px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:11px;color:var(--dsw-alias-label-tertiary);}"
 ].join("");
 function ensureCss() {
   if (typeof document === "undefined") return;
@@ -537,6 +563,8 @@ var T = {
   exit: "退出模式",
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
   btnMini: (back) => back ? "展开成长条" : "收成小条",
+  btnBackWide: "回到宽窗主屏（工作区选择）——只把窗口变宽，不退出工具台",
+  btnSettings: "打开外壳设置",
   btnExit: "退出工具台（窗口还原成正常大小）",
   btnClose: "关闭这个窗口（按应用的关窗设置走：默认收进托盘，不会退出应用）",
   switchTo: (label) => `切换到 ${label}`,
@@ -763,7 +791,9 @@ function telemetryOf(values) {
   const pressureTokens = num(pressure?.pressureTokens);
   const contextWindow = num(pressure?.contextWindow);
   const contextPercent = pressureTokens !== null && contextWindow && contextWindow > 0 ? pressureTokens / contextWindow * 100 : null;
-  return { tokensPerSecond, cacheHitPercent, contextPercent, pressureTokens, contextWindow };
+  const selection = asObject(v?.modelSelection);
+  const model = String(selection?.name || selection?.model || selection?.id || "").trim() || null;
+  return { tokensPerSecond, cacheHitPercent, contextPercent, pressureTokens, contextWindow, model };
 }
 function watchSessionProjections(sessions2, sessionId, onChange) {
   const noop = () => {
@@ -819,14 +849,25 @@ function round(value, digits = 0) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
+function tokens(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value >= 1e4) return `${Math.round(value / 1e3)}k`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
+  return String(value);
+}
 function formatTelemetry(t) {
   const speed = t?.tokensPerSecond !== null && t?.tokensPerSecond !== void 0 ? { text: `⚡ ${round(t.tokensPerSecond)} tok/s`, title: "解码速度：输出 token ÷ 解码墙钟时间（内核 sessionStats 投影）" } : { text: "⚡ 还没数据", title: "这条会话还没有流式输出过，所以算不出解码速度" };
-  const cache = t?.cacheHitPercent !== null && t?.cacheHitPercent !== void 0 ? { text: `缓存 ${round(t.cacheHitPercent)}%`, title: "缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）" } : { text: "缓存 还没数据", title: "这条会话还没有带用量的请求，所以算不出命中率" };
+  const cache = t?.cacheHitPercent !== null && t?.cacheHitPercent !== void 0 ? { text: `缓存命中 ${round(t.cacheHitPercent)}%`, title: "缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）" } : { text: "缓存命中 还没数据", title: "这条会话还没有带用量的请求，所以算不出命中率" };
+  const used = tokens(t?.pressureTokens);
+  const window_ = tokens(t?.contextWindow);
   const context = t?.contextPercent !== null && t?.contextPercent !== void 0 ? {
-    text: `上下文 ${round(t.contextPercent)}%`,
+    // 原型形状：`上下文 12.3k/128k`；窗口大小缺席时退回百分比（不编造分母）
+    text: used && window_ ? `上下文 ${used}/${window_}` : `上下文 ${round(t.contextPercent)}%`,
+    ratio: Math.max(0, Math.min(1, t.contextPercent / 100)),
     title: `占用 ${t.pressureTokens} / 窗口 ${t.contextWindow} token（内核 contextPressure 投影）`
-  } : { text: "上下文 未上报", title: "内核还没给出这条会话的上下文占用或窗口大小，所以不显示百分比" };
-  return { speed, cache, context };
+  } : { text: "上下文 未上报", ratio: 0, title: "内核还没给出这条会话的上下文占用或窗口大小，所以不显示用量" };
+  const model = t?.model ? { text: t.model, title: "当前会话选用的模型（内核 modelSelection 投影）" } : null;
+  return { speed, cache, context, model };
 }
 
 // packages/mode-kit/src/harness/projection.js
@@ -1020,9 +1061,10 @@ function readSnapshot(sessions2) {
     return null;
   }
 }
-function ConversationTile({ onBack }) {
+function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions2 = getSessions();
   const [snap, setSnap] = react3.useState(() => readSnapshot(sessions2));
+  const [sheetOpen, setSheetOpen] = react3.useState(false);
   react3.useEffect(() => {
     const store = sessions2?.list;
     if (!store || typeof store.subscribe !== "function") return void 0;
@@ -1057,6 +1099,8 @@ function ConversationTile({ onBack }) {
   const log = transcript.messages.length ? react3.createElement(
     "div",
     { className: "dshWbChatLog", "data-wb-chat-log": "", "data-wb-chat-source": transcript.source },
+    // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
+    react3.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
     transcript.messages.map(
       (m) => react3.createElement(
         "div",
@@ -1074,15 +1118,23 @@ function ConversationTile({ onBack }) {
   const strip = react3.createElement(
     "div",
     {
-      className: "dshWbStrip",
+      className: "dshWbMeter",
       "data-wb-strip": "",
+      "data-wb-meter": "",
       "data-wb-telemetry": telemetrySource,
       // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
       "data-wb-telemetry-keys": Object.keys(projValues || {}).sort().join(",")
     },
-    react3.createElement("span", { className: "dshWbStripItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
-    react3.createElement("span", { className: "dshWbStripItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
-    react3.createElement("span", { className: "dshWbStripItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text)
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
+    react3.createElement("span", { className: "dshWbMeterItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text),
+    // 上下文进度条（原型里的 `.ctxbar`）：宽度按 ratio，ratio 为 0 时不显示填充
+    react3.createElement(
+      "span",
+      { className: "dshWbMeterBar", "data-wb-meter-bar": "", title: metrics.context.title, "aria-hidden": "true" },
+      react3.createElement("i", { style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` }, "data-wb-meter-fill": String(Math.round((metrics.context.ratio || 0) * 100)) })
+    ),
+    metrics.model ? react3.createElement("span", { className: "dshWbMeterModel", title: metrics.model.title, "data-wb-metric": "model" }, metrics.model.text) : null
   );
   const title = first?.displayTitle ? String(first.displayTitle) : "";
   const surface = sendSurface(sessions2, sessionId);
@@ -1105,9 +1157,56 @@ function ConversationTile({ onBack }) {
       text: out.result === "uncertain" ? `这条消息的发送结果没能核对（${out.error}）——你写的内容还留着，可重试；不放心就点「回到完整会话」在原处发。` : `这条消息没发出去（${out.error}）——你写的内容还留着。`
     });
   };
+  const sheet = sheetOpen ? react3.createElement(
+    "div",
+    { className: "dshWbSheet", "data-wb-sheet": "", role: "menu" },
+    react3.createElement("div", { className: "dshWbSheetCap" }, "上传"),
+    react3.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbSheetItem",
+        disabled: true,
+        title: "附件上传还没接（内核的文件通道尚未接入工具台）",
+        "data-wb-sheet-upload": ""
+      },
+      "📎 上传文件"
+    ),
+    react3.createElement("div", { className: "dshWbSheetSep" }),
+    react3.createElement("div", { className: "dshWbSheetCap" }, "更多工具"),
+    modes.length === 0 ? react3.createElement("div", { className: "dshWbSheetEmpty" }, T.seamEmpty) : modes.map(
+      (m) => react3.createElement(
+        "button",
+        {
+          key: m.id,
+          type: "button",
+          className: `dshWbSheetItem${m.active ? " is-active" : ""}`,
+          onClick: () => {
+            setSheetOpen(false);
+            onPickMode?.(m.id);
+          },
+          "data-wb-sheet-mode": m.id
+        },
+        m.label
+      )
+    )
+  ) : null;
   const composer = first ? react3.createElement(
     "div",
     { className: "dshWbComposer", "data-wb-composer-row": "" },
+    react3.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbPlus",
+        title: "上传文件和更多工具",
+        "aria-expanded": sheetOpen ? "true" : "false",
+        onClick: () => setSheetOpen((v) => !v),
+        "data-wb-plus": ""
+      },
+      "+"
+    ),
+    sheet,
     react3.createElement("textarea", {
       className: "dshWbComposerInput",
       ref: draftRef,
@@ -1185,6 +1284,16 @@ async function readShape() {
     return state && typeof state === "object" ? state : null;
   } catch {
     return null;
+  }
+}
+async function openSettings(globalThisRef = typeof window === "undefined" ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell;
+  if (!bridge || typeof bridge.openSettings !== "function") return { ok: false, error: "no-shell-bridge" };
+  try {
+    const result = await bridge.openSettings();
+    return result && typeof result === "object" ? result : { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
   }
 }
 async function requestWindowClose(globalThisRef = typeof window === "undefined" ? null : window) {
@@ -1308,10 +1417,42 @@ function WorkbenchChrome() {
     }
     setOpen(false);
   };
+  const backToWide = async () => {
+    const result = await requestShape("normal");
+    if (result.ok) setShape("normal");
+  };
   const bar = !isStrip ? null : react4.createElement(
     "div",
     { className: "dshWbBar", "data-wb-bar": "", "data-wb-bar-shape": shape },
-    react4.createElement("span", { className: "dshWbBarTitle" }, T.homeTitle),
+    react4.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBarBtn",
+        onClick: () => void backToWide(),
+        title: T.btnBackWide,
+        "aria-label": T.btnBackWide,
+        "data-wb-btn": "back"
+      },
+      "←"
+    ),
+    react4.createElement(
+      "span",
+      { className: "dshWbBarTitle", "data-wb-bar-who": "" },
+      `${T.entry}${active ? ` · ${activeLabel}` : ""}`
+    ),
+    react4.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBarBtn",
+        onClick: () => openSettings(),
+        title: T.btnSettings,
+        "aria-label": T.btnSettings,
+        "data-wb-btn": "settings"
+      },
+      "⚙"
+    ),
     react4.createElement(
       "button",
       {
@@ -1471,7 +1612,11 @@ function WorkbenchChrome() {
           "aside",
           { className: "dshWbChat", "data-wb-chat": "", "aria-label": T.chatTitle },
           react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
-          react4.createElement(ConversationTile, { onBack: backToChat })
+          react4.createElement(ConversationTile, {
+            onBack: backToChat,
+            modes,
+            onPickMode: (id) => void switchMode(registry2, id)
+          })
         ),
         // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
         isStrip ? null : modes.length === 0 ? react4.createElement(
@@ -1530,7 +1675,14 @@ function WorkbenchChrome() {
               "data-wb-seam-delay": String(delay)
             },
             react4.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
-            react4.createElement("span", { className: "dshWbSeamText" }, mode.label)
+            // 状态点（原型 `.st`）：当前模式实心，其余空心——状态不只靠颜色，旁边还有 tag 文字
+            react4.createElement("span", {
+              className: `dshWbSeamSt${mode.active ? " is-active" : ""}`,
+              "data-wb-seam-st": mode.active ? "active" : "ready",
+              "aria-hidden": "true"
+            }),
+            react4.createElement("span", { className: "dshWbSeamText" }, mode.label),
+            mode.active ? react4.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
           );
         })
       )

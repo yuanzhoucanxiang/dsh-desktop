@@ -65,8 +65,11 @@ export function telemetryOf(values) {
   const contextWindow = num(pressure?.contextWindow)
   const contextPercent =
     pressureTokens !== null && contextWindow && contextWindow > 0 ? (pressureTokens / contextWindow) * 100 : null
+  // 模型名：投影里的 `modelSelection`（真内核有；没有就如实不显示，不编造）
+  const selection = asObject(v?.modelSelection)
+  const model = String(selection?.name || selection?.model || selection?.id || '').trim() || null
 
-  return { tokensPerSecond, cacheHitPercent, contextPercent, pressureTokens, contextWindow }
+  return { tokensPerSecond, cacheHitPercent, contextPercent, pressureTokens, contextWindow, model }
 }
 
 /**
@@ -137,9 +140,18 @@ function round(value, digits = 0) {
   return Math.round(value * factor) / factor
 }
 
+/** token 数的紧凑写法（原型状态条是 `12.3k/128k` 这种形状）。 */
+function tokens(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  if (value >= 10000) return `${Math.round(value / 1000)}k`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
+  return String(value)
+}
+
 /**
- * 三条文案：算得出来给数字 + 单位；算不出来给"还没有"+**原因**（guide §5：状态要有具体原因，
+ * 三条文案 + 模型名：算得出来给数字 + 单位；算不出来给"还没有"+**原因**（guide §5：状态要有具体原因，
  * 不能只靠颜色，也不能留一句没有出路的空话）。
+ * 上下文这条按原型给 `已用/窗口`（两个数都有时）+ `ratio`（0..1，给进度条用）。
  */
 export function formatTelemetry(t) {
   const speed =
@@ -148,14 +160,19 @@ export function formatTelemetry(t) {
       : { text: '⚡ 还没数据', title: '这条会话还没有流式输出过，所以算不出解码速度' }
   const cache =
     t?.cacheHitPercent !== null && t?.cacheHitPercent !== undefined
-      ? { text: `缓存 ${round(t.cacheHitPercent)}%`, title: '缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）' }
-      : { text: '缓存 还没数据', title: '这条会话还没有带用量的请求，所以算不出命中率' }
+      ? { text: `缓存命中 ${round(t.cacheHitPercent)}%`, title: '缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）' }
+      : { text: '缓存命中 还没数据', title: '这条会话还没有带用量的请求，所以算不出命中率' }
+  const used = tokens(t?.pressureTokens)
+  const window_ = tokens(t?.contextWindow)
   const context =
     t?.contextPercent !== null && t?.contextPercent !== undefined
       ? {
-          text: `上下文 ${round(t.contextPercent)}%`,
+          // 原型形状：`上下文 12.3k/128k`；窗口大小缺席时退回百分比（不编造分母）
+          text: used && window_ ? `上下文 ${used}/${window_}` : `上下文 ${round(t.contextPercent)}%`,
+          ratio: Math.max(0, Math.min(1, t.contextPercent / 100)),
           title: `占用 ${t.pressureTokens} / 窗口 ${t.contextWindow} token（内核 contextPressure 投影）`,
         }
-      : { text: '上下文 未上报', title: '内核还没给出这条会话的上下文占用或窗口大小，所以不显示百分比' }
-  return { speed, cache, context }
+      : { text: '上下文 未上报', ratio: 0, title: '内核还没给出这条会话的上下文占用或窗口大小，所以不显示用量' }
+  const model = t?.model ? { text: t.model, title: '当前会话选用的模型（内核 modelSelection 投影）' } : null
+  return { speed, cache, context, model }
 }

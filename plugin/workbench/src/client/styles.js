@@ -27,9 +27,10 @@ export const CSS = [
   '.dshWbChatSession{min-width:0;flex:1;}',
   '.dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-  // 状态条（输入框下那条窄条）：三个指标各占一段，读不到就如实写"还没数据"+原因（title）
-  '.dshWbStrip{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}',
-  '.dshWbStripItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}',
+  // 状态条（输入框下那条窄条）：三指标 + 上下文进度条 + 模型名；读不到就如实写"还没数据"+原因（title）
+  // （类名 2026-10-13 从 `.dshWbStrip*` 改成 `.dshWbMeter*`，对齐原型 `.meter` 的形状）
+  '.dshWbMeter{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}',
+  '.dshWbMeterItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}',
   // 真聊天瓷砖（只读转录）：最多几条 + 角色标签，长文截断，绝不撑破窄窗
   '.dshWbChatLog{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:auto;margin-top:8px;padding-right:2px;}',
   '.dshWbChatLine{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:17px;}',
@@ -126,10 +127,35 @@ export const CSS = [
   '.dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}',
   '.dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
   '.dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}',
+  // 状态点（原型 `.st`）+ 当前标记：点表示状态、文字再说明一次（状态不只靠颜色）
+  '.dshWbSeamSt{flex:none;width:6px;height:6px;margin-left:6px;border-radius:999px;border:1px solid var(--dsw-alias-label-tertiary);}',
+  '.dshWbSeamSt.is-active{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}',
+  '.dshWbSeamTag{flex:none;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}',
+  '.dshWbSeam.is-open .dshWbSeamItem .dshWbSeamTag{display:none;}',
   '.dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}',
   '.dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}',
   '.dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
   '.dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}',
+  // 状态条（原型 `.meter`）：三指标 + 上下文进度条 + 模型名
+  '.dshWbMeter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}',
+  '.dshWbMeterItem{white-space:nowrap;}',
+  '.dshWbMeterBar{flex:none;width:56px;height:4px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;}',
+  '.dshWbMeterBar i{display:block;height:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;}',
+  '.dshWbMeterModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;}',
+  // 输入区左侧「+」与其弹层（原型 `.plus` / `.sheet`）
+  '.dshWbComposer{position:relative;display:flex;align-items:flex-end;gap:8px;}',
+  '.dshWbPlus{flex:none;width:30px;height:30px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:16px;line-height:1;cursor:pointer;}',
+  '.dshWbPlus:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  '.dshWbSheet{position:absolute;left:0;bottom:38px;z-index:2;display:flex;flex-direction:column;gap:2px;min-width:180px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.28);}',
+  '.dshWbSheetCap{padding:2px 6px;font-size:11px;color:var(--dsw-alias-label-tertiary);}',
+  '.dshWbSheetItem{display:block;width:100%;padding:6px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;text-align:left;cursor:pointer;}',
+  '.dshWbSheetItem:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  '.dshWbSheetItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
+  '.dshWbSheetItem:disabled{opacity:.5;cursor:not-allowed;}',
+  '.dshWbSheetSep{height:1px;margin:6px 4px;background:var(--dsw-alias-border-l1);}',
+  '.dshWbSheetEmpty{padding:4px 8px;font-size:12px;color:var(--dsw-alias-label-tertiary);}',
+  // 对话里的日期分隔（原型 `.day`）
+  '.dshWbChatDay{align-self:center;padding:2px 10px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:11px;color:var(--dsw-alias-label-tertiary);}',
 ].join('')
 
 export function ensureCss() {

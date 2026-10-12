@@ -21,7 +21,7 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
-import { getShapeBridge, readShape, requestShape, requestWindowClose } from './shell-shape.js'
+import { getShapeBridge, openSettings, readShape, requestShape, requestWindowClose } from './shell-shape.js'
 
 /** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
 const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
@@ -175,12 +175,47 @@ export function WorkbenchChrome() {
     }
     setOpen(false)
   }
+  // 顶栏（原型 `.topbar`）：← 回宽窗主屏 / 中间"工作台·当前" / ⚙ 设置 / — 小条 / ⎋ 退出 / ✕ 关窗。
+  // ← 与 ⎋ 的区别：← **只是把窗口变回宽窗**（主屏还在，瓷砖格随之出现 = 原型的"工作区选择"），
+  // ⎋ 才是退出工具台（有模式在场时先过同一套守卫）。
+  const backToWide = async () => {
+    const result = await requestShape('normal')
+    if (result.ok) setShape('normal')
+  }
   const bar = !isStrip
     ? null
     : react.createElement(
         'div',
         { className: 'dshWbBar', 'data-wb-bar': '', 'data-wb-bar-shape': shape },
-        react.createElement('span', { className: 'dshWbBarTitle' }, T.homeTitle),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBarBtn',
+            onClick: () => void backToWide(),
+            title: T.btnBackWide,
+            'aria-label': T.btnBackWide,
+            'data-wb-btn': 'back',
+          },
+          '←',
+        ),
+        react.createElement(
+          'span',
+          { className: 'dshWbBarTitle', 'data-wb-bar-who': '' },
+          `${T.entry}${active ? ` · ${activeLabel}` : ''}`,
+        ),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBarBtn',
+            onClick: () => openSettings(),
+            title: T.btnSettings,
+            'aria-label': T.btnSettings,
+            'data-wb-btn': 'settings',
+          },
+          '⚙',
+        ),
         react.createElement(
           'button',
           {
@@ -353,7 +388,11 @@ export function WorkbenchChrome() {
           'aside',
           { className: 'dshWbChat', 'data-wb-chat': '', 'aria-label': T.chatTitle },
           react.createElement('div', { className: 'dshWbChatHead' }, T.chatTitle),
-          react.createElement(ConversationTile, { onBack: backToChat }),
+          react.createElement(ConversationTile, {
+            onBack: backToChat,
+            modes,
+            onPickMode: (id) => void switchMode(registry, id),
+          }),
         ),
         // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
         isStrip
@@ -421,7 +460,14 @@ export function WorkbenchChrome() {
                       'data-wb-seam-delay': String(delay),
                     },
                     react.createElement('span', { className: 'dshWbSeamGlyph', 'aria-hidden': 'true' }, mode.label.slice(0, 1) || '·'),
+                    // 状态点（原型 `.st`）：当前模式实心，其余空心——状态不只靠颜色，旁边还有 tag 文字
+                    react.createElement('span', {
+                      className: `dshWbSeamSt${mode.active ? ' is-active' : ''}`,
+                      'data-wb-seam-st': mode.active ? 'active' : 'ready',
+                      'aria-hidden': 'true',
+                    }),
                     react.createElement('span', { className: 'dshWbSeamText' }, mode.label),
+                    mode.active ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current) : null,
                   )
                 }),
               ),

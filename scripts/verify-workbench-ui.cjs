@@ -150,12 +150,16 @@ app.whenReady().then(async () => {
     window.__shapeLog = [];
     window.__overlayLog = [];
     window.__closeCalls = 0;
+    window.__settingsCalls = 0;
     window.dshShell = {
       getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false }),
       setWorkbenchShape: async (s) => {
         window.__shapeLog.push(s);
         return { ok: true, shape: s, alwaysOnTop: s !== 'normal' };
       },
+      // 顶栏「⚙」（2026-10-13）：走壳既有的设置通道，假桥只记调用次数
+      // （注意：这一段在 HTML 模板字符串里，注释**不能出现反引号**——会把模板截断，2026-10-13 踩过）
+      openSettings: async () => { window.__settingsCalls += 1; return { ok: true } },
       // 浮标已于 2026-10-13 移除（用户："这个浮标没有用就去掉"）：假桥**不再提供**这两个方法，
       // 门面若还偷偷调用会当场抛错；下面另有守卫断言钉"一次都没调过"。
       closeWorkbenchWindow: async () => { window.__closeCalls += 1; return { ok: true } },
@@ -293,8 +297,14 @@ app.whenReady().then(async () => {
   )
   await waitFor(`(document.querySelector('[data-wb-chat-session]')||{}).textContent==='归乡记讨论'`, '有标题的会话应显示标题')
   await waitFor(`(document.querySelector('[data-wb-metric="speed"]')||{}).textContent==='⚡ 38 tok/s'`, 'tok/s 应按内核口径算出真数')
-  assert.equal(await text('[data-wb-metric="cache"]'), '缓存 92%', '缓存命中率 = cacheRead ÷ (uncached+cacheRead)')
-  assert.equal(await text('[data-wb-metric="context"]'), '上下文 23%', '上下文占用 = pressureTokens ÷ contextWindow')
+  assert.equal(await text('[data-wb-metric="cache"]'), '缓存命中 92%', '缓存命中率 = cacheRead ÷ (uncached+cacheRead)')
+  // 上下文按原型给 `已用/窗口`（15000/64000 → 15k/64k），并给进度条一个 0..100 的填充值
+  assert.equal(await text('[data-wb-metric="context"]'), '上下文 15k/64k', '上下文按原型给 已用/窗口')
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-meter-fill]').getAttribute('data-wb-meter-fill')`),
+    '23',
+    '进度条填充 = 占用比（15000/64000 ≈ 23%）',
+  )
   const telemetrySource = await evaluate(
     `(document.querySelector('[data-wb-strip]')||{}).getAttribute?document.querySelector('[data-wb-strip]').getAttribute('data-wb-telemetry'):null`,
   )
@@ -378,15 +388,14 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-active-label]')!==null`, '入口应显示当前模式名')
   assert.equal(await text('[data-wb-active-label]'), '演示模式')
 
-  // ③e 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出并还原 / `✕` 走既有关窗语义）。
-  // 三条纪律各自都有对应断言：门面**只申请档位**（不自己搬窗口）、`✕` **不顺手改形态**（窗口只是藏起来）、
-  // 三钮是**原生 button 且带 title**（键盘可达、说不清就可见）。档位判据用"本组起点之后的尾巴"，
-  // 免得被前面 ③d 的申请史干扰（也提醒后来人：这一组往 shapeLog 里加的是 mini/strip/normal）。
-  // 先重新打开主屏（③d 收尾时已经进入 demo、主屏关着），并等壳回读把形态定下来再判三钮
+  // ③e 长条自绘顶栏**五钮**（2026-10-13 起对齐原型 `.topbar`：← 回宽窗主屏 / ⚙ 设置 / — 小条 /
+  // ⎋ 退出并还原 / ✕ 走既有关窗语义）。纪律各自有断言：门面**只申请档位**（不自己搬窗口）、
+  // `✕` **不顺手改形态**（窗口只是藏起来）、五钮都是**原生 button 且带 title**。
+  // 档位判据用"本组起点之后的尾巴"，免得被前面 ③d 的申请史干扰。
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '重新打开主屏')
-  await waitFor(`document.querySelector('[data-wb-bar]')!==null`, '条状形态应自绘顶栏三钮')
-  const shapeBase = await evaluate('window.__shapeLog.length')
+  await waitFor(`document.querySelector('[data-wb-bar]')!==null`, '条状形态应自绘顶栏')
+  let shapeBase = await evaluate('window.__shapeLog.length')
   const overlayBase = await evaluate('window.__overlayLog.length')
   const shapeTail = async () => (await evaluate('window.__shapeLog')).slice(shapeBase)
   const overlayTail = async () => (await evaluate('window.__overlayLog')).slice(overlayBase)
@@ -396,10 +405,26 @@ app.whenReady().then(async () => {
         return JSON.stringify({ kinds: b.map((x) => x.getAttribute('data-wb-btn')), tags: b.map((x) => x.tagName), titles: b.map((x) => x.title) }); })()`,
     ),
   )
-  assert.deepEqual(barInfo.kinds, ['mini', 'exit', 'close'], `三钮齐备且语义可辨：${JSON.stringify(barInfo.kinds)}`)
-  assert.ok(barInfo.tags.every((t) => t === 'BUTTON'), `三钮必须是原生 button（Tab 可达）：${JSON.stringify(barInfo.tags)}`)
-  assert.ok(barInfo.titles.every((t) => t && t.length > 3), `三钮都要有说得清的 title：${JSON.stringify(barInfo.titles)}`)
+  assert.deepEqual(barInfo.kinds, ['back', 'settings', 'mini', 'exit', 'close'], `五钮齐备且语义可辨：${JSON.stringify(barInfo.kinds)}`)
+  assert.ok(barInfo.tags.every((t) => t === 'BUTTON'), `五钮必须是原生 button（Tab 可达）：${JSON.stringify(barInfo.tags)}`)
+  assert.ok(barInfo.titles.every((t) => t && t.length > 3), `五钮都要有说得清的 title：${JSON.stringify(barInfo.titles)}`)
   assert.equal(await evaluate(`(document.querySelector('[data-wb-bar]')||{}).getAttribute?.('data-wb-bar-shape')`), 'strip')
+  // ⚙ 走壳既有的设置通道：假桥记一笔（**必须在 ← 之前**——← 会收掉顶栏，那时就没有 ⚙ 了）
+  await click('[data-wb-btn="settings"]')
+  await waitFor(`window.__settingsCalls===1`, '⚙ 应调用壳的设置通道')
+  // ← 与 ⎋ 的区别：← 只把窗口变回宽窗（主屏还在、瓷砖格回来），**不退出工具台**
+  await click('[data-wb-btn="back"]')
+  await waitFor(`document.querySelector('[data-wb-bar]')===null`, '← 应退出条状（顶栏随之收起）')
+  assert.deepEqual(await shapeTail(), ['normal'], '← 只申请 normal')
+  assert.equal(await count('[data-wb-switcher]'), 1, '← 不该关掉主屏')
+  assert.equal(await count('[data-wb-tiles]'), 1, '回到宽窗后瓷砖格应回来（原型的"工作区选择"）')
+  // 回到条状：走门面自己的路径（关主屏再开 → open 变化 → 重新申请 strip），别直接改假桥的状态
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '先关掉宽窗主屏')
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-bar]')!==null`, '应回到条状顶栏')
+  // **重新取基线**：上面 ← / ⚙ / 重开主屏都会往形态日志里写，后面几组要按"本组起点"判
+  shapeBase = await evaluate('window.__shapeLog.length')
 
   // 先在输入框里留一段**没发出去**的字：`—` 会整块卸载对话列，这正是最容易吞字的地方。
   // 必须走**原型上的原生 setter** 再派发 input：React 在无控组件上装了 value tracker，
@@ -437,6 +462,37 @@ app.whenReady().then(async () => {
       '接缝里当前模式要标出来',
     )
     // 点击行为放到 ④/⑤/⑥（那时有两个模式，才谈得上"切到另一个"）——这里只钉"列全 + 标当前"
+    // 状态点 + 当前标记（原型 `.st` / `em.tag`）：状态不只靠颜色，文字再说明一次
+    assert.equal(
+      await evaluate(`document.querySelectorAll('[data-wb-seam-st="active"]').length`),
+      1,
+      '接缝里当前模式的状态点要标成 active',
+    )
+    assert.equal(
+      await evaluate(`document.querySelectorAll('[data-wb-seam-tag="active"]').length`),
+      1,
+      '接缝里当前模式要有"当前"文字标记',
+    )
+  }
+  // ③g 「+」弹层（原型 `.sheet`）：上传（还没接，如实禁用）+ 更多工具（= 模式入口）
+  {
+    assert.equal(await count('[data-wb-plus]'), 1, '输入框左侧应有「+」')
+    assert.equal(await count('[data-wb-sheet]'), 0, '弹层默认收起')
+    await click('[data-wb-plus]')
+    await waitFor(`document.querySelector('[data-wb-sheet]')!==null`, '点「+」应展开弹层')
+    const upload = await evaluate(
+      `JSON.stringify((() => { const b = document.querySelector('[data-wb-sheet-upload]'); return b ? { disabled: b.disabled, title: b.title } : null })())`,
+    )
+    const up = JSON.parse(upload)
+    assert.ok(up && up.disabled === true, `上传文件还没接，必须如实禁用：${upload}`)
+    assert.ok(up.title && up.title.length > 3, `禁用的项要说明原因（title）：${upload}`)
+    const sheetModes = await evaluate(
+      `JSON.stringify(Array.from(document.querySelectorAll('[data-wb-sheet-mode]')).map((b) => b.getAttribute('data-wb-sheet-mode')))`,
+    )
+    const all = await evaluate(`JSON.stringify(window.__wbPlugin.__workbenchRegistry().list().map((m) => m.id))`)
+    assert.deepEqual(JSON.parse(sheetModes).sort(), JSON.parse(all).sort(), '「更多工具」要列出全部模式')
+    await click('[data-wb-plus]')
+    await waitFor(`document.querySelector('[data-wb-sheet]')===null`, '再点「+」应收起弹层')
   }
   assert.equal(
     await evaluate(`(document.querySelector('[data-wb-composer]')||{}).value`),
