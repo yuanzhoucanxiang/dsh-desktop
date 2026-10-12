@@ -125,8 +125,9 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
 
 - **壳的"窗口形态"能力已接上第一口**（2026-10-12 刀 2）：外壳提供 `shell:set-workbench-shape`
   （`normal` / `strip` 长条 / `mini` 小条，**只收档位枚举**，几何由主进程按显示器算）、
-  `shell:get-workbench-shape`、`shell:set-workbench-strip-on-top`、推送 `shell:workbench-shape`，
-  桥在 `window.dshShell` 上。工具台侧 `src/client/shell-shape.js` 做**能力探测**，`Chrome.js` 的接线规则：
+  `shell:get-workbench-shape`、`shell:set-workbench-strip-on-top`、**`shell:set-workbench-splice`**、
+  推送 `shell:workbench-shape`，桥在 `window.dshShell` 上。工具台侧 `src/client/shell-shape.js` 做**能力探测**，
+  `Chrome.js` 的接线规则：
   **主屏打开 → 申请 `strip`；主屏关闭（含进入模式）→ 还原 `normal`**，且"从没收成条过就绝不发还原"
   （否则会把用户的窗口尺寸/最大化状态乱改回去）。桥缺席（官方壳 / 老安装包 / 探针环境）→
   一个字都不做，主屏照旧全屏（§3.3 降级）。**形态分工（2026-10-13 起，对齐原型 v2.2）**：
@@ -168,6 +169,14 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   `none`·`no-service`（"暂时读不到…"）。**加载态与空态不能混**：`pending` 错报成"还没有消息"
   会让作者以为会话是空的（2026-10-13 修）。**流式态与空态互斥**：正在生成时摆流式态。
   探针按 fixture 逐个验（先 `null` 图验加载态、再空图 + `running:false` 验空态）。
+- **拼接几何（壳侧，2026-10-13）**：`shell:set-workbench-splice`——模式界面要拼在长条旁边时，
+  窗口得跟着变宽。**页面只说"要拼多宽"**（有界标量：`0` = 收起，或 280–760，越界夹住），
+  x / y / 高度全由主进程算；几何规则是**长条右缘不动**（它贴着工作区右缘）、向左加宽
+  （`x -= splice`、`width += splice`；用户拖过的位置记忆存的是长条自己的 x，同样左移）。
+  只对 `strip` 生效，`mini` 下不动窗口但**值留着**，切回长条即恢复。
+  `shapeState()` 回读 `spliceWidth` / `spliceRange`；设置项 `settings.workbenchSplice`。
+  实机门禁 `verify:shell-shape` **J 段**判五件事：+400 且右缘不动 / 越界夹住 / 收起还原 / 非数被拒 / 形态不变。
+  **仍未做**：插件侧的拼接面板（用模式已提供的 `dock` 视图当"可嵌入视图"第一版）与左侧子 agent 对话。
 - **长条右缘接缝·扇形（2026-10-13，原型 v2.2）**：条状形态下渲染 `.dshWbSeam`——贴右缘的把手
   （`⋮`）+ 悬停/聚焦展开的**扇形模式列**（`data-wb-seam` / `data-wb-seam-mode` / `data-wb-seam-fan`）。
   几何按原型：**以接缝为轴心、中间那颗顶到最外**（`SEAM_FAN_OUT=46`，两端按 |t| 线性收窄）、
@@ -178,7 +187,7 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   长条里它是**唯一的模式入口**（瓷砖格已让位），所以没有模式时也有一行说明、不留空白；当前模式标 `is-active`；
   每颗还有**状态点**（`data-wb-seam-st`）与**「当前」文字标记**（`data-wb-seam-tag`）——状态不只靠颜色；
   标签在悬停/聚焦时才展开（收起时 `max-width:0`，不吃点击）。
-  **仍未做**：模式拼接（右侧界面 + 左侧子 agent 对话，要模式交出可嵌入视图 + 壳层拼接几何）。
+  **仍未做**：模式拼接的插件侧（右侧界面 + 左侧子 agent 对话）——壳侧几何已就绪（见上一条「拼接几何」）。
 - **长条顶栏五钮（2026-10-13 对齐原型 `.topbar`）**：条状形态下渲染
   `←` 回宽窗主屏 / `⚙` 设置 / `—` 小条 / `⎋` 退出 / `✕` 关窗，都是原生 `<button>`（带 `title` + `aria-label`）。
   **`←` 与 `⎋` 不是一回事**：`←` 只申请 `normal`（窗口变宽、主屏还在、瓷砖格随之出现 = 原型的"工作区选择"），

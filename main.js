@@ -153,6 +153,7 @@ const DEFAULT_SETTINGS = {
   workbenchShape: 'normal',     // 工作台窗口形态：normal / strip（长条）/ mini（小条）；只由工具台申请
   workbenchStripOnTop: true,    // 长条/小条是否浮在最前（可关）；normal 形态一律不置顶
   workbenchShapeBounds: null,   // { strip:{x,y}, mini:{x,y} } 拖过的位置记忆——**绝不写进 windowBounds**
+  workbenchSplice: 0,           // 拼接宽度（px，0 = 收起，否则 280–760）：只对 strip 生效，见 currentSplice()
   appIcon: 'default',     // 应用图标：default（鲸鱼）/ 内置预设 key / custom（userData 里的副本）
 }
 
@@ -2308,6 +2309,24 @@ const SHAPE_GEOMETRY = {
   mini: { width: 300, height: 168, corner: 'bottom-right' },
 }
 
+/* ─────────── 拼接几何（2026-10-13）：模式界面拼在长条旁边时，窗口要跟着变宽 ───────────
+ *
+ * 纪律与形态档位一致：**页面只说"要拼多宽"，几何由主进程算**（x / y / 高度都在这里定），
+ * 而且宽度是**有界标量**（`0` = 收起，或 280–760，越界就夹住）——页面永远拿不到任意矩形。
+ * 为什么必须壳来做：拼接区在窗口**里面**，窗口不加宽，模式界面就只能挤在 420px 的长条里
+ * （原型里"朝窗外的桌面展开"在真实窗口上画不出来，见 `AGENTS.md` 工具台规则第 2 条）。
+ * 几何规则：长条的**右缘不动**（它贴在工作区右缘），向左加宽 —— x 左移 splice、width 加 splice。
+ * 只有 `strip` 用得上；`mini` 是小条（塞不下拼接区），但**值会留着**，切回 strip 时恢复。
+ */
+const SPLICE_MIN = 280
+const SPLICE_MAX = 760
+
+function currentSplice() {
+  const raw = Number(settings.workbenchSplice)
+  if (!Number.isFinite(raw) || raw <= 0) return 0
+  return Math.max(SPLICE_MIN, Math.min(SPLICE_MAX, Math.round(raw)))
+}
+
 function currentShape() {
   return WORKBENCH_SHAPES.includes(settings.workbenchShape) ? settings.workbenchShape : 'normal'
 }
@@ -2321,15 +2340,17 @@ function shapeBounds(shape) {
     const saved = validBounds(settings.windowBounds)
     return saved || { width: 1360, height: 920 }
   }
-  const width = g.width
+  const splice = shape === 'strip' ? currentSplice() : 0
+  const width = g.width + splice
   const height = g.height || Math.round(area.height * g.heightFactor)
   const mem = settings.workbenchShapeBounds && settings.workbenchShapeBounds[shape]
   const corner =
     g.corner === 'bottom-right'
       ? { x: area.x + area.width - width - 16, y: area.y + area.height - height - 16 }
       : { x: area.x + area.width - width - 16, y: area.y + 16 }
-  const usable = mem && validBounds({ x: mem.x, y: mem.y, width, height })
-  return { ...(usable ? { x: mem.x, y: mem.y } : corner), width, height }
+  const usable = mem && validBounds({ x: mem.x - splice, y: mem.y, width, height })
+  // 记忆里存的是**长条自己**的位置（用户拖过的那条），所以拼接时 x 要左移 splice——右缘保持不动
+  return { ...(usable ? { x: mem.x - splice, y: mem.y } : corner), width, height }
 }
 
 function shapeState() {
@@ -2340,6 +2361,9 @@ function shapeState() {
     bounds: win && !win.isDestroyed() ? win.getBounds() : null,
     contentBounds: win && !win.isDestroyed() ? win.getContentBounds() : null,
     minSize: SHAPE_MIN_SIZE[shape],
+    // 拼接宽度（只对 strip 生效）：页面据此知道"现在拼了多宽"，收起时是 0
+    spliceWidth: shape === 'strip' ? currentSplice() : 0,
+    spliceRange: [SPLICE_MIN, SPLICE_MAX],
     // 自报进程号：实机门禁按它过滤窗口，避免读到**另一个实例**（比如常驻的预览实例）的同名窗口
     pid: process.pid,
     mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
@@ -2375,6 +2399,10 @@ function shapeState() {
  *     上一次"取消置顶"的阶梯可能**在后一次"置顶"之后**才落地，把刚置上的位清掉——阶梯越长、
  *     重叠窗口越大（延长到 2500ms 后这条立刻在实机门禁里现形）。现在**同一窗口只允许最新一次意图
  *     的阶梯存活**：发起新申请时取消旧的（`topmostJobs` 里的 token + 定时器一起清）。
+ *   · **2026-10-13 第二处根因：`isAlwaysOnTop()` 会撒谎**。H 段再次间歇红时，外壳置顶日志**是空的**
+ *     ——说明第一次调用后自报 `true`（阶梯当场收手），而 OS 的 `WS_EX_TOPMOST` 位根本没置上。
+ *     所以**阶梯不再因自报成功提前结束**：盲走完整张表（幂等调用，代价只有几次 `setAlwaysOnTop`），
+ *     落地复核也改成**无条件重申请**。教训：**自报值只能当线索，不能当判据**（门禁那边也一样）。
  */
 const TOPMOST_LEVELS = ['screen-saver', 'pop-up-menu']
 const TOPMOST_RETRY_MS = [0, 120, 300, 700, 1500, 2500]
@@ -2394,38 +2422,46 @@ function enforceTopmost(target, want, label) {
   const attempt = (i) => {
     if (token.cancelled || !target || target.isDestroyed()) return
     try {
+      // 后几刀改"**先关再开**"（toggle kick）：实测单纯 `setAlwaysOnTop(true)` 有时整个窗口生命周期
+      // 都不落地，而先落一次 false 再置 true 会强制系统重算 z-order（2026-10-13 H 段间歇红时加）。
+      if (want && i >= TOPMOST_RETRY_MS.length - 3) target.setAlwaysOnTop(false)
       target.setAlwaysOnTop(want, TOPMOST_LEVELS[i % TOPMOST_LEVELS.length])
     } catch {
       return
     }
-    if (target.isAlwaysOnTop() === want) {
-      // 第一刀就中是常态；补刀成功要留痕，方便实机日志里数到底 flakes 了几次
-      if (i > 0) {
-        log(`置顶第 ${i + 1} 次才落到 OS（${label}，want=${want}）`)
-        broadcastShape()
-      }
-      // **落地之后的有界复核**（2026-10-13）：实机门禁里抓到过"调用当场自报成功、几秒后 OS 位没了"
-      // 的情况（日志为空正是因为阶梯在第一次就收手了）。条状期间按固定几个时点复核，落上就停；
-      // 换形态/新申请会取消本 token，不会互相打架。**有界**，不做常驻看门狗。
-      if (want && i === 0) {
-        for (const ms of [1500, 3000, 5000, 8000]) {
-          timers.push(setTimeout(() => {
-            if (token.cancelled || !target || target.isDestroyed()) return
-            if (target.isAlwaysOnTop() === true) return
-            log(`置顶在 ${ms}ms 复核时发现丢了，重新申请（${label}）`)
-            enforceTopmost(target, true, `${label}/recheck`)
-          }, ms))
-        }
-      }
-      return
+    const selfSays = target.isAlwaysOnTop() === want
+    if (selfSays && i > 0) {
+      // 补刀成功要留痕，方便实机日志里数到底 flakes 了几次
+      log(`置顶第 ${i + 1} 次才落到 OS（${label}，want=${want}）`)
+      broadcastShape()
     }
+    // **阶梯不因"自报成功"提前收手**（2026-10-13 实锤）：H 段红、外壳日志却空——说明第一次调用后
+    // `isAlwaysOnTop()` 报了 true，而 OS 的 WS_EX_TOPMOST 位**根本没置上**（自报会撒谎）。
+    // 所以这里**盲走完整张表**（幂等调用，代价只是几次 setAlwaysOnTop），只在"自报说没成"时补刀日志。
     if (i + 1 >= TOPMOST_RETRY_MS.length) {
-      log(`置顶始终没落到 OS（${label}，want=${want}）——已试 ${TOPMOST_RETRY_MS.length} 次`)
+      if (!selfSays) log(`置顶始终没落到 OS（${label}，want=${want}）——已试 ${TOPMOST_RETRY_MS.length} 次`)
       return
     }
     timers.push(setTimeout(() => attempt(i + 1), TOPMOST_RETRY_MS[i + 1] - TOPMOST_RETRY_MS[i]))
   }
   attempt(0)
+  // **落地之后的有界复核**（2026-10-13）：条状期间按固定几个时点**无条件重申请**（同样不信自报），
+  // 换形态/新申请会取消本 token，不会互相打架。**有界**，不做常驻看门狗。
+  if (want) {
+    for (const ms of [1500, 3000, 5000, 8000]) {
+      timers.push(
+        setTimeout(() => {
+          if (token.cancelled || !target || target.isDestroyed()) return
+          try {
+            target.setAlwaysOnTop(false)
+            target.setAlwaysOnTop(true, TOPMOST_LEVELS[1])
+          } catch {
+            return
+          }
+        }, ms),
+      )
+    }
+  }
 }
 
 
@@ -3160,6 +3196,32 @@ function registerIpc() {
   })
   ipcMain.handle('shell:get-workbench-shape', (event) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+    return { ok: true, ...shapeState() }
+  })
+
+  // 拼接宽度（2026-10-13）：页面只说"要拼多宽"（有界标量：0 = 收起 / 280–760），几何全在主进程算。
+  // 只对 strip 生效；normal 下只记住值（下次进长条时生效），mini 下不动窗口（小条塞不下拼接区）。
+  ipcMain.handle('shell:set-workbench-splice', (event, raw) => {
+    if (!isKernelPageSender(event)) {
+      log('set-workbench-splice: rejected（发送方不是内核页面主帧）')
+      return { ok: false, error: 'only-kernel-page' }
+    }
+    const value = typeof raw === 'number' ? raw : Number(raw && typeof raw === 'object' ? raw.width : raw)
+    if (!Number.isFinite(value)) {
+      log(`set-workbench-splice: rejected（宽度不是数 ${JSON.stringify(raw)}）`)
+      return { ok: false, error: 'bad-width', allowed: { collapse: 0, min: SPLICE_MIN, max: SPLICE_MAX } }
+    }
+    const next = value <= 0 ? 0 : Math.max(SPLICE_MIN, Math.min(SPLICE_MAX, Math.round(value)))
+    settings.workbenchSplice = next
+    saveSettings()
+    if (win && !win.isDestroyed() && currentShape() === 'strip') {
+      const b = shapeBounds('strip')
+      win.setBounds(b)
+      log(`拼接宽度 → ${next}px（窗口 ${b.width}×${b.height} @${b.x},${b.y}）`)
+    } else {
+      log(`拼接宽度 → ${next}px（当前形态 ${currentShape()}，只记住值）`)
+    }
+    broadcastShape()
     return { ok: true, ...shapeState() }
   })
 

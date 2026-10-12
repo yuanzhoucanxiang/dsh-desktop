@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('dshShell', {
   getWorkbenchShape: () => ipcRenderer.invoke('shell:get-workbench-shape'),
   setWorkbenchShape: (shape) => ipcRenderer.invoke('shell:set-workbench-shape', String(shape ?? '')),
   setWorkbenchStripOnTop: (on) => ipcRenderer.invoke('shell:set-workbench-strip-on-top', Boolean(on)),
+  // 拼接宽度（2026-10-13）：只说"要拼多宽"（有界标量，0 = 收起；越界主进程夹住），
+  // 窗口的 x/y/高度仍由主进程算——页面拿不到任意几何。
+  setWorkbenchSplice: (width) => ipcRenderer.invoke('shell:set-workbench-splice', Number(width)),
   // 自绘三钮的 `✕`：只表达"用户按了关闭"，具体是进托盘还是退出，由主进程既有关窗语义决定
   closeWorkbenchWindow: () => ipcRenderer.invoke('shell:close-window'),
   onWorkbenchShape: (cb) => {

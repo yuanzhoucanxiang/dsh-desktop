@@ -64,7 +64,7 @@
 - **克隆/CI 必须取子模块**：`git submodule update --init --recursive`；`.github/workflows/build-macos.yml` 的 checkout 已带 `submodules: recursive`。
 - **门禁归属**：node 层（构建一致性、架构、`test/**`）在插件仓库；**需要外壳运行时的 Electron 端到端门禁留在本仓库**（`scripts/verify-writing-*.cjs`），路径不变、照旧跑。
 
-## 工具台长条线：四条下次直接能用的规则（2026-10-13）
+## 工具台长条线：五条下次直接能用的规则（2026-10-13）
 
 > 细节在 `plugin/workbench/README.md` §六、`docs/plans/workbench-layer-v1.md` §0.1/§6.4.x、
 > `docs/workbench-mode-guide.md`；原型与落差表在 `prototypes/workbench-home/README.md`。
@@ -77,10 +77,15 @@
    要真出窗只能新增壳能力（透明置顶辅助窗 B / 原生菜单 C），而 B 的最小切片已被项目所有者否掉
    （"这个浮标没有用就去掉"）。*为什么*：别再把"窗外的桌面"当画布。
 3. **置顶是 OS 位、不是自报值**：`setAlwaysOnTop` 只有 `screen-saver`/`pop-up-menu` 会真正置位，
-   且**同一窗口只允许最新一次意图的补刀阶梯存活**（旧阶梯会把新位清掉——连续切形态时必现）。
-   门禁读 Win32 `GWL_EXSTYLE`。*为什么*：自报值一路绿而实机全被盖住，这个坑踩过两次。
+   且**同一窗口只允许最新一次意图的补刀阶梯存活**（旧阶梯会把新位清掉——连续切形态时必现）；
+   更狠的一条：**`isAlwaysOnTop()` 自己会撒谎**（报 true 而 OS 位没置上）⇒ 阶梯要**盲走全表**、
+   复核要**无条件重申请**、后几刀用"先关再开"踢一脚。门禁读 Win32 `GWL_EXSTYLE`。
+   *为什么*：自报值一路绿而实机全被盖住，这个坑踩过三次（踩坑速查 #29/#33/#38）。
 4. **探针的 `click()` 点之前先断言元素在**（`scripts/verify-workbench-ui.cjs` 已改）：
    否则报错只有一句 `null.click`，定位成本极高。*为什么*：这一轮为此多花了两轮排查。
+5. **改完 `main.js` / `preload.js` 必须再跑一次 `npm run shell-hardening-test`**：
+   它**不在 `verify:writing-quick` 全链里**，而它钉的正是壳侧不变量——曾出现"改完置顶实现后没再跑，
+   一条断言红了一整轮没人发现"（踩坑 #39）。*为什么*：独立门禁不会因为"别的都绿"而自动跑。
 
 ## 图片素材归档（用户级纪律）
 

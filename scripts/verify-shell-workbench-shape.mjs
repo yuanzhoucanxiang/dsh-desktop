@@ -372,6 +372,40 @@ try {
   // 形态不被顺手改）。这条放在最后做——窗一藏，后面的判据就没法指望了。
   await ev(`window.dshShell.setWorkbenchShape('strip')`)
   await sleep(600)
+
+  // J：**拼接几何**（2026-10-13）：页面只说"要拼多宽"（有界标量），几何由主进程算。
+  // 判据三条：窗口真的变宽了、**右缘不动**（长条贴着工作区右缘，只能往左长）、越界被夹住。
+  {
+    const before = await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ w: s.bounds.width, right: s.bounds.x + s.bounds.width, splice: s.spliceWidth, range: s.spliceRange, shape: s.shape }) })()`)
+    const b0 = JSON.parse(before)
+    const wide = await ev(`window.dshShell.setWorkbenchSplice(400)`)
+    await sleep(700)
+    const after = JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ w: s.bounds.width, right: s.bounds.x + s.bounds.width, splice: s.spliceWidth, shape: s.shape }) })()`))
+    check('J 申请拼接 400：窗口变宽 400、形态仍是长条',
+      wide?.ok === true && after.splice === 400 && Math.abs(after.w - (b0.w + 400)) <= 2 && after.shape === 'strip',
+      JSON.stringify({ before: b0, after, 回包: wide && { ok: wide.ok, spliceWidth: wide.spliceWidth } }))
+    check('J 拼接时长条的**右缘不动**（只能往左长，不许把窗口推出屏幕）',
+      Math.abs(after.right - b0.right) <= 2,
+      JSON.stringify({ 右缘前: b0.right, 右缘后: after.right }))
+    // 越界要夹住（有界标量）：5000 → 760，100 → 280，0 → 收起
+    const clampedHigh = await ev(`window.dshShell.setWorkbenchSplice(5000)`)
+    await sleep(500)
+    const clampedLow = await ev(`window.dshShell.setWorkbenchSplice(100)`)
+    await sleep(500)
+    check('J 拼接宽度是有界标量：越界被夹住（5000→760、100→280）',
+      clampedHigh?.spliceWidth === 760 && clampedLow?.spliceWidth === 280,
+      JSON.stringify({ 上限回包: clampedHigh?.spliceWidth, 下限回包: clampedLow?.spliceWidth, 允许区间: clampedHigh?.spliceRange }))
+    const collapsed = await ev(`window.dshShell.setWorkbenchSplice(0)`)
+    await sleep(700)
+    const back = JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ w: s.bounds.width, right: s.bounds.x + s.bounds.width, splice: s.spliceWidth }) })()`))
+    check('J 收起拼接（0）：窗口回到长条原宽、右缘仍在原处',
+      collapsed?.ok === true && back.splice === 0 && Math.abs(back.w - b0.w) <= 2 && Math.abs(back.right - b0.right) <= 2,
+      JSON.stringify({ 收起回包: collapsed?.spliceWidth, 回到: back, 原: { w: b0.w, right: b0.right } }))
+    // 页面拿不到任意几何：只发宽度这一个数，传对象/字符串要被拒
+    const bad = await ev(`window.dshShell.setWorkbenchSplice('不是数')`)
+    check('J 非数宽度被拒（页面只能发一个标量）', bad?.ok === false && bad?.error === 'bad-width', JSON.stringify(bad))
+  }
+
   const closed = await ev(`window.dshShell.closeWorkbenchWindow()`)
   await sleep(700)
   const pageVis = JSON.parse(await ev(`JSON.stringify({ hidden: document.hidden, vis: document.visibilityState })`))
@@ -393,5 +427,5 @@ if (failures.length) {
   console.log(`SHELL_SHAPE_FAIL ${failures.length} 项未过：${failures.join(', ')}`)
   process.exitCode = 1
 } else {
-  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标已移除 / H 置顶落到 Win32 / I ✕ 走既有关窗语义）')
+  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标已移除 / H 置顶落到 Win32 / I ✕ 走既有关窗语义 / J 拼接几何有界且右缘不动）')
 }
