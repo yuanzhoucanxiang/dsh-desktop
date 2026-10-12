@@ -37,6 +37,11 @@ export const CSS = [
   '.dshWbChatLine.is-user .dshWbChatWho{color:var(--dsw-alias-brand-primary);}',
   '.dshWbChatLine.is-error .dshWbChatWho{color:var(--dsw-alias-state-error-primary);}',
   '.dshWbChatText{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-word;}',
+  // 输入框那一行（长条底部）：文本域 + 发送钮，禁用时靠 placeholder/title 说清出路
+  '.dshWbComposer{flex:none;display:flex;gap:8px;align-items:flex-end;margin-top:8px;}',
+  '.dshWbComposerInput{flex:1;min-width:0;resize:none;padding:7px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;}',
+  '.dshWbComposerInput:disabled{opacity:.55;cursor:not-allowed;}',
+  '.dshWbComposer .dshWbBtn:disabled{opacity:.55;cursor:not-allowed;}',
   // 右侧：瓷砖格（提供 tile 的模式渲染内容窗口；没提供的退化为大按钮卡，保证可达）
   '.dshWbTiles{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-content:start;overflow:auto;padding-bottom:4px;}',
   '.dshWbTile{position:relative;display:flex;flex-direction:column;min-height:220px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden;}',

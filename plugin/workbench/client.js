@@ -341,6 +341,11 @@ var CSS = [
   ".dshWbChatLine.is-user .dshWbChatWho{color:var(--dsw-alias-brand-primary);}",
   ".dshWbChatLine.is-error .dshWbChatWho{color:var(--dsw-alias-state-error-primary);}",
   ".dshWbChatText{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-word;}",
+  // 输入框那一行（长条底部）：文本域 + 发送钮，禁用时靠 placeholder/title 说清出路
+  ".dshWbComposer{flex:none;display:flex;gap:8px;align-items:flex-end;margin-top:8px;}",
+  ".dshWbComposerInput{flex:1;min-width:0;resize:none;padding:7px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;}",
+  ".dshWbComposerInput:disabled{opacity:.55;cursor:not-allowed;}",
+  ".dshWbComposer .dshWbBtn:disabled{opacity:.55;cursor:not-allowed;}",
   // 右侧：瓷砖格（提供 tile 的模式渲染内容窗口；没提供的退化为大按钮卡，保证可达）
   ".dshWbTiles{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-content:start;overflow:auto;padding-bottom:4px;}",
   ".dshWbTile{position:relative;display:flex;flex-direction:column;min-height:220px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden;}",
@@ -928,6 +933,38 @@ function tailMessages(messages, limit = TRANSCRIPT_LIMIT) {
   return list.slice(Math.max(0, list.length - limit));
 }
 
+// plugin/workbench/src/client/chat-send.js
+function sendSurface(sessions2, sessionId) {
+  if (!sessionId) return { canSend: false, session: null, reason: "还没有会话，先在内核界面里发起一段对话。" };
+  let session = null;
+  try {
+    session = sessions2?.binding?.(sessionId)?.session || null;
+  } catch {
+    session = null;
+  }
+  if (!session || typeof session.prompt !== "function") {
+    return { canSend: false, session: null, reason: "这个内核版本没有给出发送面。点下面「回到完整会话」在原处发送。" };
+  }
+  return { canSend: true, session, reason: "" };
+}
+async function dispatchMessage(session, text) {
+  const body = String(text || "").trim();
+  if (!body) return { result: "rejected", code: "empty-body", error: "还没写内容", retainedBody: "" };
+  if (!session || typeof session.prompt !== "function") {
+    return { result: "rejected", code: "no-send-surface", error: "没有发送面", retainedBody: body };
+  }
+  try {
+    const res = await session.prompt([{ type: "text", text: body }], "queue");
+    if (res && res.ok === true) return { result: "accepted", retainedBody: "" };
+    if (res && res.ok === false) {
+      return { result: "rejected", code: String(res.error?.code || "send-rejected"), error: String(res.error?.message || res.error || "内核拒绝了这条消息"), retainedBody: body };
+    }
+    return { result: "uncertain", code: "no-response-shape", error: "发送结果无法核对", retainedBody: body };
+  } catch (err) {
+    return { result: "uncertain", code: String(err?.code || "send-threw"), error: String(err?.message || err), retainedBody: body };
+  }
+}
+
 // plugin/workbench/src/client/ConversationTile.js
 var WHO = { user: "作者", assistant: "助手", detail: "活动", error: "出错" };
 function readSnapshot(sessions2) {
@@ -1006,6 +1043,56 @@ function ConversationTile({ onBack }) {
     react3.createElement("span", { className: "dshWbStripItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text)
   );
   const title = first?.displayTitle ? String(first.displayTitle) : "";
+  const surface = sendSurface(sessions2, sessionId);
+  const draftRef = react3.useRef(null);
+  const [sending, setSending] = react3.useState(false);
+  const send = async () => {
+    const box = draftRef.current;
+    const text = box ? String(box.value || "") : "";
+    if (sending) return;
+    setSending(true);
+    const out = await dispatchMessage(surface.session, text);
+    setSending(false);
+    if (out.result === "accepted") {
+      if (box) box.value = "";
+      return;
+    }
+    setNotice({
+      kind: "warn",
+      text: out.result === "uncertain" ? `这条消息的发送结果没能核对（${out.error}）——你写的内容还留着，可重试；不放心就点「回到完整会话」在原处发。` : `这条消息没发出去（${out.error}）——你写的内容还留着。`
+    });
+  };
+  const composer = first ? react3.createElement(
+    "div",
+    { className: "dshWbComposer", "data-wb-composer-row": "" },
+    react3.createElement("textarea", {
+      className: "dshWbComposerInput",
+      ref: draftRef,
+      rows: 2,
+      placeholder: surface.canSend ? "接着和 agent 说…（Enter 发送，Shift+Enter 换行）" : "现在还不能在这里发送",
+      disabled: !surface.canSend,
+      title: surface.canSend ? "" : surface.reason,
+      "data-wb-composer": "",
+      onKeyDown: (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          void send();
+        }
+      }
+    }),
+    react3.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dshWbBtn is-primary",
+        disabled: !surface.canSend || sending,
+        title: surface.canSend ? "" : surface.reason,
+        onClick: () => void send(),
+        "data-wb-send": ""
+      },
+      sending ? "发送中…" : "发送"
+    )
+  ) : null;
   return react3.createElement(
     "div",
     { className: "dshWbChatCard", "data-wb-chat-card": "", "data-wb-chat-source": transcript.source },
@@ -1018,6 +1105,7 @@ function ConversationTile({ onBack }) {
     logHint,
     // 没有会话时不摆三条"还没数据"——那时该说的只有上面那句空状态，窄条只会添噪。
     first ? strip : null,
+    composer,
     react3.createElement(
       "button",
       { type: "button", className: "dshWbBtn is-primary", onClick: () => void onBack(), "data-wb-chat-back": "" },

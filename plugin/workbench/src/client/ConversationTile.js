@@ -17,6 +17,8 @@ import { T } from './copy.js'
 import { getSessions, getChatService } from './runtime.js'
 import { formatTelemetry, telemetryOf, watchSessionProjections } from './session-telemetry.js'
 import { tailMessages, watchTranscript } from './chat-transcript.js'
+import { dispatchMessage, sendSurface } from './chat-send.js'
+import { setNotice } from './ui-store.js'
 
 /** 转录行的角色标签：状态不只靠颜色（guide §5）。 */
 const WHO = { user: '作者', assistant: '助手', detail: '活动', error: '出错' }
@@ -118,6 +120,64 @@ export function ConversationTile({ onBack }) {
   )
   const title = first?.displayTitle ? String(first.displayTitle) : ''
 
+  // 输入框 + 发送（刀 5）。发送面来自会话句柄的 prompt 原语；没有面就禁用并把出路写在 title 上。
+  const surface = sendSurface(sessions, sessionId)
+  const draftRef = react.useRef(null)
+  const [sending, setSending] = react.useState(false)
+  const send = async () => {
+    const box = draftRef.current
+    const text = box ? String(box.value || '') : ''
+    if (sending) return
+    setSending(true)
+    const out = await dispatchMessage(surface.session, text)
+    setSending(false)
+    if (out.result === 'accepted') {
+      if (box) box.value = ''
+      return
+    }
+    // 非 accepted：**作者写的字一个字都不丢**，说清状态与出路
+    setNotice({
+      kind: 'warn',
+      text:
+        out.result === 'uncertain'
+          ? `这条消息的发送结果没能核对（${out.error}）——你写的内容还留着，可重试；不放心就点「回到完整会话」在原处发。`
+          : `这条消息没发出去（${out.error}）——你写的内容还留着。`,
+    })
+  }
+  const composer = first
+    ? react.createElement(
+        'div',
+        { className: 'dshWbComposer', 'data-wb-composer-row': '' },
+        react.createElement('textarea', {
+          className: 'dshWbComposerInput',
+          ref: draftRef,
+          rows: 2,
+          placeholder: surface.canSend ? '接着和 agent 说…（Enter 发送，Shift+Enter 换行）' : '现在还不能在这里发送',
+          disabled: !surface.canSend,
+          title: surface.canSend ? '' : surface.reason,
+          'data-wb-composer': '',
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              void send()
+            }
+          },
+        }),
+        react.createElement(
+          'button',
+          {
+            type: 'button',
+            className: 'dshWbBtn is-primary',
+            disabled: !surface.canSend || sending,
+            title: surface.canSend ? '' : surface.reason,
+            onClick: () => void send(),
+            'data-wb-send': '',
+          },
+          sending ? '发送中…' : '发送',
+        ),
+      )
+    : null
+
   return react.createElement(
     'div',
     { className: 'dshWbChatCard', 'data-wb-chat-card': '', 'data-wb-chat-source': transcript.source },
@@ -136,6 +196,7 @@ export function ConversationTile({ onBack }) {
     logHint,
     // 没有会话时不摆三条"还没数据"——那时该说的只有上面那句空状态，窄条只会添噪。
     first ? strip : null,
+    composer,
     react.createElement(
       'button',
       { type: 'button', className: 'dshWbBtn is-primary', onClick: () => void onBack(), 'data-wb-chat-back': '' },

@@ -157,7 +157,11 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   `uiConversation.binding(id).target('chat')`、老内核退回会话快照，投影一律经 mode-kit
   `projectChat`（含 `stripInjectedBlocks`——不剥就会把注入给模型的 prompt 端给作者看）。
   卡片常驻 `data-wb-chat-source`（`uiConversation`/`session`/`pending`/`none`/`no-service`/`no-session`）
-  供实机自查。**输入框与发送仍未做**（要发真实消息花额度，单独一段等点头）；
+  供实机自查。**输入框与发送已接**（刀 5）：原语是会话句柄的
+  `prompt([{type:'text',text}], 'queue')`（签名照 mode-kit 生产代码 `adapter.js:765`，不自己发明）；
+  `accepted / rejected / uncertain` 三种结果分开处理——只有 `ok:true` 才清输入框，原生拒绝与
+  "结果不可核"**都一个字不丢作者的正文**，并给可执行出路（重试或回完整会话发）；
+  没有发送面时输入框禁用、理由写在 `title` 上。
   空会话就显示 0 行，不编内容也不编"读不到"。
   **更正（2026-10-12 复核内核代码）**：早前写的"内核会话快照没有时间字段，所以不显示最近"**不成立**——
   内核 `sessions.list` 快照每条记录都带 `updatedAt`（列表本身按它倒序），另有 `running` / `blank` /

@@ -99,6 +99,24 @@ app.whenReady().then(async () => {
           getSnapshot: () => snap,
           subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
         },
+        // 假的会话句柄（刀 5 发送面用）：prompt 的签名照内核
+        // （session.prompt([{ type:'text', text }], 'queue')，见 mode-kit adapter.js:765）。
+        // 注意**故意不提供 retain**：这样遥测仍走"列表行退路"，与真老内核一致。
+        __promptCalls: [],
+        __promptMode: 'ok',
+        binding(id) {
+          const self = this;
+          return {
+            session: {
+              prompt: async (parts, mode) => {
+                self.__promptCalls.push({ parts, mode });
+                if (self.__promptMode === 'reject') return { ok: false, error: { code: 'busy', message: '内核正忙' } };
+                if (self.__promptMode === 'throw') throw new Error('交出去了但没回音');
+                return { ok: true };
+              },
+            },
+          };
+        },
         // 测试注入口子：按 updatedAt 倒序的语义由调用方（下面的断言）自己保证。
         __set(items) {
           const ids = []; const byId = {};
@@ -288,6 +306,34 @@ app.whenReady().then(async () => {
   assert.ok((await text('[data-wb-chat-line="assistant"]')).includes('三个方向'), '助手行应显示正文')
   assert.ok((await text('[data-wb-chat-line="detail"]')).includes('工具活动'), '工具调用要留可见摘要，不能吞掉')
   assert.equal(await count('[data-wb-chat-back]'), 1, '对话列应有「回到完整会话」')
+  // ③f 输入框与发送（刀 5）：有发送面时可发；**参数形状必须是内核原语的形状**（不是我们自己发明的）
+  assert.equal(await count('[data-wb-composer]'), 1, '有会话时应给出输入框')
+  assert.equal(await evaluate(`document.querySelector('[data-wb-send]').disabled`), false, '有发送面时按钮不该禁用')
+  await evaluate(`(() => { const t = document.querySelector('[data-wb-composer]'); t.value = '把结尾改冷一点'; return 1 })()`)
+  await click('[data-wb-send]')
+  await waitFor(`window.__wbSessions.__promptCalls.length===1`, '点发送应调一次内核 prompt')
+  assert.deepEqual(
+    JSON.parse(await evaluate(`JSON.stringify(window.__wbSessions.__promptCalls[0])`)),
+    { parts: [{ type: 'text', text: '把结尾改冷一点' }], mode: 'queue' },
+    '发送必须照内核 prompt(parts, mode) 的形状',
+  )
+  assert.equal(await evaluate(`document.querySelector('[data-wb-composer]').value`), '', 'accepted 后清空输入框')
+  // 原生拒绝（ok:false）：**作者写的字一个字都不丢**，并给出处（写作模式定下的纪律）
+  await evaluate(`window.__wbSessions.__promptMode = 'reject'`)
+  await evaluate(`(() => { const t = document.querySelector('[data-wb-composer]'); t.value = '这段必须留着'; return 1 })()`)
+  await click('[data-wb-send]')
+  await waitFor(`document.querySelector('[data-wb-notice]')!==null`, '拒绝要有说法')
+  assert.equal(await evaluate(`document.querySelector('[data-wb-composer]').value`), '这段必须留着', '拒绝时正文必须留着')
+  assert.ok((await text('[data-wb-notice]')).includes('没发出去'), `拒绝提示要说清状态：${await text('[data-wb-notice]')}`)
+  // 结果不可核（抛异常）：按 uncertain 处理，正文同样留着，且提示里带"回到完整会话"的出路
+  await evaluate(`document.querySelector('[data-wb-notice]').click()`)
+  await evaluate(`window.__wbSessions.__promptMode = 'throw'`)
+  await click('[data-wb-send]')
+  await waitFor(`(document.querySelector('[data-wb-notice]')||{}).textContent?.includes('没能核对')`, '不可核要有说法')
+  assert.equal(await evaluate(`document.querySelector('[data-wb-composer]').value`), '这段必须留着', '不可核时正文必须留着')
+  await evaluate(`document.querySelector('[data-wb-notice]').click(); window.__wbSessions.__promptMode = 'ok'`)
+  assert.ok((await evaluate(`document.querySelector('[data-wb-send]').title`)) === '', '可发送时按钮不该带拒绝理由')
+
   // ③d 长条接线（2026-10-12 刀 2）：主屏一打开就该请壳收成 strip；然后把探针窗口**真**收到 420 宽，
   // 主屏必须竖排（对话列在瓷砖格之上）且不出现横向溢出——这是"长条门面不破版"的几何断言，
   // 光看文案是看不见的（踩坑速查 #21：视觉层要几何 + 图，别只信文本断言）。
