@@ -23,6 +23,9 @@ import { getChatDraft, setChatDraft, setNotice } from './ui-store.js'
 /** 转录行的角色标签：状态不只靠颜色（guide §5）。 */
 const WHO = { user: '作者', assistant: '助手', detail: '活动', error: '出错' }
 
+/** 超过这个长度的气泡默认折三行（点「展开全文」看全文；不再硬截断，一个字都不丢）。 */
+const LONG_TEXT = 180
+
 /** 读会话列表快照（防御：快照Store形状不符就返回 null，组件层如实显示）。 */
 function readSnapshot(sessions) {
   try {
@@ -40,6 +43,8 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions = getSessions()
   const [snap, setSnap] = react.useState(() => readSnapshot(sessions))
   const [sheetOpen, setSheetOpen] = react.useState(false)
+  // 展开过的长消息（按 key 记）：长文默认折三行，点「展开」看全文
+  const [expanded, setExpanded] = react.useState({})
 
   react.useEffect(() => {
     const store = sessions?.list
@@ -107,18 +112,38 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
         react.createElement('div', { className: 'dshWbChatDay', 'data-wb-chat-day': '' }, '今天'),
         // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧；
         // 工具调用走活动行（上面 actLine），不套气泡
-        transcript.messages.map((m) =>
-          m.kind === 'detail' && m.tool
-            ? actLine(m)
-            : react.createElement(
-                'div',
-                { key: m.key, className: `dshWbMsg is-${m.kind}`, 'data-wb-chat-line': m.kind },
-                m.kind !== 'user'
-                  ? react.createElement('span', { className: 'dshWbMsgWho' }, WHO[m.kind] || '会话')
-                  : null,
-                react.createElement('span', { className: 'dshWbMsgBody' }, String(m.text || '').slice(0, 160)),
-              ),
-        ),
+        transcript.messages.map((m) => {
+          if (m.kind === 'detail' && m.tool) return actLine(m)
+          const full = String(m.text || '')
+          const isLong = full.length > LONG_TEXT
+          const open = expanded[m.key] === true
+          return react.createElement(
+            'div',
+            { key: m.key, className: `dshWbMsg is-${m.kind}`, 'data-wb-chat-line': m.kind },
+            m.kind !== 'user' ? react.createElement('span', { className: 'dshWbMsgWho' }, WHO[m.kind] || '会话') : null,
+            react.createElement(
+              'span',
+              {
+                className: `dshWbMsgBody${isLong && !open ? ' is-clamped' : ''}`,
+                'data-wb-msg-open': isLong ? (open ? '1' : '0') : null,
+              },
+              full,
+            ),
+            // 长文折叠：默认三行，点一下展开全文（比原来"硬截断 160 字"诚实——一个字都不丢）
+            isLong
+              ? react.createElement(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dshWbMsgMore',
+                    onClick: () => setExpanded((prev) => ({ ...prev, [m.key]: !open })),
+                    'data-wb-msg-toggle': open ? 'collapse' : 'expand',
+                  },
+                  open ? '收起' : `展开全文（${full.length} 字）`,
+                )
+              : null,
+          )
+        }),
         // 流式态：正在生成时把这一行挂在最下面（带实时 tok/s，读不到就不显示那一段）
         running
           ? react.createElement(
