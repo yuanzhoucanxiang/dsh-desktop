@@ -115,6 +115,17 @@ export const CSS = [
   '.dshWbSetChip.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
   '.dshWbBtn{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;}',
   '.dshWbBtn:hover{background:var(--dsw-alias-interactive-bg-hover);}',
+  // 长条·接缝呼出（原型 v2.2 扇形的第一版）：贴右缘的把手，悬停/聚焦才展开模式列。
+  // 只用令牌；收起态 opacity+visibility 双保险（别只靠 opacity——那还会吃到点击）。
+  '.dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}',
+  '.dshWbSeamGrip{flex:none;padding:10px 3px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}',
+  '.dshWbSeamList{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px 0 0 10px;background:var(--dsw-alias-bg-layer-1);box-shadow:-8px 0 24px rgba(0,0,0,.22);opacity:0;visibility:hidden;transform:translateX(12px);transition:opacity .16s ease-out,transform .16s ease-out,visibility .16s;}',
+  '.dshWbSeam:hover .dshWbSeamList,.dshWbSeam:focus-within .dshWbSeamList{opacity:1;visibility:visible;transform:translateX(0);}',
+  '.dshWbSeamItem{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;}',
+  '.dshWbSeamItem:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  '.dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
+  '.dshWbSeamGlyph{flex:none;width:20px;height:20px;display:grid;place-items:center;border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:11px;}',
+  '.dshWbSeamEmpty{padding:6px 10px;font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}',
 ].join('')
 
 export function ensureCss() {

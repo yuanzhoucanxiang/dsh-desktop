@@ -327,10 +327,10 @@ export function WorkbenchChrome() {
       react.createElement(
         'div',
         { className: 'dshWbHead' },
-        react.createElement('span', { className: 'dshWbTitle' }, T.homeTitle),
+        react.createElement('span', { className: 'dshWbTitle' }, isStrip ? T.chatTitle : T.homeTitle),
         react.createElement('button', { type: 'button', className: 'dshWbClose', onClick: () => setOpen(false), 'data-wb-close': '' }, T.close),
       ),
-      react.createElement('div', { className: 'dshWbHint' }, T.homeHint),
+      isStrip ? null : react.createElement('div', { className: 'dshWbHint' }, T.homeHint),
       active
         ? react.createElement(
             'div',
@@ -347,14 +347,17 @@ export function WorkbenchChrome() {
           react.createElement('div', { className: 'dshWbChatHead' }, T.chatTitle),
           react.createElement(ConversationTile, { onBack: backToChat }),
         ),
-        modes.length === 0
-          ? react.createElement(
-              'div',
-              { className: 'dshWbEmpty', 'data-wb-empty': '' },
-              react.createElement('div', null, T.empty),
-              react.createElement('div', null, T.emptyHint),
-            )
-          : react.createElement('section', { className: 'dshWbTiles', 'data-wb-tiles': '' }, tiles),
+        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
+        isStrip
+          ? null
+          : modes.length === 0
+            ? react.createElement(
+                'div',
+                { className: 'dshWbEmpty', 'data-wb-empty': '' },
+                react.createElement('div', null, T.empty),
+                react.createElement('div', null, T.emptyHint),
+              )
+            : react.createElement('section', { className: 'dshWbTiles', 'data-wb-tiles': '' }, tiles),
       ),
       active
         ? react.createElement(
@@ -364,6 +367,36 @@ export function WorkbenchChrome() {
           )
         : null,
     ),
+    // 接缝呼出（原型 v2.2 扇形的第一版）：悬停/聚焦右缘列出可达模式，点一个进入。
+    // 长条下它是**唯一的模式入口**（瓷砖格已让位），所以没有模式时也要给一行说明，不能留空白。
+    isStrip
+      ? react.createElement(
+          'div',
+          { className: 'dshWbSeam', 'data-wb-seam': '', role: 'group', 'aria-label': T.seamLabel, title: T.seamHint },
+          react.createElement('div', { className: 'dshWbSeamGrip', 'aria-hidden': 'true' }, '⋮'),
+          react.createElement(
+            'div',
+            { className: 'dshWbSeamList' },
+            modes.length === 0
+              ? react.createElement('div', { className: 'dshWbSeamEmpty' }, T.seamEmpty)
+              : modes.map((mode) =>
+                  react.createElement(
+                    'button',
+                    {
+                      key: mode.id,
+                      type: 'button',
+                      className: `dshWbSeamItem${mode.active ? ' is-active' : ''}`,
+                      onClick: () => void switchMode(registry, mode.id),
+                      title: T.switchTo(mode.label),
+                      'data-wb-seam-mode': mode.id,
+                    },
+                    react.createElement('span', { className: 'dshWbSeamGlyph', 'aria-hidden': 'true' }, mode.label.slice(0, 1) || '·'),
+                    react.createElement('span', { className: 'dshWbSeamText' }, mode.label),
+                  ),
+                ),
+          ),
+        )
+      : null,
     toast,
   )
 }

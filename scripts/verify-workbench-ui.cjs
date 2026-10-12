@@ -220,7 +220,11 @@ app.whenReady().then(async () => {
   }
   const count = (selector) => evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`)
   const text = (selector) => evaluate(`(document.querySelector(${JSON.stringify(selector)})||{}).textContent||null`)
-  const click = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+  // 点之前先断言元素在——否则报错只有一句"null.click"，根本看不出是哪一步（2026-10-13 实付过学费）
+  const click = (selector) =>
+    evaluate(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('click target missing: ' + ${JSON.stringify(selector)}); el.click(); return 0 })()`,
+    )
 
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
   await waitFor(`!!window.__wbPlugin && !!window.__wbPlugin.__workbenchRegistry()`, 'client 未加载')
@@ -253,10 +257,13 @@ app.whenReady().then(async () => {
   // ③ 主屏（2026-10-11 起的形态）：点入口开主屏——左列对话瓷砖 + 右侧瓷砖格；主屏本身不改当前模式，
   // 点模式的按钮卡才真正进入（单模式也不再直进：主屏就是目的地，不是"只有一个选项的列表"）。
   // ③ 里从 2026-10-12 起**带真实记录形状**地断言对话列（空列表 / displayTitle / 有标题三种）。
+  // **2026-10-13 形态分工**（对齐原型 v2.2）：壳在位 → 主屏收成长条 → 对话优先、右缘接缝是模式入口，
+  // 瓷砖格只在"没有壳能力"（官方壳/老包/探针假宿主）时出现。所以这里断言长条形态的样子。
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '点入口应打开主屏')
   assert.equal(await count('[data-wb-chat]'), 1, '主屏左列应是对话瓷砖')
-  assert.equal(await count('[data-wb-tiles]'), 1, '主屏右侧应是瓷砖格')
+  assert.equal(await count('[data-wb-tiles]'), 0, '长条形态不摆瓷砖格（对话优先；瓷砖格是宽窗/无壳能力时的 v1 布局）')
+  assert.equal(await count('[data-wb-seam]'), 1, '长条形态应有右缘接缝（模式入口）')
   assert.equal(await count('[data-wb-chat-empty="empty"]'), 1, '有会话服务但列表为空：应如实说明"还没有会话"')
   assert.equal(await count('[data-wb-chat-empty="noservice"]'), 0, '会话服务在位时不该报"服务不可用"')
   // 一条**没有持久标题**的会话：真实内核这种条目只有 displayTitle（title 缺席）。旧实现读 title
@@ -355,13 +362,16 @@ app.whenReady().then(async () => {
   )
   const geo = JSON.parse(narrow)
   assert.ok(geo.cw < 460, `窗口应真的收到 420 宽：clientWidth=${geo.cw}`)
-  assert.ok(geo.chatTop >= 0 && geo.tilesTop > geo.chatTop, `420 宽下主屏应竖排（对话列在上）：${narrow}`)
+  // 2026-10-13：长条里只剩对话（瓷砖格让位给接缝）——所以这里判"对话列在位 + 没有瓷砖格"，
+  // 而不是旧版的"对话列在瓷砖格上方"。
+  assert.ok(geo.chatTop >= 0 && geo.tilesTop === -1, `420 宽长条里应只有对话列、没有瓷砖格：${narrow}`)
+  assert.equal(await count('[data-wb-seam]'), 1, '420 宽长条里接缝（模式入口）要在位')
   assert.ok(geo.overflowX <= 1, `420 宽下不该有横向溢出：${narrow}`)
   win.setContentSize(900, 700)
   await sleep(300)
   assert.equal(await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`), null, '主屏本身不应改当前模式')
-  await click('[data-wb-mode="demo"]')
-  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '点按钮卡应进入模式')
+  await click('[data-wb-seam-mode="demo"]')
+  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '点接缝里的模式应进入它')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
   assert.deepEqual(await evaluate(`window.__shapeLog`), ['strip', 'normal'], '关闭主屏（进入模式）应还原 normal——模式要宽窗')
   assert.equal(await evaluate(`JSON.stringify(window.__act)`), JSON.stringify(['switch']))
@@ -413,8 +423,21 @@ app.whenReady().then(async () => {
   await click('[data-wb-btn="mini"]')
   await waitFor(`document.querySelector('[data-wb-mini]')===null`, '再点一次 `—` 应展开回长条')
   assert.deepEqual(await shapeTail(), ['mini', 'strip'], '展开回 strip')
-  assert.equal(await count('[data-wb-tiles]'), 1, '展开后瓷砖格回来')
+  assert.equal(await count('[data-wb-tiles]'), 0, '长条里不再摆瓷砖格（对话优先，模式入口走右缘接缝——原型 v2.2）')
   assert.deepEqual(await overlayTail(), [], '浮标已移除：展开后也不该申请浮标')
+  // ③f 接缝呼出（原型 v2.2 扇形的第一版）：长条下它是**唯一的模式入口**，必须列出全部模式、能进入
+  {
+    assert.equal(await count('[data-wb-seam]'), 1, '长条应有右缘接缝')
+    const seamModes = await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-seam-mode]')).map((b) => b.getAttribute('data-wb-seam-mode')))`)
+    const allModes = await evaluate(`JSON.stringify(window.__wbPlugin.__workbenchRegistry().list().map((m) => m.id))`)
+    assert.deepEqual(JSON.parse(seamModes).sort(), JSON.parse(allModes).sort(), '接缝要列出全部可达模式')
+    assert.equal(
+      await evaluate(`document.querySelectorAll('[data-wb-seam-mode].is-active').length`),
+      1,
+      '接缝里当前模式要标出来',
+    )
+    // 点击行为放到 ④/⑤/⑥（那时有两个模式，才谈得上"切到另一个"）——这里只钉"列全 + 标当前"
+  }
   assert.equal(
     await evaluate(`(document.querySelector('[data-wb-composer]')||{}).value`),
     '打到一半先收一下',
@@ -444,7 +467,7 @@ app.whenReady().then(async () => {
   // 收尾把状态交还给后续各组：重新进入 demo（④ 断言"任何时刻只有一个当前模式"要它在场）
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '重新打开主屏')
-  await click('[data-wb-mode="demo"]')
+  await click('[data-wb-seam-mode="demo"]')
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '重进 demo 模式')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
 
@@ -453,13 +476,13 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-entry]').getAttribute('data-wb-count')==='2'`, '入口计数应更新')
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '多模式时点入口应弹切换器')
-  assert.equal(await count('[data-wb-mode]'), 2, '切换器应列出两个模式')
-  assert.equal(await count('[data-wb-mode-active="1"]'), 1, '任何时刻只有一个当前模式')
-  assert.equal(await evaluate(`document.querySelector('[data-wb-mode-active="1"]').getAttribute('data-wb-mode')`), 'demo')
+  assert.equal(await count('[data-wb-seam-mode]'), 2, '接缝应列出两个模式（长条下它是唯一入口）')
+  assert.equal(await count('[data-wb-seam-mode].is-active'), 1, '任何时刻只有一个当前模式')
+  assert.equal(await evaluate(`document.querySelector('[data-wb-seam-mode].is-active').getAttribute('data-wb-seam-mode')`), 'demo')
 
   // ⑤ 关闭守卫拒绝：不切换、不自造提示、切换器留在原地
   await evaluate('window.__guardDemo = false')
-  await click('[data-wb-mode="demo2"]')
+  await click('[data-wb-seam-mode="demo2"]')
   await sleep(300)
   assert.equal(await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`), 'demo', '守卫拒绝时不得切换')
   assert.equal(await count('[data-wb-switcher]'), 1, '守卫拒绝后切换器应留在原地（由模式自己说明原因）')
@@ -468,7 +491,7 @@ app.whenReady().then(async () => {
 
   // ⑥ 放行后切换成功，且写进 host 状态文件
   await evaluate('window.__guardDemo = true')
-  await click('[data-wb-mode="demo2"]')
+  await click('[data-wb-seam-mode="demo2"]')
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo2'`, '放行后应切换')
   // 注意：切换成功与切换器关闭不在同一个 tick（setActive 先落 activeId，随后才 setOpen(false)），
   // 所以要**等**它消失——直接断言会撞上竞态（2026-10-11 实测）。
@@ -492,7 +515,9 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('[data-wb-settings-mode]').length===2`, '设置段应列出两个模式')
   assert.ok((await text('[data-wb-settings]')).includes('工具台'))
 
-  // ⑨ 主屏瓷砖：提供了 tile 的模式渲染「主要内容窗口」（运行时组件），没提供的退化为按钮卡
+  // ⑨ 主屏瓷砖：**先摘掉壳的形态能力**（官方壳/老包那条路径）——那时门面不申请 strip，主屏保持宽窗，
+  // 瓷砖格与按钮卡才是这一版的布局；长条形态（壳在位）下它们是让位给接缝的。
+  await evaluate(`(() => { delete window.dshShell.setWorkbenchShape; delete window.dshShell.getWorkbenchShape; return 0 })()`)
   await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
     id:'demo3', label:'第三个模式', order:40,
     tile:{ label:'第三模式', view: () => window.React.createElement('div', {'data-wb-tile-demo':'1'}, '瓷砖内容') },

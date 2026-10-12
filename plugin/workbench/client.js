@@ -418,7 +418,18 @@ var CSS = [
   ".dshWbSetChip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;font-size:12px;color:var(--dsw-alias-label-secondary);}",
   ".dshWbSetChip.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
   ".dshWbBtn{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;}",
-  ".dshWbBtn:hover{background:var(--dsw-alias-interactive-bg-hover);}"
+  ".dshWbBtn:hover{background:var(--dsw-alias-interactive-bg-hover);}",
+  // 长条·接缝呼出（原型 v2.2 扇形的第一版）：贴右缘的把手，悬停/聚焦才展开模式列。
+  // 只用令牌；收起态 opacity+visibility 双保险（别只靠 opacity——那还会吃到点击）。
+  ".dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}",
+  ".dshWbSeamGrip{flex:none;padding:10px 3px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}",
+  ".dshWbSeamList{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px 0 0 10px;background:var(--dsw-alias-bg-layer-1);box-shadow:-8px 0 24px rgba(0,0,0,.22);opacity:0;visibility:hidden;transform:translateX(12px);transition:opacity .16s ease-out,transform .16s ease-out,visibility .16s;}",
+  ".dshWbSeam:hover .dshWbSeamList,.dshWbSeam:focus-within .dshWbSeamList{opacity:1;visibility:visible;transform:translateX(0);}",
+  ".dshWbSeamItem{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;}",
+  ".dshWbSeamItem:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
+  ".dshWbSeamGlyph{flex:none;width:20px;height:20px;display:grid;place-items:center;border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:11px;}",
+  ".dshWbSeamEmpty{padding:6px 10px;font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}"
 ].join("");
 function ensureCss() {
   if (typeof document === "undefined") return;
@@ -513,6 +524,11 @@ var T = {
   tileEnter: (label) => `进入${label}`,
   tileEmpty: "这个模式还没有提供内容窗口；点「进入」打开它的完整界面。",
   dockResize: "拖拽调整辅助坞宽度",
+  // 长条形态的**接缝呼出**（原型 v2.2 扇形的第一版）：悬停右缘列出模式，点一个进入。
+  // 长条里因此不再摆瓷砖格——对话优先，模式入口走接缝（与原型一致；主屏仍然保留瓷砖格）。
+  seamLabel: "模式接缝",
+  seamHint: "悬停右缘呼出模式",
+  seamEmpty: "还没有模式可拼",
   activeNone: "未进入任何模式",
   exit: "退出模式",
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
@@ -1431,10 +1447,10 @@ function WorkbenchChrome() {
       react4.createElement(
         "div",
         { className: "dshWbHead" },
-        react4.createElement("span", { className: "dshWbTitle" }, T.homeTitle),
+        react4.createElement("span", { className: "dshWbTitle" }, isStrip ? T.chatTitle : T.homeTitle),
         react4.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
       ),
-      react4.createElement("div", { className: "dshWbHint" }, T.homeHint),
+      isStrip ? null : react4.createElement("div", { className: "dshWbHint" }, T.homeHint),
       active ? react4.createElement(
         "div",
         { className: "dshWbCtx", "data-wb-context": active },
@@ -1449,7 +1465,8 @@ function WorkbenchChrome() {
           react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
           react4.createElement(ConversationTile, { onBack: backToChat })
         ),
-        modes.length === 0 ? react4.createElement(
+        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
+        isStrip ? null : modes.length === 0 ? react4.createElement(
           "div",
           { className: "dshWbEmpty", "data-wb-empty": "" },
           react4.createElement("div", null, T.empty),
@@ -1462,6 +1479,32 @@ function WorkbenchChrome() {
         react4.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
       ) : null
     ),
+    // 接缝呼出（原型 v2.2 扇形的第一版）：悬停/聚焦右缘列出可达模式，点一个进入。
+    // 长条下它是**唯一的模式入口**（瓷砖格已让位），所以没有模式时也要给一行说明，不能留空白。
+    isStrip ? react4.createElement(
+      "div",
+      { className: "dshWbSeam", "data-wb-seam": "", role: "group", "aria-label": T.seamLabel, title: T.seamHint },
+      react4.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }, "⋮"),
+      react4.createElement(
+        "div",
+        { className: "dshWbSeamList" },
+        modes.length === 0 ? react4.createElement("div", { className: "dshWbSeamEmpty" }, T.seamEmpty) : modes.map(
+          (mode) => react4.createElement(
+            "button",
+            {
+              key: mode.id,
+              type: "button",
+              className: `dshWbSeamItem${mode.active ? " is-active" : ""}`,
+              onClick: () => void switchMode(registry2, mode.id),
+              title: T.switchTo(mode.label),
+              "data-wb-seam-mode": mode.id
+            },
+            react4.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
+            react4.createElement("span", { className: "dshWbSeamText" }, mode.label)
+          )
+        )
+      )
+    ) : null,
     toast
   );
 }
