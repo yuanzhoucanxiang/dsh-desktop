@@ -531,8 +531,53 @@ app.whenReady().then(async () => {
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo3'`, '点「进入」应进入该模式')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入后主屏应关闭')
 
+  // ⑩ 接缝**扇形几何**（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。
+  // 放在最后单独一组：前面各组要验瓷砖（要宽窗），而扇形只在长条形态出现；这里把壳能力装回去、
+  // 再凑够 3 个模式（少于 3 个时"中间最外"没有中间可言，断言会退化成恒真）。
+  await evaluate(`(() => {
+    const s = window.dshShell; const shapes = { shape: 'normal' };
+    s.setWorkbenchShape = async (v) => { shapes.shape = v; return { ok: true, shape: v, alwaysOnTop: v !== 'normal' } };
+    s.getWorkbenchShape = async () => ({ ok: true, shape: shapes.shape, alwaysOnTop: shapes.shape !== 'normal', pid: 1 });
+    return 0
+  })()`)
+  await evaluate(`(() => { const r = window.__wbPlugin.__workbenchRegistry();
+    r.registerMode({ id:'demo4', label:'第四个模式', order:50 });
+    r.registerMode({ id:'demo5', label:'第五个模式', order:60 });
+    return 0 })()`)
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-seam]')!==null`, '装回壳能力后主屏应收成长条并出现接缝')
+  const seamState = await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')`)
+  assert.equal(seamState, '0', '接缝默认收起（不该一上来就摊开）')
+  const fanJson = await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-seam-mode]')).map((b) => ({
+    id: b.getAttribute('data-wb-seam-mode'),
+    out: Number(b.getAttribute('data-wb-seam-out')),
+    y: Number(b.getAttribute('data-wb-seam-y')),
+    delay: Number(b.getAttribute('data-wb-seam-delay')),
+  })))`)
+  const fan = JSON.parse(fanJson)
+  assert.ok(fan.length >= 3, `这一组要至少 3 个模式才谈得上"中间最外"：${fanJson}`)
+  const mid = fan[Math.floor(fan.length / 2)]
+  assert.ok(fan.every((it) => it.out >= 0), `扇形开口不该是负的：${fanJson}`)
+  // **严格**最外：全相等（"一样远"）不算扇形——这一条是反例实证逼出来的（先前写成 <= 时，
+  // 把几何改成常数也能过，等于没锁住）。
+  assert.ok(fan.every((it) => it.out <= mid.out), `中间那颗应顶到最外：${fanJson}`)
+  assert.ok(mid.out > fan[0].out && mid.out > fan[fan.length - 1].out, `两端必须比中间收窄：${fanJson}`)
+  assert.ok(fan.every((it, i) => i === 0 || it.delay >= fan[i - 1].delay), `逐颗错峰应单调不减：${fanJson}`)
+  assert.ok(fan.every((it, i) => i === 0 || it.y >= fan[i - 1].y), `纵向应自上而下排开：${fanJson}`)
+  // 悬停展开：React 的 onMouseEnter 由 mouseover 合成，派发一个冒泡的 mouseover 即可
+  await evaluate(`(() => { document.querySelector('[data-wb-seam]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0 })()`)
+  await waitFor(
+    `document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')==='1'`,
+    '悬停接缝应展开扇形',
+  )
+  await evaluate(`(() => { document.querySelector('[data-wb-seam]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return 0 })()`)
+  await waitFor(
+    `document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')==='0'`,
+    '移开接缝应收起扇形',
+  )
+
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
-  console.log('WORKBENCH_UI_OK 9 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段）')
+  console.log('WORKBENCH_UI_OK 10 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何）')
   await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {

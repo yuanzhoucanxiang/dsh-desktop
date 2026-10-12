@@ -42,3 +42,25 @@
 - **`client.js` 不随插件仓库走**（构建产物）：新克隆先 `npm run build:writing`（`prestart`/`predev`/`build.ps1` 也会自动跑），否则 `plugin/writing-mode/client.js` 不存在，加载它的 Electron 门禁会失败。
 - **克隆/CI 必须取子模块**：`git submodule update --init --recursive`；`.github/workflows/build-macos.yml` 的 checkout 已带 `submodules: recursive`。
 - **门禁归属**：node 层（构建一致性、架构、`test/**`）在插件仓库；**需要外壳运行时的 Electron 端到端门禁留在本仓库**（`scripts/verify-writing-*.cjs`），路径不变、照旧跑。
+
+## 工具台长条线：四条下次直接能用的规则（2026-10-13）
+
+> 细节在 `plugin/workbench/README.md` §六、`docs/plans/workbench-layer-v1.md` §0.1/§6.4.x、
+> `docs/workbench-mode-guide.md`；原型与落差表在 `prototypes/workbench-home/README.md`。
+> 这里只放"下次动手前必须先知道"的部分。
+
+1. **形态分工**：壳在位 → 主屏收成 `strip`（**对话优先，不摆瓷砖格**），模式入口是**右缘接缝**；
+   桥缺席（官方壳/老包/探针假宿主）→ 宽窗主屏 + 瓷砖格。改主屏布局前先问"这是给哪种形态写的"。
+   *为什么*：瓷砖格是为宽窗设计的 v1 布局，塞进 420px 长条必然破版（用户实报过"长条内容不对"）。
+2. **窗外画不了**：窗口边界是硬的，扇形/拼接只能**收在窗口内贴右缘**（plan §12-9 的 A）。
+   要真出窗只能新增壳能力（透明置顶辅助窗 B / 原生菜单 C），而 B 的最小切片已被项目所有者否掉
+   （"这个浮标没有用就去掉"）。*为什么*：别再把"窗外的桌面"当画布。
+3. **置顶是 OS 位、不是自报值**：`setAlwaysOnTop` 只有 `screen-saver`/`pop-up-menu` 会真正置位，
+   且**同一窗口只允许最新一次意图的补刀阶梯存活**（旧阶梯会把新位清掉——连续切形态时必现）。
+   门禁读 Win32 `GWL_EXSTYLE`。*为什么*：自报值一路绿而实机全被盖住，这个坑踩过两次。
+4. **探针的 `click()` 点之前先断言元素在**（`scripts/verify-workbench-ui.cjs` 已改）：
+   否则报错只有一句 `null.click`，定位成本极高。*为什么*：这一轮为此多花了两轮排查。
+
+## 图片素材归档（用户级纪律）
+
+agent 生成/下载的图片素材一律归档 LUMEN（文件夹/标签体系见项目 `AGENTS.md`；本仓库暂无固定文件夹约定）。

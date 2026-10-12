@@ -115,17 +115,21 @@ export const CSS = [
   '.dshWbSetChip.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
   '.dshWbBtn{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;}',
   '.dshWbBtn:hover{background:var(--dsw-alias-interactive-bg-hover);}',
-  // 长条·接缝呼出（原型 v2.2 扇形的第一版）：贴右缘的把手，悬停/聚焦才展开模式列。
-  // 只用令牌；收起态 opacity+visibility 双保险（别只靠 opacity——那还会吃到点击）。
+  // 长条·接缝扇形（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰滑入）。
+  // 窗外画不了（窗口边界是硬的），所以是**窗内扇形**：收起态 opacity+visibility 双保险
+  // （只靠 opacity 还会吃点击），展开态按 --wb-delay 逐颗错峰。
   '.dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}',
   '.dshWbSeamGrip{flex:none;padding:10px 3px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}',
-  '.dshWbSeamList{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px 0 0 10px;background:var(--dsw-alias-bg-layer-1);box-shadow:-8px 0 24px rgba(0,0,0,.22);opacity:0;visibility:hidden;transform:translateX(12px);transition:opacity .16s ease-out,transform .16s ease-out,visibility .16s;}',
-  '.dshWbSeam:hover .dshWbSeamList,.dshWbSeam:focus-within .dshWbSeamList{opacity:1;visibility:visible;transform:translateX(0);}',
-  '.dshWbSeamItem{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;}',
-  '.dshWbSeamItem:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  '.dshWbSeamFan{position:absolute;right:0;top:50%;width:0;height:0;}',
+  '.dshWbSeamItem{position:absolute;right:0;top:0;margin-top:-14px;display:flex;align-items:center;gap:0;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translate(0,calc(var(--wb-y) * 1px));transition:transform .18s ease-out,opacity .18s ease-out,visibility .18s;}',
+  '.dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:translate(calc(var(--wb-out) * -1px),calc(var(--wb-y) * 1px));transition-delay:var(--wb-delay);}',
+  '.dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}',
   '.dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
-  '.dshWbSeamGlyph{flex:none;width:20px;height:20px;display:grid;place-items:center;border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:11px;}',
-  '.dshWbSeamEmpty{padding:6px 10px;font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}',
+  '.dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}',
+  '.dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}',
+  '.dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}',
+  '.dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
+  '.dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}',
 ].join('')
 
 export function ensureCss() {

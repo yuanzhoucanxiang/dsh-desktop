@@ -23,6 +23,11 @@ import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
 import { getShapeBridge, readShape, requestShape, requestWindowClose } from './shell-shape.js'
 
+/** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
+const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
+const SEAM_FAN_GAP = 44 // 相邻两颗的纵向间距（px）
+const SEAM_FAN_STAGGER = 45 // 逐颗错峰的步长（ms）
+
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
 
@@ -61,6 +66,9 @@ export function WorkbenchChrome() {
   // 长条门面接线（2026-10-12 刀 2）：主屏打开 → 请壳把窗口收成条；**收过条才**在关闭时还原
   // （没收成过就发 normal 会把用户的窗口尺寸/最大化状态乱改回去）。桥缺席 → 主屏照旧全屏。
   const [shape, setShape] = react.useState('')
+  // 接缝扇形的开合（悬停/聚焦）。用 React 状态而不是纯 CSS `:hover`：探针能直接读
+  // `data-wb-seam-open` 与逐颗的几何属性，不必去合成鼠标事件猜样式。
+  const [seamOpen, setSeamOpen] = react.useState(false)
   const askedForStrip = react.useRef(false)
   react.useEffect(() => {
     let cancelled = false
@@ -367,34 +375,56 @@ export function WorkbenchChrome() {
           )
         : null,
     ),
-    // 接缝呼出（原型 v2.2 扇形的第一版）：悬停/聚焦右缘列出可达模式，点一个进入。
-    // 长条下它是**唯一的模式入口**（瓷砖格已让位），所以没有模式时也要给一行说明，不能留空白。
+    // 接缝呼出·扇形（原型 v2.2：**以接缝为轴心、中间那颗顶到最外**，逐颗错峰滑入）。
+    // 几何在 JS 里算好、用 CSS 变量摆位——探针可直接读 data-wb-seam-out / -delay 验证这两条。
+    // 窗外画不了（窗口边界是硬的，plan §12-9 的 A/B/C 里已选"收在窗口内贴右缘"），所以是**窗内扇形**。
     isStrip
       ? react.createElement(
           'div',
-          { className: 'dshWbSeam', 'data-wb-seam': '', role: 'group', 'aria-label': T.seamLabel, title: T.seamHint },
+          {
+            className: `dshWbSeam${seamOpen ? ' is-open' : ''}`,
+            'data-wb-seam': '',
+            'data-wb-seam-open': seamOpen ? '1' : '0',
+            'data-wb-seam-count': String(modes.length),
+            role: 'group',
+            'aria-label': T.seamLabel,
+            title: T.seamHint,
+            onMouseEnter: () => setSeamOpen(true),
+            onMouseLeave: () => setSeamOpen(false),
+            onFocus: () => setSeamOpen(true),
+            onBlur: () => setSeamOpen(false),
+          },
           react.createElement('div', { className: 'dshWbSeamGrip', 'aria-hidden': 'true' }, '⋮'),
-          react.createElement(
-            'div',
-            { className: 'dshWbSeamList' },
-            modes.length === 0
-              ? react.createElement('div', { className: 'dshWbSeamEmpty' }, T.seamEmpty)
-              : modes.map((mode) =>
-                  react.createElement(
+          modes.length === 0
+            ? react.createElement('div', { className: 'dshWbSeamEmpty', 'data-wb-seam-empty': '' }, T.seamEmpty)
+            : react.createElement(
+                'div',
+                { className: 'dshWbSeamFan', 'data-wb-seam-fan': '' },
+                modes.map((mode, i) => {
+                  const mid = (modes.length - 1) / 2
+                  const t = mid === 0 ? 0 : (i - mid) / mid // -1（最上）… 0（正中）… 1（最下）
+                  const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t))) // 中间那颗顶到最外
+                  const y = Math.round((i - mid) * SEAM_FAN_GAP)
+                  const delay = i * SEAM_FAN_STAGGER
+                  return react.createElement(
                     'button',
                     {
                       key: mode.id,
                       type: 'button',
                       className: `dshWbSeamItem${mode.active ? ' is-active' : ''}`,
+                      style: { '--wb-out': String(out), '--wb-y': String(y), '--wb-delay': `${delay}ms` },
                       onClick: () => void switchMode(registry, mode.id),
                       title: T.switchTo(mode.label),
                       'data-wb-seam-mode': mode.id,
+                      'data-wb-seam-out': String(out),
+                      'data-wb-seam-y': String(y),
+                      'data-wb-seam-delay': String(delay),
                     },
                     react.createElement('span', { className: 'dshWbSeamGlyph', 'aria-hidden': 'true' }, mode.label.slice(0, 1) || '·'),
                     react.createElement('span', { className: 'dshWbSeamText' }, mode.label),
-                  ),
-                ),
-          ),
+                  )
+                }),
+              ),
         )
       : null,
     toast,

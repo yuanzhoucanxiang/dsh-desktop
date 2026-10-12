@@ -419,17 +419,21 @@ var CSS = [
   ".dshWbSetChip.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
   ".dshWbBtn{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;}",
   ".dshWbBtn:hover{background:var(--dsw-alias-interactive-bg-hover);}",
-  // 长条·接缝呼出（原型 v2.2 扇形的第一版）：贴右缘的把手，悬停/聚焦才展开模式列。
-  // 只用令牌；收起态 opacity+visibility 双保险（别只靠 opacity——那还会吃到点击）。
+  // 长条·接缝扇形（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰滑入）。
+  // 窗外画不了（窗口边界是硬的），所以是**窗内扇形**：收起态 opacity+visibility 双保险
+  // （只靠 opacity 还会吃点击），展开态按 --wb-delay 逐颗错峰。
   ".dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}",
   ".dshWbSeamGrip{flex:none;padding:10px 3px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}",
-  ".dshWbSeamList{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px 0 0 10px;background:var(--dsw-alias-bg-layer-1);box-shadow:-8px 0 24px rgba(0,0,0,.22);opacity:0;visibility:hidden;transform:translateX(12px);transition:opacity .16s ease-out,transform .16s ease-out,visibility .16s;}",
-  ".dshWbSeam:hover .dshWbSeamList,.dshWbSeam:focus-within .dshWbSeamList{opacity:1;visibility:visible;transform:translateX(0);}",
-  ".dshWbSeamItem{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;}",
-  ".dshWbSeamItem:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  ".dshWbSeamFan{position:absolute;right:0;top:50%;width:0;height:0;}",
+  ".dshWbSeamItem{position:absolute;right:0;top:0;margin-top:-14px;display:flex;align-items:center;gap:0;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translate(0,calc(var(--wb-y) * 1px));transition:transform .18s ease-out,opacity .18s ease-out,visibility .18s;}",
+  ".dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:translate(calc(var(--wb-out) * -1px),calc(var(--wb-y) * 1px));transition-delay:var(--wb-delay);}",
+  ".dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}",
   ".dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
-  ".dshWbSeamGlyph{flex:none;width:20px;height:20px;display:grid;place-items:center;border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:11px;}",
-  ".dshWbSeamEmpty{padding:6px 10px;font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;}"
+  ".dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}",
+  ".dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}",
+  ".dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}",
+  ".dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}",
+  ".dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}"
 ].join("");
 function ensureCss() {
   if (typeof document === "undefined") return;
@@ -1195,6 +1199,9 @@ async function requestWindowClose(globalThisRef = typeof window === "undefined" 
 }
 
 // plugin/workbench/src/client/Chrome.js
+var SEAM_FAN_OUT = 46;
+var SEAM_FAN_GAP = 44;
+var SEAM_FAN_STAGGER = 45;
 var NOTICE_MS = 6e3;
 function contextLabelOf(registry2, id) {
   const c = registry2.contextOf(id);
@@ -1219,6 +1226,7 @@ function WorkbenchChrome() {
     return () => window.clearTimeout(timer);
   }, [notice2]);
   const [shape, setShape] = react4.useState("");
+  const [seamOpen, setSeamOpen] = react4.useState(false);
   const askedForStrip = react4.useRef(false);
   react4.useEffect(() => {
     let cancelled = false;
@@ -1479,30 +1487,52 @@ function WorkbenchChrome() {
         react4.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
       ) : null
     ),
-    // 接缝呼出（原型 v2.2 扇形的第一版）：悬停/聚焦右缘列出可达模式，点一个进入。
-    // 长条下它是**唯一的模式入口**（瓷砖格已让位），所以没有模式时也要给一行说明，不能留空白。
+    // 接缝呼出·扇形（原型 v2.2：**以接缝为轴心、中间那颗顶到最外**，逐颗错峰滑入）。
+    // 几何在 JS 里算好、用 CSS 变量摆位——探针可直接读 data-wb-seam-out / -delay 验证这两条。
+    // 窗外画不了（窗口边界是硬的，plan §12-9 的 A/B/C 里已选"收在窗口内贴右缘"），所以是**窗内扇形**。
     isStrip ? react4.createElement(
       "div",
-      { className: "dshWbSeam", "data-wb-seam": "", role: "group", "aria-label": T.seamLabel, title: T.seamHint },
+      {
+        className: `dshWbSeam${seamOpen ? " is-open" : ""}`,
+        "data-wb-seam": "",
+        "data-wb-seam-open": seamOpen ? "1" : "0",
+        "data-wb-seam-count": String(modes.length),
+        role: "group",
+        "aria-label": T.seamLabel,
+        title: T.seamHint,
+        onMouseEnter: () => setSeamOpen(true),
+        onMouseLeave: () => setSeamOpen(false),
+        onFocus: () => setSeamOpen(true),
+        onBlur: () => setSeamOpen(false)
+      },
       react4.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }, "⋮"),
-      react4.createElement(
+      modes.length === 0 ? react4.createElement("div", { className: "dshWbSeamEmpty", "data-wb-seam-empty": "" }, T.seamEmpty) : react4.createElement(
         "div",
-        { className: "dshWbSeamList" },
-        modes.length === 0 ? react4.createElement("div", { className: "dshWbSeamEmpty" }, T.seamEmpty) : modes.map(
-          (mode) => react4.createElement(
+        { className: "dshWbSeamFan", "data-wb-seam-fan": "" },
+        modes.map((mode, i) => {
+          const mid = (modes.length - 1) / 2;
+          const t = mid === 0 ? 0 : (i - mid) / mid;
+          const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t)));
+          const y = Math.round((i - mid) * SEAM_FAN_GAP);
+          const delay = i * SEAM_FAN_STAGGER;
+          return react4.createElement(
             "button",
             {
               key: mode.id,
               type: "button",
               className: `dshWbSeamItem${mode.active ? " is-active" : ""}`,
+              style: { "--wb-out": String(out), "--wb-y": String(y), "--wb-delay": `${delay}ms` },
               onClick: () => void switchMode(registry2, mode.id),
               title: T.switchTo(mode.label),
-              "data-wb-seam-mode": mode.id
+              "data-wb-seam-mode": mode.id,
+              "data-wb-seam-out": String(out),
+              "data-wb-seam-y": String(y),
+              "data-wb-seam-delay": String(delay)
             },
             react4.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
             react4.createElement("span", { className: "dshWbSeamText" }, mode.label)
-          )
-        )
+          );
+        })
       )
     ) : null,
     toast
