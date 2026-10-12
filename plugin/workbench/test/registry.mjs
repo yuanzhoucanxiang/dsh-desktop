@@ -232,7 +232,7 @@ test('对外视图不带内部钩子（只有 UI 需要的字段）', () => {
   const r = createRegistry()
   r.registerMode({ id: 'a', label: 'A', onActivate: () => {}, canDeactivate: () => true })
   const view = r.list()[0]
-  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'id', 'label', 'mount', 'order'])
+  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'hasTile', 'id', 'label', 'mount', 'order'])
 })
 
 test('辅助坞（L2）：dockViewOf 只认带 view 的声明；list() 如实标 hasDock', () => {
@@ -353,6 +353,29 @@ await test('handoff：接收端抛错 → delivered 仍为 true（调用过）�
   assert.equal(result.ok, true)
   assert.equal(result.delivered, false, '抛错不算成功交付')
   assert.equal(r.lastHandoff().delivered, false)
+})
+
+await test('tile：主屏瓷砖视图登记与查询（没提供就如实 null）', async () => {
+  const view = function TileView() {}
+  const r = createRegistry()
+  r.registerMode({ id: 'writing', label: '写作', tile: { label: '写作', view, order: 20 } })
+  r.registerMode({ id: 'gir', label: 'GIR' })
+  const modes = r.list()
+  assert.equal(modes.find((m) => m.id === 'writing').hasTile, true)
+  assert.equal(modes.find((m) => m.id === 'gir').hasTile, false)
+  const tile = r.tileViewOf('writing')
+  assert.equal(tile.id, 'writing')
+  assert.equal(tile.label, '写作')
+  assert.equal(tile.order, 20)
+  assert.equal(tile.view, view, '组件引用要原样传回（运行时值，不是 import）')
+  assert.equal(r.tileViewOf('gir'), null, '没提供 tile 的模式如实返回 null')
+  assert.equal(r.tileViewOf('nobody'), null)
+  assert.equal(r.tileViewOf(null), null)
+  // tile 缺 view → 视为没提供（不给一个点开是空白的瓷砖）
+  const r2 = createRegistry()
+  r2.registerMode({ id: 'bad', label: '坏', tile: { label: '坏' } })
+  assert.equal(r2.list()[0].hasTile, false)
+  assert.equal(r2.tileViewOf('bad'), null)
 })
 
 console.log(`WORKBENCH_REGISTRY_OK ${passed} passed / ${failed} failed`)

@@ -11,23 +11,18 @@ import * as react from 'react'
 import { T } from './copy.js'
 import { toggleOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
-import { switchMode } from './actions.js'
 
 export function WorkbenchEntry() {
-  const { modes, active, context, open, registry } = useWorkbench()
+  const { modes, active, context, open } = useWorkbench()
   if (modes.length === 0) return null
 
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || ''
   // 有上下文就显示"正在做什么"（L1：切模式不丢上下文，入口上也看得见）
   const contextLabel = context ? context.title || context.project || context.path || '' : ''
-  const only = modes.length === 1 ? modes[0] : null
 
   const onClick = () => {
-    // 只有一个模式且它还没激活：点一下就是"进去"，不再让人在只有一个选项的列表里点第二次。
-    if (only && active !== only.id) {
-      void switchMode(registry, only.id)
-      return
-    }
+    // 工具台主屏（2026-10-11 起）：点入口 = 进入/退出主屏，不再为单模式直进——
+    // 主屏本身就是目的地（左对话 + 右瓷砖），不是"只有一个选项的列表"。
     toggleOpen()
   }
 

@@ -48,7 +48,7 @@ __export(entry_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(entry_exports);
-var react6 = __toESM(require("react"), 1);
+var react7 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/registry.js
 var MOUNTS = /* @__PURE__ */ new Set(["overlay", "panel"]);
@@ -83,6 +83,13 @@ function normalizeMode(descriptor, id) {
       view: descriptor.dock.view,
       order: Number.isFinite(descriptor.dock.order) ? Number(descriptor.dock.order) : 100
     } : null,
+    // 主屏瓷砖视图（L2 主屏，可选）：进入工具台主屏时，右侧瓷砖格里渲染这份「主要内容窗口」。
+    // 与 dock 并立：dock 是别人当主视图时的右缘轻视图，tile 是主屏里的内容窗口；同为运行时组件引用。
+    tile: descriptor.tile && typeof descriptor.tile === "object" && descriptor.tile.view ? {
+      label: descriptor.tile.label,
+      view: descriptor.tile.view,
+      order: Number.isFinite(descriptor.tile.order) ? Number(descriptor.tile.order) : 100
+    } : null,
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
     // 会被如实标成 delivered:false（工具台不替它假装收到了）。
     onHandoff: typeof descriptor.onHandoff === "function" ? descriptor.onHandoff : null
@@ -96,7 +103,8 @@ function publicView(mode, activeId) {
     mount: mode.mount,
     active: mode.id === activeId,
     hasContext: mode.context !== null,
-    hasDock: mode.dock !== null
+    hasDock: mode.dock !== null,
+    hasTile: mode.tile !== null
   };
 }
 function sortModes(modes) {
@@ -241,6 +249,12 @@ function createRegistry(options = {}) {
     if (!mode || !mode.dock) return null;
     return { id: mode.id, label: normalizeLabel(mode.dock.label) || mode.id, order: mode.dock.order, view: mode.dock.view };
   }
+  function tileViewOf(id) {
+    const key = id === null || id === void 0 ? null : String(id).trim();
+    const mode = key === null ? null : modes.get(key);
+    if (!mode || !mode.tile) return null;
+    return { id: mode.id, label: normalizeLabel(mode.tile.label) || mode.id, order: mode.tile.order, view: mode.tile.view };
+  }
   function contextOf(id) {
     const key = id === null || id === void 0 ? null : String(id).trim();
     const mode = key === null ? null : modes.get(key);
@@ -290,7 +304,7 @@ function createRegistry(options = {}) {
   function lastHandoff() {
     return lastHandoffRecord;
   }
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe: subscribe2, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf };
+  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe: subscribe2, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf };
 }
 
 // plugin/workbench/src/client/styles.js
@@ -303,20 +317,60 @@ var CSS = [
   ".dshWbEntryGlyph{flex:none;font-size:14px;line-height:1;color:var(--dsw-alias-brand-primary);}",
   ".dshWbEntryLabel{flex:none;}",
   ".dshWbEntryMode{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-tertiary);font-size:12px;}",
-  // 切换器（帧级浮层；浮层本身 click-through，只有面板接指针）
-  ".dshWbScrim{position:fixed;inset:0;z-index:1400;background:transparent;}",
-  ".dshWbPanel{position:absolute;left:12px;bottom:56px;min-width:260px;max-width:min(420px,calc(100vw - 24px));padding:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.32);pointer-events:auto;}",
+  // 主屏（L2 主屏，2026-10-11 项目所有者定形态）：全屏门面——左列对话 + 右侧模式瓷砖格；
+  // z 层 2200：盖过模式浮层（写作 2000 / GIR 60）与辅助坞（2100），打开时盖住、关闭后原样回到。
+  ".dshWbHome{position:fixed;inset:0;z-index:2200;display:flex;background:var(--dsw-alias-bg-base);animation:dshWbIn .16s ease-out;}",
+  "@keyframes dshWbIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
+  "@media (prefers-reduced-motion:reduce){.dshWbHome{animation:none}}",
+  ".dshWbHomePanel{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;padding:20px 24px;overflow:auto;}",
+  ".dshWbHomeBody{flex:1;min-height:0;display:flex;gap:16px;}",
+  // 左列：对话瓷砖（真实但克制的 v1：会话标题 + 回到完整会话；完整聊天交互下一轮）
+  ".dshWbChat{flex:none;width:340px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);padding:14px;}",
+  ".dshWbChatHead{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);}",
+  ".dshWbChatCard{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;}",
+  ".dshWbChatSession{min-width:0;flex:1;}",
+  ".dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
+  // 状态条（输入框下那条窄条）：三个指标各占一段，读不到就如实写"还没数据"+原因（title）
+  ".dshWbStrip{flex:none;display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1);}",
+  ".dshWbStripItem{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default;}",
+  // 真聊天瓷砖（只读转录）：最多几条 + 角色标签，长文截断，绝不撑破窄窗
+  ".dshWbChatLog{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:auto;margin-top:8px;padding-right:2px;}",
+  ".dshWbChatLine{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:17px;}",
+  ".dshWbChatWho{flex:none;padding:1px 5px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px;}",
+  ".dshWbChatLine.is-user .dshWbChatWho{color:var(--dsw-alias-brand-primary);}",
+  ".dshWbChatLine.is-error .dshWbChatWho{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWbChatText{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-word;}",
+  // 右侧：瓷砖格（提供 tile 的模式渲染内容窗口；没提供的退化为大按钮卡，保证可达）
+  ".dshWbTiles{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-content:start;overflow:auto;padding-bottom:4px;}",
+  ".dshWbTile{position:relative;display:flex;flex-direction:column;min-height:220px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden;}",
+  ".dshWbTile.is-active{border-color:var(--dsw-alias-brand-primary);}",
+  ".dshWbTileHead{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);}",
+  ".dshWbTileLabel{flex:1;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWbTileEnter{flex:none;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;padding:3px 9px;cursor:pointer;}",
+  ".dshWbTileEnter:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-brand-primary);}",
+  ".dshWbTileEnter:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
+  ".dshWbTileBody{flex:1;min-height:0;overflow:auto;padding:10px;}",
+  // 窄窗（<900px）对话列收上、瓷砖格收下，不横向挤坏
+  "@media (max-width:900px){.dshWbHomeBody{flex-direction:column;}.dshWbChat{width:auto;flex:none;}}",
   ".dshWbHead{display:flex;align-items:baseline;gap:8px;}",
-  ".dshWbTitle{flex:1;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);}",
+  ".dshWbTitle{flex:1;font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary);}",
   ".dshWbClose{border:none;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:6px;}",
   ".dshWbClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
-  ".dshWbList{display:flex;flex-direction:column;gap:4px;}",
-  ".dshWbRow{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;text-align:left;}",
-  ".dshWbRow:hover{background:var(--dsw-alias-interactive-bg-hover);}",
-  ".dshWbRow.is-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);}",
-  ".dshWbRowLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  ".dshWbRowMark{flex:none;font-size:11px;color:var(--dsw-alias-brand-primary);}",
+  // 模式卡片（2026-10-11 前端轮，中央面板版）：大徽标 + 名称 + 该模式自己上报的「正在做什么」；当前模式品牌色描边
+  ".dshWbList{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}",
+  ".dshWbMode{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:10px;width:100%;min-height:96px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;cursor:pointer;text-align:left;}",
+  ".dshWbMode:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2);}",
+  ".dshWbMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
+  ".dshWbMode.is-active{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWbModeGlyph{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-brand-primary);font-size:16px;font-weight:600;}",
+  ".dshWbMode.is-active .dshWbModeGlyph{border-color:var(--dsw-alias-brand-primary);}",
+  ".dshWbModeBody{min-width:0;display:flex;flex-direction:column;gap:3px;}",
+  ".dshWbModeLabel{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}",
+  ".dshWbModeCtx{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}",
+  ".dshWbRowMark{flex:none;font-size:11px;padding:1px 8px;border:1px solid var(--dsw-alias-brand-primary);border-radius:999px;color:var(--dsw-alias-brand-primary);}",
+  ".dshWbMode .dshWbRowMark{position:absolute;top:10px;right:10px;}",
   ".dshWbEmpty{padding:8px 10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
   // 上下文行（L1）：工具台只汇总与展示，模式自己报"正在做什么"
   ".dshWbCtx{margin:2px 0 2px;padding:6px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
@@ -331,6 +385,9 @@ var CSS = [
   ".dshWbDockClose{flex:none;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:1;padding:4px 7px;cursor:pointer;}",
   ".dshWbDockClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbDockBody{flex:1;min-height:0;overflow:auto;padding:10px;}",
+  // 左缘拖拽把手（2026-10-11 前端轮）：宽度仍由 ui-store 的 clamp(240–720) 与 localStorage 管
+  ".dshWbDockGrip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:ew-resize;pointer-events:auto;}",
+  ".dshWbDockGrip:hover{background:var(--dsw-alias-interactive-bg-hover);box-shadow:inset 1px 0 0 var(--dsw-alias-brand-primary);}",
   ".dshWbDockRail{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2100;padding:10px 6px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:8px 0 0 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer;pointer-events:auto;}",
   ".dshWbDockRail:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbDockRailText{writing-mode:vertical-rl;letter-spacing:.08em;}",
@@ -358,12 +415,26 @@ function ensureCss() {
 
 // plugin/workbench/src/client/runtime.js
 var registry = null;
+var sessions = null;
+var chatService = null;
 function setRegistry(next) {
   registry = next;
 }
 function getRegistry() {
   if (!registry) throw new Error("workbench registry 尚未建立");
   return registry;
+}
+function setSessions(next) {
+  sessions = next && typeof next === "object" ? next : null;
+}
+function getSessions() {
+  return sessions;
+}
+function setChatService(next) {
+  chatService = next && typeof next === "object" ? next : null;
+}
+function getChatService() {
+  return chatService;
 }
 
 // plugin/workbench/src/client/host-api.js
@@ -403,10 +474,10 @@ var T = {
   entry: "工具台",
   settings: "工具台",
   switcherTitle: "创作工具台",
-  switcherHint: "选择一个模式进入；切走时模式自己的守卫会先被问一次。",
+  switcherHint: "选一个模式开始创作；↑↓ 选择、回车进入，Esc 关闭。切走时模式自己的守卫会先被问一次。",
   close: "关闭",
-  empty: "还没有可用的模式。",
-  emptyHint: "写作模式与 GIR 生图模式接入后，会出现在这里。",
+  empty: "还没有模式接入工具台。",
+  emptyHint: "写作、GIR 生图等模式就绪后，会出现在这里。",
   current: "当前",
   contextNow: "正在做",
   noticeDismiss: "点击关闭",
@@ -415,12 +486,23 @@ var T = {
   dockOpen: (label) => `展开${label}的辅助坞`,
   dockCollapse: "收起辅助坞",
   dockPick: "选择坞里显示哪个模式",
+  // 主屏（L2 主屏）：入口打开的就是它——左列对话 + 右侧模式瓷砖格
+  homeTitle: "创作工具台",
+  homeHint: "左边接着和 agent 聊，右边是各模式的内容窗口；点一块进入该模式。",
+  chatTitle: "对话",
+  chatBack: "回到完整会话",
+  chatNoService: "读不到会话（内核会话服务不可用）。",
+  chatEmpty: "还没有会话。关掉主屏，在内核界面里发起一段对话。",
+  chatOpenHint: "当前会话",
+  tileEnter: (label) => `进入${label}`,
+  tileEmpty: "这个模式还没有提供内容窗口；点「进入」打开它的完整界面。",
+  dockResize: "拖拽调整辅助坞宽度",
   activeNone: "未进入任何模式",
   exit: "退出模式",
   switchTo: (label) => `切换到 ${label}`,
   settingsIntro: "工具台是模式的统一门面：入口、切换、互斥与共享上下文都在这里，模式自己的实现不受影响。",
   settingsModes: "已注册的模式",
-  settingsNone: "当前没有模式向工具台注册（写作模式与 GIR 生图模式尚未接入，见 docs/plans/workbench-layer-v1.md 的 P1/P2）。",
+  settingsNone: "当前没有模式向工具台注册。若刚升级过，请确认写作模式 / GIR 生图插件处于启用状态。",
   settingsActive: "当前模式",
   settingsHost: "状态文件",
   settingsHostHint: "状态权威在 host（$DSH_HOME/workbench.json）：跨窗口一致，壳侧热键可读。",
@@ -506,6 +588,13 @@ function setDockOpen(next) {
 function getDockWidth() {
   return dockWidth;
 }
+function setDockWidth(next) {
+  const value = Math.min(720, Math.max(240, Number(next) || dockWidth));
+  if (dockWidth === value) return;
+  dockWidth = value;
+  persistDock();
+  emit();
+}
 function getDockModeId() {
   return dockModeId;
 }
@@ -551,28 +640,13 @@ function useWorkbench() {
   return { ...state, registry: registry2 };
 }
 
-// plugin/workbench/src/client/actions.js
-async function switchMode(registry2, id, reason = "switch") {
-  const result = await registry2.setActive(id, reason);
-  if (result.ok) setOpen(false);
-  return result;
-}
-function exitMode(registry2) {
-  return switchMode(registry2, null, "exit");
-}
-
 // plugin/workbench/src/client/FooterEntry.js
 function WorkbenchEntry() {
-  const { modes, active, context, open: open2, registry: registry2 } = useWorkbench();
+  const { modes, active, context, open: open2 } = useWorkbench();
   if (modes.length === 0) return null;
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || "";
   const contextLabel = context ? context.title || context.project || context.path || "" : "";
-  const only = modes.length === 1 ? modes[0] : null;
   const onClick = () => {
-    if (only && active !== only.id) {
-      void switchMode(registry2, only.id);
-      return;
-    }
     toggleOpen();
   };
   return react2.createElement(
@@ -593,12 +667,394 @@ function WorkbenchEntry() {
 }
 
 // plugin/workbench/src/client/Chrome.js
+var react4 = __toESM(require("react"), 1);
+
+// plugin/workbench/src/client/actions.js
+async function switchMode(registry2, id, reason = "switch") {
+  const result = await registry2.setActive(id, reason);
+  if (result.ok) setOpen(false);
+  return result;
+}
+function exitMode(registry2) {
+  return switchMode(registry2, null, "exit");
+}
+
+// plugin/workbench/src/client/ConversationTile.js
 var react3 = __toESM(require("react"), 1);
+
+// plugin/workbench/src/client/session-telemetry.js
+function asObject(value) {
+  return value && typeof value === "object" ? value : null;
+}
+function usageOf(values) {
+  return asObject(values?.tokenUsage?.totals) || asObject(values?.tokenUsage);
+}
+function num(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function projectionValuesOf(sessions2, sessionId) {
+  if (!sessions2 || !sessionId) return null;
+  try {
+    const snap = sessions2.list?.getSnapshot?.();
+    const record = snap?.byId?.[sessionId];
+    return asObject(record?.projectionValues);
+  } catch {
+    return null;
+  }
+}
+function telemetryOf(values) {
+  const v = asObject(values);
+  const stats = asObject(v?.sessionStats);
+  const usage = usageOf(v);
+  const pressure = asObject(v?.contextPressure);
+  const decodeMs = num(stats?.decodeMs);
+  const decodeTokens = num(stats?.decodeTokens);
+  const tokensPerSecond = decodeMs && decodeMs > 0 && decodeTokens !== null ? decodeTokens / (decodeMs / 1e3) : null;
+  const cacheRead = num(usage?.cacheReadTokens) ?? 0;
+  const promptInput = (num(usage?.uncachedInputTokens) ?? 0) + cacheRead + (num(usage?.cacheWriteTokens) ?? 0);
+  const cacheHitPercent = usage && promptInput > 0 ? cacheRead / promptInput * 100 : null;
+  const pressureTokens = num(pressure?.pressureTokens);
+  const contextWindow = num(pressure?.contextWindow);
+  const contextPercent = pressureTokens !== null && contextWindow && contextWindow > 0 ? pressureTokens / contextWindow * 100 : null;
+  return { tokensPerSecond, cacheHitPercent, contextPercent, pressureTokens, contextWindow };
+}
+function watchSessionProjections(sessions2, sessionId, onChange) {
+  const noop = () => {
+  };
+  if (!sessions2 || !sessionId) return { source: "no-session", dispose: noop };
+  if (typeof sessions2.retain !== "function" || typeof sessions2.binding !== "function") {
+    onChange(projectionValuesOf(sessions2, sessionId));
+    return { source: "list-row", dispose: noop };
+  }
+  let ref = null;
+  try {
+    ref = sessions2.retain(sessionId, { source: "mainView" });
+  } catch {
+    onChange(projectionValuesOf(sessions2, sessionId));
+    return { source: "list-row", dispose: noop };
+  }
+  const store = sessions2.binding?.(sessionId)?.session?.projections;
+  if (!store || typeof store.values !== "function") {
+    try {
+      ref?.release?.();
+    } catch {
+    }
+    return { source: "no-store", dispose: noop };
+  }
+  const sync = () => {
+    try {
+      onChange(store.values());
+    } catch {
+    }
+  };
+  sync();
+  let off = null;
+  try {
+    off = typeof store.subscribeAny === "function" ? store.subscribeAny(sync) : null;
+  } catch {
+    off = null;
+  }
+  return {
+    source: "retained",
+    dispose() {
+      try {
+        if (typeof off === "function") off();
+      } catch {
+      }
+      try {
+        ref?.release?.();
+      } catch {
+      }
+    }
+  };
+}
+function round(value, digits = 0) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+function formatTelemetry(t) {
+  const speed = t?.tokensPerSecond !== null && t?.tokensPerSecond !== void 0 ? { text: `⚡ ${round(t.tokensPerSecond)} tok/s`, title: "解码速度：输出 token ÷ 解码墙钟时间（内核 sessionStats 投影）" } : { text: "⚡ 还没数据", title: "这条会话还没有流式输出过，所以算不出解码速度" };
+  const cache = t?.cacheHitPercent !== null && t?.cacheHitPercent !== void 0 ? { text: `缓存 ${round(t.cacheHitPercent)}%`, title: "缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）" } : { text: "缓存 还没数据", title: "这条会话还没有带用量的请求，所以算不出命中率" };
+  const context = t?.contextPercent !== null && t?.contextPercent !== void 0 ? {
+    text: `上下文 ${round(t.contextPercent)}%`,
+    title: `占用 ${t.pressureTokens} / 窗口 ${t.contextWindow} token（内核 contextPressure 投影）`
+  } : { text: "上下文 未上报", title: "内核还没给出这条会话的上下文占用或窗口大小，所以不显示百分比" };
+  return { speed, cache, context };
+}
+
+// packages/mode-kit/src/harness/projection.js
+var REFERENCE_SEPARATOR = "\n\n--- 供本次讨论参考的稿件快照（可能尚未保存） ---\n";
+function textOf(parts) {
+  return (parts || []).filter((p) => p && (p.kind === "text" || p.type === "text")).map((p) => p.text || "").join("");
+}
+var INJECTED_PREFIXES = ["【写作模式状态】", "【项目备忘"];
+function stripInjectedBlocks(text) {
+  let out = String(text || "");
+  for (let i = 0; i < 4; i++) {
+    const trimmed = out.replace(/^\s+/, "");
+    if (!INJECTED_PREFIXES.some((p) => trimmed.startsWith(p))) break;
+    const nl = trimmed.indexOf("\n\n");
+    out = nl < 0 ? "" : trimmed.slice(nl + 2);
+  }
+  return out.trim();
+}
+function projectChat(chat) {
+  if (!chat) return { messages: [], hasUnknown: false };
+  const nodes = chat.nodes;
+  const order = chat.order || [];
+  const messages = [];
+  let hasUnknown = false;
+  for (const key of order) {
+    const node = nodes && typeof nodes.get === "function" ? nodes.get(key) : nodes ? nodes[key] : null;
+    if (!node || node.visibility === "hidden") continue;
+    const data = node.data || {};
+    if (node.kind === "user" || node.kind === "steering") {
+      const raw = textOf(data.content);
+      const idx = raw.indexOf(REFERENCE_SEPARATOR);
+      const text = stripInjectedBlocks(idx >= 0 ? raw.slice(0, idx) : raw);
+      const reference = idx >= 0 ? raw.slice(idx + REFERENCE_SEPARATOR.length) : void 0;
+      messages.push({ key, kind: "user", text: text || "附件消息（在完整会话中查看）", reference });
+      continue;
+    }
+    if (node.kind === "assistant-step") {
+      const text = textOf(data.blocks);
+      if (text) messages.push({ key, kind: "assistant", text });
+      continue;
+    }
+    if (node.kind === "turn-tail") continue;
+    if (node.kind === "tool-call") {
+      const root = data.root && typeof data.root === "object" ? data.root : data;
+      const result = root.kind === "tool-result" ? root : null;
+      messages.push({
+        key,
+        kind: "detail",
+        text: "工具活动",
+        detail: data,
+        tool: {
+          name: String((result ? result.call?.name : root.name) || ""),
+          callId: String(root.callId || ""),
+          argsRaw: String((result ? result.call?.argsRaw : root.argsRaw) || ""),
+          phase: result ? "result" : String(root.phase || ""),
+          isError: result ? result.isError === true : false
+        }
+      });
+      continue;
+    }
+    if (node.kind === "turn-error") {
+      messages.push({ key, kind: "error", text: data.failure?.message || "这次回复未能完成，请查看完整会话。" });
+      continue;
+    }
+    hasUnknown = true;
+    messages.push({ key, kind: "detail", text: node.kind === "context" ? "补充上下文" : "会话活动", detail: data });
+  }
+  return { messages, hasUnknown };
+}
+
+// plugin/workbench/src/client/chat-transcript.js
+var TRANSCRIPT_LIMIT = 6;
+function asFunction(value) {
+  return typeof value === "function" ? value : null;
+}
+function graphOf(target) {
+  if (!target || typeof target !== "object") return null;
+  const snap = asFunction(target.getSnapshot);
+  const value = snap ? snap.call(target) : target;
+  if (!value || typeof value !== "object") return null;
+  if (value.nodes || Array.isArray(value.order)) return value;
+  if (value.chat && (value.chat.nodes || Array.isArray(value.chat.order))) return value.chat;
+  return null;
+}
+function emptyState(source) {
+  return { source, messages: [], hasUnknown: false };
+}
+function projected(source, graph) {
+  return { source, ...projectChat(graph) };
+}
+function watchTranscript(sessions2, uiConversation, sessionId, onChange) {
+  const offs = [];
+  let closed = false;
+  const dispose = () => {
+    closed = true;
+    while (offs.length) {
+      const off = offs.pop();
+      try {
+        if (typeof off === "function") off();
+      } catch {
+      }
+    }
+  };
+  const notify = (state) => {
+    if (closed || typeof onChange !== "function") return;
+    try {
+      onChange(state);
+    } catch {
+    }
+  };
+  const attach = (subscribe2, reader) => {
+    const ret = subscribe2(() => notify(reader()));
+    if (typeof ret === "function") offs.push(ret);
+  };
+  if (!sessionId) return { ...emptyState("no-session"), dispose };
+  if (!sessions2 && !uiConversation) return { ...emptyState("no-service"), dispose };
+  try {
+    const target = uiConversation?.binding?.(sessionId)?.target?.("chat");
+    if (target) {
+      const read = () => {
+        const graph = graphOf(target);
+        return graph ? projected("uiConversation", graph) : emptyState("pending");
+      };
+      if (asFunction(target.subscribe)) attach(target.subscribe.bind(target), read);
+      const first = read();
+      return { ...first, dispose };
+    }
+  } catch {
+  }
+  try {
+    const session = sessions2?.binding?.(sessionId)?.session;
+    const store = session?.chat && asFunction(session.chat.subscribe) ? session.chat : null;
+    const read = () => {
+      const graph = graphOf(store) || graphOf(session?.chat) || graphOf(session);
+      return graph ? projected("session", graph) : emptyState("none");
+    };
+    if (store) attach(store.subscribe.bind(store), read);
+    const first = read();
+    if (first.source === "session") return { ...first, dispose };
+  } catch {
+  }
+  return { ...emptyState("none"), dispose };
+}
+function tailMessages(messages, limit = TRANSCRIPT_LIMIT) {
+  const list = Array.isArray(messages) ? messages : [];
+  return list.slice(Math.max(0, list.length - limit));
+}
+
+// plugin/workbench/src/client/ConversationTile.js
+var WHO = { user: "作者", assistant: "助手", detail: "活动", error: "出错" };
+function readSnapshot(sessions2) {
+  try {
+    const store = sessions2?.list;
+    if (!store || typeof store.getSnapshot !== "function") return null;
+    const snap = store.getSnapshot();
+    if (!snap || !Array.isArray(snap.ids) || typeof snap.byId !== "object" || !snap.byId) return null;
+    return snap;
+  } catch {
+    return null;
+  }
+}
+function ConversationTile({ onBack }) {
+  const sessions2 = getSessions();
+  const [snap, setSnap] = react3.useState(() => readSnapshot(sessions2));
+  react3.useEffect(() => {
+    const store = sessions2?.list;
+    if (!store || typeof store.subscribe !== "function") return void 0;
+    const sync = () => setSnap(readSnapshot(sessions2));
+    try {
+      return store.subscribe(sync);
+    } catch {
+      return void 0;
+    }
+  }, [sessions2]);
+  const first = snap && snap.ids.length > 0 ? snap.byId[snap.ids[0]] : null;
+  const sessionId = snap && snap.ids.length > 0 ? snap.ids[0] : null;
+  const [projValues, setProjValues] = react3.useState(null);
+  const [telemetrySource, setTelemetrySource] = react3.useState("no-session");
+  react3.useEffect(() => {
+    const watch = watchSessionProjections(sessions2, sessionId, setProjValues);
+    setTelemetrySource(watch.source);
+    return watch.dispose;
+  }, [sessionId, sessions2]);
+  const metrics = formatTelemetry(telemetryOf(projValues));
+  const [transcript, setTranscript] = react3.useState({ source: "no-session", messages: [] });
+  react3.useEffect(() => {
+    const watch = watchTranscript(
+      sessions2,
+      getChatService(),
+      sessionId,
+      (next) => setTranscript({ source: next.source, messages: tailMessages(next.messages) })
+    );
+    setTranscript({ source: watch.source, messages: tailMessages(watch.messages) });
+    return watch.dispose;
+  }, [sessionId, sessions2]);
+  const log = transcript.messages.length ? react3.createElement(
+    "div",
+    { className: "dshWbChatLog", "data-wb-chat-log": "", "data-wb-chat-source": transcript.source },
+    transcript.messages.map(
+      (m) => react3.createElement(
+        "div",
+        { key: m.key, className: `dshWbChatLine is-${m.kind}`, "data-wb-chat-line": m.kind },
+        react3.createElement("span", { className: "dshWbChatWho" }, WHO[m.kind] || "会话"),
+        react3.createElement("span", { className: "dshWbChatText" }, String(m.text || "").slice(0, 160))
+      )
+    )
+  ) : null;
+  const logHint = !transcript.messages.length && sessionId && (transcript.source === "none" || transcript.source === "no-service") ? react3.createElement(
+    "div",
+    { className: "dshWbChatHint", "data-wb-chat-log-empty": transcript.source },
+    "这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。"
+  ) : null;
+  const strip = react3.createElement(
+    "div",
+    {
+      className: "dshWbStrip",
+      "data-wb-strip": "",
+      "data-wb-telemetry": telemetrySource,
+      // 自查用：句柄投影里**到底有哪些键**（真内核上一眼能分清"还没送到"与"根本没这个键"）
+      "data-wb-telemetry-keys": Object.keys(projValues || {}).sort().join(",")
+    },
+    react3.createElement("span", { className: "dshWbStripItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
+    react3.createElement("span", { className: "dshWbStripItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
+    react3.createElement("span", { className: "dshWbStripItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text)
+  );
+  const title = first?.displayTitle ? String(first.displayTitle) : "";
+  return react3.createElement(
+    "div",
+    { className: "dshWbChatCard", "data-wb-chat-card": "", "data-wb-chat-source": transcript.source },
+    !sessions2 ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "noservice" }, T.chatNoService) : !snap ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "unreadable" }, T.chatNoService) : !first ? react3.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "empty" }, T.chatEmpty) : react3.createElement(
+      "div",
+      { className: "dshWbChatSession", "data-wb-chat-session": "" },
+      react3.createElement("div", { className: "dshWbChatSessionTitle", title }, title)
+    ),
+    log,
+    logHint,
+    // 没有会话时不摆三条"还没数据"——那时该说的只有上面那句空状态，窄条只会添噪。
+    first ? strip : null,
+    react3.createElement(
+      "button",
+      { type: "button", className: "dshWbBtn is-primary", onClick: () => void onBack(), "data-wb-chat-back": "" },
+      T.chatBack
+    )
+  );
+}
+
+// plugin/workbench/src/client/shell-shape.js
+function getShapeBridge(globalThisRef = typeof window === "undefined" ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell;
+  if (!bridge || typeof bridge.setWorkbenchShape !== "function" || typeof bridge.getWorkbenchShape !== "function") return null;
+  return bridge;
+}
+async function requestShape(shape) {
+  const bridge = getShapeBridge();
+  if (!bridge) return { ok: false, error: "no-shell-bridge" };
+  try {
+    const result = await bridge.setWorkbenchShape(shape);
+    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+
+// plugin/workbench/src/client/Chrome.js
 var NOTICE_MS = 6e3;
+function contextLabelOf(registry2, id) {
+  const c = registry2.contextOf(id);
+  if (!c) return "";
+  return c.title || c.project || c.doc || c.path || "";
+}
 function WorkbenchChrome() {
   const { modes, active, context, lastHandoff, open: open2, notice: notice2, registry: registry2 } = useWorkbench();
-  const seenHandoffAt = react3.useRef(0);
-  react3.useEffect(() => {
+  const panelRef = react4.useRef(null);
+  const seenHandoffAt = react4.useRef(0);
+  react4.useEffect(() => {
     if (!lastHandoff || lastHandoff.at === seenHandoffAt.current) return;
     seenHandoffAt.current = lastHandoff.at;
     const from = registry2.resolveLabel(lastHandoff.from);
@@ -606,15 +1062,48 @@ function WorkbenchChrome() {
     if (lastHandoff.delivered) setNotice({ kind: "info", text: `已把「${from}」的引用交给「${to}」` });
     else setNotice({ kind: "warn", text: `「${to}」还没有接收端，引用没有送出去` });
   }, [lastHandoff, registry2]);
-  react3.useEffect(() => {
+  react4.useEffect(() => {
     if (!notice2) return void 0;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [notice2]);
+  const [shape, setShape] = react4.useState("");
+  const askedForStrip = react4.useRef(false);
+  react4.useEffect(() => {
+    let cancelled = false;
+    const apply2 = async (next) => {
+      if (!getShapeBridge()) {
+        setShape("unsupported");
+        return;
+      }
+      const result = await requestShape(next);
+      if (!cancelled) setShape(result.ok ? next : `failed:${result.error}`);
+    };
+    if (open2) {
+      askedForStrip.current = true;
+      void apply2("strip");
+    } else if (askedForStrip.current) {
+      askedForStrip.current = false;
+      void apply2("normal");
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [open2]);
+  react4.useEffect(() => {
+    if (!open2) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const target = panel.querySelector('[data-wb-mode-active="1"]') || panel.querySelector("[data-wb-mode]");
+    try {
+      target?.focus({ preventScroll: true });
+    } catch {
+    }
+  }, [open2]);
   if (!open2 && !notice2) return null;
   const contextLabel = context ? context.title || context.project || context.path || "" : "";
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || "";
-  const toast = notice2 ? react3.createElement(
+  const toast = notice2 ? react4.createElement(
     "div",
     {
       className: `dshWbToast${notice2.kind === "warn" ? " is-warn" : ""}`,
@@ -625,54 +1114,123 @@ function WorkbenchChrome() {
     },
     notice2.text
   ) : null;
-  if (!open2) return react3.createElement(react3.Fragment, null, toast);
-  const onKeyDown = (event) => {
-    if (event.key === "Escape") setOpen(false);
+  if (!open2) return react4.createElement(react4.Fragment, null, toast);
+  const backToChat = async () => {
+    if (active) {
+      const result = await exitMode(registry2);
+      if (!result.ok) return;
+    }
+    setOpen(false);
   };
-  const rows = modes.map(
-    (mode) => react3.createElement(
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const items = Array.from(panel.querySelectorAll("[data-wb-mode]"));
+    if (items.length === 0) return;
+    event.preventDefault();
+    const index = items.indexOf(document.activeElement);
+    let next = 0;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    else if (event.key === "ArrowDown") next = index < 0 ? 0 : (index + 1) % items.length;
+    else next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length;
+    try {
+      items[next].focus({ preventScroll: true });
+    } catch {
+    }
+  };
+  const tiles = modes.map((mode) => {
+    const ctxLabel = contextLabelOf(registry2, mode.id);
+    const tile = mode.hasTile ? registry2.tileViewOf(mode.id) : null;
+    if (tile) {
+      const TileView = tile.view;
+      return react4.createElement(
+        "div",
+        { key: mode.id, className: `dshWbTile${mode.active ? " is-active" : ""}`, "data-wb-tile": mode.id },
+        react4.createElement(
+          "div",
+          { className: "dshWbTileHead" },
+          react4.createElement("span", { className: "dshWbTileLabel" }, tile.label),
+          mode.active ? react4.createElement("span", { className: "dshWbRowMark" }, T.current) : null,
+          react4.createElement(
+            "button",
+            {
+              type: "button",
+              className: "dshWbTileEnter",
+              onClick: () => void switchMode(registry2, mode.id),
+              "data-wb-tile-enter": mode.id
+            },
+            T.tileEnter(tile.label)
+          )
+        ),
+        react4.createElement("div", { className: "dshWbTileBody" }, react4.createElement(TileView))
+      );
+    }
+    return react4.createElement(
       "button",
       {
         key: mode.id,
         type: "button",
-        className: `dshWbRow${mode.active ? " is-active" : ""}`,
+        className: `dshWbMode${mode.active ? " is-active" : ""}`,
         onClick: () => void switchMode(registry2, mode.id),
         title: T.switchTo(mode.label),
         "data-wb-mode": mode.id,
-        "data-wb-mode-active": mode.active ? "1" : "0"
+        "data-wb-mode-active": mode.active ? "1" : "0",
+        "aria-current": mode.active ? "true" : void 0
       },
-      react3.createElement("span", { className: "dshWbRowLabel" }, mode.label),
-      mode.active ? react3.createElement("span", { className: "dshWbRowMark" }, T.current) : null
-    )
-  );
-  return react3.createElement(
+      react4.createElement("span", { className: "dshWbModeGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
+      react4.createElement(
+        "span",
+        { className: "dshWbModeBody" },
+        react4.createElement("span", { className: "dshWbModeLabel" }, mode.label),
+        ctxLabel ? react4.createElement("span", { className: "dshWbModeCtx", title: ctxLabel }, ctxLabel) : react4.createElement("span", { className: "dshWbModeCtx" }, T.tileEmpty)
+      ),
+      mode.active ? react4.createElement("span", { className: "dshWbRowMark" }, T.current) : null
+    );
+  });
+  return react4.createElement(
     "div",
-    { className: "dshWbScrim", onClick: () => setOpen(false), onKeyDown, "data-wb-switcher": "" },
-    react3.createElement(
+    { className: "dshWbHome", onKeyDown, "data-wb-switcher": "", "data-wb-shape": shape || "none" },
+    react4.createElement(
       "div",
-      { className: "dshWbPanel", onClick: (event) => event.stopPropagation(), role: "dialog", "aria-label": T.switcherTitle },
-      react3.createElement(
+      { className: "dshWbHomePanel", ref: panelRef, role: "dialog", "aria-label": T.homeTitle },
+      react4.createElement(
         "div",
         { className: "dshWbHead" },
-        react3.createElement("span", { className: "dshWbTitle" }, T.switcherTitle),
-        react3.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
+        react4.createElement("span", { className: "dshWbTitle" }, T.homeTitle),
+        react4.createElement("button", { type: "button", className: "dshWbClose", onClick: () => setOpen(false), "data-wb-close": "" }, T.close)
       ),
-      react3.createElement("div", { className: "dshWbHint" }, T.switcherHint),
-      active ? react3.createElement(
+      react4.createElement("div", { className: "dshWbHint" }, T.homeHint),
+      active ? react4.createElement(
         "div",
         { className: "dshWbCtx", "data-wb-context": active },
         `${T.contextNow}：${activeLabel}${contextLabel ? ` · ${contextLabel}` : ""}`
       ) : null,
-      modes.length === 0 ? react3.createElement(
+      react4.createElement(
         "div",
-        { className: "dshWbEmpty", "data-wb-empty": "" },
-        react3.createElement("div", null, T.empty),
-        react3.createElement("div", null, T.emptyHint)
-      ) : react3.createElement("div", { className: "dshWbList" }, rows),
-      active ? react3.createElement(
+        { className: "dshWbHomeBody" },
+        react4.createElement(
+          "aside",
+          { className: "dshWbChat", "data-wb-chat": "", "aria-label": T.chatTitle },
+          react4.createElement("div", { className: "dshWbChatHead" }, T.chatTitle),
+          react4.createElement(ConversationTile, { onBack: backToChat })
+        ),
+        modes.length === 0 ? react4.createElement(
+          "div",
+          { className: "dshWbEmpty", "data-wb-empty": "" },
+          react4.createElement("div", null, T.empty),
+          react4.createElement("div", null, T.emptyHint)
+        ) : react4.createElement("section", { className: "dshWbTiles", "data-wb-tiles": "" }, tiles)
+      ),
+      active ? react4.createElement(
         "div",
         { className: "dshWbFoot" },
-        react3.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
+        react4.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
       ) : null
     ),
     toast
@@ -680,9 +1238,9 @@ function WorkbenchChrome() {
 }
 
 // plugin/workbench/src/client/Dock.js
-var react4 = __toESM(require("react"), 1);
+var react5 = __toESM(require("react"), 1);
 function useDockInset(open2, width) {
-  react4.useEffect(() => {
+  react5.useEffect(() => {
     try {
       document.documentElement.style.setProperty("--dsh-wb-dock-width", open2 ? `${width}px` : "0px");
     } catch {
@@ -702,7 +1260,7 @@ function WorkbenchDock() {
   if (candidates.length === 0) return null;
   const chosen = candidates.find((c) => c.id === dockModeId2) || candidates[0];
   if (!dockOpen2) {
-    return react4.createElement(
+    return react5.createElement(
       "button",
       {
         type: "button",
@@ -712,11 +1270,23 @@ function WorkbenchDock() {
         "aria-label": T.dockOpen(chosen.label),
         "data-wb-dock-rail": ""
       },
-      react4.createElement("span", { className: "dshWbDockRailText" }, chosen.label)
+      react5.createElement("span", { className: "dshWbDockRailText" }, chosen.label)
     );
   }
   const DockView = chosen.view;
-  return react4.createElement(
+  const onGripDown = (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = dockWidth2;
+    const onMove = (moveEvent) => setDockWidth(startWidth + (startX - moveEvent.clientX));
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("mouseup", onUp, true);
+    };
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("mouseup", onUp, true);
+  };
+  return react5.createElement(
     "aside",
     {
       className: "dshWbDock",
@@ -724,10 +1294,17 @@ function WorkbenchDock() {
       "data-wb-dock": chosen.id,
       "aria-label": T.dockTitle(chosen.label)
     },
-    react4.createElement(
+    react5.createElement("div", {
+      className: "dshWbDockGrip",
+      onMouseDown: onGripDown,
+      title: T.dockResize,
+      "aria-hidden": "true",
+      "data-wb-dock-resize": ""
+    }),
+    react5.createElement(
       "div",
       { className: "dshWbDockHead" },
-      candidates.length > 1 ? react4.createElement(
+      candidates.length > 1 ? react5.createElement(
         "select",
         {
           className: "dshWbDockPick",
@@ -736,24 +1313,24 @@ function WorkbenchDock() {
           title: T.dockPick,
           "data-wb-dock-pick": ""
         },
-        candidates.map((c) => react4.createElement("option", { key: c.id, value: c.id }, c.label))
-      ) : react4.createElement("span", { className: "dshWbDockTitle" }, chosen.label),
-      react4.createElement(
+        candidates.map((c) => react5.createElement("option", { key: c.id, value: c.id }, c.label))
+      ) : react5.createElement("span", { className: "dshWbDockTitle" }, chosen.label),
+      react5.createElement(
         "button",
         { type: "button", className: "dshWbDockClose", onClick: () => setDockOpen(false), title: T.dockCollapse, "data-wb-dock-close": "" },
         "⟩"
       )
     ),
-    react4.createElement("div", { className: "dshWbDockBody", "data-wb-dock-body": chosen.id }, react4.createElement(DockView))
+    react5.createElement("div", { className: "dshWbDockBody", "data-wb-dock-body": chosen.id }, react5.createElement(DockView))
   );
 }
 
 // plugin/workbench/src/client/Settings.js
-var react5 = __toESM(require("react"), 1);
+var react6 = __toESM(require("react"), 1);
 function WorkbenchSettings() {
   const { modes, active } = useWorkbench();
-  const [host, setHost] = react5.useState({ loading: true });
-  react5.useEffect(() => {
+  const [host, setHost] = react6.useState({ loading: true });
+  react6.useEffect(() => {
     let dead = false;
     void fetchState().then((result) => {
       if (!dead) setHost({ loading: false, ...result });
@@ -763,25 +1340,25 @@ function WorkbenchSettings() {
     };
   }, []);
   const activeLabel = (modes.find((m) => m.id === active) || {}).label || T.activeNone;
-  return react5.createElement(
+  return react6.createElement(
     "div",
     { className: "dshWbSet", "data-wb-settings": "" },
-    react5.createElement(
+    react6.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react5.createElement("div", { className: "dshWbSetTitle" }, T.settings),
-      react5.createElement("div", { className: "dshWbSetLine" }, T.settingsIntro),
-      react5.createElement("div", { className: "dshWbSetMuted" }, T.settingsDegraded)
+      react6.createElement("div", { className: "dshWbSetTitle" }, T.settings),
+      react6.createElement("div", { className: "dshWbSetLine" }, T.settingsIntro),
+      react6.createElement("div", { className: "dshWbSetMuted" }, T.settingsDegraded)
     ),
-    react5.createElement(
+    react6.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react5.createElement("div", { className: "dshWbSetTitle" }, T.settingsModes),
-      modes.length === 0 ? react5.createElement("div", { className: "dshWbSetMuted", "data-wb-settings-none": "" }, T.settingsNone) : react5.createElement(
+      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsModes),
+      modes.length === 0 ? react6.createElement("div", { className: "dshWbSetMuted", "data-wb-settings-none": "" }, T.settingsNone) : react6.createElement(
         "div",
         { className: "dshWbSetLine", style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
         modes.map(
-          (mode) => react5.createElement(
+          (mode) => react6.createElement(
             "span",
             { key: mode.id, className: `dshWbSetChip${mode.active ? " is-active" : ""}`, "data-wb-settings-mode": mode.id },
             mode.label
@@ -789,23 +1366,23 @@ function WorkbenchSettings() {
         )
       )
     ),
-    react5.createElement(
+    react6.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react5.createElement("div", { className: "dshWbSetTitle" }, T.settingsActive),
-      react5.createElement("div", { className: "dshWbSetLine", "data-wb-settings-active": active || "" }, activeLabel)
+      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsActive),
+      react6.createElement("div", { className: "dshWbSetLine", "data-wb-settings-active": active || "" }, activeLabel)
     ),
-    react5.createElement(
+    react6.createElement(
       "div",
       { className: "dshWbSetCard" },
-      react5.createElement("div", { className: "dshWbSetTitle" }, T.settingsHost),
-      react5.createElement("div", { className: "dshWbSetMuted" }, T.settingsHostHint),
-      host.loading ? react5.createElement("div", { className: "dshWbSetMuted" }, "…") : host.ok ? react5.createElement(
+      react6.createElement("div", { className: "dshWbSetTitle" }, T.settingsHost),
+      react6.createElement("div", { className: "dshWbSetMuted" }, T.settingsHostHint),
+      host.loading ? react6.createElement("div", { className: "dshWbSetMuted" }, "…") : host.ok ? react6.createElement(
         "div",
         { className: "dshWbSetLine", "data-wb-settings-rev": String(host.state?.revision ?? "") },
         T.settingsRevision(host.state?.revision ?? 0),
         host.state?.activeModeId ? ` · ${host.state.activeModeId}` : ""
-      ) : react5.createElement("div", { className: "dshWbSetLine", "data-wb-settings-error": host.error || "error" }, T.settingsUnreachable)
+      ) : react6.createElement("div", { className: "dshWbSetLine", "data-wb-settings-error": host.error || "error" }, T.settingsUnreachable)
     )
   );
 }
@@ -832,6 +1409,16 @@ function apply(ctx) {
     ctx.effect(() => ctx.reflect.provide("workbench", registry2), "workbench: service");
   } catch (err) {
     console.warn("[workbench] provide service failed:", err);
+  }
+  try {
+    ctx.inject(["sessions"], (scope) => setSessions(scope?.sessions || null));
+  } catch (err) {
+    console.warn("[workbench] sessions inject failed:", err);
+  }
+  try {
+    ctx.inject(["uiConversation"], (scope) => setChatService(scope?.uiConversation || null));
+  } catch (err) {
+    console.warn("[workbench] uiConversation inject failed:", err);
   }
   const tryRestore = () => {
     if (restored || !restoreTarget) return;

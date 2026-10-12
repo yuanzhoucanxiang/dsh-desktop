@@ -13,10 +13,19 @@ import path from 'node:path'
 import process from 'node:process'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { publishSet, compareTrees, RECORD_NAME } from '../lib/plugin-sync.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PLUGIN = path.join(ROOT, 'plugin', 'writing-mode')
+// electron 可执行文件：纯 Node 下 require('electron') 返回二进制路径字符串；保底用 dist 直路径。
+const ELECTRON_BIN = (() => {
+  try {
+    const p = createRequire(import.meta.url)('electron')
+    if (typeof p === 'string' && fs.existsSync(p)) return p
+  } catch {}
+  return path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+})()
 const mode = (process.argv[2] || 'all').toLowerCase()
 const AS_JSON = process.argv.includes('--json')
 const results = []
@@ -40,18 +49,28 @@ function makeEnv(label) {
 
 /** 跑一次应用（smoke：拉起内核→就绪→自行退出；不弹通知、不碰真实环境）。 */
 function runApp(env, timeoutMs = 240000) {
-  const r = spawnSync('npm', ['run', 'smoke', '--silent'], {
+  const childEnv = {
+    ...process.env,
+    DSH_HOME: env.home,
+    DSH_DESKTOP_HOME: env.desktopHome,
+    DSH_DESKTOP_USER_DATA: env.userData,
+    LOCALAPPDATA: env.localAppData,
+  }
+  // ELECTRON_RUN_AS_NODE 必须摘掉：带着它时子进程里 require('electron') 退化成二进制路径字符串，
+  // electron-updater 的 autoUpdater getter 一碰就炸（main.js 都进不去）。
+  // 从 Electron 宿主终端（Kimi Work、VSCode 任务等）跑门禁会继承这个变量（2026-10-11 实测）。
+  delete childEnv.ELECTRON_RUN_AS_NODE
+  // 直调 electron.exe，不经 npm（= `npm run smoke` 去掉 shim 层）：GUI 子系统的 electron.exe 经
+  // npm/cmd shim 链拉起时主进程 console 到不了调用方的管道——smoke 其实跑完了，但 SMOKE_OK 进了虚空，
+  // 本脚本只会看到误判的 FAIL（与探针脚本"绕开 npm 直调 electron"是同一个坑，2026-10-11 实测）。
+  // ELECTRON_ENABLE_LOGGING 顺带补上：真控制台窗口里跑时让主进程日志可见。
+  childEnv.ELECTRON_ENABLE_LOGGING = '1'
+  const r = spawnSync(ELECTRON_BIN, ['.', '--smoke'], {
     cwd: ROOT,
     encoding: 'utf8',
     timeout: timeoutMs,
-    shell: true,
-    env: {
-      ...process.env,
-      DSH_HOME: env.home,
-      DSH_DESKTOP_HOME: env.desktopHome,
-      DSH_DESKTOP_USER_DATA: env.userData,
-      LOCALAPPDATA: env.localAppData,
-    },
+    windowsHide: true,
+    env: childEnv,
   })
   const out = `${r.stdout || ''}${r.stderr || ''}`
   return { ok: /SMOKE_OK/.test(out), timedOut: r.error?.code === 'ETIMEDOUT', out }

@@ -29,6 +29,25 @@ let win
 let server
 const errors = []
 
+// 收尾**绝不能无限等**：`server.close()` 要等已有连接结束，而探针页与本地 http 之间的
+// keep-alive 连接不会自己断——2026-10-12 实测 `verify:writing-quick` 链尾就是因为这个
+// 打印完 OK 仍挂住 20 分钟（断言全过、退出码永远等不到）。先把连接全断开再 close，并套超时兜底。
+function closeServer(srv) {
+  if (!srv) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = () => resolve()
+    const timer = setTimeout(finish, 1500)
+    srv.close(() => {
+      clearTimeout(timer)
+      finish()
+    })
+    try {
+      srv.closeAllConnections?.()
+      srv.closeIdleConnections?.()
+    } catch {}
+  })
+}
+
 app.whenReady().then(async () => {
   // ── 夹具：一个库根 + 一部作品 + 一章 ──────────────────────────────────
   const root = path.join(temp, 'library')
@@ -175,7 +194,10 @@ app.whenReady().then(async () => {
   assert.equal(await count('[data-wb-switcher]'), 0, '未激活时不应有切换器')
 
   // W2：进写作 → 写作台出现；再切到另一个模式 → 写作台退场
+  // （2026-10-11 起主屏形态：点入口先开主屏，再点写作模式的卡进入——不再单模式直进）
   await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, 'W2：点入口应打开主屏')
+  await click('[data-wb-mode="writing"]')
   await waitFor(`document.documentElement.getAttribute('data-writing-mode')==='on'`, 'W2：进写作后应进入写作台')
   assert.equal(await count('.dshWmRoot'), 1, 'W2：写作台 overlay 应在场')
   await evaluate(`(() => { window.__plugins['@dsh-local/workbench'].__workbenchRegistry().registerMode({ id:'demo', label:'演示模式', order:30 }); return 0 })()`)
@@ -299,12 +321,12 @@ app.whenReady().then(async () => {
   assert.equal(errors.length, 0, `降级场景控制台不应有 error：${errors.join(' | ')}`)
 
   console.log('WORKBENCH_WRITING_OK W1/W2/W3/W5 + L1/L1.5/L2 通过（入口唯一 / 互斥 / 守卫拒绝 / 降级 / 上下文 / 交接 / 辅助坞）')
-  await new Promise((resolve) => server.close(resolve))
+  await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {
   console.error('WORKBENCH_WRITING_FAIL', err?.stack || err)
   try {
-    if (server) await new Promise((resolve) => server.close(resolve))
+    if (server) await closeServer(server)
   } catch {}
   app.exit(1)
 })

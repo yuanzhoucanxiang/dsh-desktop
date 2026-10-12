@@ -13,7 +13,7 @@
  */
 import * as react from 'react'
 import { T } from './copy.js'
-import { setDockModeId, setDockOpen } from './ui-store.js'
+import { setDockModeId, setDockOpen, setDockWidth } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 
 /** 坞宽度同步到 CSS 变量：模式用 `padding-right: var(--dsh-wb-dock-width, 0px)` 让位。 */
@@ -65,6 +65,22 @@ export function WorkbenchDock() {
   }
 
   const DockView = chosen.view
+
+  // 左缘拖拽调宽（2026-10-11 前端轮）：宽度 clamp(240–720) 与 localStorage 持久化都在 ui-store；
+  // 拖拽过程经 useDockInset 实时写进 --dsh-wb-dock-width，主视图（如写作台）跟着让位。
+  const onGripDown = (event) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = dockWidth
+    const onMove = (moveEvent) => setDockWidth(startWidth + (startX - moveEvent.clientX))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove, true)
+      document.removeEventListener('mouseup', onUp, true)
+    }
+    document.addEventListener('mousemove', onMove, true)
+    document.addEventListener('mouseup', onUp, true)
+  }
+
   return react.createElement(
     'aside',
     {
@@ -73,6 +89,13 @@ export function WorkbenchDock() {
       'data-wb-dock': chosen.id,
       'aria-label': T.dockTitle(chosen.label),
     },
+    react.createElement('div', {
+      className: 'dshWbDockGrip',
+      onMouseDown: onGripDown,
+      title: T.dockResize,
+      'aria-hidden': 'true',
+      'data-wb-dock-resize': '',
+    }),
     react.createElement(
       'div',
       { className: 'dshWbDockHead' },

@@ -24,6 +24,25 @@ let win
 let server
 const errors = []
 
+// 收尾**绝不能无限等**：`server.close()` 要等已有连接结束，而探针页与本地 http 之间的
+// keep-alive 连接不会自己断——2026-10-12 实测 `verify:writing-quick` 链尾就是因为这个
+// 打印完 OK 仍挂住 20 分钟（断言全过、退出码永远等不到）。先把连接全断开再 close，并套超时兜底。
+function closeServer(srv) {
+  if (!srv) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = () => resolve()
+    const timer = setTimeout(finish, 1500)
+    srv.close(() => {
+      clearTimeout(timer)
+      finish()
+    })
+    try {
+      srv.closeAllConnections?.()
+      srv.closeIdleConnections?.()
+    } catch {}
+  })
+}
+
 app.whenReady().then(async () => {
   const host = await import(pathToFileURL(path.join(repo, 'plugin/workbench/index.js')))
   let handler = null
@@ -52,6 +71,7 @@ app.whenReady().then(async () => {
     const React = require(${JSON.stringify(path.join(modules, 'react'))});
     const jsx = require(${JSON.stringify(path.join(modules, 'react/jsx-runtime'))});
     const ReactDOM = require(${JSON.stringify(path.join(modules, 'react-dom/client'))});
+    window.React = React;
     const mounted = {};
     function mount(id, Component){
       // 同一槽位可能注册多个条目（如 shell.overlay 的切换器 + 辅助坞）：每个条目一个独立容器，
@@ -66,8 +86,60 @@ app.whenReady().then(async () => {
       mounted[id].push(root);
     }
     const provided = {};
+    // 假的内核 sessions 服务（2026-10-12 补）。本探针以前**没有会话服务**、也没有 ctx.inject
+    // （entry.js 那句 inject 抛错被 try/catch 咽掉），所以对话列只走过"服务缺席"的降级分支——
+    // "有服务"那条分支从来没按真实记录形状断言过，displayTitle 口径的缺陷就是这么漏掉的。
+    // 真实内核客户端侧的列表快照记录：{id, displayTitle, running, retainedBy, blank, updatedAt, title?}
+    // 见 runtime/.../dsh-api-session-controller/lib/types/client/sessions/service.js:491-512。
+    const sessionsStore = (() => {
+      let snap = { ids: [], byId: {} };
+      const subs = new Set();
+      return {
+        list: {
+          getSnapshot: () => snap,
+          subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
+        },
+        // 测试注入口子：按 updatedAt 倒序的语义由调用方（下面的断言）自己保证。
+        __set(items) {
+          const ids = []; const byId = {};
+          for (const it of items) { ids.push(it.id); byId[it.id] = it; }
+          snap = { ids, byId };
+          for (const fn of subs) fn();
+        },
+      };
+    })();
+    provided.sessions = sessionsStore; // 先就位，模拟"内核已提供该服务"
+    window.__wbSessions = sessionsStore;
+    // 假的 0.2.0 会话图通道（真聊天瓷砖读转录用）：target 形状照内核——可快照、可订阅。
+    const chatTargets = {};
+    function chatTarget(id) {
+      if (!chatTargets[id]) {
+        const subs = new Set();
+        chatTargets[id] = {
+          graph: null,
+          getSnapshot() { return this.graph; },
+          subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
+          __set(g) { this.graph = g; for (const f of subs) f(); },
+        };
+      }
+      return chatTargets[id];
+    }
+    provided.uiConversation = { binding: (id) => ({ target: (kind) => (kind === 'chat' ? chatTarget(id) : null) }) };
+    window.__wbChat = { set: (id, g) => chatTarget(id).__set(g) };
+    // 假的壳「窗口形态」桥（2026-10-12 刀 2）：记录插件请求过的档位，返回值照主进程的包络。
+    // 探针里窗口不会真变形（那是外壳的活），验的是**门面有没有正确地申请/还原**与
+    // **长条几何下主屏是否竖排不破版**（后者靠真改窗宽）。
+    window.__shapeLog = [];
+    window.dshShell = {
+      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false }),
+      setWorkbenchShape: async (s) => {
+        window.__shapeLog.push(s);
+        return { ok: true, shape: s, alwaysOnTop: s !== 'normal' };
+      },
+    };
     const ctx = {
       effect: (fn) => { fn(); return () => {}; },
+      inject: (deps, cb) => { const scope = {}; for (const d of deps) scope[d] = provided[d]; return cb(scope); },
       reflect: { provide: (name, value) => { provided[name] = value; window.__wbService = provided; return () => { delete provided[name]; }; } },
       slots: {
         inject: (name, fn) => fn(),
@@ -155,10 +227,92 @@ app.whenReady().then(async () => {
   assert.equal(await evaluate(`document.querySelector('[data-wb-entry]').getAttribute('data-wb-count')`), '1')
   assert.equal((await text('[data-wb-entry]')).includes('工具台'), true)
 
-  // ③ 单模式：点一下直接进模式（不进只有一个选项的列表）
+  // ③ 主屏（2026-10-11 起的形态）：点入口开主屏——左列对话瓷砖 + 右侧瓷砖格；主屏本身不改当前模式，
+  // 点模式的按钮卡才真正进入（单模式也不再直进：主屏就是目的地，不是"只有一个选项的列表"）。
+  // ③ 里从 2026-10-12 起**带真实记录形状**地断言对话列（空列表 / displayTitle / 有标题三种）。
   await click('[data-wb-entry]')
-  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '点入口应进入模式')
-  assert.equal(await count('[data-wb-switcher]'), 0, '单模式直接进，不应弹切换器')
+  await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '点入口应打开主屏')
+  assert.equal(await count('[data-wb-chat]'), 1, '主屏左列应是对话瓷砖')
+  assert.equal(await count('[data-wb-tiles]'), 1, '主屏右侧应是瓷砖格')
+  assert.equal(await count('[data-wb-chat-empty="empty"]'), 1, '有会话服务但列表为空：应如实说明"还没有会话"')
+  assert.equal(await count('[data-wb-chat-empty="noservice"]'), 0, '会话服务在位时不该报"服务不可用"')
+  // 一条**没有持久标题**的会话：真实内核这种条目只有 displayTitle（title 缺席）。旧实现读 title
+  // → 这行是空白。这条断言的反例就是它自己：把 ConversationTile 改回读 title 立刻红。
+  await evaluate(
+    `window.__wbSessions.__set([{ id:'s1', displayTitle:'未命名会话的派生标题', running:false, retainedBy:'none', blank:false, updatedAt:Date.now() }])`,
+  )
+  await waitFor(`document.querySelector('[data-wb-chat-session]')!==null`, '有会话时对话列应渲染它')
+  assert.equal(await text('[data-wb-chat-session]'), '未命名会话的派生标题', '对话列应显示 displayTitle')
+  // 状态条（2026-10-12 接真投影）：这条会话**没有**投影值 → 三条都得如实写"还没数据/未上报"，
+  // 绝不拿 0 冒充"没有"（反例：把 telemetryOf 的空值分支改成 ?? 0，这三条立刻红）。
+  assert.ok((await text('[data-wb-metric="speed"]')).includes('还没数据'), '没有解码数据时 tok/s 要如实说明')
+  assert.ok((await text('[data-wb-metric="cache"]')).includes('还没数据'), '没有用量数据时缓存命中要如实说明')
+  assert.ok((await text('[data-wb-metric="context"]')).includes('未上报'), '没有上下文投影时要如实说明')
+  // 确有持久标题的会话：内核两个字段都给，displayTitle 即该标题；再挂上真投影——
+  // **形状照 2026-10-12 真内核实测**：`sessionStats` 是扁平的、`tokenUsage` 也是扁平的
+  // （host 侧 durable state 才套 `{totals,last}`）。之前按嵌套写读法，命中率在真内核上永远算不出，
+  // 就是这条 fixture 与真实形状不一致害的——所以 fixture 必须来自实测，不能凭类型声明猜。
+  // 期望值：tok/s = 156/(4100/1000) ≈ 38；缓存 = 13800/(1200+13800+0) = 92%；上下文 = 15000/64000 ≈ 23%。
+  await evaluate(
+    `window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:true, retainedBy:'none', blank:false, updatedAt:Date.now()+1000,
+      projectionValues: {
+        sessionStats: { turns:3, steps:9, llmMs:5200, toolMs:1200, ttftMs:340, ttftSteps:3, decodeMs:4100, decodeTokens:156 },
+        tokenUsage: { uncachedInputTokens:1200, outputTokens:156, cacheReadTokens:13800, cacheWriteTokens:0 },
+        contextPressure: { pressureTokens:15000, contextWindow:64000 },
+      } }])`,
+  )
+  await waitFor(`(document.querySelector('[data-wb-chat-session]')||{}).textContent==='归乡记讨论'`, '有标题的会话应显示标题')
+  await waitFor(`(document.querySelector('[data-wb-metric="speed"]')||{}).textContent==='⚡ 38 tok/s'`, 'tok/s 应按内核口径算出真数')
+  assert.equal(await text('[data-wb-metric="cache"]'), '缓存 92%', '缓存命中率 = cacheRead ÷ (uncached+cacheRead)')
+  assert.equal(await text('[data-wb-metric="context"]'), '上下文 23%', '上下文占用 = pressureTokens ÷ contextWindow')
+  const telemetrySource = await evaluate(
+    `(document.querySelector('[data-wb-strip]')||{}).getAttribute?document.querySelector('[data-wb-strip]').getAttribute('data-wb-telemetry'):null`,
+  )
+  assert.equal(telemetrySource, 'list-row', `本假宿主没有 retain/binding，应退回读列表行投影：${telemetrySource}`)
+  // ③e 真聊天瓷砖（只读）：喂一条 0.2.0 形状的会话图（nodes 是 Map、order 是数组），
+  // 转录必须经 mode-kit projectChat 投影出带角色的行——**未知内容保留可见摘要**，不藏。
+  await evaluate(
+    `window.__wbChat.set('s2', { order:['m1','m2','m3'], nodes: new Map([
+      ['m1',{kind:'user',data:{content:[{kind:'text',text:'把第二章的结尾改冷一点'}]}}],
+      ['m2',{kind:'assistant-step',data:{blocks:[{type:'text',text:'好，先给你三个方向'}]}}],
+      ['m3',{kind:'tool-call',data:{name:'write_file',callId:'c1',argsRaw:'{}',phase:'call'}}],
+    ]) })`,
+  )
+  await waitFor(`document.querySelectorAll('[data-wb-chat-line]').length>=3`, '真聊天瓷砖应投影出转录行')
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-chat-log]').getAttribute('data-wb-chat-source')`),
+    'uiConversation',
+    '应走 0.2.0 会话图通道',
+  )
+  assert.ok((await text('[data-wb-chat-line="user"]')).includes('把第二章的结尾改冷一点'), '作者行应显示正文')
+  assert.ok((await text('[data-wb-chat-line="assistant"]')).includes('三个方向'), '助手行应显示正文')
+  assert.ok((await text('[data-wb-chat-line="detail"]')).includes('工具活动'), '工具调用要留可见摘要，不能吞掉')
+  assert.equal(await count('[data-wb-chat-back]'), 1, '对话列应有「回到完整会话」')
+  // ③d 长条接线（2026-10-12 刀 2）：主屏一打开就该请壳收成 strip；然后把探针窗口**真**收到 420 宽，
+  // 主屏必须竖排（对话列在瓷砖格之上）且不出现横向溢出——这是"长条门面不破版"的几何断言，
+  // 光看文案是看不见的（踩坑速查 #21：视觉层要几何 + 图，别只信文本断言）。
+  await waitFor(
+    `document.querySelector('[data-wb-switcher]').getAttribute('data-wb-shape')==='strip'`,
+    '主屏打开应申请 strip 形态',
+  )
+  assert.deepEqual(await evaluate(`window.__shapeLog`), ['strip'], '打开主屏只应申请一次 strip')
+  win.setContentSize(420, 700)
+  await sleep(400)
+  const narrow = await evaluate(
+    `(() => { const c = document.querySelector('[data-wb-chat]'); const t = document.querySelector('[data-wb-tiles]'); const de = document.documentElement;
+      return JSON.stringify({ chatTop: c ? Math.round(c.getBoundingClientRect().top) : -1, tilesTop: t ? Math.round(t.getBoundingClientRect().top) : -1, overflowX: de.scrollWidth - de.clientWidth, cw: de.clientWidth }); })()`,
+  )
+  const geo = JSON.parse(narrow)
+  assert.ok(geo.cw < 460, `窗口应真的收到 420 宽：clientWidth=${geo.cw}`)
+  assert.ok(geo.chatTop >= 0 && geo.tilesTop > geo.chatTop, `420 宽下主屏应竖排（对话列在上）：${narrow}`)
+  assert.ok(geo.overflowX <= 1, `420 宽下不该有横向溢出：${narrow}`)
+  win.setContentSize(900, 700)
+  await sleep(300)
+  assert.equal(await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`), null, '主屏本身不应改当前模式')
+  await click('[data-wb-mode="demo"]')
+  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '点按钮卡应进入模式')
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
+  assert.deepEqual(await evaluate(`window.__shapeLog`), ['strip', 'normal'], '关闭主屏（进入模式）应还原 normal——模式要宽窗')
   assert.equal(await evaluate(`JSON.stringify(window.__act)`), JSON.stringify(['switch']))
   await waitFor(`document.querySelector('[data-wb-active-label]')!==null`, '入口应显示当前模式名')
   assert.equal(await text('[data-wb-active-label]'), '演示模式')
@@ -207,14 +361,28 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelectorAll('[data-wb-settings-mode]').length===2`, '设置段应列出两个模式')
   assert.ok((await text('[data-wb-settings]')).includes('工具台'))
 
+  // ⑨ 主屏瓷砖：提供了 tile 的模式渲染「主要内容窗口」（运行时组件），没提供的退化为按钮卡
+  await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
+    id:'demo3', label:'第三个模式', order:40,
+    tile:{ label:'第三模式', view: () => window.React.createElement('div', {'data-wb-tile-demo':'1'}, '瓷砖内容') },
+  }); return 0 })()`)
+  await click('[data-wb-entry]')
+  await waitFor(`document.querySelector('[data-wb-tile="demo3"]')!==null`, '提供 tile 的模式应在主屏渲染瓷砖')
+  assert.ok((await text('[data-wb-tile="demo3"]')).includes('瓷砖内容'), '瓷砖体部应渲染模式自己的视图组件')
+  assert.equal(await count('[data-wb-tile-enter="demo3"]'), 1, '瓷砖应有「进入」按钮')
+  assert.equal(await count('[data-wb-mode]'), 2, '没提供 tile 的模式应退化为按钮卡（保证可达）')
+  await click('[data-wb-tile-enter="demo3"]')
+  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo3'`, '点「进入」应进入该模式')
+  await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入后主屏应关闭')
+
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
-  console.log('WORKBENCH_UI_OK 8 组断言通过（入口/切换/守卫/host 状态/设置段）')
-  await new Promise((resolve) => server.close(resolve))
+  console.log('WORKBENCH_UI_OK 9 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/瓷砖/切换/守卫/host 状态/设置段）')
+  await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {
   console.error('WORKBENCH_UI_FAIL', err?.stack || err)
   try {
-    if (server) await new Promise((resolve) => server.close(resolve))
+    if (server) await closeServer(server)
   } catch {}
   app.exit(1)
 })

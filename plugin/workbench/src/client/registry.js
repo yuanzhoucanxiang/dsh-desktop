@@ -47,6 +47,16 @@ function normalizeMode(descriptor, id) {
             order: Number.isFinite(descriptor.dock.order) ? Number(descriptor.dock.order) : 100,
           }
         : null,
+    // 主屏瓷砖视图（L2 主屏，可选）：进入工具台主屏时，右侧瓷砖格里渲染这份「主要内容窗口」。
+    // 与 dock 并立：dock 是别人当主视图时的右缘轻视图，tile 是主屏里的内容窗口；同为运行时组件引用。
+    tile:
+      descriptor.tile && typeof descriptor.tile === 'object' && descriptor.tile.view
+        ? {
+            label: descriptor.tile.label,
+            view: descriptor.tile.view,
+            order: Number.isFinite(descriptor.tile.order) ? Number(descriptor.tile.order) : 100,
+          }
+        : null,
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
     // 会被如实标成 delivered:false（工具台不替它假装收到了）。
     onHandoff: typeof descriptor.onHandoff === 'function' ? descriptor.onHandoff : null,
@@ -63,6 +73,7 @@ function publicView(mode, activeId) {
     active: mode.id === activeId,
     hasContext: mode.context !== null,
     hasDock: mode.dock !== null,
+    hasTile: mode.tile !== null,
   }
 }
 
@@ -238,6 +249,17 @@ export function createRegistry(options = {}) {
   }
 
   /**
+   * 某个模式提供的主屏瓷砖视图（L2 主屏）：`{ id, label, order, view }`；没提供 → null。
+   * 工具台只负责把它摆进主屏瓷砖格、给标题与「进入」，视图内容完全归模式。
+   */
+  function tileViewOf(id) {
+    const key = id === null || id === undefined ? null : String(id).trim()
+    const mode = key === null ? null : modes.get(key)
+    if (!mode || !mode.tile) return null
+    return { id: mode.id, label: normalizeLabel(mode.tile.label) || mode.id, order: mode.tile.order, view: mode.tile.view }
+  }
+
+  /**
    * 当前上下文（工具台只做**汇总与展示**，不解释内容）：模式自己报"现在在做什么"
    * （作品/场景/产物），工具台把它显示在入口与切换器上。模式没报或报错 → null（不编造）。
    */
@@ -302,5 +324,5 @@ export function createRegistry(options = {}) {
     return lastHandoffRecord
   }
 
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf }
+  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf }
 }

@@ -15,7 +15,7 @@
 import * as react from 'react'
 import { createRegistry } from './registry.js'
 import { ensureCss } from './styles.js'
-import { setRegistry } from './runtime.js'
+import { setRegistry, setSessions, setChatService } from './runtime.js'
 import { fetchState, pushState } from './host-api.js'
 import { T } from './copy.js'
 import { WorkbenchEntry } from './FooterEntry.js'
@@ -50,6 +50,20 @@ export function apply(ctx) {
     ctx.effect(() => ctx.reflect.provide('workbench', registry), 'workbench: service')
   } catch (err) {
     console.warn('[workbench] provide service failed:', err)
+  }
+
+  // 主屏左列的对话瓷砖用（可选注入：没有会话服务的环境——老内核/探针 harness——如实降级，不报错）
+  try {
+    ctx.inject(['sessions'], (scope) => setSessions(scope?.sessions || null))
+  } catch (err) {
+    console.warn('[workbench] sessions inject failed:', err)
+  }
+  // 0.2.0 的会话图通道（真聊天瓷砖读转录用）。**单独一次 inject**：跟 sessions 绑在一起的话，
+  // 环境缺 uiConversation 会让两个服务都永远等不到（cordis 的 inject 要凑齐依赖才回调）。
+  try {
+    ctx.inject(['uiConversation'], (scope) => setChatService(scope?.uiConversation || null))
+  } catch (err) {
+    console.warn('[workbench] uiConversation inject failed:', err)
   }
 
   // ③ 从 host 恢复上次激活的模式。模式可能比工具台晚注册，所以注册表每次变化都再试一次。
