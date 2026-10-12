@@ -346,6 +346,11 @@ var CSS = [
   ".dshWbMsg.is-user .dshWbMsgBody{border-bottom-right-radius:4px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbMsg.is-assistant .dshWbMsgBody{border-bottom-left-radius:4px;}",
   ".dshWbMsg.is-error .dshWbMsgBody{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);}",
+  // 长文折叠：默认三行（`-webkit-line-clamp`），展开后自然撑开
+  ".dshWbMsgBody.is-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}",
+  ".dshWbMsgMore{align-self:flex-start;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10px;line-height:14px;padding:1px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}",
+  ".dshWbMsg.is-user .dshWbMsgMore{align-self:flex-end;}",
+  ".dshWbMsgMore:hover{color:var(--dsw-alias-label-primary);}",
   ".dshWbMsg.is-detail .dshWbMsgBody{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}",
   // 工具活动行（结构化 tool）：一行压扁，不套气泡；失败用错误色 + 文字说明（不只靠颜色）
   ".dshWbAct{display:flex;align-items:center;gap:6px;padding:2px 2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}",
@@ -398,6 +403,8 @@ var CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   ".dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}",
   ".dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
+  // 「退出」用文字（不是字形）：它是回主界面的唯一出口，得一眼看懂（2026-10-13 项目所有者问过"怎么回去"）
+  ".dshWbBarBtn.is-exit{width:auto;padding:0 10px;font-size:12px;border-color:var(--dsw-alias-border-l2);}",
   ".dshWbBarBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
   ".dshWbBarBtn.is-close:hover{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);}",
   // `—` 收到小条：整块门面只剩顶栏 + 一行"正在做什么"（168px 高塞对话与瓷砖就是破版）
@@ -595,7 +602,8 @@ var T = {
   btnMini: (back) => back ? "展开成长条" : "收成小条",
   btnBackWide: "回到宽窗主屏（工作区选择）——只把窗口变宽，不退出工具台",
   btnSettings: "打开外壳设置",
-  btnExit: "退出工具台（窗口还原成正常大小）",
+  btnExit: "退出工具台，回到主界面（窗口还原成正常大小；有模式在场会先问它的守卫）",
+  btnExitShort: "退出",
   btnClose: "关闭这个窗口（按应用的关窗设置走：默认收进托盘，不会退出应用）",
   switchTo: (label) => `切换到 ${label}`,
   settingsIntro: "工具台是模式的统一门面：入口、切换、互斥与共享上下文都在这里，模式自己的实现不受影响。",
@@ -1080,6 +1088,7 @@ async function dispatchMessage(session, text) {
 
 // plugin/workbench/src/client/ConversationTile.js
 var WHO = { user: "作者", assistant: "助手", detail: "活动", error: "出错" };
+var LONG_TEXT = 180;
 function readSnapshot(sessions2) {
   try {
     const store = sessions2?.list;
@@ -1095,6 +1104,7 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
   const sessions2 = getSessions();
   const [snap, setSnap] = react3.useState(() => readSnapshot(sessions2));
   const [sheetOpen, setSheetOpen] = react3.useState(false);
+  const [expanded, setExpanded] = react3.useState({});
   react3.useEffect(() => {
     const store = sessions2?.list;
     if (!store || typeof store.subscribe !== "function") return void 0;
@@ -1146,14 +1156,36 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     react3.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
     // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧；
     // 工具调用走活动行（上面 actLine），不套气泡
-    transcript.messages.map(
-      (m) => m.kind === "detail" && m.tool ? actLine(m) : react3.createElement(
+    transcript.messages.map((m) => {
+      if (m.kind === "detail" && m.tool) return actLine(m);
+      const full = String(m.text || "");
+      const isLong = full.length > LONG_TEXT;
+      const open2 = expanded[m.key] === true;
+      return react3.createElement(
         "div",
         { key: m.key, className: `dshWbMsg is-${m.kind}`, "data-wb-chat-line": m.kind },
         m.kind !== "user" ? react3.createElement("span", { className: "dshWbMsgWho" }, WHO[m.kind] || "会话") : null,
-        react3.createElement("span", { className: "dshWbMsgBody" }, String(m.text || "").slice(0, 160))
-      )
-    ),
+        react3.createElement(
+          "span",
+          {
+            className: `dshWbMsgBody${isLong && !open2 ? " is-clamped" : ""}`,
+            "data-wb-msg-open": isLong ? open2 ? "1" : "0" : null
+          },
+          full
+        ),
+        // 长文折叠：默认三行，点一下展开全文（比原来"硬截断 160 字"诚实——一个字都不丢）
+        isLong ? react3.createElement(
+          "button",
+          {
+            type: "button",
+            className: "dshWbMsgMore",
+            onClick: () => setExpanded((prev) => ({ ...prev, [m.key]: !open2 })),
+            "data-wb-msg-toggle": open2 ? "collapse" : "expand"
+          },
+          open2 ? "收起" : `展开全文（${full.length} 字）`
+        ) : null
+      );
+    }),
     // 流式态：正在生成时把这一行挂在最下面（带实时 tok/s，读不到就不显示那一段）
     running ? react3.createElement(
       "div",
@@ -1552,13 +1584,15 @@ function WorkbenchChrome() {
       "button",
       {
         type: "button",
-        className: "dshWbBarBtn",
+        // 2026-10-13：字形 `⎋` 没人认得出（项目所有者直接问"怎么回到主界面"）→ 换成**文字**「退出」。
+        // 这一钮是"回到内核主界面"的唯一出口（← 只是回宽窗主屏，✕ 是关窗进托盘），必须一眼看懂。
+        className: "dshWbBarBtn is-exit",
         onClick: () => void exitWorkbench(),
         title: T.btnExit,
         "aria-label": T.btnExit,
         "data-wb-btn": "exit"
       },
-      "⎋"
+      T.btnExitShort
     ),
     react4.createElement(
       "button",

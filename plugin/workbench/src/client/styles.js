@@ -42,6 +42,11 @@ export const CSS = [
   '.dshWbMsg.is-user .dshWbMsgBody{border-bottom-right-radius:4px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
   '.dshWbMsg.is-assistant .dshWbMsgBody{border-bottom-left-radius:4px;}',
   '.dshWbMsg.is-error .dshWbMsgBody{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);}',
+  // 长文折叠：默认三行（`-webkit-line-clamp`），展开后自然撑开
+  '.dshWbMsgBody.is-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}',
+  '.dshWbMsgMore{align-self:flex-start;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10px;line-height:14px;padding:1px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}',
+  '.dshWbMsg.is-user .dshWbMsgMore{align-self:flex-end;}',
+  '.dshWbMsgMore:hover{color:var(--dsw-alias-label-primary);}',
   '.dshWbMsg.is-detail .dshWbMsgBody{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}',
   // 工具活动行（结构化 tool）：一行压扁，不套气泡；失败用错误色 + 文字说明（不只靠颜色）
   '.dshWbAct{display:flex;align-items:center;gap:6px;padding:2px 2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}',
@@ -94,6 +99,8 @@ export const CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   '.dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}',
   '.dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+  // 「退出」用文字（不是字形）：它是回主界面的唯一出口，得一眼看懂（2026-10-13 项目所有者问过"怎么回去"）
+  '.dshWbBarBtn.is-exit{width:auto;padding:0 10px;font-size:12px;border-color:var(--dsw-alias-border-l2);}',
   '.dshWbBarBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}',
   '.dshWbBarBtn.is-close:hover{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);}',
   // `—` 收到小条：整块门面只剩顶栏 + 一行"正在做什么"（168px 高塞对话与瓷砖就是破版）

@@ -232,13 +232,15 @@ export function WorkbenchChrome() {
           'button',
           {
             type: 'button',
-            className: 'dshWbBarBtn',
+            // 2026-10-13：字形 `⎋` 没人认得出（项目所有者直接问"怎么回到主界面"）→ 换成**文字**「退出」。
+            // 这一钮是"回到内核主界面"的唯一出口（← 只是回宽窗主屏，✕ 是关窗进托盘），必须一眼看懂。
+            className: 'dshWbBarBtn is-exit',
             onClick: () => void exitWorkbench(),
             title: T.btnExit,
             'aria-label': T.btnExit,
             'data-wb-btn': 'exit',
           },
-          '⎋',
+          T.btnExitShort,
         ),
         react.createElement(
           'button',

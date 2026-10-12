@@ -312,10 +312,11 @@ app.whenReady().then(async () => {
   // ③e 真聊天瓷砖（只读）：喂一条 0.2.0 形状的会话图（nodes 是 Map、order 是数组），
   // 转录必须经 mode-kit projectChat 投影出带角色的行——**未知内容保留可见摘要**，不藏。
   await evaluate(
-    `window.__wbChat.set('s2', { order:['m1','m2','m3'], nodes: new Map([
+    `window.__wbChat.set('s2', { order:['m1','m2','m3','m4'], nodes: new Map([
       ['m1',{kind:'user',data:{content:[{kind:'text',text:'把第二章的结尾改冷一点'}]}}],
       ['m2',{kind:'assistant-step',data:{blocks:[{type:'text',text:'好，先给你三个方向'}]}}],
       ['m3',{kind:'tool-call',data:{name:'write_file',callId:'c1',argsRaw:'{}',phase:'call'}}],
+      ['m4',{kind:'user',data:{content:[{kind:'text',text:'这是一段很长的消息。'.repeat(20)}]}}],
     ]) })`,
   )
   await waitFor(`document.querySelectorAll('[data-wb-chat-line]').length>=2`, '真聊天瓷砖应投影出转录行')
@@ -334,6 +335,24 @@ app.whenReady().then(async () => {
     'call',
     '活动行要标出阶段（call/result）',
   )
+  // 长文折叠（气泡细节）：旧实现把正文硬截断到 160 字（一个字都不该丢）→ 现在默认折三行 + 「展开全文」
+  {
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-msg-toggle]').getAttribute('data-wb-msg-toggle')`),
+      'expand',
+      '长文默认给「展开全文」',
+    )
+    assert.equal(await evaluate(`document.querySelector('[data-wb-msg-open]').getAttribute('data-wb-msg-open')`), '0', '长文默认折叠')
+    const len = await evaluate(`document.querySelector('[data-wb-msg-open]').textContent.length`)
+    assert.ok(len >= 200, `折叠时正文也要**完整渲染**（不再硬截断）：实际 ${len}`)
+    await click('[data-wb-msg-toggle]')
+    await waitFor(`document.querySelector('[data-wb-msg-open]').getAttribute('data-wb-msg-open')==='1'`, '点「展开全文」应展开')
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-msg-open]').classList.contains('is-clamped')`),
+      false,
+      '展开后不再折行',
+    )
+  }
   // 流式态：这条 fixture 的 running=true → 应挂一行"正在生成…"；把它关掉就应收起
   assert.equal(await count('[data-wb-chat-streaming]'), 1, 'running=true 时应显示流式态')
   await evaluate(`window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:false, retainedBy:'none', blank:false, updatedAt:Date.now() }])`)
@@ -428,6 +447,12 @@ app.whenReady().then(async () => {
   assert.ok(barInfo.tags.every((t) => t === 'BUTTON'), `五钮必须是原生 button（Tab 可达）：${JSON.stringify(barInfo.tags)}`)
   assert.ok(barInfo.titles.every((t) => t && t.length > 3), `五钮都要有说得清的 title：${JSON.stringify(barInfo.titles)}`)
   assert.equal(await evaluate(`(document.querySelector('[data-wb-bar]')||{}).getAttribute?.('data-wb-bar-shape')`), 'strip')
+  // 「退出」必须是**看得懂的文字**（不是字形）：它是回内核主界面的唯一出口。
+  // 2026-10-13 项目所有者直接问"怎么回到主界面"——字形 ⎋ 的锅，这条断言就是钉它别再退回去。
+  assert.ok(
+    String(await text('[data-wb-btn="exit"]')).length >= 2,
+    `「退出」钮要用文字标签（可读性）：实际 ${JSON.stringify(await text('[data-wb-btn="exit"]'))}`,
+  )
   // ⚙ 走壳既有的设置通道：假桥记一笔（**必须在 ← 之前**——← 会收掉顶栏，那时就没有 ⚙ 了）
   await click('[data-wb-btn="settings"]')
   await waitFor(`window.__settingsCalls===1`, '⚙ 应调用壳的设置通道')
