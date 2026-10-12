@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..', '..')
 const KIT = path.join(REPO, 'packages', 'mode-kit')
+const PKG = path.join(REPO, 'node_modules', '@dsh-local', 'mode-kit')
 const SHIM = path.join(REPO, 'plugin', 'writing-mode', 'src', 'client', 'adapters', 'harness')
 
 let passed = 0
@@ -52,11 +53,46 @@ for (const [file, names] of Object.entries(EXPECTED)) {
   })
 }
 
-await test('shim 与库是同一份实现（函数引用相等，不是各自复制了一份）', async () => {
-  const kit = await import(pathToFileURL(path.join(KIT, 'src', 'harness', 'adapter.js')).href)
+await test('shim 与「插件实际解析到的那份实现」是同一引用（包名解析，不是本地副本）', async () => {
+  // 2026-10-12：插件改用包名引用后（`@dsh-local/mode-kit/harness/adapter.js`，git 依赖），
+  // shim 的引用来自 **node_modules 里的包**；再拿 packages/mode-kit 比就会红。
+  // 这条断言必须对准"真正发布出去的那份"，否则门禁测的不是产物。
+  if (!fs.existsSync(PKG)) {
+    console.log('SKIP shim 引用比对（node_modules 里没有 @dsh-local/mode-kit；先 npm install）')
+    return
+  }
+  const kit = await import(pathToFileURL(path.join(PKG, 'src', 'harness', 'adapter.js')).href)
   const shim = await import(pathToFileURL(path.join(SHIM, 'adapter.js')).href)
   assert.equal(shim.createHarnessAdapter, kit.createHarnessAdapter)
   assert.equal(shim.newOperationToken, kit.newOperationToken)
+})
+
+await test('两份副本一致：packages/mode-kit vs 已安装的 @dsh-local/mode-kit（防静默漂移）', () => {
+  // 为什么需要这条：工作台（plugin/workbench）用本地副本的相对路径，插件用已安装的包。
+  // 两份同时存在期间，谁改了一份都不会有人发现——这条把它们钉在一起。
+  // 比对忽略换行符差异（本机 autocrlf 会把工作树转成 CRLF）。
+  if (!fs.existsSync(PKG)) {
+    console.log('SKIP 副本一致性（node_modules 里没有 @dsh-local/mode-kit；先 npm install）')
+    return
+  }
+  const norm = (s) => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const list = (dir) => {
+    const out = []
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name)
+        if (e.isDirectory()) walk(p)
+        else out.push(path.relative(dir, p).replace(/\\/g, '/'))
+      }
+    }
+    walk(dir)
+    return out.sort()
+  }
+  const local = list(path.join(KIT, 'src'))
+  const packed = list(path.join(PKG, 'src'))
+  assert.deepEqual(local, packed, '两份副本的文件集合不同')
+  const diff = local.filter((rel) => norm(fs.readFileSync(path.join(KIT, 'src', rel), 'utf8')) !== norm(fs.readFileSync(path.join(PKG, 'src', rel), 'utf8')))
+  assert.deepEqual(diff, [], '两份副本内容不同（改了一份要同步另一份，或改成只用一份）')
 })
 
 await test('结构边界：库内所有 import 都是包内相对路径且真实存在', () => {
