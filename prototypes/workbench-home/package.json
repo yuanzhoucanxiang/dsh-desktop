@@ -1,0 +1,9 @@
+{
+  "name": "workbench-home-prototype",
+  "private": true,
+  "version": "0.0.0",
+  "description": "工具台主屏互动原型（纯静态，零依赖；npm run dev 即可预览）",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  }
+}

@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>长条对话窗 · 模式拼接 · 互动原型</title>
+<style>
+  :root{
+    --bg-base:#12130f; --bg-1:#181a15; --bg-2:#1f211b; --bg-3:#262820;
+    --tx-1:#eceae2; --tx-2:#b3b1a6; --tx-3:#807e74;
+    --bd-1:rgba(236,234,226,.08); --bd-2:rgba(236,234,226,.18);
+    --brand:#8fb37a; --brand-dim:rgba(143,179,122,.14);
+    --warn:#c9a25a; --error:#c96a5a;
+    --hover:rgba(236,234,226,.06);
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important} /* 类里的 display:flex 会盖过 hidden 属性（v2.2 首屏被遮罩糊住的根因） */
+  html,body{height:100%}
+  body{margin:0;color:var(--tx-1);font:14px/1.6 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    /* 电脑桌面壁纸（不是"预留的舞台背景"）：极光绿 + 钢蓝 + 一点暖光，明显区别于纯色底 */
+    background:
+      radial-gradient(1100px 640px at 84% -10%, rgba(143,179,122,.16), transparent 62%),
+      radial-gradient(900px 620px at 4% 112%, rgba(96,144,180,.13), transparent 60%),
+      radial-gradient(1500px 800px at 55% 118%, rgba(201,162,90,.06), transparent 55%),
+      linear-gradient(160deg,#171a20 0%,#141810 48%,#0f120c 100%);
+    overflow:hidden}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  button:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:1px;border-radius:6px}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:3px}
+
+  .desk-note{position:fixed;left:26px;top:24px;max-width:270px;color:var(--tx-3);font-size:12px;line-height:1.8;z-index:1}
+  .desk-note b{color:var(--tx-2);font-weight:600}
+  .desk-note a{color:var(--brand);text-decoration:none;border-bottom:1px dotted var(--brand)}
+
+  /* 桌面氛围图标（纯装饰，强化"窗外就是电脑桌面"） */
+  .desk-icons{position:fixed;left:22px;bottom:20px;display:flex;gap:18px;z-index:1;opacity:.5;pointer-events:none}
+  .dicon{display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;
+    font-size:10.5px;color:var(--tx-2);text-shadow:0 1px 4px rgba(0,0,0,.9)}
+  .dicon span{font-size:24px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.7))}
+
+  /* ── 拼接区：左子agent对话 | 主长条 | 右模式界面 ───────── */
+  .dock{height:100vh;display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:0 18px;overflow-x:auto;transition:opacity .22s ease, transform .28s ease}
+  .dock.gone{opacity:0;transform:translateY(14px);pointer-events:none}
+
+  /* ── 长条窗（主 agent，手机微信比例） ─────────────────── */
+  .strip{position:relative;flex:none;width:392px;height:min(880px,94vh);display:flex;flex-direction:column;
+    background:var(--bg-base);border:1px solid var(--bd-2);border-radius:22px;overflow:visible;
+    box-shadow:0 32px 90px rgba(0,0,0,.55), 0 0 0 6px rgba(236,234,226,.03)}
+  .strip-inner{display:flex;flex-direction:column;height:100%;border-radius:22px;overflow:hidden}
+
+  /* 顶栏：← 齿轮 最小化 退出工作台 关闭 */
+  .topbar{flex:none;display:flex;align-items:center;gap:2px;height:46px;padding:0 8px;
+    border-bottom:1px solid var(--bd-1);background:var(--bg-1)}
+  .tbtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;
+    border-radius:8px;color:var(--tx-2);transition:background .15s ease}
+  .tbtn:hover{background:var(--hover);color:var(--tx-1)}
+  .tbtn svg{width:17px;height:17px;display:block}
+  .topbar .who{flex:1;text-align:center;font-size:13.5px;font-weight:600;letter-spacing:.02em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .topbar .who small{display:block;font-size:10.5px;font-weight:400;color:var(--tx-3)}
+  .topbar .who .magent{color:var(--brand);font-weight:500}
+
+  /* 中部：对话 */
+  .chat{flex:1;overflow-y:auto;padding:14px 12px 8px;display:flex;flex-direction:column;gap:10px;min-height:0}
+  .msg{max-width:82%;padding:8px 11px;border-radius:12px;font-size:13.5px;white-space:pre-wrap;word-break:break-word}
+  .msg.user{align-self:flex-end;background:var(--brand-dim);border:1px solid rgba(143,179,122,.3)}
+  .msg.agent{align-self:flex-start;background:var(--bg-2);border:1px solid var(--bd-1)}
+  .msg .who{display:block;font-size:10.5px;color:var(--tx-3);margin-bottom:2px}
+  .msg.stream::after{content:"▌";color:var(--brand);animation:caret .8s steps(1) infinite}
+  @keyframes caret{50%{opacity:0}}
+  .day{align-self:center;font-size:10.5px;color:var(--tx-3);padding:2px 10px;background:var(--bg-1);
+    border-radius:999px;border:1px solid var(--bd-1)}
+
+  /* 统筹卡（主 agent 管各模式子任务） */
+  .orch{align-self:stretch;margin:2px 4px;padding:10px 12px;border-radius:12px;
+    border:1px solid rgba(143,179,122,.35);background:var(--brand-dim);font-size:12.5px}
+  .orch .orch-title{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--brand);margin-bottom:6px}
+  .orch .orch-row{display:flex;align-items:center;gap:7px;padding:3px 0;color:var(--tx-2)}
+  .orch .orch-row .st{margin-left:auto;font-size:11px;color:var(--tx-3)}
+  .orch .orch-row .st.doing{color:var(--warn)}
+  .orch .orch-row .st.done{color:var(--brand)}
+
+  /* 底部：输入框 + 状态窄条 */
+  .composer{flex:none;border-top:1px solid var(--bd-1);background:var(--bg-1)}
+  .composer-row{display:flex;align-items:flex-end;gap:8px;padding:10px 10px 8px}
+  .plus{position:relative;flex:none;width:36px;height:36px;border-radius:10px;border:1px solid var(--bd-2);
+    color:var(--tx-2);font-size:19px;line-height:1;transition:background .15s ease}
+  .plus:hover{background:var(--hover);color:var(--tx-1)}
+  .input{flex:1;display:flex;align-items:flex-end;gap:8px;padding:8px 10px;border-radius:12px;
+    border:1px solid var(--bd-2);background:var(--bg-base)}
+  .input textarea{flex:1;resize:none;border:none;background:none;color:var(--tx-1);font:inherit;
+    font-size:13.5px;max-height:96px;height:22px;padding:0}
+  .input textarea:focus-visible{outline:none}
+  .send{flex:none;padding:5px 12px;border-radius:9px;background:var(--brand);color:#12160e;font-weight:600;font-size:13px}
+  .send:hover{filter:brightness(1.08)}
+  .send[disabled]{opacity:.45;cursor:not-allowed}
+
+  /* 「+」弹层 */
+  .sheet{position:absolute;left:10px;bottom:96px;width:224px;padding:6px;border-radius:12px;
+    border:1px solid var(--bd-2);background:var(--bg-2);box-shadow:0 14px 44px rgba(0,0,0,.45);
+    animation:sheetIn .16s ease-out;z-index:30}
+  @keyframes sheetIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .sheet button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border-radius:8px;
+    font-size:13px;color:var(--tx-1);text-align:left}
+  .sheet button:hover{background:var(--hover)}
+  .sheet button[disabled]{color:var(--tx-3);cursor:not-allowed}
+  .sheet .sep{height:1px;margin:5px 8px;background:var(--bd-1)}
+  .sheet .cap{padding:6px 10px 2px;font-size:10.5px;color:var(--tx-3)}
+
+  /* 状态窄条（token 速度 / 缓存命中 / 上下文） */
+  .meter{display:flex;align-items:center;gap:10px;padding:3px 12px 7px;font-size:10.5px;color:var(--tx-3);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .meter b{color:var(--tx-2);font-weight:500}
+  .meter .live{color:var(--brand)}
+  .meter .ctxbar{position:relative;flex:0 0 44px;height:3px;border-radius:2px;background:var(--bg-3);overflow:hidden}
+  .meter .ctxbar i{position:absolute;inset:0 auto 0 0;width:10%;background:var(--brand);border-radius:2px}
+  .meter .model{margin-left:auto;overflow:hidden;text-overflow:ellipsis}
+
+  /* ── 右缘朝外扇形模式菜单（图标朝窗外的桌面扇形展开，不压窗口） ── */
+  .edge{position:absolute;top:0;right:-14px;width:26px;height:100%;z-index:20}
+  .edge::after{content:"";position:absolute;top:50%;right:6px;transform:translateY(-50%);
+    width:4px;height:56px;border-radius:2px;background:var(--bd-2);opacity:0;transition:opacity .18s ease}
+  .edge:hover::after,.edge.hot::after{opacity:1;background:var(--brand)}
+  .fan{position:absolute;left:100%;top:50%;width:150px;height:200px;margin-left:-4px;
+    transform:translateY(-50%);display:none;z-index:25}
+  .edge:hover .fan,.fan:hover{display:block}
+  .fan-item{position:absolute;left:6px;top:50%;width:46px;height:46px;margin-top:-23px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;color:var(--tx-1);
+    background:var(--bg-1);border:1px solid var(--bd-2);box-shadow:0 12px 30px rgba(0,0,0,.5);
+    opacity:0;animation:fanPop .2s cubic-bezier(.25,.9,.3,1.15) forwards}
+  .fan-item:nth-child(1){--a:-34deg;animation-delay:.02s}
+  .fan-item:nth-child(2){--a:0deg;animation-delay:.07s}
+  .fan-item:nth-child(3){--a:34deg;animation-delay:.12s}
+  @keyframes fanPop{
+    from{opacity:0;transform:rotate(var(--a)) translateX(10px) rotate(calc(var(--a)*-1)) scale(.4)}
+    to{opacity:1;transform:rotate(var(--a)) translateX(84px) rotate(calc(var(--a)*-1)) scale(1)}}
+  .fan-item:hover:not([disabled]){border-color:rgba(143,179,122,.55);background:var(--brand-dim)}
+  .fan-item.joined{border-color:rgba(143,179,122,.55)}
+  .fan-item[disabled]{opacity:.42;cursor:not-allowed;border-style:dashed}
+  .fan-item .ic{font-size:19px;pointer-events:none}
+  .fan-item .st{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;
+    border:2px solid var(--bg-base);background:var(--brand);display:none}
+  .fan-item.joined .st{display:block}
+  .fan-item .lbl{position:absolute;left:calc(100% + 9px);top:50%;transform:translateY(-50%);
+    padding:3px 9px;border-radius:8px;background:var(--bg-1);border:1px solid var(--bd-2);
+    box-shadow:0 8px 22px rgba(0,0,0,.4);font-size:11.5px;color:var(--tx-1);white-space:nowrap;
+    opacity:0;transition:opacity .15s ease;pointer-events:none}
+  .fan-item:hover .lbl{opacity:1}
+  .fan-item .lbl .tag{font-style:normal;margin-left:6px;color:var(--tx-3)}
+  .fan-item.joined .lbl .tag{color:var(--brand)}
+
+  /* ── 拼接面板（左子agent对话 / 右模式界面） ────────────── */
+  .pane{flex:none;height:min(880px,94vh);display:flex;flex-direction:column;
+    background:var(--bg-1);border:1px solid var(--bd-2);border-radius:18px;overflow:hidden;
+    box-shadow:0 24px 70px rgba(0,0,0,.45);animation:paneIn .24s ease-out}
+  @keyframes paneIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+  .pane.from-left{animation-name:paneInL}
+  @keyframes paneInL{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+  .pane-head{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;
+    border-bottom:1px solid var(--bd-1);background:var(--bg-2);font-size:13px;font-weight:600}
+  .pane-head .badge{padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:500;
+    background:var(--bg-3);color:var(--tx-3);border:1px solid var(--bd-1)}
+  .pane-head .badge.sub{color:var(--brand);background:var(--brand-dim);border-color:rgba(143,179,122,.35)}
+  .pane-head .x{margin-left:auto}
+  .pane-body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
+
+  /* 子 agent 对话面板（左拼） */
+  .subchat{width:300px}
+  .subchat .chat{padding:12px 10px}
+  .subchat .composer-row{padding:8px}
+  .subnote{flex:none;padding:5px 12px 8px;font-size:10.5px;color:var(--tx-3);
+    display:flex;gap:8px;align-items:center;border-top:1px dashed var(--bd-1)}
+  .subnote .dot{width:6px;height:6px;border-radius:50%;background:var(--brand)}
+
+  /* 模式界面面板（右拼） */
+  .modepane{width:460px;min-width:300px;max-width:760px;position:relative}
+  .grip{position:absolute;left:-4px;top:0;width:9px;height:100%;cursor:col-resize;z-index:6}
+  .grip::after{content:"";position:absolute;left:3px;top:50%;transform:translateY(-50%);
+    width:3px;height:44px;border-radius:2px;background:var(--bd-2);transition:background .15s ease}
+  .grip:hover::after,.grip.on::after{background:var(--brand)}
+  .crumb{font-size:12px;color:var(--tx-3);padding:12px 14px 0}
+  .crumb b{color:var(--tx-2);font-weight:500}
+  .editor{flex:1;min-height:0;overflow-y:auto;margin:10px 14px;padding:12px 14px;border-radius:10px;
+    border:1px solid var(--bd-1);background:var(--bg-base);font-size:13.5px;line-height:1.9}
+  .editor p{margin:0 0 10px}
+  .statusbar{flex:none;display:flex;gap:14px;padding:0 14px 12px;font-size:11.5px;color:var(--tx-3)}
+  .statusbar .ok{color:var(--brand)}
+  .prompt{width:calc(100% - 28px);margin:10px 14px 0;resize:none;height:60px;padding:9px 11px;border-radius:10px;
+    font:inherit;font-size:13px;border:1px solid var(--bd-1);background:var(--bg-base);color:var(--tx-1)}
+  .prompt-label{font-size:12px;color:var(--tx-3);padding:12px 14px 0}
+  .preview{position:relative;margin:10px 14px;border-radius:10px;border:1px solid var(--bd-1);overflow:hidden;
+    aspect-ratio:16/9;background:var(--bg-base)}
+  .preview svg{display:block;width:100%;height:100%}
+  .preview .seed{position:absolute;right:8px;bottom:6px;font-size:11px;color:rgba(236,234,226,.55)}
+  .preview .shimmer{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(18,19,15,.55);font-size:12.5px;color:var(--tx-2)}
+  .preview.busy .shimmer{display:flex}
+  .pane-foot{flex:none;display:flex;gap:8px;align-items:center;padding:0 14px 12px}
+  .btn{padding:7px 14px;border-radius:9px;border:1px solid var(--bd-2);color:var(--tx-2);
+    transition:background .16s ease,color .16s ease}
+  .btn:hover{background:var(--hover);color:var(--tx-1)}
+  .btn.is-primary{background:var(--brand);border-color:var(--brand);color:#12160e;font-weight:600}
+  .note{font-size:11.5px;color:var(--tx-3)}
+  .note::before{content:"ⓘ "}
+
+  /* ── 最小化小长条 / 桌面态 / toast ─────────────────────── */
+  .mini{position:fixed;right:26px;bottom:26px;display:flex;align-items:center;gap:6px;height:42px;
+    padding:0 10px;border-radius:12px;border:1px solid var(--bd-2);background:var(--bg-1);
+    box-shadow:0 18px 50px rgba(0,0,0,.5);animation:miniIn .2s ease-out;z-index:40}
+  @keyframes miniIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .mini .mstat{display:flex;gap:9px;padding:0 6px 0 2px;font-size:10.5px;color:var(--tx-3);
+    font-variant-numeric:tabular-nums;white-space:nowrap;border-right:1px solid var(--bd-1);margin-right:2px}
+  .mini .mstat b{color:var(--tx-2);font-weight:500}
+  .mini .mstat .live{color:var(--brand)}
+
+  .closed{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;
+    justify-content:center;color:var(--tx-3);z-index:50;background:rgba(16,18,13,.6);backdrop-filter:blur(3px)}
+  .closed .btn{padding:8px 18px;border-radius:10px;border:1px solid var(--bd-2);color:var(--tx-1)}
+  .closed .btn:hover{background:var(--hover)}
+
+  .toast{position:fixed;left:14px;bottom:16px;z-index:80;max-width:min(400px,90vw);padding:9px 13px;
+    border:1px solid var(--bd-2);border-left:3px solid var(--brand);border-radius:10px;
+    background:var(--bg-1);box-shadow:0 8px 28px rgba(0,0,0,.3);font-size:12.5px;color:var(--tx-1);
+    cursor:pointer;animation:sheetIn .16s ease-out}
+  .toast.is-warn{border-left-color:var(--warn)}
+
+  @media (max-width:900px){ .desk-note{display:none} }
+  @media (prefers-reduced-motion:reduce){
+    .dock,.sheet,.mini,.toast,.pane,.fan-item{animation:none;transition:none}
+    .msg.stream::after{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="desk-note">
+  <b>设想 v2.2 · 长条对话窗 + 模式拼接</b><br>
+  窗外就是<b>电脑桌面</b>（不是预留的舞台背景）——没拼接时只有这一条长条窗。<br>
+  鼠标放到长条窗<b>右缘</b>（已有模式时 = 长条窗与模式窗口的<b>拼合处</b>）→ 模式图标<b>朝窗外的桌面</b>扇形展开；<br>
+  点一个：<b>新模式像细胞分裂一样从接缝展开</b>——<br>
+  · 右侧：新界面贴着长条窗，把既有模式界面往外顶（左缘可拖拽调宽）<br>
+  · 左侧：新模式的<b>子 agent 对话拼到最外边</b>（与主 agent 相互独立）<br>
+  两侧正好镜像；主 agent（长条窗）统筹，各模式同时推进。<br>
+  <a href="index.html">← 回到主屏设想（v1 瓷砖格）</a>
+</div>
+
+<!-- 桌面氛围：窗外就是电脑桌面（纯装饰） -->
+<div class="desk-icons" aria-hidden="true">
+  <div class="dicon"><span>🖥️</span>此电脑</div>
+  <div class="dicon"><span>📄</span>归乡记-第3章.md</div>
+  <div class="dicon"><span>🗑️</span>回收站</div>
+</div>
+
+<!-- ═══════════ 拼接区 ═══════════ -->
+<div class="dock" id="dock">
+
+  <!-- 左侧：各模式的子 agent 对话（动态拼接） -->
+  <div id="sidechats" style="display:contents"></div>
+
+  <!-- 主长条窗（工作台主 agent） -->
+  <div class="strip" id="strip">
+    <div class="strip-inner">
+      <div class="topbar">
+        <button class="tbtn" id="navBack" title="返回工作区选择">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </button>
+        <span class="who">工作台 <span class="magent">· 主 agent</span><small>统筹各模式子 agent</small></span>
+        <button class="tbtn" id="navSettings" title="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="tbtn" id="navMin" title="最小化为小长条">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="tbtn" id="navExit" title="退出工作台模式">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
+        <button class="tbtn" id="navClose" title="关闭界面">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="chat" id="chat">
+        <div class="day">今天</div>
+        <div class="msg user">第二章结尾我总觉得松，钩子没立起来。另外第三章想要一张站台雨夜的图。</div>
+        <div class="msg agent"><span class="who">工作台 · 主 agent</span>收到，这两件事都不用你等：改结尾我派给写作伙伴，图我派给 GIR。你把鼠标放到我这条窗口的<b>右缘</b>，就能看到它们——点开之后，模式的界面拼我右边，它自己的对话拼我左边，各干各的，有进展我汇总。</div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-row">
+          <button class="plus" id="plusBtn" title="上传文件和更多工具">+</button>
+          <div class="input">
+            <textarea id="inputText" placeholder="发消息……" rows="1"></textarea>
+            <button class="send" id="sendBtn">发送</button>
+          </div>
+        </div>
+        <div class="meter">
+          <span>⚡ <b id="mSpeed">0.0</b> tok/s</span>
+          <span>缓存命中 <b id="mCache">62%</b></span>
+          <span>上下文 <b id="mCtx">12.3k</b>/128k</span>
+          <span class="ctxbar"><i id="mCtxBar"></i></span>
+          <span class="model">deepseek-chat</span>
+        </div>
+        <div class="sheet" id="sheet" hidden>
+          <div class="cap">上传</div>
+          <button id="sheetUpload">📎 上传文件</button>
+          <div class="sep"></div>
+          <div class="cap">更多工具</div>
+          <button data-tool="写作模式">✍️ 写作模式</button>
+          <button data-tool="GIR 生图">🖼 GIR 生图</button>
+          <button disabled title="还没开始做">🎬 导演模式（规划中）</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右缘扇形菜单触发区 -->
+    <div class="edge" id="edge" title="模式">
+      <div class="fan" id="fan">
+        <button class="fan-item" data-mode="writing"><span class="ic">✍️</span><span class="st"></span><span class="lbl">写作模式<em class="tag">拼接</em></span></button>
+        <button class="fan-item" data-mode="gir"><span class="ic">🖼</span><span class="st"></span><span class="lbl">GIR 生图<em class="tag">拼接</em></span></button>
+        <button class="fan-item" disabled><span class="ic">🎬</span><span class="st"></span><span class="lbl">导演模式<em class="tag">规划中</em></span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧：各模式的界面（动态拼接，可拖拽调宽） -->
+  <div id="modepanes" style="display:contents"></div>
+</div>
+
+<!-- ═══════════ 最小化小长条 ═══════════ -->
+<div class="mini" id="mini" hidden>
+  <button class="tbtn" id="miniRestore" title="返回默认界面">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+  </button>
+  <span class="mstat">
+    <span>⚡ <b class="live" id="miniSpeed">0.0</b></span>
+    <span>缓存 <b id="miniCache">62%</b></span>
+    <span>上下文 <b id="miniCtx">12.3k</b></span>
+  </span>
+  <button class="tbtn" id="miniExit" title="退出工作台模式">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+  </button>
+  <button class="tbtn" id="miniClose" title="关闭界面">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+  </button>
+</div>
+
+<div class="closed" id="closedVeil" hidden>
+  <div id="closedText">界面已关闭（原型示意）。</div>
+  <button class="btn" id="reopen">重新打开长条窗</button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  function el(tag, cls, text){
+    var d = document.createElement(tag);
+    if (cls) d.className = cls;
+    if (text !== undefined) d.textContent = text;
+    return d;
+  }
+
+  /* ── toast ── */
+  var toastTimer = null;
+  function toast(text, warn){
+    var t = $('toast');
+    t.textContent = text;
+    t.className = 'toast' + (warn ? ' is-warn' : '');
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.hidden = true; }, 6000);
+  }
+  $('toast').addEventListener('click', function(){ this.hidden = true; clearTimeout(toastTimer); });
+
+  /* ── 状态窄条 ── */
+  var meter = { speed: 0, cache: 62, ctx: 12300, max: 128000 };
+  var speedConsumers = 0; // 几处同时在流式，速度就叠起来（主 agent + 子 agent 同时推进）
+  function kfmt(n){ return (n / 1000).toFixed(1) + 'k'; }
+  function paintMeter(){
+    var live = meter.speed > 0.05;
+    ['mSpeed', 'miniSpeed'].forEach(function(id){
+      var e = $(id); if (!e) return;
+      e.textContent = meter.speed.toFixed(1);
+      e.classList.toggle('live', live);
+    });
+    var cacheTxt = Math.round(meter.cache) + '%';
+    $('mCache').textContent = cacheTxt; $('miniCache').textContent = cacheTxt;
+    var ctxTxt = kfmt(meter.ctx);
+    $('mCtx').textContent = ctxTxt; $('miniCtx').textContent = ctxTxt;
+    $('mCtxBar').style.width = Math.min(100, meter.ctx / meter.max * 100).toFixed(1) + '%';
+  }
+  paintMeter();
+  setInterval(function(){
+    if (speedConsumers === 0) {
+      meter.speed = Math.max(0, meter.speed - 6);
+      meter.cache = Math.max(40, Math.min(92, meter.cache + (Math.random() - 0.5) * 1.2));
+      paintMeter();
+    }
+  }, 1600);
+  function speedPump(){
+    meter.speed = Math.min(88, meter.speed + 12 + Math.random() * 18);
+    meter.cache = Math.max(40, Math.min(96, meter.cache + (Math.random() - 0.35) * 2));
+  }
+
+  /* ── 通用对话行为（主 agent 与各子 agent 共用） ── */
+  function scrollBox(box){ box.scrollTop = box.scrollHeight; }
+  function addMsg(box, who, text, whoLabel){
+    var div = el('div', 'msg ' + who);
+    if (whoLabel) {
+      var s = el('span', 'who', whoLabel);
+      div.appendChild(s);
+    }
+    div.appendChild(document.createTextNode(text));
+    box.appendChild(div);
+    scrollBox(box);
+    return div;
+  }
+  function streamInto(box, whoLabel, full, onDone){
+    speedConsumers++;
+    var bubble = addMsg(box, 'agent', '', whoLabel);
+    bubble.classList.add('stream');
+    var textNode = bubble.lastChild;
+    var i = 0;
+    var timer = setInterval(function(){
+      var burst = 2 + Math.floor(Math.random() * 3);
+      i = Math.min(full.length, i + burst);
+      textNode.textContent = full.slice(0, i);
+      meter.ctx += burst * 2;
+      speedPump();
+      paintMeter();
+      scrollBox(box);
+      if (i >= full.length) {
+        clearInterval(timer);
+        bubble.classList.remove('stream');
+        speedConsumers--;
+        setTimeout(function(){ if (onDone) onDone(); }, 350);
+      }
+    }, 90);
+  }
+
+  /* ── 主 agent 对话 ── */
+  var mainCanned = [
+    '两边都在跑：写作伙伴改结尾，GIR 准备「站台雨夜」。你不用盯着，有结果我汇总到这儿。',
+    '统筹口径：写作那边先不动第三章大纲，等结尾定了再补伏笔登记；图出来我会让你挑一版。',
+  ];
+  var mainCannedIdx = 0;
+  var mainBusy = false;
+  function mainSend(){
+    var ta = $('inputText');
+    var text = ta.value.trim();
+    if (!text || mainBusy) return;
+    addMsg($('chat'), 'user', text);
+    ta.value = '';
+    meter.ctx += text.length * 2;
+    mainBusy = true;
+    $('sendBtn').disabled = true;
+    setTimeout(function(){
+      streamInto($('chat'), '工作台 · 主 agent', mainCanned[mainCannedIdx++ % mainCanned.length], function(){
+        mainBusy = false;
+        $('sendBtn').disabled = false;
+      });
+    }, 450);
+  }
+  $('sendBtn').addEventListener('click', mainSend);
+  $('inputText').addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mainSend(); }
+  });
+
+  /* ── 统筹卡（第一个模式拼接时出现，随子 agent 进展更新） ── */
+  var orchRows = {}; // mode -> status element
+  function ensureOrch(){
+    if ($('orch')) return;
+    var card = el('div', 'orch');
+    card.id = 'orch';
+    var title = el('div', 'orch-title', '◧ 统筹：各模式同时推进');
+    card.appendChild(title);
+    $('chat').appendChild(card);
+    scrollBox($('chat'));
+  }
+  function orchSet(mode, label, status, done){
+    ensureOrch();
+    if (!orchRows[mode]) {
+      var row = el('div', 'orch-row');
+      row.appendChild(el('span', null, label));
+      var st = el('span', 'st');
+      row.appendChild(st);
+      $('orch').appendChild(row);
+      orchRows[mode] = st;
+    }
+    orchRows[mode].textContent = status;
+    orchRows[mode].className = 'st' + (done ? ' done' : ' doing');
+  }
+
+  /* ── 模式拼接：右界面 + 左子agent对话 ── */
+  var MODES = {
+    writing: {
+      icon: '✍️', label: '写作模式', sub: '写作伙伴', subCtx: '归乡记 · 第2章',
+      task: '改写第二章结尾（方向 A：留下名字）',
+      subTranscript: [
+        ['agent', '方向 A 我落笔了：信纸蜷到一半熄灭，名字那一角落在灰外。比直接烧完多一口气。'],
+        ['user', '好，就往这个方向改，别动站台钟。'],
+      ],
+      subCanned: [
+        '改完了，两处：末段收在「名字那一角落在灰外」，上一段补了半句写火光照不到站台钟。右侧写作台已同步，你过目。',
+        '顺手跑了体检：新结尾没有超长句，钩子强度从 ⚠ 偏弱回到 ✓。',
+      ],
+      doneNote: '结尾改写完成（2 处改动），已同步右侧写作台',
+    },
+    gir: {
+      icon: '🖼', label: 'GIR 生图', sub: 'GIR 助手', subCtx: '站台雨夜',
+      task: '出「站台雨夜」概念图（3 个方向）',
+      subTranscript: [
+        ['agent', '「画面怎么安排」我拟了三版：①暖黄路灯孤影 ②车顶雨珠反光 ③远景绿皮车出隧道。先各出一张草图？'],
+      ],
+      subCanned: [
+        '三张草图出来了，在右侧面板里——我个人偏向 ③，隧道口的灯和站台钟能接上第三章的戏。',
+        '收到，按 ③ 细化：胶片颗粒保留，雨丝加密一档。好了叫你。',
+      ],
+      doneNote: '草图 3 张已出，待你挑方向',
+    },
+  };
+  var openModes = {}; // mode -> { pane, chat }
+
+  function buildSubchat(mode, def){
+    var pane = el('aside', 'pane subchat from-left');
+    pane.style.width = '300px';
+    var head = el('div', 'pane-head');
+    head.appendChild(el('span', null, def.icon + ' ' + def.sub));
+    var badge = el('span', 'badge sub', '子 agent · 独立于主 agent');
+    head.appendChild(badge);
+    var x = el('button', 'tbtn x');
+    x.title = '收起「' + def.label + '」';
+    x.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
+    x.addEventListener('click', function(){ closeMode(mode); });
+    head.appendChild(x);
+    pane.appendChild(head);
+
+    var body = el('div', 'pane-body');
+    var chatBox = el('div', 'chat');
+    def.subTranscript.forEach(function(m){
+      var whoLabel = m[0] === 'agent' ? def.sub + ' · 子 agent' : null;
+      var d = el('div', 'msg ' + m[0]);
+      if (whoLabel) d.appendChild(el('span', 'who', whoLabel));
+      d.appendChild(document.createTextNode(m[1]));
+      chatBox.appendChild(d);
+    });
+    body.appendChild(chatBox);
+    pane.appendChild(body);
+
+    var composer = el('div', 'composer');
+    var row = el('div', 'composer-row');
+    var input = el('div', 'input');
+    var ta = el('textarea');
+    ta.placeholder = '只和「' + def.sub + '」说……';
+    ta.rows = 1;
+    var send = el('button', 'send', '发送');
+    input.appendChild(ta); input.appendChild(send);
+    row.appendChild(input);
+    composer.appendChild(row);
+    var note = el('div', 'subnote');
+    note.appendChild(el('span', 'dot'));
+    note.appendChild(el('span', null, '独立于主 agent 的对话；进展会由主 agent 汇总'));
+    composer.appendChild(note);
+    pane.appendChild(composer);
+
+    var cannedIdx = 0, busy = false;
+    function subSend(){
+      var text = ta.value.trim();
+      if (!text || busy) return;
+      addMsg(chatBox, 'user', text);
+      ta.value = '';
+      busy = true; send.disabled = true;
+      orchSet(mode, def.icon + ' ' + def.label, '进行中…', false);
+      setTimeout(function(){
+        streamInto(chatBox, def.sub + ' · 子 agent', def.subCanned[cannedIdx++ % def.subCanned.length], function(){
+          busy = false; send.disabled = false;
+          orchSet(mode, def.icon + ' ' + def.label, def.doneNote, true);
+          toast('主 agent 已汇总：「' + def.sub + '」' + def.doneNote + '。');
+        });
+      }, 450);
+    }
+    send.addEventListener('click', subSend);
+    ta.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); subSend(); }
+    });
+    return pane;
+  }
+
+  function buildWritingPane(mode, def){
+    var pane = el('section', 'pane modepane');
+    pane.style.width = '460px';
+    addGrip(pane);
+    var head = paneHead(def.icon + ' ' + def.label, '界面 · 拼在主窗右侧', mode);
+    pane.appendChild(head);
+    var body = el('div', 'pane-body');
+    var crumb = el('div', 'crumb');
+    crumb.innerHTML = '<b>归乡记</b> / draft / <b>第2章 · 站台</b>';
+    body.appendChild(crumb);
+    var editor = el('div', 'editor');
+    editor.innerHTML =
+      '<p>雨是傍晚开始下的。沈默站在出站口，看人流从他身边分开，又在他身后合拢。十二年，站台的雨棚换过一次，铁皮换了彩钢，漏雨的地方还是漏雨。</p>' +
+      '<p>他把信又读了一遍。信纸边角已经起毛，折痕深得快要断开。母亲的字一笔一划，像怕惊动谁似的，写着：回来吧，家里都好。</p>' +
+      '<p>打火机第三次才点着。火苗舔上信纸的时候，他忽然想起站台上那盏总是忽明忽暗的灯——小时候他就在那盏灯下，数着绿皮火车一节一节爬出隧道。</p>' +
+      '<p style="color:var(--tx-3)">（子 agent 改写的结尾会落在这里——原型里发一条消息试试）</p>';
+    body.appendChild(editor);
+    var bar = el('div', 'statusbar');
+    bar.innerHTML = '<span>1,842 字 · 今日 +327</span><span class="ok">体检 ✓</span><span>成稿检查：钩子 ⚠ 偏弱</span>';
+    body.appendChild(bar);
+    pane.appendChild(body);
+    return pane;
+  }
+
+  var palettes = [
+    { sky0:'#1a2233', sky1:'#2c2a26', lamp:'#e8c97a' },
+    { sky0:'#241a2e', sky1:'#33262b', lamp:'#e89a7a' },
+    { sky0:'#12242a', sky1:'#1e3030', lamp:'#a8d8b9' },
+  ];
+  var palIdx = 0;
+  function buildGirPane(mode, def){
+    var pane = el('section', 'pane modepane');
+    pane.style.width = '440px';
+    addGrip(pane);
+    pane.appendChild(paneHead(def.icon + ' ' + def.label, '界面 · 拼在主窗右侧', mode));
+    var body = el('div', 'pane-body');
+    var pl = el('div', 'prompt-label', '画面怎么安排');
+    body.appendChild(pl);
+    var prompt = el('textarea', 'prompt');
+    prompt.value = '站台夜雨，暖黄路灯，绿皮火车，胶片质感。';
+    body.appendChild(prompt);
+    var prev = el('div', 'preview');
+    prev.innerHTML =
+      '<svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">' +
+      '<defs><linearGradient id="psky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2233"/><stop offset="1" stop-color="#2c2a26"/></linearGradient>' +
+      '<radialGradient id="plamp" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#e8c97a" stop-opacity=".9"/><stop offset="1" stop-color="#e8c97a" stop-opacity="0"/></radialGradient></defs>' +
+      '<rect width="640" height="360" fill="url(#psky)"/><rect y="250" width="640" height="110" fill="#151712"/>' +
+      '<circle cx="470" cy="150" r="90" fill="url(#plamp)"/><rect x="455" y="140" width="6" height="120" fill="#0c0d0a"/>' +
+      '<rect x="60" y="235" width="520" height="14" rx="7" fill="#242a22"/>' +
+      '<g stroke="#8b9490" stroke-width="1" opacity=".5"><line x1="120" y1="40" x2="112" y2="90"/><line x1="300" y1="50" x2="292" y2="100"/><line x1="540" y1="60" x2="532" y2="110"/></g></svg>' +
+      '<span class="seed">方向 ③ · seed 2077</span><div class="shimmer">生成中……</div>';
+    body.appendChild(prev);
+    var foot = el('div', 'pane-foot');
+    var go = el('button', 'btn', '▶ 再来一版');
+    go.addEventListener('click', function(){
+      if (prev.classList.contains('busy')) return;
+      prev.classList.add('busy');
+      speedConsumers++;
+      setTimeout(function(){
+        palIdx = (palIdx + 1) % palettes.length;
+        var stops = prev.querySelectorAll('#psky stop');
+        stops[0].setAttribute('stop-color', palettes[palIdx].sky0);
+        stops[1].setAttribute('stop-color', palettes[palIdx].sky1);
+        prev.querySelectorAll('#plamp stop').forEach(function(s){ s.setAttribute('stop-color', palettes[palIdx].lamp); });
+        prev.querySelector('.seed').textContent = '方向 ③ · seed ' + (1000 + Math.floor(Math.random() * 9000));
+        prev.classList.remove('busy');
+        speedConsumers--;
+      }, 1100);
+    });
+    foot.appendChild(go);
+    foot.appendChild(el('span', 'note', '原型：换配色稿；正式版走 GIR 后端。'));
+    body.appendChild(foot);
+    pane.appendChild(body);
+    return pane;
+  }
+
+  function paneHead(title, badgeText, mode){
+    var head = el('div', 'pane-head');
+    head.appendChild(el('span', null, title));
+    head.appendChild(el('span', 'badge', badgeText));
+    var x = el('button', 'tbtn x');
+    x.title = '收起这个模式';
+    x.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
+    x.addEventListener('click', function(){ closeMode(mode); });
+    head.appendChild(x);
+    return head;
+  }
+
+  /* 左缘拖拽调宽（300–760px） */
+  function addGrip(pane){
+    var grip = el('div', 'grip');
+    grip.title = '拖拽调整宽度';
+    grip.addEventListener('pointerdown', function(e){
+      e.preventDefault();
+      grip.classList.add('on');
+      var startX = e.clientX;
+      var startW = pane.offsetWidth;
+      function move(ev){
+        var w = Math.max(300, Math.min(760, startW + (startX - ev.clientX)));
+        pane.style.width = w + 'px';
+      }
+      function up(){
+        grip.classList.remove('on');
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+      }
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+    pane.appendChild(grip);
+  }
+
+  /* 细胞分裂式插入：从 0 宽展开，把既有面板顶出去；收起时反向塌缩。 */
+  function insertWithSplit(container, pane, targetWidth){
+    pane.style.transition = 'none';
+    pane.style.animation = 'none';
+    pane.style.minWidth = '0';
+    pane.style.width = '0px';
+    pane.style.opacity = '0';
+    container.insertBefore(pane, container.firstChild); // 新模式永远贴着主长条插入
+    void pane.offsetWidth;
+    pane.style.transition = 'width .28s ease, opacity .2s ease';
+    pane.style.width = targetWidth;
+    pane.style.opacity = '1';
+    setTimeout(function(){
+      pane.style.transition = '';
+      if (pane.classList.contains('modepane')) pane.style.minWidth = '';
+    }, 320);
+  }
+  function collapseRemove(pane){
+    pane.style.transition = 'width .22s ease, opacity .16s ease';
+    pane.style.animation = 'none';
+    pane.style.minWidth = '0';
+    pane.style.width = '0px';
+    pane.style.opacity = '0';
+    setTimeout(function(){ pane.remove(); }, 230);
+  }
+
+  function openMode(mode){
+    if (openModes[mode]) { toast('「' + MODES[mode].label + '」已经拼着了。'); return; }
+    var def = MODES[mode];
+    var siblings = Object.keys(openModes); // 已拼接的模式（拼装讯息里要说"插在谁和谁之间"）
+    var chat = buildSubchat(mode, def);
+    var pane = mode === 'writing' ? buildWritingPane(mode, def) : buildGirPane(mode, def);
+    var paneW = pane.style.width;
+    openModes[mode] = { pane: pane, chat: chat };
+    // 拼接规则（用户 2026-10-12）：右侧界面——新模式从「主长条与既有模式的接缝」展开，贴着我；
+    // 左侧子对话——新模式拼到既有子对话的更左边（离我最远）。两侧恰好镜像。
+    insertWithSplit($('modepanes'), pane, paneW);
+    insertWithSplit($('sidechats'), chat, '300px');
+    orchSet(mode, def.icon + ' ' + def.label, def.task + ' · 排队中', false);
+    syncFan();
+    var how = siblings.length === 0
+      ? '它的界面拼在我右边（左缘可以拖宽），它自己的对话拼在我左边'
+      : '它从我和「' + siblings.map(function(k){ return MODES[k].label; }).join('、') + '」之间的接缝里展开（界面贴着我这侧），它自己的对话拼到最左边';
+    setTimeout(function(){
+      streamInto($('chat'), '工作台 · 主 agent',
+        '已把「' + def.task + '」派给' + def.sub + '。' + how + '——你们直接聊也行，有进展我汇总。',
+        function(){ orchSet(mode, def.icon + ' ' + def.label, def.task, false); });
+    }, 350);
+  }
+  function closeMode(mode){
+    var m = openModes[mode];
+    if (!m) return;
+    delete openModes[mode];
+    collapseRemove(m.pane);
+    collapseRemove(m.chat);
+    if (orchRows[mode]) orchRows[mode].textContent = '已收起';
+    syncFan();
+  }
+  function syncFan(){
+    document.querySelectorAll('.fan-item[data-mode]').forEach(function(b){
+      var mode = b.getAttribute('data-mode');
+      var on = !!openModes[mode];
+      b.classList.toggle('joined', on);                       // 图标右下角亮绿点 + 品牌色描边
+      b.querySelector('.tag').textContent = on ? '已拼接' : '拼接';
+    });
+  }
+  document.querySelectorAll('.fan-item[data-mode]').forEach(function(b){
+    b.addEventListener('click', function(){ openMode(b.getAttribute('data-mode')); });
+  });
+
+  /* ── 「+」弹层 ── */
+  $('plusBtn').addEventListener('click', function(e){
+    e.stopPropagation();
+    $('sheet').hidden = !$('sheet').hidden;
+  });
+  document.addEventListener('click', function(e){
+    if (!$('sheet').hidden && !$('sheet').contains(e.target)) $('sheet').hidden = true;
+  });
+  $('sheetUpload').addEventListener('click', function(){
+    $('sheet').hidden = true;
+    toast('原型示意：真机会弹文件选择，把文件挂进这条对话。');
+  });
+  document.querySelectorAll('#sheet [data-tool]').forEach(function(b){
+    b.addEventListener('click', function(){
+      $('sheet').hidden = true;
+      var mode = b.getAttribute('data-tool') === '写作模式' ? 'writing' : 'gir';
+      openMode(mode); // 「+」里的更多工具与右缘扇形殊途同归：都是拼接模式
+    });
+  });
+
+  /* ── 顶栏 / 最小化 / 关闭 ── */
+  $('navBack').addEventListener('click', function(){ location.href = 'index.html'; });
+  $('navSettings').addEventListener('click', function(){
+    toast('原型示意：设置面板（模型、令牌、状态条显隐……放什么进来也是手感的一部分）。');
+  });
+  $('navExit').addEventListener('click', function(){ closedLike('已退出工作台模式（原型示意：真机回到常规 dsh 界面）。'); });
+  $('navClose').addEventListener('click', function(){ closedLike('界面已关闭（原型示意）。'); });
+  function closedLike(text){
+    $('dock').classList.add('gone');
+    $('mini').hidden = true;
+    $('closedText').textContent = text;
+    setTimeout(function(){ $('closedVeil').hidden = false; }, 200);
+  }
+  $('reopen').addEventListener('click', function(){
+    $('closedVeil').hidden = true;
+    $('dock').classList.remove('gone');
+  });
+  $('navMin').addEventListener('click', function(){
+    $('dock').classList.add('gone');
+    setTimeout(function(){ $('mini').hidden = false; }, 180);
+  });
+  $('miniRestore').addEventListener('click', function(){
+    $('mini').hidden = true;
+    $('dock').classList.remove('gone');
+  });
+  $('miniExit').addEventListener('click', function(){ closedLike('已退出工作台模式（原型示意：真机回到常规 dsh 界面）。'); });
+  $('miniClose').addEventListener('click', function(){ closedLike('界面已关闭（原型示意）。'); });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') {
+      if (!$('sheet').hidden) { $('sheet').hidden = true; return; }
+      if (!$('mini').hidden) { $('miniRestore').click(); }
+    }
+  });
+})();
+</script>
+</body>
+</html>
