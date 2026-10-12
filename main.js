@@ -2251,11 +2251,13 @@ function createWindow() {
   win.on('resize', scheduleSaveBounds)
   win.on('move', scheduleSaveBounds)
   // 浮标（工作台辅助窗）跟着主窗走：主窗动它就动，主窗藏/最小化它就一起没（不留孤儿浮标）
-  win.on('move', syncWorkbenchOverlay)
-  win.on('resize', syncWorkbenchOverlay)
+  // 2026-10-13：去抖后再摆——拖动时 move 事件很密，逐次 setBounds 会抖；
+  // 且 `setBounds` 与 OS 真正落位之间有时序，拖尾补一次更稳。
+  win.on('move', () => syncWorkbenchOverlaySoon())
+  win.on('resize', () => syncWorkbenchOverlaySoon())
   win.on('hide', hideWorkbenchOverlay)
   win.on('minimize', hideWorkbenchOverlay)
-  win.on('restore', syncWorkbenchOverlay)
+  win.on('restore', () => syncWorkbenchOverlaySoon(0))
   win.on('maximize', () => { settings.windowBounds.maximized = true; saveSettings() })
   win.on('unmaximize', () => { settings.windowBounds.maximized = false; saveSettings() })
 
@@ -2412,6 +2414,9 @@ function applyWorkbenchShape(shape) {
   const onTop = shape !== 'normal' && settings.workbenchStripOnTop !== false
   // 置顶走统一入口：申请 → 读 OS 真值复核 → 没落地就补刀（理由见 enforceTopmost 的实测注释）
   enforceTopmost(win, onTop, `主窗/${shape}`)
+  // 形态变了，贴在主窗外侧的浮标要跟着挪（2026-10-13 实机抓到：不补这一下，浮标会停在旧位置）
+  syncWorkbenchOverlaySoon(0)
+  syncWorkbenchOverlaySoon(160)
   broadcastShape()
   log(`工作台形态 → ${shape}（${b.width}×${b.height} @${b.x ?? '?'},${b.y ?? '?'}，最小 ${minW}×${minH}，置顶=${onTop}）`)
   return { ok: true, ...shapeState() }
@@ -2510,6 +2515,11 @@ function showWorkbenchOverlay() {
     overlayWin.setBounds(overlayBounds())
   }
   overlayWin.show()
+  // **摆位竞态**（2026-10-13 实机抓到）：浮标由门面在"主屏打开"时申请，而主屏打开与
+  // `setWorkbenchShape('strip')` 是两条通道——浮标可能先于形态落定被创建，于是
+  // `overlayBounds()` 读到的是**还是宽窗**的主窗几何，浮标被摆到屏幕最左（x=0）而不是贴着长条。
+  // 这里在创建后补摆几次，等形态落定；无论门面那边的顺序如何都能收敛。
+  for (const ms of [0, 120, 400]) setTimeout(syncWorkbenchOverlay, ms)
   log('工作台浮标：开（贴在主窗外侧）')
   return { ok: true, visible: true, bounds: overlayWin.getBounds() }
 }
@@ -2528,6 +2538,16 @@ function syncWorkbenchOverlay() {
   try {
     overlayWin.setBounds(overlayBounds())
   } catch {}
+}
+
+/** 去抖版：拖动/缩放时 move·resize 很密，逐次 setBounds 会抖；拖尾补一次覆盖时序差。 */
+let overlaySyncTimer = null
+function syncWorkbenchOverlaySoon(delay = 60) {
+  if (overlaySyncTimer) clearTimeout(overlaySyncTimer)
+  overlaySyncTimer = setTimeout(() => {
+    overlaySyncTimer = null
+    syncWorkbenchOverlay()
+  }, delay)
 }
 
 /** 托盘用官方鲸鱼：深色任务栏用白鲸，浅色用黑鲸。 */

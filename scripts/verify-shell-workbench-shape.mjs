@@ -78,6 +78,8 @@ public class TopmostProbe {
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
   public static uint PidFilter = 0;
   static bool OnEnum(IntPtr h, IntPtr l) {
     if (!IsWindowVisible(h)) return true;
@@ -85,7 +87,8 @@ public class TopmostProbe {
     if (PidFilter != 0 && ownPid != PidFilter) return true;
     var sb = new StringBuilder(512); GetWindowText(h, sb, sb.Capacity);
     int ex = GetWindowLong(h, -20);
-    outp.Add(sb.ToString() + "~" + ex.ToString("X8"));
+    RECT r; GetWindowRect(h, out r);
+    outp.Add(sb.ToString() + "~" + ex.ToString("X8") + "~" + r.Left + "," + r.Top + "," + (r.Right - r.Left) + "," + (r.Bottom - r.Top));
     return true;
   }
   public static List<string> Run() {
@@ -104,8 +107,16 @@ function winStyles(pid = 0) {
     const out = execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps], { encoding: 'utf8', timeout: 20000 })
     const NL = String.fromCharCode(10)
     const rows = out.split(NL).map((l) => l.trim()).filter((l) => l.includes('~')).map((l) => {
-      const i = l.lastIndexOf('~')
-      return { title: l.slice(0, i), ex: parseInt(l.slice(i + 1), 16) }
+      // 每行：title~EXSTYLE~x,y,w,h（矩形是 2026-10-13 加的，用来判"浮标有没有贴着长条外侧"）
+      const parts = l.split('~')
+      const ex = parseInt(parts[parts.length - (parts.length >= 3 ? 2 : 1)], 16)
+      const rect = parts.length >= 3 ? parts[parts.length - 1].split(',').map(Number) : null
+      const title = parts.length >= 3 ? parts.slice(0, -2).join('~') : parts.slice(0, -1).join('~')
+      return {
+        title,
+        ex,
+        rect: rect && rect.length === 4 && rect.every((n) => Number.isFinite(n)) ? { x: rect[0], y: rect[1], width: rect[2], height: rect[3] } : null,
+      }
     })
     if (!rows.length) return { error: '枚举到 0 个窗口（探针自检：node scripts/verify-shell-workbench-shape.mjs --selftest）' }
     return rows
@@ -318,6 +329,26 @@ try {
   check('G 浮标能开（主进程侧可见）', opened?.ok === true && opened?.visible === true, JSON.stringify(opened?.bounds))
   const withOverlay = await ev(`window.dshShell.getWorkbenchShape()`)
   check('G 状态回读说浮标在位', withOverlay?.overlay === true, JSON.stringify({ overlay: withOverlay?.overlay }))
+  // G2：浮标必须**贴着长条外侧**。2026-10-13 实机抓到摆位竞态：浮标由门面在"主屏打开"时申请，
+  // 而主屏打开与 setWorkbenchShape('strip') 是两条通道——浮标先创建时 overlayBounds() 读到的是
+  // **还是宽窗**的主窗几何，于是被摆到屏幕最左（x=0），离长条几百像素。这条断言就是钉它。
+  {
+    // 用状态回读里的 pid（appPid 在 H 段才定义，这里先用得上）
+    const pidNow = withOverlay?.pid || 0
+    const wins = winStyles(pidNow)
+    const main = Array.isArray(wins) ? wins.find((w) => w.title.includes('Harness') && w.rect && w.rect.width > 300 && w.rect.width < 1300) : null
+    const ov = Array.isArray(wins) ? wins.find((w) => w.title.includes('浮标') && w.rect) : null
+    if (main && ov) {
+      const gapLeft = main.rect.x - (ov.rect.x + ov.rect.width)      // 浮标在长条左侧时的缝
+      const gapRight = ov.rect.x - (main.rect.x + main.rect.width)   // 浮标在长条右侧时的缝
+      const glued = (gapLeft >= -12 && gapLeft <= 60) || (gapRight >= -12 && gapRight <= 60)
+      check('G 浮标贴着长条外侧（不是被摆到屏幕边缘）', glued,
+        JSON.stringify({ main: main.rect, overlay: ov.rect, gapLeft, gapRight }))
+    } else {
+      check('G 浮标贴着长条外侧（不是被摆到屏幕边缘）', false,
+        `枚举不到可判的窗口：main=${JSON.stringify(main?.rect || null)} overlay=${JSON.stringify(ov?.rect || null)}`)
+    }
+  }
   if (focusBefore === true) {
     check('G 浮标开着时主窗焦点没被抢（focusable:false）', withOverlay?.mainFocused === true,
       JSON.stringify({ before: focusBefore, after: withOverlay?.mainFocused }))
@@ -328,6 +359,34 @@ try {
   await sleep(400)
   const afterClose = await ev(`window.dshShell.getWorkbenchShape()`)
   check('G 浮标关得掉、不残留', closedOv?.ok === true && afterClose?.overlay === false, JSON.stringify({ closed: closedOv?.ok, overlay: afterClose?.overlay }))
+
+  // G3：**摆位竞态**（2026-10-13 实机抓到）。门面（插件）是在"主屏打开"时申请浮标的，而主屏打开与
+  // `setWorkbenchShape('strip')` 是两条通道——浮标可能**先于形态落定**被创建，此时 overlayBounds()
+  // 读到的是"还是宽窗"的主窗几何，浮标被摆到屏幕最左（x=0）。上面那条 G2 按"先形态后浮标"的顺序跑，
+  // 复现不了它；这里按**真实顺序**复现：先开浮标 → 再收形态 → 必须仍然贴着长条。
+  await ev(`window.dshShell.closeWorkbenchOverlay()`)
+  await ev(`window.dshShell.setWorkbenchShape('normal')`)
+  await sleep(700)
+  // **同一 tick 内**先申请形态、紧接着开浮标：这正是门面的真实顺序（主屏打开时两件事一起发），
+  // 而 `win.setBounds()` 之后主进程的 getBounds() 可能还是旧值 → overlayBounds() 用旧几何算出错位置。
+  await ev(`(async () => { await window.dshShell.setWorkbenchShape('strip'); return await window.dshShell.openWorkbenchOverlay() })()`)
+  await sleep(1200)
+  {
+    const st = await ev(`window.dshShell.getWorkbenchShape()`)
+    const wins = winStyles(st?.pid || 0)
+    const main = Array.isArray(wins) ? wins.find((w) => w.title.includes('Harness') && w.rect && w.rect.width > 300 && w.rect.width < 1300) : null
+    const ov = Array.isArray(wins) ? wins.find((w) => w.title.includes('浮标') && w.rect) : null
+    if (main && ov) {
+      const gapLeft = main.rect.x - (ov.rect.x + ov.rect.width)
+      const gapRight = ov.rect.x - (main.rect.x + main.rect.width)
+      const glued = (gapLeft >= -12 && gapLeft <= 60) || (gapRight >= -12 && gapRight <= 60)
+      check('G 浮标先于形态创建也能贴住长条（摆位竞态）', glued,
+        JSON.stringify({ main: main.rect, overlay: ov.rect, gapLeft, gapRight }))
+    } else {
+      check('G 浮标先于形态创建也能贴住长条（摆位竞态）', false,
+        `枚举不到可判的窗口：main=${JSON.stringify(main?.rect || null)} overlay=${JSON.stringify(ov?.rect || null)}`)
+    }
+  }
 
   // H：置顶必须落到 **OS 的 WS_EX_TOPMOST 位**上（读自报值会被骗，见上面的注释）。
   // 外壳的申请是"申请 → 读 OS 真值 → 没落地补刀"（最多 2.2s，见 main.js 的 enforceTopmost），
