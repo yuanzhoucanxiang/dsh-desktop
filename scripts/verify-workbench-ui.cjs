@@ -318,7 +318,7 @@ app.whenReady().then(async () => {
       ['m3',{kind:'tool-call',data:{name:'write_file',callId:'c1',argsRaw:'{}',phase:'call'}}],
     ]) })`,
   )
-  await waitFor(`document.querySelectorAll('[data-wb-chat-line]').length>=3`, '真聊天瓷砖应投影出转录行')
+  await waitFor(`document.querySelectorAll('[data-wb-chat-line]').length>=2`, '真聊天瓷砖应投影出转录行')
   assert.equal(
     await evaluate(`document.querySelector('[data-wb-chat-log]').getAttribute('data-wb-chat-source')`),
     'uiConversation',
@@ -326,7 +326,20 @@ app.whenReady().then(async () => {
   )
   assert.ok((await text('[data-wb-chat-line="user"]')).includes('把第二章的结尾改冷一点'), '作者行应显示正文')
   assert.ok((await text('[data-wb-chat-line="assistant"]')).includes('三个方向'), '助手行应显示正文')
-  assert.ok((await text('[data-wb-chat-line="detail"]')).includes('工具活动'), '工具调用要留可见摘要，不能吞掉')
+  // 工具调用**不套气泡**，压成活动行（转录投影给结构化 tool：name/phase/isError）
+  assert.equal(await count('[data-wb-chat-act]'), 1, '工具调用应渲染成活动行')
+  assert.ok((await text('[data-wb-chat-act]')).includes('write_file'), '活动行要带工具名')
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-chat-act]').getAttribute('data-wb-chat-act')`),
+    'call',
+    '活动行要标出阶段（call/result）',
+  )
+  // 流式态：这条 fixture 的 running=true → 应挂一行"正在生成…"；把它关掉就应收起
+  assert.equal(await count('[data-wb-chat-streaming]'), 1, 'running=true 时应显示流式态')
+  await evaluate(`window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:false, retainedBy:'none', blank:false, updatedAt:Date.now() }])`)
+  await waitFor(`document.querySelector('[data-wb-chat-streaming]')===null`, 'running=false 时流式态应收起')
+  await evaluate(`window.__wbSessions.__set([{ id:'s2', displayTitle:'归乡记讨论', title:'归乡记讨论', running:true, retainedBy:'none', blank:false, updatedAt:Date.now() }])`)
+  await waitFor(`document.querySelector('[data-wb-chat-streaming]')!==null`, 'running 回到 true 时流式态应回来')
   assert.equal(await count('[data-wb-chat-back]'), 1, '对话列应有「回到完整会话」')
   // ③f 输入框与发送（刀 5）：有发送面时可发；**参数形状必须是内核原语的形状**（不是我们自己发明的）
   assert.equal(await count('[data-wb-composer]'), 1, '有会话时应给出输入框')

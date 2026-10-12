@@ -43,6 +43,19 @@ export const CSS = [
   '.dshWbMsg.is-assistant .dshWbMsgBody{border-bottom-left-radius:4px;}',
   '.dshWbMsg.is-error .dshWbMsgBody{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);}',
   '.dshWbMsg.is-detail .dshWbMsgBody{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}',
+  // 工具活动行（结构化 tool）：一行压扁，不套气泡；失败用错误色 + 文字说明（不只靠颜色）
+  '.dshWbAct{display:flex;align-items:center;gap:6px;padding:2px 2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}',
+  '.dshWbActIcon{flex:none;opacity:.8;}',
+  '.dshWbActName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code,monospace);}',
+  '.dshWbActPhase{flex:none;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);}',
+  '.dshWbAct.is-error{color:var(--dsw-alias-state-error-primary);}',
+  '.dshWbAct.is-error .dshWbActPhase{background:transparent;border:1px solid var(--dsw-alias-state-error-primary);}',
+  // 流式态：一个会呼吸的点 + "正在生成…" + 实时 tok/s（尊重 reduced-motion）
+  '.dshWbStreaming{display:flex;align-items:center;gap:8px;padding:2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);}',
+  '.dshWbStreamDot{flex:none;width:7px;height:7px;border-radius:999px;background:var(--dsw-alias-brand-primary);animation:dshWbPulse 1.1s ease-in-out infinite;}',
+  '.dshWbStreamSpeed{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}',
+  '@keyframes dshWbPulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}',
+  '@media (prefers-reduced-motion:reduce){.dshWbStreamDot{animation:none;opacity:1;}}',
   // 输入区（长条底部，原型 `.composer`）：文本域与发送**同框**，`+` 在左侧圆形
   '.dshWbComposer{flex:none;display:flex;gap:8px;align-items:flex-end;margin-top:8px;}',
   '.dshWbInputWrap{position:relative;flex:1;min-width:0;display:flex;}',

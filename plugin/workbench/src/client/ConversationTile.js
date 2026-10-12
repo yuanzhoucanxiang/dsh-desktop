@@ -83,23 +83,54 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
     setTranscript({ source: watch.source, messages: tailMessages(watch.messages) })
     return watch.dispose
   }, [sessionId, sessions])
+  // 会话是不是**正在生成**（列表快照记录上的 running）：流式态与"还没有消息"互斥
+  const running = Boolean(first?.running)
+  // 工具活动行（转录投影给的是结构化 tool：{name, phase, isError}）——不套气泡，压成一行，
+  // 免得"调用了个工具"在窄条里跟作者的话一样占地方
+  const actLine = (m) => {
+    const tool = m.tool
+    if (!tool) return null
+    const phase = tool.phase === 'result' ? (tool.isError ? '失败' : '完成') : '进行中'
+    return react.createElement(
+      'div',
+      { key: m.key, className: `dshWbAct${tool.isError ? ' is-error' : ''}`, 'data-wb-chat-act': tool.phase || 'call' },
+      react.createElement('span', { className: 'dshWbActIcon', 'aria-hidden': 'true' }, '⚙'),
+      react.createElement('span', { className: 'dshWbActName', title: tool.argsRaw || '' }, tool.name || '工具'),
+      react.createElement('span', { className: 'dshWbActPhase' }, phase),
+    )
+  }
   const log = transcript.messages.length
     ? react.createElement(
         'div',
         { className: 'dshWbChatLog', 'data-wb-chat-log': '', 'data-wb-chat-source': transcript.source },
         // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
         react.createElement('div', { className: 'dshWbChatDay', 'data-wb-chat-day': '' }, '今天'),
-        // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧
+        // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧；
+        // 工具调用走活动行（上面 actLine），不套气泡
         transcript.messages.map((m) =>
-          react.createElement(
-            'div',
-            { key: m.key, className: `dshWbMsg is-${m.kind}`, 'data-wb-chat-line': m.kind },
-            m.kind !== 'user'
-              ? react.createElement('span', { className: 'dshWbMsgWho' }, WHO[m.kind] || '会话')
-              : null,
-            react.createElement('span', { className: 'dshWbMsgBody' }, String(m.text || '').slice(0, 160)),
-          ),
+          m.kind === 'detail' && m.tool
+            ? actLine(m)
+            : react.createElement(
+                'div',
+                { key: m.key, className: `dshWbMsg is-${m.kind}`, 'data-wb-chat-line': m.kind },
+                m.kind !== 'user'
+                  ? react.createElement('span', { className: 'dshWbMsgWho' }, WHO[m.kind] || '会话')
+                  : null,
+                react.createElement('span', { className: 'dshWbMsgBody' }, String(m.text || '').slice(0, 160)),
+              ),
         ),
+        // 流式态：正在生成时把这一行挂在最下面（带实时 tok/s，读不到就不显示那一段）
+        running
+          ? react.createElement(
+              'div',
+              { className: 'dshWbStreaming', 'data-wb-chat-streaming': '' },
+              react.createElement('span', { className: 'dshWbStreamDot', 'aria-hidden': 'true' }),
+              react.createElement('span', null, '正在生成…'),
+              metrics.speed.text.includes('还没数据')
+                ? null
+                : react.createElement('span', { className: 'dshWbStreamSpeed', 'data-wb-chat-stream-speed': '' }, metrics.speed.text),
+            )
+          : null,
       )
     : null
   // 有会话但读不到图（老内核 / 通道形状不符）：说清"读不到"与出路，不留一块空白。
@@ -110,8 +141,9 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
           { className: 'dshWbChatHint', 'data-wb-chat-log-empty': transcript.source },
           '这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。',
         )
-      : // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）
-        !transcript.messages.length && sessionId
+      : // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）。
+        // 正在生成时不摆这句——那时该出现的是下面的流式态，不是"还没有消息"。
+        !transcript.messages.length && sessionId && !running
         ? react.createElement(
             'div',
             { className: 'dshWbChatHint', 'data-wb-chat-log-empty': 'no-messages' },

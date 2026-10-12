@@ -347,6 +347,19 @@ var CSS = [
   ".dshWbMsg.is-assistant .dshWbMsgBody{border-bottom-left-radius:4px;}",
   ".dshWbMsg.is-error .dshWbMsgBody{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);}",
   ".dshWbMsg.is-detail .dshWbMsgBody{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}",
+  // 工具活动行（结构化 tool）：一行压扁，不套气泡；失败用错误色 + 文字说明（不只靠颜色）
+  ".dshWbAct{display:flex;align-items:center;gap:6px;padding:2px 2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);}",
+  ".dshWbActIcon{flex:none;opacity:.8;}",
+  ".dshWbActName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code,monospace);}",
+  ".dshWbActPhase{flex:none;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);}",
+  ".dshWbAct.is-error{color:var(--dsw-alias-state-error-primary);}",
+  ".dshWbAct.is-error .dshWbActPhase{background:transparent;border:1px solid var(--dsw-alias-state-error-primary);}",
+  // 流式态：一个会呼吸的点 + "正在生成…" + 实时 tok/s（尊重 reduced-motion）
+  ".dshWbStreaming{display:flex;align-items:center;gap:8px;padding:2px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);}",
+  ".dshWbStreamDot{flex:none;width:7px;height:7px;border-radius:999px;background:var(--dsw-alias-brand-primary);animation:dshWbPulse 1.1s ease-in-out infinite;}",
+  ".dshWbStreamSpeed{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}",
+  "@keyframes dshWbPulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}",
+  "@media (prefers-reduced-motion:reduce){.dshWbStreamDot{animation:none;opacity:1;}}",
   // 输入区（长条底部，原型 `.composer`）：文本域与发送**同框**，`+` 在左侧圆形
   ".dshWbComposer{flex:none;display:flex;gap:8px;align-items:flex-end;margin-top:8px;}",
   ".dshWbInputWrap{position:relative;flex:1;min-width:0;display:flex;}",
@@ -1113,28 +1126,51 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
     setTranscript({ source: watch.source, messages: tailMessages(watch.messages) });
     return watch.dispose;
   }, [sessionId, sessions2]);
+  const running = Boolean(first?.running);
+  const actLine = (m) => {
+    const tool = m.tool;
+    if (!tool) return null;
+    const phase = tool.phase === "result" ? tool.isError ? "失败" : "完成" : "进行中";
+    return react3.createElement(
+      "div",
+      { key: m.key, className: `dshWbAct${tool.isError ? " is-error" : ""}`, "data-wb-chat-act": tool.phase || "call" },
+      react3.createElement("span", { className: "dshWbActIcon", "aria-hidden": "true" }, "⚙"),
+      react3.createElement("span", { className: "dshWbActName", title: tool.argsRaw || "" }, tool.name || "工具"),
+      react3.createElement("span", { className: "dshWbActPhase" }, phase)
+    );
+  };
   const log = transcript.messages.length ? react3.createElement(
     "div",
     { className: "dshWbChatLog", "data-wb-chat-log": "", "data-wb-chat-source": transcript.source },
     // 日期分隔（原型里是 `.day`）：v1 只写"今天"——不编造历史日期，等真转录带时间戳再说
     react3.createElement("div", { className: "dshWbChatDay", "data-wb-chat-day": "" }, "今天"),
-    // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧
+    // 气泡（原型 `.msg.user` / `.msg.agent`）：作者那一侧自己，助手/活动/出错在另一侧；
+    // 工具调用走活动行（上面 actLine），不套气泡
     transcript.messages.map(
-      (m) => react3.createElement(
+      (m) => m.kind === "detail" && m.tool ? actLine(m) : react3.createElement(
         "div",
         { key: m.key, className: `dshWbMsg is-${m.kind}`, "data-wb-chat-line": m.kind },
         m.kind !== "user" ? react3.createElement("span", { className: "dshWbMsgWho" }, WHO[m.kind] || "会话") : null,
         react3.createElement("span", { className: "dshWbMsgBody" }, String(m.text || "").slice(0, 160))
       )
-    )
+    ),
+    // 流式态：正在生成时把这一行挂在最下面（带实时 tok/s，读不到就不显示那一段）
+    running ? react3.createElement(
+      "div",
+      { className: "dshWbStreaming", "data-wb-chat-streaming": "" },
+      react3.createElement("span", { className: "dshWbStreamDot", "aria-hidden": "true" }),
+      react3.createElement("span", null, "正在生成…"),
+      metrics.speed.text.includes("还没数据") ? null : react3.createElement("span", { className: "dshWbStreamSpeed", "data-wb-chat-stream-speed": "" }, metrics.speed.text)
+    ) : null
   ) : null;
   const logHint = !transcript.messages.length && sessionId && (transcript.source === "none" || transcript.source === "no-service") ? react3.createElement(
     "div",
     { className: "dshWbChatHint", "data-wb-chat-log-empty": transcript.source },
     "这条会话的内容暂时读不到（内核会话图通道不可用）。点下面「回到完整会话」看全文。"
   ) : (
-    // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）
-    !transcript.messages.length && sessionId ? react3.createElement(
+    // 通道在位、只是**还没有消息**：也要说明，否则窄条中间就是一大片空白（2026-10-13 截图抓到）。
+    // 正在生成时不摆这句——那时该出现的是下面的流式态，不是"还没有消息"。
+    !transcript.messages.length && sessionId && !running ? react3.createElement(
       "div",
       { className: "dshWbChatHint", "data-wb-chat-log-empty": "no-messages" },
       "这条会话还没有消息。在下面发一条，或点「回到完整会话」看历史。"
