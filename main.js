@@ -2450,18 +2450,19 @@ function createWindow() {
     saveSettings()
   }
   const bounds = validBounds(settings.windowBounds)
-  // 首窗摆哪：有记忆就按记忆；**没有记忆且指定了 DSH_DESKTOP_DISPLAY 时摆到那块屏**——
-  // 探针/预览实例默认弹在主屏上会打断正在干活的人（2026-10-13 项目所有者要求）。
-  const displayPinned = String(process.env.DSH_DESKTOP_DISPLAY || '').trim().length > 0
+  // 首窗摆哪（2026-10-13 项目所有者两次要求"测试实例别跑到我主屏上"）：
+  //   · 指定了目标屏（显式变量，或"隔离实例"默认去非主屏）⇒ **目标屏优先于保存的位置**——
+  //     探针/链路会先往 userData 写带主屏坐标的 settings.json，旧逻辑"有记忆就按记忆"会被它绕过 ✗
+  //   · 没指定（真实桌面版）⇒ 老行为：按记忆摆。
+  const displayPinned = displayEnvRaw().length > 0
   const pinnedArea = displayPinned
     ? anchorArea(bounds && Number.isFinite(bounds.x) ? bounds : screen.getPrimaryDisplay().bounds)
     : null
-  // **尺寸也要夹进目标屏**：默认 1360×920 落在 1093×698 的副屏上，居中会算出 x=-133（探出屏幕，
-  // 2026-10-13 实机预览两次都踩到）。夹完再居中。
+  // **尺寸也要夹进目标屏**：默认 1360×920 落在 1093×698 的副屏上，居中会算出 x=-133（探出屏幕）。
   const firstWidth = pinnedArea ? Math.max(980, Math.min(bounds?.width || 1360, pinnedArea.width - 16)) : bounds?.width || 1360
   const firstHeight = pinnedArea ? Math.max(640, Math.min(bounds?.height || 920, pinnedArea.height - 16)) : bounds?.height || 920
-  const firstX = bounds?.x ?? (pinnedArea ? pinnedArea.x + Math.max(0, Math.round((pinnedArea.width - firstWidth) / 2)) : undefined)
-  const firstY = bounds?.y ?? (pinnedArea ? pinnedArea.y + Math.max(0, Math.round((pinnedArea.height - firstHeight) / 2)) : undefined)
+  const firstX = !pinnedArea && bounds?.x !== undefined ? bounds.x : pinnedArea ? pinnedArea.x + Math.max(0, Math.round((pinnedArea.width - firstWidth) / 2)) : undefined
+  const firstY = !pinnedArea && bounds?.y !== undefined ? bounds.y : pinnedArea ? pinnedArea.y + Math.max(0, Math.round((pinnedArea.height - firstHeight) / 2)) : undefined
   win = new BrowserWindow({
     width: firstWidth,
     height: firstHeight,
@@ -2631,8 +2632,21 @@ function currentShape() {
  * 跨屏 `setBounds` 会被系统按目标屏再缩放一次（实测 420×601 请求变成 481×688，正好 312/273）——
  * 所以窗口要在**目标屏上直接创建**，别先建在主屏再搬。
  */
+/**
+ * 目标屏的**取值**：显式 `DSH_DESKTOP_DISPLAY` 优先；没写但这是**隔离实例**（带 `DSH_DESKTOP_USER_DATA`
+ * 的探针/预览/链路）→ 默认 `secondary`。理由：项目所有者要求"测试实例别跑到我主屏上"，
+ * 而我此前只在个别命令里带了变量 ⇒ 全链里别的脚本 spawn 的实例照样弹到他屏幕上（2026-10-13 又报）。
+ * 真实的桌面版**不带** `DSH_DESKTOP_USER_DATA`，所以它的行为一点不变。
+ */
+function displayEnvRaw() {
+  const explicit = String(process.env.DSH_DESKTOP_DISPLAY || '').trim().toLowerCase()
+  if (explicit) return explicit
+  if (String(process.env.DSH_DESKTOP_USER_DATA || '').trim()) return 'secondary'
+  return ''
+}
+
 function displayFor(anchor) {
-  const raw = String(process.env.DSH_DESKTOP_DISPLAY || '').trim().toLowerCase()
+  const raw = displayEnvRaw()
   if (!raw) return screen.getDisplayMatching(anchor)
   let displays = []
   try {
@@ -2663,7 +2677,7 @@ function anchorArea(anchor) {
  * 少一处就会在主屏上闪一下（2026-10-13 项目所有者反馈"还是会来到我的主屏上"）。
  */
 function preferredDisplaySeed(width, height) {
-  if (!String(process.env.DSH_DESKTOP_DISPLAY || '').trim()) return {}
+  if (!displayEnvRaw()) return {}
   const area = anchorArea(screen.getPrimaryDisplay().bounds)
   // **尺寸也要夹进目标屏**：默认主窗 1360 宽，落在 1093 宽的副屏上居中会算出 x=-133（探出屏幕）——
   // 2026-10-13 实机预览实测踩到。所以宽度/高度取 min(请求值, 工作区 - 20)。
