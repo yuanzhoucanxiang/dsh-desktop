@@ -57,6 +57,28 @@ function normalizeMode(descriptor, id) {
             order: Number.isFinite(descriptor.tile.order) ? Number(descriptor.tile.order) : 100,
           }
         : null,
+    // **拼接视图**（2026-10-13，用户拍板 A）：比 dock 重——拼到长条右侧时要的是模式的**完整界面**，
+    // 不是"顺眼看一下"的轻视图。两种给法，二选一：
+    //   · `mount(container)`：模式把自己的界面渲染进工具台给的容器（portal / 挂 DOM 都行），
+    //     返回 dispose（收起拼接时调用）。**单实例模式（如写作台）走这条**——它有自己的 React 根
+    //     与编辑会话，再挂一份会打架（坞视图注释里就写着这条教训）。
+    //   · `view`：直接给运行时组件引用（可自由重挂的模式走这条）。
+    splice:
+      descriptor.splice &&
+      typeof descriptor.splice === 'object' &&
+      (typeof descriptor.splice.mount === 'function' || descriptor.splice.view)
+        ? {
+            label: descriptor.splice.label,
+            mount: typeof descriptor.splice.mount === 'function' ? descriptor.splice.mount : null,
+            view: descriptor.splice.view || null,
+            // **模式自己说要多宽**（可选）：写作台那种按宽窗设计的界面在 420px 里会被裁，
+            // 所以让它自己声明期望宽度；壳侧仍会按屏幕夹到合法区间（2026-10-13 实机看上裁剪后加）。
+            width: Number.isFinite(descriptor.splice.width)
+              ? Math.max(280, Math.min(1200, Math.round(descriptor.splice.width)))
+              : null,
+            order: Number.isFinite(descriptor.splice.order) ? descriptor.splice.order : 100,
+          }
+        : null,
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
     // 会被如实标成 delivered:false（工具台不替它假装收到了）。
     onHandoff: typeof descriptor.onHandoff === 'function' ? descriptor.onHandoff : null,
@@ -74,6 +96,8 @@ function publicView(mode, activeId) {
     hasContext: mode.context !== null,
     hasDock: mode.dock !== null,
     hasTile: mode.tile !== null,
+    // 能不能拼（2026-10-13）：给 splice 视图的模式优先，退而求其次用坞视图（旧的"轻视图"路径）。
+    hasSplice: mode.splice !== null,
   }
 }
 
@@ -260,6 +284,25 @@ export function createRegistry(options = {}) {
   }
 
   /**
+   * 某个模式提供的**拼接视图**（2026-10-13，用户拍板 A）：`{ id, label, mount, view }`；没提供 → null。
+   * 工具台负责给容器、给标题与收起钮；**界面内容完全归模式**——`mount(container)` 那条路是给
+   * 单实例模式用的（它把已有的 React 界面 portal 进容器，收起时调 dispose 让回来）。
+   */
+  function spliceViewOf(id) {
+    const key = id === null || id === undefined ? null : String(id).trim()
+    const mode = key === null ? null : modes.get(key)
+    if (!mode || !mode.splice) return null
+    return {
+      id: mode.id,
+      label: normalizeLabel(mode.splice.label) || mode.id,
+      order: mode.splice.order,
+      mount: mode.splice.mount,
+      view: mode.splice.view,
+      width: mode.splice.width,
+    }
+  }
+
+  /**
    * 当前上下文（工具台只做**汇总与展示**，不解释内容）：模式自己报"现在在做什么"
    * （作品/场景/产物），工具台把它显示在入口与切换器上。模式没报或报错 → null（不编造）。
    */
@@ -324,5 +367,5 @@ export function createRegistry(options = {}) {
     return lastHandoffRecord
   }
 
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf }
+  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf, spliceViewOf }
 }

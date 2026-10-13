@@ -4,6 +4,10 @@
  * - Entry: plugin/writing-mode/src/client/entry.js (ESM; imports ../shared/* and features)
  * - react / react/jsx-runtime stay external: the ModuleLoader factory's `require`
  *   resolves the host React — never bundle a second copy.
+ *   2026-10-13: `react-dom` 同理必须 external——写作模式要用 `createPortal` 把**同一个界面实例**
+ *   搬进工具台的拼接列，portal 必须由**内核那一份** react-dom 创建（自己再内联一份 = 两套
+ *   reconciler 混在同一棵树里）。内核自己的插件也是这么做的（`dsh-client-ui-primitives`
+ *   直接 `import { createPortal } from "react-dom"`，由 ModuleLoader 解析）。
  * - Output: CJS bundle wrapped as window.__ModuleLoader__.load({id, factory}).
  * - Deterministic: same input → byte-identical output (no timestamps, no absolute paths).
  *   Two consecutive builds must match; scripts/verify-writing-build.mjs enforces this.
@@ -40,7 +44,7 @@ export async function buildWritingClient(outFile) {
     format: 'cjs',
     platform: 'browser',
     target: 'es2022',
-    external: ['react', 'react/jsx-runtime'],
+    external: ['react', 'react/jsx-runtime', 'react-dom'],
     charset: 'utf8',
     legalComments: 'none',
     logLevel: 'silent',

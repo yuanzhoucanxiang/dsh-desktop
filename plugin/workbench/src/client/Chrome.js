@@ -21,6 +21,7 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
+import { SplicePanelBody } from './Splice.js'
 import { getShapeBridge, hasSpliceBridge, openSettings, readShape, requestShape, requestSplice, requestWindowClose } from './shell-shape.js'
 import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
 
@@ -204,8 +205,9 @@ export function WorkbenchChrome() {
     setShape(result.ok ? next : `failed:${result.error}`)
   }
   /* ── 模式拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**） ─────────────
-   * 与"进入模式"分工：进全屏走宽窗主屏的瓷砖「进入」；接缝点一下是把该模式的**可嵌入视图**
-   * 拼在长条右侧（第一版就用模式已提供的 `dock` 视图），窗口跟着变宽（壳侧 `splice` 几何）。
+   * 与"进入模式"分工：进全屏走宽窗主屏的瓷砖「进入」；接缝点一下是把该模式的**完整界面**
+   * 拼在长条右侧（用户拍板 A：要的是完整界面，不是轻视图），窗口跟着变宽（壳侧 `splice` 几何）。
+   * 视图来源优先 `splice`（`mount(container)` 给单实例模式 / `view` 给可重挂模式），没有才退回 `dock`。
    * 2026-10-13 第二版：**可以拼多个**（新拼的贴主长条插入，旧的整体外顶——原型 v2.2 的规则），
    * 每块左缘可**拖拽调宽**（280–上限，壳侧夹住；宽度记忆在壳的 `settings.workbenchSplice` 里）。
    * 纪律：① 没有可嵌入视图的模式**不拼**（如实说明，不硬塞）；② 壳不支持拼接（老壳）时
@@ -222,13 +224,16 @@ export function WorkbenchChrome() {
   }
   const spliceMode = async (id) => {
     if (spliced.some((it) => it.id === id)) return unsplice(id)
-    const view = registry.dockViewOf(id)
+    // 优先"完整界面"（splice），退而求其次才是坞的轻视图（dock）——旧的降级路径
+    const view = registry.spliceViewOf(id) || registry.dockViewOf(id)
     if (!view) {
       setNotice({ kind: 'info', text: T.spliceNoView(registry.resolveLabel(id)) })
       return
     }
-    // 新拼的**贴主长条插入**（原型 v2.2：右侧新界面贴长条、旧界面依次外顶）
-    const next = [{ id, width: SPLICE_WIDTH }, ...spliced]
+    // 新拼的**贴主长条插入**（原型 v2.2：右侧新界面贴长条、旧界面依次外顶）。
+    // 宽度优先用**模式自己声明的**（`splice.width`）——写作台那种宽窗设计的界面在 420 里会被裁。
+    const width = Number(view.width) > 0 ? Number(view.width) : SPLICE_WIDTH
+    const next = [{ id, width }, ...spliced]
     const result = await applySpliceWidth(next)
     if (!result.ok) {
       setNotice({ kind: 'error', text: T.spliceFailed(result.error) })
@@ -485,11 +490,11 @@ export function WorkbenchChrome() {
     )
   })
 
-  // 拼接面板（长条右侧那些列）：每块 = 模式的**可嵌入视图**（第一版 = 它的 `dock` 视图）+ 头部
-  // （模式名 + ✕）+ 左缘**拖拽把手**。宽度由壳回读的 `spliceWidth` 定（窗口已按它加宽）。
+  // 拼接面板（长条右侧那些列）：每块 = 模式的**完整界面**（`splice`：mount 或 view；没有才退回
+  // 坞的轻视图）+ 头部（模式名 + ✕）+ 左缘**拖拽把手**。宽度由壳回读的 `spliceWidth` 定。
   const splicePanels = spliced
     .map((panel) => {
-      const view = registry.dockViewOf(panel.id)
+      const view = registry.spliceViewOf(panel.id) || registry.dockViewOf(panel.id)
       if (!view) return null
       return react.createElement(
         'section',
@@ -528,7 +533,7 @@ export function WorkbenchChrome() {
         react.createElement(
           'div',
           { className: 'dshWbSpliceBody', 'data-wb-splice-body': '' },
-          react.createElement(view.view),
+          react.createElement(SplicePanelBody, { view }),
         ),
       )
     })

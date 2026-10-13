@@ -177,14 +177,22 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   `shapeState()` 回读 `spliceWidth` / `spliceRange`；设置项 `settings.workbenchSplice`。
   实机门禁 `verify:shell-shape` **J 段**判五件事：+400 且右缘不动 / 越界夹住 / 收起还原 / 非数被拒 / 形态不变。
   **仍未做**：插件侧的拼接面板与左侧子 agent 对话（见下条，第一版已落地）。
-- **拼接面板·插件侧（2026-10-13，用户拍板 A；同日第二版支持多块 + 拖拽）**：
+- **拼接面板·插件侧（2026-10-13，用户拍板 A；同日第二版支持多块 + 拖拽；第三版"完整界面"）**：
   **接缝里点一下模式 = 把它拼到长条右侧**（不是进入模式）；要进它的全屏界面就点 `←` 回宽窗主屏、
   再点瓷砖「进入」。拼接区是长条右侧的若干列（`data-wb-splice` / `data-wb-splice-width`，
-  外层 `data-wb-splice-wrap` 报块数），内容是模式的**可嵌入视图**——第一版直接用它的 `dock` 视图
-  （写作模式已有），窗口由壳按总宽加宽。
+  外层 `data-wb-splice-wrap` 报块数），窗口由壳按总宽加宽。
+  - **视图来源（第三版起）**：优先模式交的 **`splice`**（用户拍板 A：要**完整界面**，不是轻视图）——
+    `splice.mount(container)` 给**单实例模式**（写作台那种：自己的 React 根 + 编辑会话，再挂一份会打架；
+    它把同一个实例 portal 进我们给的容器，收起时调返回的 dispose），`splice.view` 给可自由重挂的模式；
+    都没有才退回 `dock` 的轻视图（旧的降级路径，模式还没交完整界面时如实呈现）。
+    渲染在 `Splice.js`：容器 `.dshWbSpliceHost{position:relative}`，`data-wb-splice-source` 标出走的哪条路。
+  - **宽度**：优先模式声明的 `splice.width`（写作台声明 720——三栏界面在 420 里会被裁，实机截图确认过），
+    否则用默认 420；壳侧仍按屏幕夹到 `spliceRange`。
+  - 探针 **⑫ 组**：`splice.mount` 被调用一次、模式挂进来的内容真在列里、
+    `data-wb-splice-source="mount"`、没有同时退化成坞视图、**声明 600 就申请 600**、
+    收起时 dispose 恰好一次且内容被清掉。
   - **可以同时拼多个**：新拼的**贴主长条插入**（`index 0`，旧的整体外顶——原型 v2.2 的规则），
-    总宽 = 各块之和（壳侧上限按显示器工作区算，`spliceRange` 回读）；
-  - **每块左缘可拖拽调宽**（`.dshWbSpliceGrip`，pointer capture，移动中节流申请、松手落定）；
+    总宽 = 各块之和（壳侧上限按显示器工作区算，`spliceRange` 回读）；  - **每块左缘可拖拽调宽**（`.dshWbSpliceGrip`，pointer capture，移动中节流申请、松手落定）；
     宽度**记忆在壳的 `settings.workbenchSplice`**，所以重启/重进长条还在；
   - 三条纪律：① **没有可嵌入视图的模式不拼**（如实说明"还没提供可嵌入视图"，窗口一动不动）；
     ② 壳不支持拼接（老壳）→ `no-splice-bridge`，界面保持原样；③ **进入模式 / 回宽窗 / 退出工具台 /

@@ -114,6 +114,10 @@ export const CSS = [
   '.dshWbSpliceHead{flex:none;display:flex;align-items:center;gap:8px;}',
   '.dshWbSpliceLabel{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWbSpliceBody{flex:1;min-height:0;overflow:auto;}',
+  // 拼接内容容器：模式自己把界面挂进来（portal / appendChild），这里只负责给它一块占满的空间。
+  // `position:relative` 是给模式的全屏壳用的——写作台的 `.dshWmRoot` 是 `position:fixed`，
+  // 内嵌时它自己会改成 `absolute;inset:0`（见写作模式 writing-css.js 的 `:where(.dshWbSpliceHost)`）。
+  '.dshWbSpliceHost{position:relative;flex:1;min-height:100%;display:flex;flex-direction:column;}',
   '.dshWbSeamItem.is-spliced{border-color:var(--dsw-alias-brand-primary);}',
   '.dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}',
   '.dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',

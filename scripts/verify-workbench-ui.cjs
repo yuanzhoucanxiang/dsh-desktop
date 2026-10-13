@@ -858,6 +858,50 @@ app.whenReady().then(async () => {
     assert.ok((await text('[data-wb-switcher]')).includes('可嵌入视图'), '拼不了要如实说明原因')
   }
 
+  // ⑫ **拼接要的是"完整界面"**（2026-10-13 用户拍板 A）：单实例模式走 `splice.mount(container)`，
+  // 工具台给容器、模式把界面渲染进去；收起时调 dispose（模式据此把自己的界面收回去）。
+  await evaluate(`(() => {
+    window.__mountCalls = 0; window.__disposeCalls = 0;
+    window.__wbPlugin.__workbenchRegistry().registerMode({
+      id:'demoMount', label:'单实例模式', order:90,
+      splice:{ label:'完整界面', width:600, mount:(container) => {
+        window.__mountCalls += 1;
+        window.__mountHost = container && container.className;
+        const inner = document.createElement('div');
+        inner.setAttribute('data-wb-splice-mounted','1');
+        inner.textContent = '模式自己的完整界面';
+        container.appendChild(inner);
+        return () => { window.__disposeCalls += 1; if (inner.parentNode) inner.parentNode.removeChild(inner) };
+      } },
+    });
+    return 0
+  })()`)
+  {
+    // 注册之后要**等它出现在扇形里**再点（registerMode → 门面重渲染不是同一个 tick，2026-10-13 撞过）
+    await waitFor(`document.querySelector('[data-wb-seam-mode="demoMount"]')!==null`, '新注册的模式应出现在扇形里')
+    await click('[data-wb-seam-mode="demoMount"]')
+    await waitFor(`document.querySelector('[data-wb-splice="demoMount"]')!==null`, '给 mount 的模式应能拼上')
+    await waitFor(`window.__mountCalls===1`, 'mount 应被调用一次')
+    assert.equal(await count('[data-wb-splice-mounted]'), 1, '模式挂进来的内容应真的在拼接列里')
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-splice-host]').getAttribute('data-wb-splice-source')`),
+      'mount',
+      '这条走的是 mount（不是退回坞视图）',
+    )
+    assert.equal(await count('[data-wb-splice] [class*="dshWbDock"]'), 0, '不该同时退化成坞视图')
+    // **模式自己声明的宽度**优先（写作台那种宽窗界面在 420 里会被裁）：这里声明 600，就该申请 600
+    assert.equal(
+      await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`),
+      '600',
+      '拼接宽度应优先用模式声明的 splice.width（不是写死 420）',
+    )
+    assert.equal(await evaluate(`window.__disposeCalls`), 0, '还在拼着的时候不该调 dispose')
+    await click('[data-wb-splice-collapse="demoMount"]')
+    await waitFor(`document.querySelector('[data-wb-splice="demoMount"]')===null`, '收起后拼接列应撤掉')
+    assert.equal(await evaluate(`window.__disposeCalls`), 1, '收起时应调一次 dispose（模式收回自己的界面）')
+    assert.equal(await count('[data-wb-splice-mounted]'), 0, 'dispose 后模式的内容应被清掉')
+  }
+
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
   console.log('WORKBENCH_UI_OK 11 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何/拼接）')
   await closeServer(server)

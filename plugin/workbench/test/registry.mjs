@@ -232,7 +232,36 @@ test('对外视图不带内部钩子（只有 UI 需要的字段）', () => {
   const r = createRegistry()
   r.registerMode({ id: 'a', label: 'A', onActivate: () => {}, canDeactivate: () => true })
   const view = r.list()[0]
-  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'hasTile', 'id', 'label', 'mount', 'order'])
+  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'hasSplice', 'hasTile', 'id', 'label', 'mount', 'order'])
+})
+
+test('拼接视图（2026-10-13）：spliceViewOf 认 mount 与 view；list() 如实标 hasSplice', () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'plain', label: '没交拼接界面' })
+  assert.equal(r.spliceViewOf('plain'), null)
+  assert.equal(r.spliceViewOf('nope'), null)
+  assert.equal(r.list()[0].hasSplice, false)
+  // 只给一个空对象不算数（既没 mount 也没 view）——不假装它能拼
+  r.registerMode({ id: 'empty', label: '空的', splice: {} })
+  assert.equal(r.spliceViewOf('empty'), null)
+  assert.equal(r.list().find((m) => m.id === 'empty').hasSplice, false)
+
+  const mount = () => () => {}
+  r.registerMode({ id: 'writing', label: '写作', splice: { label: () => '写作台', mount, order: 30 } })
+  const single = r.spliceViewOf('writing')
+  assert.equal(single.id, 'writing')
+  assert.equal(single.label, '写作台')
+  assert.equal(single.order, 30)
+  assert.equal(single.mount, mount, 'mount 必须是同一个函数引用（不是包装过的）')
+  assert.equal(single.view, null, '没给 view 就是 null，别编一个')
+  assert.equal(r.list().find((m) => m.id === 'writing').hasSplice, true)
+
+  const View = () => null
+  r.registerMode({ id: 'stateless', label: '可重挂的', splice: { view: View } })
+  const multi = r.spliceViewOf('stateless')
+  assert.equal(multi.view, View, 'view 也必须是同一个组件引用')
+  assert.equal(multi.mount, null)
+  assert.equal(multi.label, 'stateless', '没给 label 就退回 id（不编造名字）')
 })
 
 test('辅助坞（L2）：dockViewOf 只认带 view 的声明；list() 如实标 hasDock', () => {
