@@ -1127,6 +1127,8 @@ function openSettingsPanel(tab) {
   settingsWin = new BrowserWindow({
     width: 800,
     height: 620,
+    // 指定了目标屏就摆那儿（本机：主屏是"屏幕 2"=4K/273%，测试实例一律去另一块，别打断作者）
+    ...preferredDisplaySeed(800, 620),
     minWidth: 640,
     minHeight: 460,
     title: '设置',
@@ -1768,6 +1770,7 @@ function openSplashPreview(withError) {
     height: 700,
     minWidth: 620,
     minHeight: 440,
+    ...preferredDisplaySeed(900, 700),
     title: `预览启动画面 · ${THEMES[themeId()].label}`,
     backgroundColor: THEMES[themeId()].bg,
     icon: appIconImage(),
@@ -1838,6 +1841,7 @@ function openWikiWindow(rawPath) {
     height: 800,
     minWidth: 620,
     minHeight: 440,
+    ...preferredDisplaySeed(1000, 800),
     title: `作品档案 · ${path.basename(p) || '未命名'}`,
     backgroundColor: THEMES[themeId()].bg,
     icon: appIconImage(),
@@ -1884,6 +1888,7 @@ function openExtraWindow() {
     height: 820,
     minWidth: 900,
     minHeight: 600,
+    ...preferredDisplaySeed(1180, 820),
     backgroundColor: THEMES[themeId()].bg,
     icon: appIconImage(),
     title: APP_NAME,
@@ -1901,6 +1906,160 @@ function openExtraWindow() {
   hardenWindow(w)
   w.loadURL(kernelPageUrl()).catch((err) => log(`extra window failed: ${err.message}`))
   return w
+}
+
+/* ─────────── 模块窗口（2026-10-13，用户："我想的是模块化，即它们也可以分离"） ───────────
+ *
+ * 拼接**不是一个窗口里多一列**，而是每个模式一个**独立窗口**，贴边拼在长条左侧
+ * （长条贴工作区右缘，所以模块往左依次挨着排，间距 `MODULE_GAP`）。
+ * **分离**的语义：用户一自己拖动某个模块窗口，就把它标成 `detached`，壳**不再插手它的位置**
+ * （拖开就留在那儿，等于把这块拆下来）；没被拖过的模块跟着长条走（改形态、挪位置都跟）。
+ * 判定"用户自己拖的"：我们自己的 `setBounds` 期间挂 `entry.setting` 标记，期间收到的 move 不算。
+ * 页面侧靠 URL 片段 `#dsh-wb-module=<modeId>` 认出"我是模块窗口"，只渲染那一个模式。
+ */
+const MODULE_WINDOW_MIN = 280
+const MODULE_WINDOW_MAX = 900
+const MODULE_GAP = 8
+/** modeId → { win, width, anchored } */
+const moduleWins = new Map()
+
+function moduleWindowUrl(modeId) {
+  const base = kernelPageUrl() || 'about:blank'
+  return `${base}#dsh-wb-module=${encodeURIComponent(modeId)}`
+}
+
+function moduleWindowTitle(modeId) {
+  return `模块 · ${modeId}`
+}
+
+/** 把还没被拖开的模块窗口依次贴到长条左侧（被拖开的保持原位＝分离）。 */
+function layoutModuleWindows() {
+  if (!win || win.isDestroyed() || currentShape() === 'normal') return
+  const strip = win.getBounds()
+  let rightEdge = strip.x - MODULE_GAP
+  for (const entry of moduleWins.values()) {
+    if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
+    const width = Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, entry.width))
+    entry.setting = true
+    try {
+      entry.win.setBounds({ x: rightEdge - width, y: strip.y, width, height: strip.height })
+    } catch {
+      /* 窗口刚销毁之类：忽略这一次摆位 */
+    }
+    entry.setting = false
+    rightEdge = rightEdge - width - MODULE_GAP
+  }
+}
+
+function moduleWindowState() {
+  return Array.from(moduleWins.entries()).map(([modeId, entry]) => ({
+    modeId,
+    anchored: entry.anchored,
+    bounds: entry.win && !entry.win.isDestroyed() ? entry.win.getBounds() : null,
+  }))
+}
+
+function openModuleWindow(modeId, width) {
+  const id = String(modeId || '').trim()
+  if (!/^[a-z0-9._-]{1,64}$/i.test(id)) return { ok: false, error: 'bad-mode-id' }
+  const existing = moduleWins.get(id)
+  if (existing && existing.win && !existing.win.isDestroyed()) {
+    layoutModuleWindows()
+    existing.win.focus()
+    return { ok: true, opened: false, ...shapeState(), modules: moduleWindowState() }
+  }
+  const wantWidth = Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, Number(width) || 420))
+  // **在目标屏上直接建窗，别先建在主屏再搬过去**：两块屏缩放不同（这台 2.73 / 3.12）时，
+  // 跨屏 `setBounds` 会被系统按目标屏缩放再算一遍，尺寸凭空大 14.5%（2026-10-13 实机实测：
+  // 请求 420×601 得到 481×688，比例正好是 3.12/2.73）。所以先用长条几何算出锚点位置再建窗。
+  const anchor = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds
+  let seedX
+  let seedY
+  let seedHeight = 640
+  if (currentShape() !== 'normal') {
+    let rightEdge = anchor.x - MODULE_GAP
+    for (const e of moduleWins.values()) {
+      if (!e.anchored || !e.win || e.win.isDestroyed()) continue
+      rightEdge = rightEdge - Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, e.width)) - MODULE_GAP
+    }
+    seedX = rightEdge - wantWidth
+    seedY = anchor.y
+    seedHeight = anchor.height
+  }
+  const w = new BrowserWindow({
+    width: wantWidth,
+    height: seedHeight,
+    ...(Number.isFinite(seedX) ? { x: seedX } : {}),
+    ...(Number.isFinite(seedY) ? { y: seedY } : {}),
+    minWidth: 220,
+    // 120 是给 `mini` 形态留的余地（小条才 168 高，模块要贴着它一起变矮）——设 240 的话
+    // `setBounds` 会被系统夹住，"跟着长条走"当场失效（2026-10-13 K 段实测：长条 170、模块 242）。
+    minHeight: 120,
+    backgroundColor: THEMES[themeId()].bg,
+    icon: appIconImage(),
+    title: moduleWindowTitle(id),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  })
+  const entry = { win: w, width: Number(width) || 420, anchored: true, setting: false }
+  moduleWins.set(id, entry)
+  // 页面会自己设 document.title（内核页面就设），会把我们认窗口用的标题顶掉 ⇒ 拦下来
+  w.on('page-title-updated', (e) => {
+    e.preventDefault()
+    try {
+      w.setTitle(moduleWindowTitle(id))
+    } catch {
+      /* 窗口没了 */
+    }
+  })
+  w.on('move', () => {
+    // 我们自己的 setBounds 会带 setting 标记；除此之外的 move 就是**用户拖的** ⇒ 分离
+    if (entry.setting || !entry.anchored) return
+    entry.anchored = false
+    log(`模块窗口分离：${id}（用户拖动，壳不再贴边）`)
+    broadcastShape()
+  })
+  w.on('closed', () => {
+    moduleWins.delete(id)
+    broadcastShape()
+  })
+  hardenWindow(w)
+  w.loadURL(moduleWindowUrl(id)).catch((err) => log(`module window failed: ${err.message}`))
+  layoutModuleWindows()
+  log(`模块窗口打开：${id}（宽 ${entry.width}）`)
+  return { ok: true, opened: true, ...shapeState(), modules: moduleWindowState() }
+}
+
+function closeModuleWindow(modeId) {
+  const id = String(modeId || '').trim()
+  const entry = moduleWins.get(id)
+  if (!entry) return { ok: true, closed: false, ...shapeState(), modules: moduleWindowState() }
+  try {
+    entry.win.destroy()
+  } catch {
+    /* 已经没了 */
+  }
+  moduleWins.delete(id)
+  broadcastShape()
+  log(`模块窗口关闭：${id}`)
+  return { ok: true, closed: true, ...shapeState(), modules: moduleWindowState() }
+}
+
+function closeAllModuleWindows() {
+  for (const entry of moduleWins.values()) {
+    try {
+      entry.win.destroy()
+    } catch {
+      /* 已经没了 */
+    }
+  }
+  moduleWins.clear()
 }
 
 /**
@@ -2200,11 +2359,21 @@ function createWindow() {
     saveSettings()
   }
   const bounds = validBounds(settings.windowBounds)
+  // 首窗摆哪：有记忆就按记忆；**没有记忆且指定了 DSH_DESKTOP_DISPLAY 时摆到那块屏**——
+  // 探针/预览实例默认弹在主屏上会打断正在干活的人（2026-10-13 项目所有者要求）。
+  const displayPinned = String(process.env.DSH_DESKTOP_DISPLAY || '').trim().length > 0
+  const pinnedArea = displayPinned
+    ? anchorArea(bounds && Number.isFinite(bounds.x) ? bounds : screen.getPrimaryDisplay().bounds)
+    : null
+  const firstWidth = bounds?.width || 1360
+  const firstHeight = bounds?.height || 920
+  const firstX = bounds?.x ?? (pinnedArea ? pinnedArea.x + Math.round((pinnedArea.width - firstWidth) / 2) : undefined)
+  const firstY = bounds?.y ?? (pinnedArea ? pinnedArea.y + Math.round((pinnedArea.height - firstHeight) / 2) : undefined)
   win = new BrowserWindow({
-    width: bounds?.width || 1360,
-    height: bounds?.height || 920,
-    x: bounds?.x,
-    y: bounds?.y,
+    width: firstWidth,
+    height: firstHeight,
+    x: firstX,
+    y: firstY,
     minWidth: 980,
     minHeight: 640,
     backgroundColor: THEMES[themeId()].bg, // 与启动画面同色，避免任何白闪
@@ -2254,7 +2423,12 @@ function createWindow() {
     }, 500)
   }
   win.on('resize', scheduleSaveBounds)
-  win.on('move', scheduleSaveBounds)
+  win.on('move', () => {
+    scheduleSaveBounds()
+    // 长条动/变大小 ⇒ 还贴着的模块窗口跟着走（被拖开的=分离，不跟）
+    layoutModuleWindows()
+  })
+  win.on('resize', layoutModuleWindows)
   win.on('maximize', () => { settings.windowBounds.maximized = true; saveSettings() })
   win.on('unmaximize', () => { settings.windowBounds.maximized = false; saveSettings() })
   // 藏过/最小化过之后 OS 的置顶位可能丢：条状形态下再断言一次（2026-10-13 加固，见 enforceTopmost 注释）
@@ -2351,9 +2525,63 @@ function currentShape() {
 }
 
 /** 按档位算目标几何；用户拖过的位置从 workbenchShapeBounds 里取（越出工作区就回落到默认角）。 */
+/* ─────────── 测试/预览实例放哪个屏（2026-10-13 项目所有者要求） ───────────
+ * "你在拉实例测试时去放在我的屏幕二上测试，不然会影响我"——探针与预览都会弹真窗口，
+ * 落在主屏上会打断正在干活的人。`DSH_DESKTOP_DISPLAY` 支持：
+ *   `primary`（默认，行为不变）| `secondary`（**非主屏那块**，没有就回落主屏）| 数字索引（0 起）
+ * 只影响**窗口摆哪**：形态几何、拼接上限等仍按目标显示器的工作区算（本来就是这么设计的）。
+ * 本机实测（2026-10-13 项目所有者告知 + 探针量到）：主屏是 **3840×2160 物理 / 273% 缩放** ⇒
+ * Electron 报 `1407×792` DIP 工作区；另一块 `1093×698` DIP（312% 缩放）。**两块缩放不同**，
+ * 跨屏 `setBounds` 会被系统按目标屏再缩放一次（实测 420×601 请求变成 481×688，正好 312/273）——
+ * 所以窗口要在**目标屏上直接创建**，别先建在主屏再搬。
+ */
+function displayFor(anchor) {
+  const raw = String(process.env.DSH_DESKTOP_DISPLAY || '').trim().toLowerCase()
+  if (!raw) return screen.getDisplayMatching(anchor)
+  let displays = []
+  try {
+    displays = screen.getAllDisplays()
+  } catch {
+    return screen.getDisplayMatching(anchor)
+  }
+  if (!displays.length) return screen.getDisplayMatching(anchor)
+  if (raw === 'primary') return screen.getPrimaryDisplay()
+  if (raw === 'secondary') {
+    // **按"非主屏"认，不按数组下标**：`getAllDisplays()` 的顺序不保证等于 Windows 的屏幕编号
+    // （项目所有者截图里"2"是在 1 上面那块）。有第二块就用它，只有一块回落到主屏。
+    const primaryId = screen.getPrimaryDisplay().id
+    return displays.find((d) => d.id !== primaryId) || displays[0]
+  }
+  const index = Number(raw)
+  if (Number.isInteger(index) && index >= 0 && index < displays.length) return displays[index]
+  return screen.getDisplayMatching(anchor)
+}
+
+function anchorArea(anchor) {
+  return displayFor(anchor).workArea
+}
+
+/**
+ * 给窗口选项塞一个"按 `DSH_DESKTOP_DISPLAY` 指定的屏"的初始位置；没指定就什么都不加（行为不变）。
+ * 摆法：在该屏工作区里居中。**所有**会被弹出的窗口都该带上它——工具台设置、预览、wiki、新窗口，
+ * 少一处就会在主屏上闪一下（2026-10-13 项目所有者反馈"还是会来到我的主屏上"）。
+ */
+function preferredDisplaySeed(width, height) {
+  if (!String(process.env.DSH_DESKTOP_DISPLAY || '').trim()) return {}
+  const area = anchorArea(screen.getPrimaryDisplay().bounds)
+  const w = Number(width) || 1200
+  const h = Number(height) || 800
+  return {
+    x: area.x + Math.max(0, Math.round((area.width - w) / 2)),
+    y: area.y + Math.max(0, Math.round((area.height - h) / 2)),
+  }
+}
+
+/** 按档位算目标几何；用户拖过的位置从 workbenchShapeBounds 里取（越出工作区就回落到默认角）。 */
 function shapeBounds(shape) {
   const anchor = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds
-  const area = screen.getDisplayMatching(anchor).workArea
+  // 屏幕由 `displayFor` 决定（默认跟窗口所在屏；测试/预览可用 DSH_DESKTOP_DISPLAY 钉到副屏）
+  const area = anchorArea(anchor)
   const g = SHAPE_GEOMETRY[shape]
   if (!g) {
     const saved = validBounds(settings.windowBounds)
@@ -2386,6 +2614,8 @@ function shapeState() {
     // 拼接宽度（只对 strip 生效）：页面据此知道"现在拼了多宽"，收起时是 0
     spliceWidth: shape === 'strip' ? currentSplice() : 0,
     spliceRange: [SPLICE_MIN, spliceMax()],
+    // 模块窗口（每个模式一个独立窗口，贴边拼在长条左侧；被拖开的标 anchored:false）
+    modules: moduleWindowState(),
     // 自报进程号：实机门禁按它过滤窗口，避免读到**另一个实例**（比如常驻的预览实例）的同名窗口
     pid: process.pid,
     mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
@@ -2499,6 +2729,10 @@ function applyWorkbenchShape(shape) {
   if (win.isMaximized()) win.unmaximize()
   const b = shapeBounds(shape)
   win.setBounds(b)
+  // 模块窗口跟着形态走；回到 normal（工具台关了）⇒ 模块窗口一起收掉
+  // （模块属于工具台：主屏关了就没了。要做"拆下来还活着"是下一刀的事，见日志）
+  if (shape === 'normal') closeAllModuleWindows()
+  else layoutModuleWindows()
   const onTop = shape !== 'normal' && settings.workbenchStripOnTop !== false
   // 置顶走统一入口：申请 → 读 OS 真值复核 → 没落地就补刀（理由见 enforceTopmost 的实测注释）
   enforceTopmost(win, onTop, `主窗/${shape}`)
@@ -3219,6 +3453,26 @@ function registerIpc() {
   ipcMain.handle('shell:get-workbench-shape', (event) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     return { ok: true, ...shapeState() }
+  })
+
+  /* 模块窗口（2026-10-13，用户："我想的是模块化，即它们也可以分离"）：
+   * 每个模式一个**独立窗口**，贴边拼在长条左侧；用户拖开即分离（壳不再贴边）。
+   * 纪律与形态通道一致：只认内核页面主帧；modeId 只收安全字符；宽度有界（280–900）。 */
+  ipcMain.handle('shell:open-module-window', (event, payload) => {
+    if (!isKernelPageSender(event)) {
+      log('open-module-window: rejected（发送方不是内核页面主帧）')
+      return { ok: false, error: 'only-kernel-page' }
+    }
+    const modeId = payload && typeof payload === 'object' ? payload.modeId : payload
+    const width = payload && typeof payload === 'object' ? payload.width : undefined
+    const result = openModuleWindow(modeId, width)
+    if (result.ok) broadcastShape()
+    return result
+  })
+  ipcMain.handle('shell:close-module-window', (event, payload) => {
+    if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
+    const modeId = payload && typeof payload === 'object' ? payload.modeId : payload
+    return closeModuleWindow(modeId)
   })
 
   // 拼接宽度（2026-10-13）：页面只说"要拼多宽"（有界标量：0 = 收起 / 280 到工作区上限），

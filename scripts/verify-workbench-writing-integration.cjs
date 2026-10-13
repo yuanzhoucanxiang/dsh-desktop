@@ -10,7 +10,7 @@
 // 说明：W3 用入口导出的 `__setCloseGuard` 装一个"拒绝"守卫来验**接线**
 // （工具台 → canDeactivate → 守卫）；真实守卫（未保存内容 → editor.close）的语义由
 // 写作模式自己的门禁（verify:writing-ui / native）覆盖，不在本探针重复。
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, screen } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
@@ -161,6 +161,12 @@ app.whenReady().then(async () => {
     width: 1200,
     height: 820,
     show: false,
+    // **测试窗摆副屏**（2026-10-13 项目所有者要求：拉实例测试时放屏幕二，别影响他干活）
+    ...(() => {
+      const all = screen.getAllDisplays()
+      const d = all.length > 1 ? all[1] : all[0]
+      return d ? { x: d.workArea.x + 20, y: d.workArea.y + 20 } : {}
+    })(),
     webPreferences: { nodeIntegration: true, contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (event, level, message) => {

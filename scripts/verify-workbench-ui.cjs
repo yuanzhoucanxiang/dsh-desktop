@@ -6,7 +6,7 @@
 //
 // 验的是 P0 契约：没有模式就不留死按钮；注册后入口出现；点一下进模式；多模式时切换器列出全部；
 // 关闭守卫拒绝时不切换、且工具台不自造提示；切换写进 host 状态文件；设置段如实显示。
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, screen } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
@@ -217,6 +217,14 @@ app.whenReady().then(async () => {
     width: 900,
     height: 700,
     show: false,
+    // **测试窗摆副屏**（2026-10-13 项目所有者要求："拉实例测试时放到屏幕二，不然会影响我"）：
+    // 探针窗是真窗口，落在主屏上会打断正在干活的人。
+    ...(() => {
+      const all = screen.getAllDisplays()
+      const d = all.length > 1 ? all[1] : all[0]
+      if (!d) return {}
+      return { x: d.workArea.x + 20, y: d.workArea.y + 20 }
+    })(),
     webPreferences: { nodeIntegration: true, contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (event, level, message) => {
