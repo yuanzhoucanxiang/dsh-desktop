@@ -1919,6 +1919,8 @@ function openExtraWindow() {
  */
 const MODULE_WINDOW_MIN = 280
 const MODULE_WINDOW_MAX = 900
+/** 贴边时允许缩到的最小宽度（比 MODULE_WINDOW_MIN 还小：放不下时宁可窄一点，也不能探出屏幕）。 */
+const MODULE_MIN_WIDTH = 220
 const MODULE_GAP = 8
 /** modeId → { win, width, anchored } */
 const moduleWins = new Map()
@@ -1936,13 +1938,17 @@ function moduleWindowTitle(modeId) {
 function layoutModuleWindows() {
   if (!win || win.isDestroyed() || currentShape() === 'normal') return
   const strip = win.getBounds()
+  const area = anchorArea(strip)
   let rightEdge = strip.x - MODULE_GAP
   for (const entry of moduleWins.values()) {
     if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
-    const width = Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, entry.width))
+    // **放不下就缩到装得下**：贴边是往左排，左边到工作区边缘为止；不缩的话窗口会探出屏幕
+    // （2026-10-13 实机：副屏 1093 宽、长条占 657，720 宽的写作台直接落到 x=-71）。
+    const room = Math.max(MODULE_MIN_WIDTH, rightEdge - area.x)
+    const width = Math.max(MODULE_MIN_WIDTH, Math.min(Math.min(MODULE_WINDOW_MAX, entry.width), room))
     entry.setting = true
     try {
-      entry.win.setBounds({ x: rightEdge - width, y: strip.y, width, height: strip.height })
+      entry.win.setBounds({ x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
     } catch {
       /* 窗口刚销毁之类：忽略这一次摆位 */
     }
@@ -1973,21 +1979,25 @@ function openModuleWindow(modeId, width) {
   // 跨屏 `setBounds` 会被系统按目标屏缩放再算一遍，尺寸凭空大 14.5%（2026-10-13 实机实测：
   // 请求 420×601 得到 481×688，比例正好是 3.12/2.73）。所以先用长条几何算出锚点位置再建窗。
   const anchor = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds
+  const seedArea = anchorArea(anchor)
   let seedX
   let seedY
   let seedHeight = 640
+  let seedWidth = wantWidth
   if (currentShape() !== 'normal') {
     let rightEdge = anchor.x - MODULE_GAP
     for (const e of moduleWins.values()) {
       if (!e.anchored || !e.win || e.win.isDestroyed()) continue
       rightEdge = rightEdge - Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, e.width)) - MODULE_GAP
     }
-    seedX = rightEdge - wantWidth
+    // 放不下就缩到装得下（同 layoutModuleWindows 的规矩：宁可窄，不能探出屏幕）
+    seedWidth = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, Math.max(MODULE_MIN_WIDTH, rightEdge - seedArea.x)))
+    seedX = Math.max(seedArea.x, rightEdge - seedWidth)
     seedY = anchor.y
     seedHeight = anchor.height
   }
   const w = new BrowserWindow({
-    width: wantWidth,
+    width: seedWidth,
     height: seedHeight,
     ...(Number.isFinite(seedX) ? { x: seedX } : {}),
     ...(Number.isFinite(seedY) ? { y: seedY } : {}),

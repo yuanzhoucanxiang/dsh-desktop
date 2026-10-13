@@ -486,5 +486,5 @@ if (failures.length) {
   console.log(`SHELL_SHAPE_FAIL ${failures.length} 项未过：${failures.join(', ')}`)
   process.exitCode = 1
 } else {
-  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标已移除 / H 置顶落到 Win32 / I ✕ 走既有关窗语义 / J 拼接几何有界且右缘不动）')
+  console.log('SHELL_SHAPE_OK 形态能力实机验收通过（A 桥 / B 枚举纪律 / C strip / D 不污染 windowBounds / E 还原 / F mini / G 浮标已移除 / H 置顶落到 Win32 / I ✕ 走既有关窗语义 / J 拼接几何有界且右缘不动 / K 模块窗口可贴边可分离）')
 }

@@ -1529,6 +1529,30 @@ async function requestSplice(width) {
     return { ok: false, error: String(err && err.message || err) };
   }
 }
+async function openModuleWindow(modeId, width) {
+  const bridge = getShapeBridge();
+  if (!bridge || typeof bridge.openModuleWindow !== "function") return { ok: false, error: "no-module-bridge" };
+  try {
+    const result = await bridge.openModuleWindow(String(modeId), Number(width) || void 0);
+    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+async function closeModuleWindow(modeId) {
+  const bridge = getShapeBridge();
+  if (!bridge || typeof bridge.closeModuleWindow !== "function") return { ok: false, error: "no-module-bridge" };
+  try {
+    const result = await bridge.closeModuleWindow(String(modeId));
+    return result && typeof result === "object" ? result : { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+function hasModuleWindowBridge(globalThisRef = typeof window === "undefined" ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell;
+  return Boolean(bridge && typeof bridge.openModuleWindow === "function" && typeof bridge.closeModuleWindow === "function");
+}
 async function readShape() {
   const bridge = getShapeBridge();
   if (!bridge) return null;
@@ -1619,6 +1643,8 @@ function WorkbenchChrome() {
   const [spliced, setSpliced] = react6.useState([]);
   const [spliceWidth, setSpliceWidth] = react6.useState(0);
   const [stripWidth, setStripWidth] = react6.useState(SPLICE_WIDTH);
+  const [modules, setModules] = react6.useState([]);
+  const moduleIds = modules.map((m) => m.modeId);
   const rememberShape = (state) => {
     const w = Number(state && state.stripWidth);
     if (Number.isFinite(w) && w > 0) setStripWidth(w);
@@ -1628,6 +1654,16 @@ function WorkbenchChrome() {
     panelsRef.current = spliced;
   }, [spliced]);
   const askedForStrip = react6.useRef(false);
+  react6.useEffect(() => {
+    const bridge = getShapeBridge();
+    if (!bridge || typeof bridge.onWorkbenchShape !== "function") return void 0;
+    const off = bridge.onWorkbenchShape((state) => {
+      if (state && Array.isArray(state.modules)) setModules(state.modules);
+    });
+    return () => {
+      if (typeof off === "function") off();
+    };
+  }, []);
   react6.useEffect(() => {
     let cancelled = false;
     const apply2 = async (next) => {
@@ -1714,6 +1750,22 @@ function WorkbenchChrome() {
     return result;
   };
   const spliceMode = async (id) => {
+    if (hasModuleWindowBridge()) {
+      if (moduleIds.includes(id)) {
+        const closed = await closeModuleWindow(id);
+        if (Array.isArray(closed?.modules)) setModules(closed.modules);
+        return closed;
+      }
+      const view2 = registry2.spliceViewOf(id) || registry2.dockViewOf(id);
+      const wantWidth = Number(view2 && view2.width) > 0 ? Number(view2.width) : SPLICE_WIDTH;
+      const result2 = await openModuleWindow(id, wantWidth);
+      if (!result2.ok) {
+        setNotice({ kind: "error", text: T.spliceFailed(result2.error) });
+        return result2;
+      }
+      if (Array.isArray(result2.modules)) setModules(result2.modules);
+      return result2;
+    }
     if (spliced.some((it) => it.id === id)) return unsplice(id);
     const view = registry2.spliceViewOf(id) || registry2.dockViewOf(id);
     if (!view) {
@@ -2000,7 +2052,7 @@ function WorkbenchChrome() {
       )
     );
   }).filter(Boolean);
-  const splicePanel = splicePanels.length ? react6.createElement(
+  const splicePanel = !hasModuleWindowBridge() && splicePanels.length ? react6.createElement(
     "div",
     { className: "dshWbSpliceWrap", "data-wb-splice-wrap": String(splicePanels.length), style: { flexBasis: `${spliceWidth || SPLICE_WIDTH}px` } },
     splicePanels
@@ -2102,7 +2154,7 @@ function WorkbenchChrome() {
           const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, SEAM_FAN_SPREAD * 2 / (modes.length - 1)) : 0;
           const a = Math.round((mid - i) * step);
           const delay = i * SEAM_FAN_STAGGER;
-          const isSpliced = spliced.some((it) => it.id === mode.id);
+          const isSpliced = moduleIds.includes(mode.id) || spliced.some((it) => it.id === mode.id);
           return react6.createElement(
             "button",
             {

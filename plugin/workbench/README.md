@@ -177,10 +177,16 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   `shapeState()` 回读 `spliceWidth` / `spliceRange`；设置项 `settings.workbenchSplice`。
   实机门禁 `verify:shell-shape` **J 段**判五件事：+400 且右缘不动 / 越界夹住 / 收起还原 / 非数被拒 / 形态不变。
   **仍未做**：插件侧的拼接面板与左侧子 agent 对话（见下条，第一版已落地）。
-- **拼接面板·插件侧（2026-10-13，用户拍板 A；同日第二版支持多块 + 拖拽；第三版"完整界面"）**：
-  **接缝里点一下模式 = 把它拼到长条右侧**（不是进入模式）；要进它的全屏界面就点 `←` 回宽窗主屏、
-  再点瓷砖「进入」。拼接区是长条右侧的若干列（`data-wb-splice` / `data-wb-splice-width`，
-  外层 `data-wb-splice-wrap` 报块数），窗口由壳按总宽加宽。
+- **拼接 = 模块窗口（2026-10-13 用户拍板："我想的是模块化，即它们也可以分离"）**：
+  接缝点一下模式 → 走**壳的模块窗口**（`shell:open-module-window`）：**每个模式一个独立窗口**，
+  贴边排在长条左侧；**用户拖开就分离**（壳不再插手它的位置）；再点同一个模式 = 关掉那个窗口。
+  - 门面侧：`shell-shape.js` 的 `openModuleWindow`/`closeModuleWindow`/`hasModuleWindowBridge`；
+    `Chrome.js` 订阅壳推送的 `modules` 记账（接缝上的「已拼接」标记据此显示，不自己编状态）。
+  - **降级路径**：壳没有模块窗口能力（老壳/官方壳）→ 退回原来的**窗口内拼接**（主窗撑宽 + 右侧一列，
+    内容优先 `splice.mount`、其次 `splice.view`、都没有才用 `dock` 轻视图）。两条路都在探针里验过。
+  - 壳侧纪律：只认内核页面主帧、modeId 只收安全字符、宽度有界且**放不下就缩**（不许探出屏幕）、
+    `normal`（工具台关了）时模块窗口一起收掉。门禁 `verify:shell-shape` **K 段** 7 条 + hardening 4 条。
+- **拼接面板（旧路径，仍作为降级保留）**：**接缝里点一下模式 = 把它拼到长条右侧**；
   - **视图来源（第三版起）**：优先模式交的 **`splice`**（用户拍板 A：要**完整界面**，不是轻视图）——
     `splice.mount(container)` 给**单实例模式**（写作台那种：自己的 React 根 + 编辑会话，再挂一份会打架；
     它把同一个实例 portal 进我们给的容器，收起时调返回的 dispose），`splice.view` 给可自由重挂的模式；

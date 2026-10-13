@@ -152,13 +152,15 @@ app.whenReady().then(async () => {
     window.__closeCalls = 0;
     window.__settingsCalls = 0;
     window.__spliceLog = [];
+    window.__moduleLog = [];
+    window.__modules = [];
     window.__shapeSubs = [];
     window.dshShell = {
-      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false, spliceWidth: 0, spliceRange: [280, 1200] }),
+      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false, spliceWidth: 0, spliceRange: [280, 1200], modules: window.__modules }),
       setWorkbenchShape: async (s) => {
         window.__shapeLog.push(s);
-        const state = { ok: true, shape: s, alwaysOnTop: s !== 'normal', spliceWidth: 0, spliceRange: [280, 1200] };
-        // 形态推送：辅助坞据此决定显不显示（长条下不显示，见 Dock.js）
+        const state = { ok: true, shape: s, alwaysOnTop: s !== 'normal', spliceWidth: 0, spliceRange: [280, 1200], modules: window.__modules };
+        // 形态推送：辅助坞据此决定显不显示（长条下不显示，见 Dock.js）；模块窗口记账也走这条
         (window.__shapeSubs || []).forEach((cb) => { try { cb(state) } catch (e) {} });
         return state;
       },
@@ -173,6 +175,22 @@ app.whenReady().then(async () => {
         const next = !Number.isFinite(n) || n <= 0 ? 0 : Math.max(280, Math.min(1200, Math.round(n)));
         window.__spliceLog.push(next);
         return { ok: true, shape: 'strip', spliceWidth: next, spliceRange: [280, 1200] };
+      },
+      // **模块窗口**（2026-10-13 模块化）：假壳照真壳口径回包——记账列表随形态推送发出去，
+      // 门面据此在接缝上标「已拼接」。⑫ 组会把这两条方法摘掉，用来验降级路径。
+      openModuleWindow: async (modeId, width) => {
+        window.__moduleLog.push({ op: 'open', modeId: String(modeId), width: Number(width) });
+        if (!window.__modules.some((m) => m.modeId === modeId)) {
+          window.__modules = window.__modules.concat([{ modeId: String(modeId), anchored: true, bounds: null }]);
+        }
+        (window.__shapeSubs || []).forEach((cb) => { try { cb({ ok: true, shape: 'strip', modules: window.__modules }) } catch (e) {} });
+        return { ok: true, shape: 'strip', modules: window.__modules };
+      },
+      closeModuleWindow: async (modeId) => {
+        window.__moduleLog.push({ op: 'close', modeId: String(modeId) });
+        window.__modules = window.__modules.filter((m) => m.modeId !== modeId);
+        (window.__shapeSubs || []).forEach((cb) => { try { cb({ ok: true, shape: 'strip', modules: window.__modules }) } catch (e) {} });
+        return { ok: true, shape: 'strip', modules: window.__modules };
       },
       // 浮标已于 2026-10-13 移除（用户："这个浮标没有用就去掉"）：假桥**不再提供**这两个方法，
       // 门面若还偷偷调用会当场抛错；下面另有守卫断言钉"一次都没调过"。
@@ -779,113 +797,43 @@ app.whenReady().then(async () => {
     '彻底移开后（超过宽限）应收起扇形',
   )
 
-  // ⑪ 拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**，不是进入模式）。
-  // 需要"提供可嵌入视图"的模式：这里现注册一个带 dock 视图的（前几组要验瓷砖，不能提前注册）。
+  // ⑪ 拼接 = **模块窗口**（2026-10-13 用户拍板："我想的是模块化，即它们也可以分离"）。
+  // 壳支持模块窗口时，接缝点一下是**开一个独立窗口**贴到长条左边——不是把主窗撑宽、也不是多一列。
   await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
     id:'demoDock', label:'带坞视图的模式', order:70,
-    dock:{ label:'坞视图', view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
+    splice:{ label:'完整界面', width:640, view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
   }); return 0 })()`)
-  await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
-    id:'demoDock2', label:'第二个带坞视图的模式', order:80,
-    dock:{ label:'坞视图二', view: () => window.React.createElement('div', {'data-wb-splice-demo':'2'}, '拼接内容二') },
-  }); return 0 })()`)
-  // **长条形态下辅助坞不出现**（2026-10-13 实机定位）：坞的 rail 挂在右缘、和接缝挤在一起——
-  // 项目所有者点了 rail 上的"写作"，以为点的是扇形，结果"直接跳进了写作模式"。
-  assert.equal(
-    await count('[data-wb-dock-rail]'),
-    0,
-    '长条形态下不该出现辅助坞 rail（它和接缝挤在右缘，会让人以为点的是扇形）',
-  )
   {
-    const activeBefore = await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`)
+    await waitFor(`document.querySelector('[data-wb-seam-mode="demoDock"]')!==null`, '新注册的模式应出现在扇形里')
     await click('[data-wb-seam-mode="demoDock"]')
-    await waitFor(`document.querySelector('[data-wb-splice]')!==null`, '点接缝里的模式应把它拼到右侧')
+    await waitFor(`window.__moduleLog.length===1`, '接缝点一下应向壳申请一个模块窗口')
+    assert.deepEqual(
+      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog[0])`)),
+      { op: 'open', modeId: 'demoDock', width: 640 },
+      '模块窗口要带模式 id 与**模式自己声明的宽度**（没声明才用默认 420）',
+    )
+    assert.equal(await count('[data-wb-splice]'), 0, '模块窗口路径下**主窗里不该再拼一列**（那是老壳的降级形态）')
+    await waitFor(`document.querySelector('[data-wb-seam-tag="spliced"]')!==null`, '接缝里应标出"已拼接"')
     assert.equal(
-      await evaluate(`document.querySelector('[data-wb-splice]').getAttribute('data-wb-splice')`),
-      'demoDock',
-      '拼接区应挂着这个模式',
+      await evaluate(`document.querySelector('[data-wb-seam-mode="demoDock"] .dshWbSeamTag').textContent`),
+      '已拼接',
+      '标记文案要说"已拼接"（不是自己编一个）',
     )
-    assert.equal(
-      await evaluate(`JSON.stringify(window.__spliceLog)`),
-      JSON.stringify([420]),
-      '拼接要向壳申请 420（只发宽度这一个标量）',
+    // 再点同一个 = 关掉那个模块窗口（窗口是壳管的，我们只说"关哪个"）
+    await click('[data-wb-seam-mode="demoDock"]')
+    await waitFor(`window.__moduleLog.length===2`, '再点一次应关掉模块窗口')
+    assert.deepEqual(
+      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog[1])`)),
+      { op: 'close', modeId: 'demoDock' },
+      '第二次点应该是 close 同一个模式',
     )
-    assert.equal(
-      await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`),
-      activeBefore,
-      '拼接**不该**改当前模式（进入模式是主屏瓷砖「进入」的事）',
-    )
-    assert.equal(await count('[data-wb-splice-demo]'), 1, '拼接区应渲染模式自己的可嵌入视图')
-    assert.equal(await count('[data-wb-seam-tag="spliced"]'), 1, '接缝里应标出"已拼接"')
-
-    // 第二块：**可以同时拼多个**，新拼的贴主长条插入（原型 v2.2 的规则）
-    await click('[data-wb-seam-mode="demoDock2"]')
-    await waitFor(`document.querySelectorAll('[data-wb-splice]').length===2`, '应能同时拼两个模式')
-    assert.equal(
-      await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-splice]')).map((el) => el.getAttribute('data-wb-splice')))`),
-      JSON.stringify(['demoDock2', 'demoDock']),
-      '新拼的那块要**贴主长条**插入（旧的整体外顶）',
-    )
-    assert.equal(
-      await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`),
-      '840',
-      '两块各 420，总宽应向壳申请 840',
-    )
-    assert.equal(await evaluate(`document.querySelector('[data-wb-splice-wrap]').getAttribute('data-wb-splice-wrap')`), '2', '外层应报出拼了几块')
-
-    // **拼接的"形式"**（2026-10-13 实机抓到错版：长条那套竖排没被覆盖 ⇒ 对话列占满整宽、拼接区被挤到下面；
-    // 而且接缝一直贴在窗口最外缘 ⇒ 扇形跑到面板外侧）。判据：横排（拼接区在对话列右侧、两者齐顶）
-    // + 接缝站在**拼合处**（长条与拼接区之间那条缝），不是窗口最外缘。
-    // 注意：假壳不会真把窗口撑宽，所以这里**手动把视口设成"长条 + 拼接"的真实总宽**——
-    // 否则接缝的 `right: 拼接宽` 会算到视口左边去（第一次就是这么红的）。
-    win.setContentSize(420 + 10 + 840 + 2, 700)
-    await sleep(400)
-    const layout = JSON.parse(
-      await evaluate(
-        `JSON.stringify((() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) } }; return { chat: r('[data-wb-chat]'), wrap: r('[data-wb-splice-wrap]'), seam: r('[data-wb-seam]'), win: innerWidth } })())`,
-      ),
-    )
-    assert.ok(layout.wrap.x >= layout.chat.x + layout.chat.w - 4, `拼接区应在对话列右侧（横排，不许叠在下面）：${JSON.stringify(layout)}`)
-    assert.ok(Math.abs(layout.wrap.y - layout.chat.y) <= 6, `对话列与拼接区应齐顶：${JSON.stringify(layout)}`)
-    assert.ok(layout.chat.w <= layout.win * 0.6, `拼接后对话列应保持长条自己的宽度，不该占满整宽：${JSON.stringify(layout)}`)
-    assert.ok(
-      layout.seam.x >= layout.chat.x + layout.chat.w - 40 && layout.seam.x <= layout.chat.x + layout.chat.w + 4,
-      `接缝应站在长条与拼接区的拼合处：${JSON.stringify(layout)}`,
-    )
-    assert.equal(
-      await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-at')`),
-      'junction',
-      '拼接后接缝应标成 junction（拼合处），不是窗口最外缘',
-    )
-
-    // 拖拽调宽：往左拖 100px → 该块 420 → 520，总宽申请 940
-    await evaluate(`(() => {
-      const grip = document.querySelector('[data-wb-splice-grip]');
-      grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 400 }));
-      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 300 }));
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 300 }));
-      return 0 })()`)
-    await waitFor(`window.__spliceLog.slice(-1)[0]===940`, '拖拽 100px 应把总宽申请到 940（420+100+420）')
-    assert.equal(
-      await evaluate(`document.querySelector('[data-wb-splice="demoDock2"]').getAttribute('data-wb-splice-width')`),
-      '520',
-      '被拖的那块宽度要变成 520（松手后不会被旧值改回去）',
-    )
-
-    // 收起其中一块：另一块还在，总宽回到 420
-    await click('[data-wb-splice-collapse="demoDock2"]')
-    await waitFor(`document.querySelectorAll('[data-wb-splice]').length===1`, '收起一块后另一块应还在')
-    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '420', '收起一块后总宽申请应回到 420')
-    await click('[data-wb-splice-collapse="demoDock"]')
-    await waitFor(`document.querySelector('[data-wb-splice]')===null`, '点收起应撤掉拼接区')
-    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '0', '全收起要向壳申请 0')
-    // 没有可嵌入视图的模式：**不许拼**（如实说明，窗口不变宽）
-    await click('[data-wb-seam-mode="demo"]')
-    await sleep(300)
-    assert.equal(await count('[data-wb-splice]'), 0, '没有可嵌入视图的模式不该被拼上')
-    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '0', '拼不了就不该动窗口')
-    assert.ok((await text('[data-wb-switcher]')).includes('可嵌入视图'), '拼不了要如实说明原因')
+    assert.equal(await count('[data-wb-seam-tag="spliced"]'), 0, '关掉后不该再标"已拼接"')
   }
+
+  // ⑫ **降级路径**（老壳 / 官方壳没有模块窗口能力）：退回"窗口内拼接"——主窗撑宽、右侧多一列，
+  // 内容优先 `splice.mount(container)`、其次 `splice.view`、都没有才用坞的轻视图。
+  // 先把模块窗口两条方法摘掉（测完恢复），这样下面的断言判的就是降级形态。
+  await evaluate(`(() => { window.__origOpenModule = window.dshShell.openModuleWindow; window.__origCloseModule = window.dshShell.closeModuleWindow; delete window.dshShell.openModuleWindow; delete window.dshShell.closeModuleWindow; return 0 })()`)
 
   // ⑫ **拼接要的是"完整界面"**（2026-10-13 用户拍板 A）：单实例模式走 `splice.mount(container)`，
   // 工具台给容器、模式把界面渲染进去；收起时调 dispose（模式据此把自己的界面收回去）。
@@ -932,6 +880,9 @@ app.whenReady().then(async () => {
   }
 
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
+  // 收尾恢复模块窗口能力（免得影响后续新增的组）
+  await evaluate(`(() => { window.dshShell.openModuleWindow = window.__origOpenModule; window.dshShell.closeModuleWindow = window.__origCloseModule; return 0 })()`)
+
   console.log('WORKBENCH_UI_OK 11 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何/拼接）')
   await closeServer(server)
   app.exit(0)

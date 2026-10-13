@@ -22,7 +22,7 @@ import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
 import { SplicePanelBody } from './Splice.js'
-import { getShapeBridge, hasSpliceBridge, openSettings, readShape, requestShape, requestSplice, requestWindowClose } from './shell-shape.js'
+import { getShapeBridge, hasModuleWindowBridge, openSettings, openModuleWindow, closeModuleWindow, readShape, requestShape, requestSplice, requestWindowClose } from './shell-shape.js'
 import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
 
 /** 拼接区默认宽度（px）：壳侧允许 280 到"工作区上限"，这里取中间值；拖拽调宽是同一刀的后半。 */
@@ -111,6 +111,9 @@ export function WorkbenchChrome() {
   const [spliceWidth, setSpliceWidth] = react.useState(0)
   // 长条**自己**的宽度（壳报的，别在插件里写死 420）：拼接时用它把对话列钉住
   const [stripWidth, setStripWidth] = react.useState(SPLICE_WIDTH)
+  // 壳记账的**模块窗口**列表（每个被拼接的模式一个独立窗口；`anchored:false` = 用户拖开了=分离）
+  const [modules, setModules] = react.useState([])
+  const moduleIds = modules.map((m) => m.modeId)
   /** 壳每次回包都带 `stripWidth`，见到就记下来（挂载读、申请形态、申请拼接三处都会过这里）。 */
   const rememberShape = (state) => {
     const w = Number(state && state.stripWidth)
@@ -125,6 +128,18 @@ export function WorkbenchChrome() {
     panelsRef.current = spliced
   }, [spliced])
   const askedForStrip = react.useRef(false)
+  // 壳每次广播形态时也带 `modules`（模块窗口记账）——拼上/关掉/拖开都从这里同步过来，
+  // 接缝上的「已拼接」标记才不会与真实情况脱节（2026-10-13 模块化那一刀）。
+  react.useEffect(() => {
+    const bridge = getShapeBridge()
+    if (!bridge || typeof bridge.onWorkbenchShape !== 'function') return undefined
+    const off = bridge.onWorkbenchShape((state) => {
+      if (state && Array.isArray(state.modules)) setModules(state.modules)
+    })
+    return () => {
+      if (typeof off === 'function') off()
+    }
+  }, [])
   react.useEffect(() => {
     let cancelled = false
     const apply = async (next) => {
@@ -247,8 +262,26 @@ export function WorkbenchChrome() {
     return result
   }
   const spliceMode = async (id) => {
+    // **模块窗口路径**（2026-10-13 用户拍板："模块化，即它们也可以分离"）：壳在位且支持模块窗口时，
+    // 拼接就是**开一个独立窗口**贴到长条左边——不是把主窗撑宽。再点一次同一个模式＝关掉那个窗口。
+    if (hasModuleWindowBridge()) {
+      if (moduleIds.includes(id)) {
+        const closed = await closeModuleWindow(id)
+        if (Array.isArray(closed?.modules)) setModules(closed.modules)
+        return closed
+      }
+      const view = registry.spliceViewOf(id) || registry.dockViewOf(id)
+      const wantWidth = Number(view && view.width) > 0 ? Number(view.width) : SPLICE_WIDTH
+      const result = await openModuleWindow(id, wantWidth)
+      if (!result.ok) {
+        setNotice({ kind: 'error', text: T.spliceFailed(result.error) })
+        return result
+      }
+      if (Array.isArray(result.modules)) setModules(result.modules)
+      return result
+    }
+    // **降级路径**（老壳没有模块窗口）：退回"窗口内拼接"——主窗撑宽、右侧多一列
     if (spliced.some((it) => it.id === id)) return unsplice(id)
-    // 优先"完整界面"（splice），退而求其次才是坞的轻视图（dock）——旧的降级路径
     const view = registry.spliceViewOf(id) || registry.dockViewOf(id)
     if (!view) {
       setNotice({ kind: 'info', text: T.spliceNoView(registry.resolveLabel(id)) })
@@ -562,13 +595,16 @@ export function WorkbenchChrome() {
       )
     })
     .filter(Boolean)
-  const splicePanel = splicePanels.length
-    ? react.createElement(
-        'div',
-        { className: 'dshWbSpliceWrap', 'data-wb-splice-wrap': String(splicePanels.length), style: { flexBasis: `${spliceWidth || SPLICE_WIDTH}px` } },
-        splicePanels,
-      )
-    : null
+  // **只在降级路径下**渲染窗口内的拼接列：壳支持模块窗口时，被拼的模式是独立窗口（贴边/可分离），
+  // 主窗不该再撑宽多一列（2026-10-13 用户拍板换了架构）。
+  const splicePanel =
+    !hasModuleWindowBridge() && splicePanels.length
+      ? react.createElement(
+          'div',
+          { className: 'dshWbSpliceWrap', 'data-wb-splice-wrap': String(splicePanels.length), style: { flexBasis: `${spliceWidth || SPLICE_WIDTH}px` } },
+          splicePanels,
+        )
+      : null
 
   return react.createElement(
     'div',
@@ -681,7 +717,8 @@ export function WorkbenchChrome() {
                   const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, (SEAM_FAN_SPREAD * 2) / (modes.length - 1)) : 0
                   const a = Math.round((mid - i) * step)
                   const delay = i * SEAM_FAN_STAGGER
-                  const isSpliced = spliced.some((it) => it.id === mode.id)
+                  // 「已拼接」两种形态都算：模块窗口（新路径）或窗口内的拼接列（老壳降级路径）
+                  const isSpliced = moduleIds.includes(mode.id) || spliced.some((it) => it.id === mode.id)
                   return react.createElement(
                     'button',
                     {

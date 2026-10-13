@@ -51,6 +51,39 @@ export function hasSpliceBridge(globalThisRef = typeof window === 'undefined' ? 
 }
 
 /**
+ * **模块窗口**（2026-10-13 用户拍板："我想的是模块化，即它们也可以分离"）：
+ * 每个被拼接的模式是一个**独立窗口**，壳负责贴边（长条左侧）与分离（用户拖开就不管了）。
+ * 页面只说"开哪个模式、多宽"；返回里带 `modules`（壳记账的模块窗口列表，含 anchored）。
+ */
+export async function openModuleWindow(modeId, width) {
+  const bridge = getShapeBridge()
+  if (!bridge || typeof bridge.openModuleWindow !== 'function') return { ok: false, error: 'no-module-bridge' }
+  try {
+    const result = await bridge.openModuleWindow(String(modeId), Number(width) || undefined)
+    return result && typeof result === 'object' ? result : { ok: false, error: 'bad-response' }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}
+
+export async function closeModuleWindow(modeId) {
+  const bridge = getShapeBridge()
+  if (!bridge || typeof bridge.closeModuleWindow !== 'function') return { ok: false, error: 'no-module-bridge' }
+  try {
+    const result = await bridge.closeModuleWindow(String(modeId))
+    return result && typeof result === 'object' ? result : { ok: true }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}
+
+/** 壳支不支持模块窗口（不支持 → 退回"窗口内拼接"这条老路径）。 */
+export function hasModuleWindowBridge(globalThisRef = typeof window === 'undefined' ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell
+  return Boolean(bridge && typeof bridge.openModuleWindow === 'function' && typeof bridge.closeModuleWindow === 'function')
+}
+
+/**
  * 读壳当前形态（用于**挂载时对账**：页面重载/插件重挂后主屏是关的，而壳可能还停在条状）。
  * 读不到就返回 null——对账失败不该影响门面能用。
  */
