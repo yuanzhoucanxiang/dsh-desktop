@@ -178,17 +178,19 @@ app.whenReady().then(async () => {
       },
       // **模块窗口**（2026-10-13 模块化）：假壳照真壳口径回包——记账列表随形态推送发出去，
       // 门面据此在接缝上标「已拼接」。⑫ 组会把这两条方法摘掉，用来验降级路径。
-      openModuleWindow: async (modeId, width) => {
-        window.__moduleLog.push({ op: 'open', modeId: String(modeId), width: Number(width) });
-        if (!window.__modules.some((m) => m.modeId === modeId)) {
-          window.__modules = window.__modules.concat([{ modeId: String(modeId), anchored: true, bounds: null }]);
+      openModuleWindow: async (modeId, width, kind) => {
+        const k = kind === 'assistant' ? 'assistant' : 'main';
+        window.__moduleLog.push({ op: 'open', modeId: String(modeId), width: Number(width), kind: k });
+        if (!window.__modules.some((m) => m.modeId === modeId && m.kind === k)) {
+          window.__modules = window.__modules.concat([{ modeId: String(modeId), kind: k, anchored: true, bounds: null }]);
         }
         (window.__shapeSubs || []).forEach((cb) => { try { cb({ ok: true, shape: 'strip', modules: window.__modules }) } catch (e) {} });
         return { ok: true, shape: 'strip', modules: window.__modules };
       },
-      closeModuleWindow: async (modeId) => {
-        window.__moduleLog.push({ op: 'close', modeId: String(modeId) });
-        window.__modules = window.__modules.filter((m) => m.modeId !== modeId);
+      closeModuleWindow: async (modeId, kind) => {
+        const k = kind === 'assistant' ? 'assistant' : kind === 'main' ? 'main' : null;
+        window.__moduleLog.push({ op: 'close', modeId: String(modeId), kind: k || 'all' });
+        window.__modules = window.__modules.filter((m) => !(m.modeId === modeId && (!k || m.kind === k)));
         (window.__shapeSubs || []).forEach((cb) => { try { cb({ ok: true, shape: 'strip', modules: window.__modules }) } catch (e) {} });
         return { ok: true, shape: 'strip', modules: window.__modules };
       },
@@ -798,19 +800,29 @@ app.whenReady().then(async () => {
   )
 
   // ⑪ 拼接 = **模块窗口**（2026-10-13 用户拍板："我想的是模块化，即它们也可以分离"）。
-  // 壳支持模块窗口时，接缝点一下是**开一个独立窗口**贴到长条左边——不是把主窗撑宽、也不是多一列。
+  // 壳支持模块窗口时，接缝点一下是**开一个独立窗口**贴到长条右边；模式声明了 `splice.assistant`
+  // （用户："左边是写作模式的 agent 对话窗口——我说的是「写作助手」"）就**同时**再开一块助手窗口。
   await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
     id:'demoDock', label:'带坞视图的模式', order:70,
-    splice:{ label:'完整界面', width:640, view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
+    splice:{ label:'完整界面', width:640, assistant:{ width:300 }, view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
   }); return 0 })()`)
   {
     await waitFor(`document.querySelector('[data-wb-seam-mode="demoDock"]')!==null`, '新注册的模式应出现在扇形里')
     await click('[data-wb-seam-mode="demoDock"]')
-    await waitFor(`window.__moduleLog.length===1`, '接缝点一下应向壳申请一个模块窗口')
+    // 声明了 assistant ⇒ **两块**：先主界面（右），再助手（左）
+    await waitFor(`window.__moduleLog.length===2`, '声明了 assistant 的模式应同时开出主界面与助手两块窗口')
     assert.deepEqual(
-      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog[0])`)),
-      { op: 'open', modeId: 'demoDock', width: 640 },
-      '模块窗口要带模式 id 与**模式自己声明的宽度**（没声明才用默认 420）',
+      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog.slice(0, 2))`)),
+      [
+        { op: 'open', modeId: 'demoDock', width: 640, kind: 'main' },
+        { op: 'open', modeId: 'demoDock', width: 300, kind: 'assistant' },
+      ],
+      '主界面用 splice.width（640）、助手用 splice.assistant.width（300），kind 要分得清',
+    )
+    assert.equal(
+      await evaluate(`JSON.stringify(window.__modules.map((m) => m.kind).sort())`),
+      JSON.stringify(['assistant', 'main']),
+      '壳的记账里两块都在（一块 main、一块 assistant）',
     )
     assert.equal(await count('[data-wb-splice]'), 0, '模块窗口路径下**主窗里不该再拼一列**（那是老壳的降级形态）')
     await waitFor(`document.querySelector('[data-wb-seam-tag="spliced"]')!==null`, '接缝里应标出"已拼接"')
@@ -819,14 +831,15 @@ app.whenReady().then(async () => {
       '已拼接',
       '标记文案要说"已拼接"（不是自己编一个）',
     )
-    // 再点同一个 = 关掉那个模块窗口（窗口是壳管的，我们只说"关哪个"）
+    // 再点同一个 = 关掉（不带 kind ⇒ 两块一起关，壳侧负责）
     await click('[data-wb-seam-mode="demoDock"]')
-    await waitFor(`window.__moduleLog.length===2`, '再点一次应关掉模块窗口')
+    await waitFor(`window.__moduleLog.length===3`, '再点一次应关掉模块窗口')
     assert.deepEqual(
-      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog[1])`)),
-      { op: 'close', modeId: 'demoDock' },
-      '第二次点应该是 close 同一个模式',
+      JSON.parse(await evaluate(`JSON.stringify(window.__moduleLog[2])`)),
+      { op: 'close', modeId: 'demoDock', kind: 'all' },
+      '第二次点应该是 close 同一个模式（不带 kind ⇒ 两块都关）',
     )
+    assert.equal(await evaluate(`window.__modules.length`), 0, '关掉后壳的记账里不该留下模块窗口')
     assert.equal(await count('[data-wb-seam-tag="spliced"]'), 0, '关掉后不该再标"已拼接"')
   }
 

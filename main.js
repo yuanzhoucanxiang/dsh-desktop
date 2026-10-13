@@ -1921,6 +1921,8 @@ const MODULE_WINDOW_MIN = 280
 const MODULE_WINDOW_MAX = 900
 /** 贴边时允许缩到的最小宽度（比 MODULE_WINDOW_MIN 还小：放不下时宁可窄一点，也不能探出屏幕）。 */
 const MODULE_MIN_WIDTH = 220
+/** **左侧助手窗**的下限（再小就没法用了）；左侧常常只剩一百多像素，这个值决定它会不会压住长条。 */
+const MODULE_ASSISTANT_MIN_WIDTH = 160
 const MODULE_GAP = 0
 /** modeId → { win, width, anchored } */
 const moduleWins = new Map()
@@ -1968,8 +1970,9 @@ function layoutModuleWindows() {
     if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
     const wantWidth = Math.max(MODULE_MIN_WIDTH, Math.min(MODULE_WINDOW_MAX, entry.width))
     if (entry.kind === 'assistant') {
-      const room = Math.max(MODULE_MIN_WIDTH, rightEdge - area.x)
-      const width = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, room))
+      // 左侧：只能占长条左边现有的地方；**宁可缩到 160 也不许压住长条**（实机踩过重叠 40px）
+      const room = Math.max(MODULE_ASSISTANT_MIN_WIDTH, rightEdge - area.x)
+      const width = Math.max(MODULE_ASSISTANT_MIN_WIDTH, Math.min(wantWidth, room))
       entry.setting = true
       try {
         entry.win.setBounds({ x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
@@ -2073,7 +2076,9 @@ function openModuleWindow(modeId, width, kind) {
     height: seedHeight,
     ...(Number.isFinite(seedX) ? { x: seedX } : {}),
     ...(Number.isFinite(seedY) ? { y: seedY } : {}),
-    minWidth: 220,
+    minWidth: 160,
+    // 160 而不是 220：**左侧助手窗要能缩**——长条左边常常只剩一百多像素（实机 182px），
+    // 最小值压着不让缩时窗口会**压在长条上**（2026-10-13 实测重叠 40px）。下限只防"缩成一条缝"。
     // 120 是给 `mini` 形态留的余地（小条才 168 高，模块要贴着它一起变矮）——设 240 的话
     // `setBounds` 会被系统夹住，"跟着长条走"当场失效（2026-10-13 K 段实测：长条 170、模块 242）。
     minHeight: 120,

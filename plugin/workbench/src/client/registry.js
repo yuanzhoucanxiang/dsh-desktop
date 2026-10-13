@@ -12,6 +12,10 @@
 
 const MOUNTS = new Set(['overlay', 'panel'])
 
+/** 助手模块窗口（`splice.assistant`）的默认宽度与下限；壳侧仍会按屏幕夹一次（2026-10-13）。 */
+const MODULE_ASSISTANT_DEFAULT = 360
+const MODULE_ASSISTANT_MIN = 260
+
 function normalizeLabel(label) {
   if (typeof label === 'function') {
     try {
@@ -63,6 +67,9 @@ function normalizeMode(descriptor, id) {
     //     返回 dispose（收起拼接时调用）。**单实例模式（如写作台）走这条**——它有自己的 React 根
     //     与编辑会话，再挂一份会打架（坞视图注释里就写着这条教训）。
     //   · `view`：直接给运行时组件引用（可自由重挂的模式走这条）。
+    // `assistant`（可选，2026-10-13 用户："左边是写作模式的 agent 对话窗口——我说的是「写作助手」"）：
+    // 声明"这个模式还需要一块**助手对话窗口**"（壳会把它排在长条**左侧**，`kind=assistant`）。
+    // 模式自己在那个窗口里按 URL 片段渲染助手界面，所以这里只需要一个宽度。
     splice:
       descriptor.splice &&
       typeof descriptor.splice === 'object' &&
@@ -76,6 +83,17 @@ function normalizeMode(descriptor, id) {
             width: Number.isFinite(descriptor.splice.width)
               ? Math.max(280, Math.min(1200, Math.round(descriptor.splice.width)))
               : null,
+            // 助手窗口（可选）：真值即"这个模式要一块助手对话窗口"，宽度可声明（默认 360）
+            assistant:
+              descriptor.splice.assistant && typeof descriptor.splice.assistant === 'object'
+                ? {
+                    width: Number.isFinite(descriptor.splice.assistant.width)
+                      ? Math.max(MODULE_ASSISTANT_MIN, Math.min(1200, Math.round(descriptor.splice.assistant.width)))
+                      : MODULE_ASSISTANT_DEFAULT,
+                  }
+                : descriptor.splice.assistant === true
+                  ? { width: MODULE_ASSISTANT_DEFAULT }
+                  : null,
             order: Number.isFinite(descriptor.splice.order) ? descriptor.splice.order : 100,
           }
         : null,
@@ -299,6 +317,8 @@ export function createRegistry(options = {}) {
       mount: mode.splice.mount,
       view: mode.splice.view,
       width: mode.splice.width,
+      // 声明了"splice.assistant"的模式：拼接时**同时**开一块助手窗口（壳把它排长条左侧）
+      assistant: mode.splice.assistant,
     }
   }
 

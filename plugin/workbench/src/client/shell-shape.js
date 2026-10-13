@@ -55,11 +55,11 @@ export function hasSpliceBridge(globalThisRef = typeof window === 'undefined' ? 
  * 每个被拼接的模式是一个**独立窗口**，壳负责贴边（长条左侧）与分离（用户拖开就不管了）。
  * 页面只说"开哪个模式、多宽"；返回里带 `modules`（壳记账的模块窗口列表，含 anchored）。
  */
-export async function openModuleWindow(modeId, width) {
+export async function openModuleWindow(modeId, width, kind) {
   const bridge = getShapeBridge()
   if (!bridge || typeof bridge.openModuleWindow !== 'function') return { ok: false, error: 'no-module-bridge' }
   try {
-    const result = await bridge.openModuleWindow(String(modeId), Number(width) || undefined)
+    const result = await bridge.openModuleWindow(String(modeId), Number(width) || undefined, kind === 'assistant' ? 'assistant' : 'main')
     return result && typeof result === 'object' ? result : { ok: false, error: 'bad-response' }
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) }

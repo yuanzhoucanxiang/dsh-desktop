@@ -277,7 +277,15 @@ export function WorkbenchChrome() {
         setNotice({ kind: 'error', text: T.spliceFailed(result.error) })
         return result
       }
-      if (Array.isArray(result.modules)) setModules(result.modules)
+      // **助手窗口**（2026-10-13 用户："左边是写作模式的 agent 对话窗口——我说的是「写作助手」"）：
+      // 模式声明了 `splice.assistant` 就同时开一块（壳把它排在长条**左侧**）。
+      // 主窗口开失败时不开助手（宁可少一块，也不想留个孤零零的助手窗）。
+      let modules = Array.isArray(result.modules) ? result.modules : modules
+      if (view && view.assistant) {
+        const assistant = await openModuleWindow(id, Number(view.assistant.width) || undefined, 'assistant')
+        if (Array.isArray(assistant?.modules)) modules = assistant.modules
+      }
+      setModules(modules)
       return result
     }
     // **降级路径**（老壳没有模块窗口）：退回"窗口内拼接"——主窗撑宽、右侧多一列

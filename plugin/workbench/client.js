@@ -52,6 +52,8 @@ var react9 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/registry.js
 var MOUNTS = /* @__PURE__ */ new Set(["overlay", "panel"]);
+var MODULE_ASSISTANT_DEFAULT = 360;
+var MODULE_ASSISTANT_MIN = 260;
 function normalizeLabel(label) {
   if (typeof label === "function") {
     try {
@@ -96,6 +98,9 @@ function normalizeMode(descriptor, id) {
     //     返回 dispose（收起拼接时调用）。**单实例模式（如写作台）走这条**——它有自己的 React 根
     //     与编辑会话，再挂一份会打架（坞视图注释里就写着这条教训）。
     //   · `view`：直接给运行时组件引用（可自由重挂的模式走这条）。
+    // `assistant`（可选，2026-10-13 用户："左边是写作模式的 agent 对话窗口——我说的是「写作助手」"）：
+    // 声明"这个模式还需要一块**助手对话窗口**"（壳会把它排在长条**左侧**，`kind=assistant`）。
+    // 模式自己在那个窗口里按 URL 片段渲染助手界面，所以这里只需要一个宽度。
     splice: descriptor.splice && typeof descriptor.splice === "object" && (typeof descriptor.splice.mount === "function" || descriptor.splice.view) ? {
       label: descriptor.splice.label,
       mount: typeof descriptor.splice.mount === "function" ? descriptor.splice.mount : null,
@@ -103,6 +108,10 @@ function normalizeMode(descriptor, id) {
       // **模式自己说要多宽**（可选）：写作台那种按宽窗设计的界面在 420px 里会被裁，
       // 所以让它自己声明期望宽度；壳侧仍会按屏幕夹到合法区间（2026-10-13 实机看上裁剪后加）。
       width: Number.isFinite(descriptor.splice.width) ? Math.max(280, Math.min(1200, Math.round(descriptor.splice.width))) : null,
+      // 助手窗口（可选）：真值即"这个模式要一块助手对话窗口"，宽度可声明（默认 360）
+      assistant: descriptor.splice.assistant && typeof descriptor.splice.assistant === "object" ? {
+        width: Number.isFinite(descriptor.splice.assistant.width) ? Math.max(MODULE_ASSISTANT_MIN, Math.min(1200, Math.round(descriptor.splice.assistant.width))) : MODULE_ASSISTANT_DEFAULT
+      } : descriptor.splice.assistant === true ? { width: MODULE_ASSISTANT_DEFAULT } : null,
       order: Number.isFinite(descriptor.splice.order) ? descriptor.splice.order : 100
     } : null,
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
@@ -282,7 +291,9 @@ function createRegistry(options = {}) {
       order: mode.splice.order,
       mount: mode.splice.mount,
       view: mode.splice.view,
-      width: mode.splice.width
+      width: mode.splice.width,
+      // 声明了"splice.assistant"的模式：拼接时**同时**开一块助手窗口（壳把它排长条左侧）
+      assistant: mode.splice.assistant
     };
   }
   function contextOf(id) {
@@ -1529,11 +1540,11 @@ async function requestSplice(width) {
     return { ok: false, error: String(err && err.message || err) };
   }
 }
-async function openModuleWindow(modeId, width) {
+async function openModuleWindow(modeId, width, kind) {
   const bridge = getShapeBridge();
   if (!bridge || typeof bridge.openModuleWindow !== "function") return { ok: false, error: "no-module-bridge" };
   try {
-    const result = await bridge.openModuleWindow(String(modeId), Number(width) || void 0);
+    const result = await bridge.openModuleWindow(String(modeId), Number(width) || void 0, kind === "assistant" ? "assistant" : "main");
     return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
   } catch (err) {
     return { ok: false, error: String(err && err.message || err) };
@@ -1763,7 +1774,12 @@ function WorkbenchChrome() {
         setNotice({ kind: "error", text: T.spliceFailed(result2.error) });
         return result2;
       }
-      if (Array.isArray(result2.modules)) setModules(result2.modules);
+      let modules2 = Array.isArray(result2.modules) ? result2.modules : modules2;
+      if (view2 && view2.assistant) {
+        const assistant = await openModuleWindow(id, Number(view2.assistant.width) || void 0, "assistant");
+        if (Array.isArray(assistant?.modules)) modules2 = assistant.modules;
+      }
+      setModules(modules2);
       return result2;
     }
     if (spliced.some((it) => it.id === id)) return unsplice(id);
