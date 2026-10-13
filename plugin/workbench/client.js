@@ -2266,9 +2266,10 @@ function WorkbenchDock() {
   const { modes, active, dockOpen: dockOpen2, dockWidth: dockWidth2, dockModeId: dockModeId2, registry: registry2 } = useWorkbench();
   const shape = useShellShape();
   const inStrip = shape === "strip" || shape === "mini";
+  const isModuleWindowPage = typeof window !== "undefined" && /dsh-wb-module/.test(String(window.location.hash || ""));
   const candidates = modes.filter((m) => m.hasDock && m.id !== active).map((m) => registry2.dockViewOf(m.id)).filter(Boolean).sort((a, b) => a.order === b.order ? a.id.localeCompare(b.id, "en") : a.order - b.order);
-  useDockInset(!inStrip && dockOpen2 && candidates.length > 0, dockWidth2);
-  if (inStrip || candidates.length === 0) return null;
+  useDockInset(!inStrip && !isModuleWindowPage && dockOpen2 && candidates.length > 0, dockWidth2);
+  if (inStrip || isModuleWindowPage || candidates.length === 0) return null;
   const chosen = candidates.find((c) => c.id === dockModeId2) || candidates[0];
   if (!dockOpen2) {
     return react7.createElement(

@@ -72,6 +72,11 @@ export function WorkbenchDock() {
   const shape = useShellShape()
   const inStrip = shape === 'strip' || shape === 'mini'
 
+  // **模块窗口里也不显示**（2026-10-13 项目所有者指着图上的"写作"问"这是什么"）：
+  // 每块模块窗口都是一个完整内核页、都带工具台插件 ⇒ 坞导轨会**跟着每块窗口各画一遍**，
+  // 而那块窗口本身就是"这个模式的界面"——再给它一个"切到某模式"的入口纯属重复（宪法第二条）。
+  const isModuleWindowPage = typeof window !== 'undefined' && /dsh-wb-module/.test(String(window.location.hash || ''))
+
   // 候选：提供了坞视图、且不是当前主视图的模式
   const candidates = modes
     .filter((m) => m.hasDock && m.id !== active)
@@ -79,9 +84,9 @@ export function WorkbenchDock() {
     .filter(Boolean)
     .sort((a, b) => (a.order === b.order ? a.id.localeCompare(b.id, 'en') : a.order - b.order))
 
-  useDockInset(!inStrip && dockOpen && candidates.length > 0, dockWidth)
+  useDockInset(!inStrip && !isModuleWindowPage && dockOpen && candidates.length > 0, dockWidth)
 
-  if (inStrip || candidates.length === 0) return null
+  if (inStrip || isModuleWindowPage || candidates.length === 0) return null
   const chosen = candidates.find((c) => c.id === dockModeId) || candidates[0]
 
   if (!dockOpen) {
