@@ -1925,21 +1925,24 @@ const MODULE_GAP = 0
 /** modeId → { win, width, anchored } */
 const moduleWins = new Map()
 
-function moduleWindowUrl(modeId) {
+function moduleWindowUrl(modeId, kind) {
   const base = kernelPageUrl() || 'about:blank'
-  return `${base}#dsh-wb-module=${encodeURIComponent(modeId)}`
+  // 页面按片段认"我是哪个模式的模块窗口、哪种"（main = 模式界面 / assistant = 该模式的助手对话）
+  const query = kind === 'assistant' ? `&kind=assistant` : ''
+  return `${base}#dsh-wb-module=${encodeURIComponent(modeId)}${query}`
 }
 
-function moduleWindowTitle(modeId) {
-  return `模块 · ${modeId}`
+function moduleWindowTitle(modeId, kind) {
+  return kind === 'assistant' ? `模块 · ${modeId} · 助手` : `模块 · ${modeId}`
 }
 
-/** 还贴着的模块窗口总宽（含缝）——长条要**左移**让出这么多地方，模块才有位置排在它右边。 */
-function moduleTotalWidth() {
+/** 还贴着的模块窗口总宽（含缝）：`side` = 'right'（模式界面）或 'left'（该模式的助手对话）。 */
+function moduleTotalWidth(side = 'right') {
   let total = 0
   let count = 0
   for (const entry of moduleWins.values()) {
     if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
+    if ((entry.kind === 'assistant' ? 'left' : 'right') !== side) continue
     total += Math.min(MODULE_WINDOW_MAX, Math.max(MODULE_MIN_WIDTH, entry.width))
     count += 1
   }
@@ -1947,8 +1950,12 @@ function moduleTotalWidth() {
 }
 
 /**
- * 把还贴着的模块窗口依次排在**长条右侧**（2026-10-13 项目所有者纠正：模式界面在工具台右边，
- * 左边留给"该模式的子 agent 对话"）。长条本身会左移腾地方，见 `shapeBounds` 里的 `reserved`。
+ * 贴边排布（2026-10-13 第二版，项目所有者："模式窗口在工具台右边，左边是写作模式的 agent 对话窗口
+ * ——我说的是「写作助手」"）：
+ *   · `kind: 'main'`（默认）→ 排在长条**右侧**，依次往右；
+ *   · `kind: 'assistant'` → 排在长条**左侧**，依次往左（最外侧是最后开的那个）。
+ * 长条本身会**左移**给右侧模块腾地方（见 `shapeBounds` 的 reserved）；左侧模块只能用长条左边
+ * 现有的地方，放不下就缩（下限 MODULE_MIN_WIDTH，不许探出屏幕）。
  */
 function layoutModuleWindows() {
   if (!win || win.isDestroyed() || currentShape() === 'normal') return
@@ -1956,11 +1963,25 @@ function layoutModuleWindows() {
   const area = anchorArea(strip)
   let leftEdge = strip.x + strip.width + MODULE_GAP
   const maxRight = area.x + area.width - 16
+  let rightEdge = strip.x - MODULE_GAP
   for (const entry of moduleWins.values()) {
     if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
-    // 放不下就缩到装得下（不许探出屏幕）：右边到工作区边缘为止
+    const wantWidth = Math.max(MODULE_MIN_WIDTH, Math.min(MODULE_WINDOW_MAX, entry.width))
+    if (entry.kind === 'assistant') {
+      const room = Math.max(MODULE_MIN_WIDTH, rightEdge - area.x)
+      const width = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, room))
+      entry.setting = true
+      try {
+        entry.win.setBounds({ x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
+      } catch {
+        /* 窗口刚销毁之类：忽略这一次摆位 */
+      }
+      entry.setting = false
+      rightEdge = rightEdge - width - MODULE_GAP
+      continue
+    }
     const room = Math.max(MODULE_MIN_WIDTH, maxRight - leftEdge)
-    const width = Math.max(MODULE_MIN_WIDTH, Math.min(Math.min(MODULE_WINDOW_MAX, entry.width), room))
+    const width = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, room))
     entry.setting = true
     try {
       entry.win.setBounds({ x: leftEdge, y: strip.y, width, height: strip.height })
@@ -2006,16 +2027,19 @@ function syncModulesOnStripMove() {
 
 function moduleWindowState() {
   return Array.from(moduleWins.entries()).map(([modeId, entry]) => ({
-    modeId,
+    modeId: entry.modeId || modeId,
+    kind: entry.kind || 'main',
     anchored: entry.anchored,
     bounds: entry.win && !entry.win.isDestroyed() ? entry.win.getBounds() : null,
   }))
 }
 
-function openModuleWindow(modeId, width) {
+function openModuleWindow(modeId, width, kind) {
   const id = String(modeId || '').trim()
   if (!/^[a-z0-9._-]{1,64}$/i.test(id)) return { ok: false, error: 'bad-mode-id' }
-  const existing = moduleWins.get(id)
+  const kindNorm = kind === 'assistant' ? 'assistant' : 'main'
+  const key = moduleKey(id, kindNorm)
+  const existing = moduleWins.get(key)
   if (existing && existing.win && !existing.win.isDestroyed()) {
     layoutModuleWindows()
     existing.win.focus()
@@ -2055,7 +2079,7 @@ function openModuleWindow(modeId, width) {
     minHeight: 120,
     backgroundColor: THEMES[themeId()].bg,
     icon: appIconImage(),
-    title: moduleWindowTitle(id),
+    title: moduleWindowTitle(id, kind),
     // **无边框 + 无阴影**：模块窗口要跟长条**真拼在一起**（2026-10-13 项目所有者："现在拼接不起来"——
     // 各自带系统边框与投影时，看着是两块窗而不是一体）。无边框后拖动仍可用（`-webkit-app-region` 是
     // 下一刀；现在按住标题栏区域拖不动，但可以用系统快捷键/拖边缘调整）。
@@ -2070,13 +2094,14 @@ function openModuleWindow(modeId, width) {
       spellcheck: false,
     },
   })
-  const entry = { win: w, width: Number(width) || 420, anchored: true, setting: false }
-  moduleWins.set(id, entry)
+  const kindNorm2 = kindNorm
+  const entry = { win: w, width: Number(width) || 420, anchored: true, setting: false, kind: kindNorm2, modeId: id }
+  moduleWins.set(key, entry)
   // 页面会自己设 document.title（内核页面就设），会把我们认窗口用的标题顶掉 ⇒ 拦下来
   w.on('page-title-updated', (e) => {
     e.preventDefault()
     try {
-      w.setTitle(moduleWindowTitle(id))
+      w.setTitle(moduleWindowTitle(id, kind))
     } catch {
       /* 窗口没了 */
     }
@@ -2089,11 +2114,11 @@ function openModuleWindow(modeId, width) {
     broadcastShape()
   })
   w.on('closed', () => {
-    moduleWins.delete(id)
+    moduleWins.delete(key)
     broadcastShape()
   })
   hardenWindow(w)
-  w.loadURL(moduleWindowUrl(id)).catch((err) => log(`module window failed: ${err.message}`))
+  w.loadURL(moduleWindowUrl(id, kind)).catch((err) => log(`module window failed: ${err.message}`))
   // **就绪后再落一次位**：建窗那一刻长条还没左移腾地方，而且窗口未映射时系统会把 setBounds 归一化
   // （2026-10-13 实机 K 段：模块落到长条位置上、宽度也没按剩余空间缩）。三处兜：ready-to-show /
   // did-finish-load / 500ms 定时——都是幂等的贴边计算，重复跑无害。
@@ -2125,21 +2150,34 @@ function syncStripBoundsForModules() {
   }
 }
 
-function closeModuleWindow(modeId) {
+/** 模块窗口的键：同一个模式可以同时有「主界面」（右）与「助手对话」（左）两块，所以键要带上 kind。 */
+function moduleKey(id, kind) {
+  return kind === 'assistant' ? `${id}/assistant` : id
+}
+
+function closeModuleWindow(modeId, kind) {
   const id = String(modeId || '').trim()
-  const entry = moduleWins.get(id)
-  if (!entry) return { ok: true, closed: false, ...shapeState(), modules: moduleWindowState() }
-  try {
-    entry.win.destroy()
-  } catch {
-    /* 已经没了 */
+  // 带 kind 只关那一块；不带则先关助手再关主界面（同一个模式可能两块都在）
+  const keys = kind === 'assistant' || kind === 'main'
+    ? [moduleKey(id, kind === 'assistant' ? 'assistant' : 'main')]
+    : [moduleKey(id, 'assistant'), moduleKey(id, 'main')]
+  let closed = false
+  for (const key of keys) {
+    const entry = moduleWins.get(key)
+    if (!entry) continue
+    try {
+      entry.win.destroy()
+    } catch {
+      /* 已经没了 */
+    }
+    moduleWins.delete(key)
+    closed = true
+    log(`模块窗口关闭：${key}`)
   }
-  moduleWins.delete(id)
   // 收回地方：长条回到"没有模块"时的位置（右缘仍贴工作区右缘）
   syncStripBoundsForModules()
   broadcastShape()
-  log(`模块窗口关闭：${id}`)
-  return { ok: true, closed: true, ...shapeState(), modules: moduleWindowState() }
+  return { ok: true, closed, ...shapeState(), modules: moduleWindowState() }
 }
 
 function closeAllModuleWindows() {
@@ -3577,8 +3615,9 @@ function registerIpc() {
   })
 
   /* 模块窗口（2026-10-13，用户："我想的是模块化，即它们也可以分离"）：
-   * 每个模式一个**独立窗口**，贴边拼在长条左侧；用户拖开即分离（壳不再贴边）。
-   * 纪律与形态通道一致：只认内核页面主帧；modeId 只收安全字符；宽度有界（280–900）。 */
+   * 每个模式一个**独立窗口**，贴边拼在长条两侧（`main` 在右＝模式界面，`assistant` 在左＝该模式的
+   * 助手对话）；用户拖开即分离（壳不再贴边）。
+   * 纪律与形态通道一致：只认内核页面主帧；modeId 只收安全字符；宽度有界（280–900）；kind 只收两值。 */
   ipcMain.handle('shell:open-module-window', (event, payload) => {
     if (!isKernelPageSender(event)) {
       log('open-module-window: rejected（发送方不是内核页面主帧）')
@@ -3586,14 +3625,16 @@ function registerIpc() {
     }
     const modeId = payload && typeof payload === 'object' ? payload.modeId : payload
     const width = payload && typeof payload === 'object' ? payload.width : undefined
-    const result = openModuleWindow(modeId, width)
+    const kind = payload && typeof payload === 'object' ? payload.kind : undefined
+    const result = openModuleWindow(modeId, width, kind)
     if (result.ok) broadcastShape()
     return result
   })
   ipcMain.handle('shell:close-module-window', (event, payload) => {
     if (!isKernelPageSender(event)) return { ok: false, error: 'only-kernel-page' }
     const modeId = payload && typeof payload === 'object' ? payload.modeId : payload
-    return closeModuleWindow(modeId)
+    const kind = payload && typeof payload === 'object' ? payload.kind : undefined
+    return closeModuleWindow(modeId, kind)
   })
 
   // 拼接宽度（2026-10-13）：页面只说"要拼多宽"（有界标量：0 = 收起 / 280 到工作区上限），

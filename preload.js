@@ -71,9 +71,10 @@ contextBridge.exposeInMainWorld('dshShell', {
   // 窗口的 x/y/高度仍由主进程算——页面拿不到任意几何。
   setWorkbenchSplice: (width) => ipcRenderer.invoke('shell:set-workbench-splice', Number(width)),
   // **模块窗口**（2026-10-13 模块化）：每个模式一个独立窗口，壳负责贴边与分离。
-  // 页面只说"开哪个模式、多宽"，位置/贴边/跟随全由壳算。
-  openModuleWindow: (modeId, width) => ipcRenderer.invoke('shell:open-module-window', { modeId: String(modeId ?? ''), width: Number(width) || undefined }),
-  closeModuleWindow: (modeId) => ipcRenderer.invoke('shell:close-module-window', { modeId: String(modeId ?? '') }),
+  // 页面只说"开哪个模式、多宽、哪种"（`main`＝模式界面排长条右、`assistant`＝该模式助手排左），
+  // 位置/贴边/跟随全由壳算。
+  openModuleWindow: (modeId, width, kind) => ipcRenderer.invoke('shell:open-module-window', { modeId: String(modeId ?? ''), width: Number(width) || undefined, kind: kind === 'assistant' ? 'assistant' : 'main' }),
+  closeModuleWindow: (modeId, kind) => ipcRenderer.invoke('shell:close-module-window', { modeId: String(modeId ?? ''), kind: kind === 'assistant' || kind === 'main' ? kind : undefined }),
   // 自绘三钮的 `✕`：只表达"用户按了关闭"，具体是进托盘还是退出，由主进程既有关窗语义决定
   closeWorkbenchWindow: () => ipcRenderer.invoke('shell:close-window'),
   onWorkbenchShape: (cb) => {
