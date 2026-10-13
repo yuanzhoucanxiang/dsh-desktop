@@ -186,6 +186,13 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
   贴边排在长条左侧；**用户拖开就分离**（壳不再插手它的位置）；再点同一个模式 = 关掉那个窗口。
   - 门面侧：`shell-shape.js` 的 `openModuleWindow`/`closeModuleWindow`/`hasModuleWindowBridge`；
     `Chrome.js` 订阅壳推送的 `modules` 记账（接缝上的「已拼接」标记据此显示，不自己编状态）。
+  - **助手窗口 `splice.assistant`**（2026-10-13 用户："左边是写作模式的 agent 对话窗口——我说的是
+    「写作助手」"）：模式声明 `assistant: { width }`（或 `true`）⇒ 拼接时门面**同时开两块**：
+    主界面（`kind=main`，排长条右）+ 助手（`kind=assistant`，排长条**左**）。
+    模式自己在助手窗口里按 URL 片段渲染助手界面（第六条：模块窗口要自报家门）。
+    壳给左侧一个**独立下限 160**（长条左边常只剩一百多像素，压着 220 会重叠在长条上）。
+    探针 ⑪ 判：一次开出两块、宽度分别取 `splice.width` 与 `splice.assistant.width`、
+    壳记账两种 kind 都在、关掉时不带 kind ⇒ 两块一起关。
   - **降级路径**：壳没有模块窗口能力（老壳/官方壳）→ 退回原来的**窗口内拼接**（主窗撑宽 + 右侧一列，
     内容优先 `splice.mount`、其次 `splice.view`、都没有才用 `dock` 轻视图）。两条路都在探针里验过。
   - 壳侧纪律：只认内核页面主帧、modeId 只收安全字符、宽度有界且**放不下就缩**（不许探出屏幕）、
