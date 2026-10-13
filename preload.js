@@ -157,6 +157,7 @@ function applySkin(id) {
  */
 function bootstrapShellInjections() {
   try {
+    ensureThemeChrome()
     ensureModuleWindowTrim()
     ensureDragStrip()
   } catch (err) {
@@ -200,7 +201,24 @@ function ensureModuleWindowTrim() {
   if (document.getElementById('dsh-shell-module-trim')) return
   const style = document.createElement('style')
   style.id = 'dsh-shell-module-trim'
-  style.textContent = '.palis-glyphs{display:none!important;}'
+  // `.palis-glyphs` = 主题装饰层；`.ptp-float` = PALIS 主题面板自己的浮钮（46×46 固定右下）
+  // ——两者都在**每个窗口**注入一遍，三块拼在一起就重复（2026-10-13 项目所有者：
+  // "'palis' 主题切换同时出现在三个窗口冗余，只出现在工具台界面即可"）。
+  style.textContent = '.palis-glyphs,.ptp-float{display:none!important;}'
+  ;(document.head || document.documentElement).appendChild(style)
+}
+
+/**
+ * **主题浮钮缩小**（2026-10-13 项目所有者："而且有些大，弄小一点"，确认指的是那块小牌子）：
+ * `.ptp-float` 原本 46×46、`right:14 bottom:40`。这里只改尺寸（不动位置/样式）。
+ * 为什么由外壳注入：那是 PALIS 主题面板自己的按钮，改它要动那个项目并重建；
+ * 外壳这条是**可回退的覆盖**（同"模块窗口去重"一类），等那边自己调好就能删掉这条。
+ */
+function ensureThemeChrome() {
+  if (document.getElementById('dsh-shell-theme-chrome')) return
+  const style = document.createElement('style')
+  style.id = 'dsh-shell-theme-chrome'
+  style.textContent = '.ptp-float{width:34px!important;height:34px!important;}'
   ;(document.head || document.documentElement).appendChild(style)
 }
 
