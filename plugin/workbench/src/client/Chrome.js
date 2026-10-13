@@ -36,6 +36,8 @@ const SPLICE_MIN = 280
 const SEAM_FAN_R = 58 // 弹出半径（px，原型 fanPop 的终点就是 58）
 const SEAM_FAN_SPREAD = 34 // 两端相对中间的夹角（度，原型 -34° / 0° / 34°）
 const SEAM_FAN_STAGGER = 45 // 逐颗错峰的步长（ms，原型 .02/.07/.12s）
+/** 鼠标离开接缝后**等多久才收**（ms）：扇形是从窄条往里弹的，不留宽限根本来不及挪过去。 */
+const SEAM_CLOSE_GRACE_MS = 240
 
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
@@ -82,6 +84,28 @@ export function WorkbenchChrome() {
   // 接缝扇形的开合（悬停/聚焦）。用 React 状态而不是纯 CSS `:hover`：探针能直接读
   // `data-wb-seam-open` 与逐颗的几何属性，不必去合成鼠标事件猜样式。
   const [seamOpen, setSeamOpen] = react.useState(false)
+  // 接缝的关合宽限（见下面 openSeam/scheduleCloseSeam 的注释）：定时器放 ref，重开时清掉
+  const seamCloseTimer = react.useRef(null)
+  const openSeam = react.useCallback(() => {
+    if (seamCloseTimer.current) {
+      window.clearTimeout(seamCloseTimer.current)
+      seamCloseTimer.current = null
+    }
+    setSeamOpen(true)
+  }, [])
+  const scheduleCloseSeam = react.useCallback(() => {
+    if (seamCloseTimer.current) window.clearTimeout(seamCloseTimer.current)
+    seamCloseTimer.current = window.setTimeout(() => {
+      seamCloseTimer.current = null
+      setSeamOpen(false)
+    }, SEAM_CLOSE_GRACE_MS)
+  }, [])
+  react.useEffect(
+    () => () => {
+      if (seamCloseTimer.current) window.clearTimeout(seamCloseTimer.current)
+    },
+    [],
+  )
   // 拼接：右侧拼了哪些模式（数组，**index 0 = 贴着主长条那块**；新拼的插到最前）+ 壳回读的总宽
   const [spliced, setSpliced] = react.useState([])
   const [spliceWidth, setSpliceWidth] = react.useState(0)
@@ -633,10 +657,16 @@ export function WorkbenchChrome() {
             role: 'group',
             'aria-label': T.seamLabel,
             title: T.seamHint,
-            onMouseEnter: () => setSeamOpen(true),
-            onMouseLeave: () => setSeamOpen(false),
-            onFocus: () => setSeamOpen(true),
-            onBlur: () => setSeamOpen(false),
+            /**
+             * 开合带**宽限延迟**（2026-10-13 项目所有者实报："图标呼出时，鼠标还没挪过去就消失了"）。
+             * 原因是几何：扇形从 26px 宽的右缘条往里弹出 58px，鼠标从条上往图标走**中途就出了条**，
+             * `mouseleave` 立刻收起。两处一起兜：① 展开时命中区撑宽到覆盖扇形（CSS `.is-open`）；
+             * ② 离开后等 `SEAM_CLOSE_GRACE_MS` 再收，进到图标/重新进条上就取消这个定时器。
+             */
+            onMouseEnter: () => openSeam(),
+            onMouseLeave: () => scheduleCloseSeam(),
+            onFocus: () => openSeam(),
+            onBlur: () => scheduleCloseSeam(),
           },
           react.createElement('div', { className: 'dshWbSeamGrip', 'aria-hidden': 'true' }),
           modes.length === 0

@@ -744,10 +744,31 @@ app.whenReady().then(async () => {
     `document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')==='1'`,
     '悬停接缝应展开扇形',
   )
+  // **展开时命中区要撑到覆盖扇形**（2026-10-13 项目所有者实报"图标呼出时，鼠标还没挪过去就消失了"：
+  // 扇形是从 26px 窄条往里弹 58px 的，鼠标从条上往图标走中途就出了命中区 ⇒ mouseleave ⇒ 立刻收）。
+  const openWidth = await evaluate(`Math.round(document.querySelector('[data-wb-seam]').getBoundingClientRect().width)`)
+  assert.ok(openWidth > 100, `展开时接缝的命中区应覆盖到扇形（实测 ${openWidth}px，关着时才 26px）`)
+  // **离开后要留宽限**：mouseout 之后立刻看还在（不然鼠标根本来不及挪），等超时才收
+  await evaluate(`(() => { document.querySelector('[data-wb-seam]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return 0 })()`)
+  await sleep(60)
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')`),
+    '1',
+    'mouseout 之后要留宽限（不能立刻收，否则鼠标挪不到图标上）',
+  )
+  // 宽限期内**再进到接缝/图标上要取消关闭**（这条是"挪过去"的真正兜底）
+  await evaluate(`(() => { document.querySelector('[data-wb-seam-item], [data-wb-seam-mode]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0 })()`)
+  await sleep(400)
+  assert.equal(
+    await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')`),
+    '1',
+    '鼠标进到扇形里的那一颗上时不该被收起',
+  )
+  // 真的离开（不再回来）→ 超过宽限后收起
   await evaluate(`(() => { document.querySelector('[data-wb-seam]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return 0 })()`)
   await waitFor(
     `document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')==='0'`,
-    '移开接缝应收起扇形',
+    '彻底移开后（超过宽限）应收起扇形',
   )
 
   // ⑪ 拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**，不是进入模式）。

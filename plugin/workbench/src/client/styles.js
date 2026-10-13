@@ -181,6 +181,9 @@ export const CSS = [
   // 中间一道小指示条；项是 **46px 圆形图标钮**，标签在图标**左侧**悬停才出现（原型在右侧，
   // 但那是画在窗外的；我们收在窗内，标签只能往左），状态点是图标右下角的小徽标。
   '.dshWbSeam{position:fixed;top:0;right:0;width:26px;height:100%;z-index:2210;pointer-events:auto;}',
+  // 展开时把**命中区撑到覆盖扇形**（26 + 弹出 58 + 图标 46 + 余量）：否则鼠标从窄条往图标挪的中途
+  // 就出了命中区，`mouseleave` 一触发扇形就没了（2026-10-13 项目所有者实报）。JS 那边还有一层宽限延迟。
+  '.dshWbSeam.is-open{width:132px;}',
   '.dshWbSeamGrip{position:absolute;top:50%;right:6px;width:4px;height:44px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-label-tertiary);opacity:.45;transition:opacity .16s ease-out,background .16s ease-out;}',
   '.dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{opacity:1;background:var(--dsw-alias-brand-primary);}',
   '.dshWbSeamFan{position:absolute;right:14px;top:50%;width:0;height:0;}',
