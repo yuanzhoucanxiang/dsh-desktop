@@ -154,6 +154,7 @@ function applySkin(id) {
  * 这是外壳级的按需注入（与断连浮层/审阅侧栏同类），不改内核代码、不改页面结构。
  */
 function ensureDragStrip() {
+  ensureModuleWindowTrim()
   if (!document.body || document.getElementById('dsh-shell-drag-strip')) return
   const el = document.createElement('div')
   el.id = 'dsh-shell-drag-strip'
