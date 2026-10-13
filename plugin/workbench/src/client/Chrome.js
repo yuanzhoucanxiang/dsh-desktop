@@ -727,6 +727,8 @@ export function WorkbenchChrome() {
                   const delay = i * SEAM_FAN_STAGGER
                   // 「已拼接」两种形态都算：模块窗口（新路径）或窗口内的拼接列（老壳降级路径）
                   const isSpliced = moduleIds.includes(mode.id) || spliced.some((it) => it.id === mode.id)
+                  // 分离（壳记账里 `anchored:false`）与"还拼着"要区分显示——用户拖开后得看得出来
+                  const modeDetached = modules.some((m) => m.modeId === mode.id && m.anchored === false)
                   return react.createElement(
                     'button',
                     {
@@ -759,7 +761,13 @@ export function WorkbenchChrome() {
                       { className: 'dshWbSeamText', style: { transform: `translateY(-50%) rotate(${-a}deg)` } },
                       mode.label,
                       isSpliced
-                        ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'spliced' }, T.spliced)
+                        ? react.createElement(
+                            'em',
+                            // **分离与拼接要看得出来**（2026-10-13 交互细节）：壳的记账里有 `anchored`，
+                            // 拖开的那块标「已分离」——否则用户不知道它还算不算拼着。
+                            { className: `dshWbSeamTag${modeDetached ? ' is-detached' : ''}`, 'data-wb-seam-tag': modeDetached ? 'detached' : 'spliced' },
+                            modeDetached ? T.detached : T.spliced,
+                          )
                         : mode.active
                           ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current)
                           : null,

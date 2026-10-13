@@ -677,6 +677,8 @@ var T = {
   spliceNoView: (label) => `${label}还没提供可嵌入视图，拼不了；回宽窗主屏点「进入」可以用它的完整界面。`,
   spliceFailed: (err) => `拼接没成功（${err}）——窗口没变宽，界面保持原样。`,
   spliced: "已拼接",
+  // 拖开的那块：接缝上标「已分离」（2026-10-13 交互细节——分离与拼接要看得出区别）
+  detached: "已分离",
   activeNone: "未进入任何模式",
   exit: "退出模式",
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
@@ -2171,6 +2173,7 @@ function WorkbenchChrome() {
           const a = Math.round((mid - i) * step);
           const delay = i * SEAM_FAN_STAGGER;
           const isSpliced = moduleIds.includes(mode.id) || spliced.some((it) => it.id === mode.id);
+          const modeDetached = modules.some((m) => m.modeId === mode.id && m.anchored === false);
           return react6.createElement(
             "button",
             {
@@ -2202,7 +2205,13 @@ function WorkbenchChrome() {
               "span",
               { className: "dshWbSeamText", style: { transform: `translateY(-50%) rotate(${-a}deg)` } },
               mode.label,
-              isSpliced ? react6.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "spliced" }, T.spliced) : mode.active ? react6.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
+              isSpliced ? react6.createElement(
+                "em",
+                // **分离与拼接要看得出来**（2026-10-13 交互细节）：壳的记账里有 `anchored`，
+                // 拖开的那块标「已分离」——否则用户不知道它还算不算拼着。
+                { className: `dshWbSeamTag${modeDetached ? " is-detached" : ""}`, "data-wb-seam-tag": modeDetached ? "detached" : "spliced" },
+                modeDetached ? T.detached : T.spliced
+              ) : mode.active ? react6.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
             )
           );
         })

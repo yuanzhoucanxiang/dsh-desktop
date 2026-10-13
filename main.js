@@ -1957,42 +1957,96 @@ function moduleTotalWidth(side = 'right') {
  *   · `kind: 'main'`（默认）→ 排在长条**右侧**，依次往右；
  *   · `kind: 'assistant'` → 排在长条**左侧**，依次往左（最外侧是最后开的那个）。
  * 长条本身会**左移**给右侧模块腾地方（见 `shapeBounds` 的 reserved）；左侧模块只能用长条左边
- * 现有的地方，放不下就缩（下限 MODULE_MIN_WIDTH，不许探出屏幕）。
+ * 现有的地方，放不下就缩（下限 MODULE_ASSISTANT_MIN_WIDTH，不许探出屏幕）。
+ *
+ * **目标位置只算一次**（`moduleTargetRects`）：贴边摆位与"吸附拼回"的判定共用同一套算法，
+ * 否则会出现"看着快贴上了、松手却没吸回去"这种手感不一致（2026-10-13 抠交互细节时定的）。
  */
-function layoutModuleWindows() {
-  if (!win || win.isDestroyed() || currentShape() === 'normal') return
+function moduleTargetRects(options = {}) {
+  const includeDetached = options.includeDetached === true
+  const rects = new Map()
+  if (!win || win.isDestroyed() || currentShape() === 'normal') return rects
   const strip = win.getBounds()
   const area = anchorArea(strip)
   let leftEdge = strip.x + strip.width + MODULE_GAP
   const maxRight = area.x + area.width - 16
   let rightEdge = strip.x - MODULE_GAP
-  for (const entry of moduleWins.values()) {
-    if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
+  for (const [key, entry] of moduleWins.entries()) {
+    if (!entry.win || entry.win.isDestroyed()) continue
+    // `includeDetached`：判定"吸附拼回"时，**分离的模块也要算出"如果贴回去会在哪"**——
+    // 否则它没有目标位、永远吸不回来（2026-10-13 写完就发现的逻辑坑）。
+    if (!entry.anchored && !includeDetached) continue
     const wantWidth = Math.max(MODULE_MIN_WIDTH, Math.min(MODULE_WINDOW_MAX, entry.width))
     if (entry.kind === 'assistant') {
       // 左侧：只能占长条左边现有的地方；**宁可缩到 160 也不许压住长条**（实机踩过重叠 40px）
       const room = Math.max(MODULE_ASSISTANT_MIN_WIDTH, rightEdge - area.x)
       const width = Math.max(MODULE_ASSISTANT_MIN_WIDTH, Math.min(wantWidth, room))
-      entry.setting = true
-      try {
-        entry.win.setBounds({ x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
-      } catch {
-        /* 窗口刚销毁之类：忽略这一次摆位 */
-      }
-      entry.setting = false
+      rects.set(key, { x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
       rightEdge = rightEdge - width - MODULE_GAP
       continue
     }
     const room = Math.max(MODULE_MIN_WIDTH, maxRight - leftEdge)
     const width = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, room))
+    rects.set(key, { x: leftEdge, y: strip.y, width, height: strip.height })
+    leftEdge = leftEdge + width + MODULE_GAP
+  }
+  return rects
+}
+
+function layoutModuleWindows() {
+  if (!win || win.isDestroyed() || currentShape() === 'normal') return
+  for (const [key, rect] of moduleTargetRects().entries()) {
+    const entry = moduleWins.get(key)
+    if (!entry || !entry.win || entry.win.isDestroyed()) continue
     entry.setting = true
     try {
-      entry.win.setBounds({ x: leftEdge, y: strip.y, width, height: strip.height })
+      entry.win.setBounds(rect)
     } catch {
       /* 窗口刚销毁之类：忽略这一次摆位 */
     }
     entry.setting = false
-    leftEdge = leftEdge + width + MODULE_GAP
+  }
+}
+
+/**
+ * 用户拖完一块模块窗口（Electron 的 `moved` 事件＝拖拽结束）：
+ *   · **还贴着的**：松手时离目标位很近 ⇒ **吸回去**（只是手抖）；拖远了 ⇒ 才算**分离**；
+ *   · **已分离的**：再拖回目标位附近 ⇒ **吸附拼回**（重新进拼合）。
+ * 判定用同一套目标矩形 + `MODULE_SNAP_PX` 阈值；纵向也一起比（拼合是一横排，歪着不算贴上）。
+ * 2026-10-13 项目所有者："（拼接和分离要做逻辑互动方面的细节）"。
+ */
+const MODULE_SNAP_PX = 48
+function settleModuleAfterDrag(key) {
+  const entry = moduleWins.get(key)
+  if (!entry || !entry.win || entry.win.isDestroyed()) return
+  if (currentShape() === 'normal') return
+  const target = moduleTargetRects({ includeDetached: true }).get(key)
+  if (!target) {
+    // 目标算不出来（工具台已经关了之类）：不动它
+    return
+  }
+  const b = entry.win.getBounds()
+  const dx = Math.abs(b.x - target.x)
+  const dy = Math.abs(b.y - target.y)
+  const near = dx <= MODULE_SNAP_PX && dy <= MODULE_SNAP_PX
+  if (near) {
+    const wasDetached = !entry.anchored
+    entry.anchored = true
+    entry.setting = true
+    try {
+      entry.win.setBounds(target)
+    } catch {
+      /* 忽略 */
+    }
+    entry.setting = false
+    log(wasDetached ? `模块窗口吸附拼回：${key}` : `模块窗口吸附回位：${key}`)
+    broadcastShape()
+    return
+  }
+  if (entry.anchored) {
+    entry.anchored = false
+    log(`模块窗口分离：${key}（拖离 ${dx}px，壳不再贴边）`)
+    broadcastShape()
   }
 }
 
@@ -2115,12 +2169,22 @@ function openModuleWindow(modeId, width, kind) {
       /* 窗口没了 */
     }
   })
+  // **拖拽结束再判定**（`move` 会连发，拖动中判定会把"手抖"当成"分离"——2026-10-13 抠交互细节）。
+  // Electron 的 `moved` 是拖拽结束事件（Windows/macOS 有）；为稳妥再加一条 240ms 防抖兜底，
+  // 两条都走同一个幂等的 `settleModuleAfterDrag`。
+  let dragSettleTimer = null
+  w.on('moved', () => {
+    if (entry.setting) return
+    settleModuleAfterDrag(key)
+  })
   w.on('move', () => {
-    // 我们自己的 setBounds 会带 setting 标记；除此之外的 move 就是**用户拖的** ⇒ 分离
-    if (entry.setting || !entry.anchored) return
-    entry.anchored = false
-    log(`模块窗口分离：${id}（用户拖动，壳不再贴边）`)
-    broadcastShape()
+    if (entry.setting) return
+    if (dragSettleTimer) clearTimeout(dragSettleTimer)
+    dragSettleTimer = setTimeout(() => {
+      dragSettleTimer = null
+      if (entry.setting) return
+      settleModuleAfterDrag(key)
+    }, 240)
   })
   w.on('closed', () => {
     moduleWins.delete(key)
@@ -2189,15 +2253,21 @@ function closeModuleWindow(modeId, kind) {
   return { ok: true, closed, ...shapeState(), modules: moduleWindowState() }
 }
 
+/**
+ * 工具台关了（回到 normal）时收模块窗口：**只收还贴着的**，已经"分离"的留着。
+ * 理由：分离的语义就是"这块拆下来了、独立活着"（2026-10-13 交互细节）——把它一起关掉等于
+ * 用户白拖一次，而且他可能正想单独用那块界面。用户自己关它即可。
+ */
 function closeAllModuleWindows() {
-  for (const entry of moduleWins.values()) {
+  for (const [key, entry] of Array.from(moduleWins.entries())) {
+    if (!entry.anchored) continue
     try {
       entry.win.destroy()
     } catch {
       /* 已经没了 */
     }
+    moduleWins.delete(key)
   }
-  moduleWins.clear()
 }
 
 /**
