@@ -1921,7 +1921,7 @@ const MODULE_WINDOW_MIN = 280
 const MODULE_WINDOW_MAX = 900
 /** 贴边时允许缩到的最小宽度（比 MODULE_WINDOW_MIN 还小：放不下时宁可窄一点，也不能探出屏幕）。 */
 const MODULE_MIN_WIDTH = 220
-const MODULE_GAP = 8
+const MODULE_GAP = 0
 /** modeId → { win, width, anchored } */
 const moduleWins = new Map()
 
@@ -1969,6 +1969,38 @@ function layoutModuleWindows() {
     }
     entry.setting = false
     leftEdge = leftEdge + width + MODULE_GAP
+  }
+}
+
+/** 长条**只挪位置**时：模块跟着平移（保持各自尺寸）；尺寸变了才交给 layoutModuleWindows 重排。 */
+let lastStripBounds = null
+function syncModulesOnStripMove() {
+  if (!win || win.isDestroyed() || currentShape() === 'normal') return
+  const b = win.getBounds()
+  const prev = lastStripBounds
+  lastStripBounds = { x: b.x, y: b.y, width: b.width, height: b.height }
+  if (!prev) {
+    layoutModuleWindows()
+    return
+  }
+  if (b.width !== prev.width || b.height !== prev.height) {
+    layoutModuleWindows()
+    return
+  }
+  const dx = b.x - prev.x
+  const dy = b.y - prev.y
+  if (dx === 0 && dy === 0) return
+  for (const entry of moduleWins.values()) {
+    if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
+    const mb = entry.win.getBounds()
+    entry.setting = true
+    try {
+      // 宽高照旧 —— 拖长条时模块**跟着走**，不是被拉伸
+      entry.win.setBounds({ x: mb.x + dx, y: mb.y + dy, width: mb.width, height: mb.height })
+    } catch {
+      /* 忽略这一次 */
+    }
+    entry.setting = false
   }
 }
 
@@ -2472,10 +2504,13 @@ function createWindow() {
   win.on('resize', scheduleSaveBounds)
   win.on('move', () => {
     scheduleSaveBounds()
-    // 长条动/变大小 ⇒ 还贴着的模块窗口跟着走（被拖开的=分离，不跟）
+    // 长条动 ⇒ 模块跟着动，但**只平移、不改尺寸**（2026-10-13 项目所有者："拖动工具台窗口时，
+    // 应该是同时拖动它们，而不是写作模式的窗口在被拉伸"）。位置变了就平移，尺寸变了才重排。
+    syncModulesOnStripMove()
+  })
+  win.on('resize', () => {
     layoutModuleWindows()
   })
-  win.on('resize', layoutModuleWindows)
   win.on('maximize', () => { settings.windowBounds.maximized = true; saveSettings() })
   win.on('unmaximize', () => { settings.windowBounds.maximized = false; saveSettings() })
   // 藏过/最小化过之后 OS 的置顶位可能丢：条状形态下再断言一次（2026-10-13 加固，见 enforceTopmost 注释）

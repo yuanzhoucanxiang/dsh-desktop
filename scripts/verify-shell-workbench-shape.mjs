@@ -438,8 +438,10 @@ try {
     // 缝允许 2–14：窗口边框在不同 DPI/主题下宽度不同（实测 6 与 8 都出现过）。
     // **方向判"右侧"**（2026-10-13 项目所有者纠正：模式界面在工具台右边，左边留给子对话）——
     // gap 为负说明又排到左边去了。
-    check('K 模块窗口贴在长条**右侧**（缝 2–14px）且与长条等高',
-      Boolean(mod) && gap >= 2 && gap <= 14 && Math.abs(mod.bounds.height - before.bounds.height) <= 2,
+    // 缝允许 0–14：2026-10-13 起改成**无边框 + 零缝**（项目所有者："拼接有间隙"），
+    // 但主窗自己还带系统边框，实测 OS 报的矩形仍可能有几像素差；方向必须是**右侧**（gap ≥ 0）。
+    check('K 模块窗口贴在长条**右侧**（缝 0–14px）且与长条等高',
+      Boolean(mod) && gap >= 0 && gap <= 14 && Math.abs(mod.bounds.height - before.bounds.height) <= 2,
       JSON.stringify({ 长条: before.bounds, 模块: mod?.bounds, 缝: gap }))
     const wins = winStyles(appPid)
     const osWin = Array.isArray(wins) ? wins.find((w) => w.title.includes('模块 · probe-module')) : null
