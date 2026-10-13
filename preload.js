@@ -143,8 +143,25 @@ function applySkin(id) {
   // preload 可能早于 <html> 存在：等 DOM 就绪再补上
   document.addEventListener('DOMContentLoaded', () => {
     if (document.documentElement && pendingSkin) document.documentElement.dataset[SKIN_ATTR] = pendingSkin
-    ensureDragStrip()
+    bootstrapShellInjections()
   }, { once: true })
+  // **不能只挂 DOMContentLoaded**（2026-10-13 实机抓到：这段代码本身可能在事件之后才执行 ⇒
+  // 主窗里拖拽带根本没注入 ⇒ "整体拖动不了"）。三条都挂，注入函数本身幂等。
+  bootstrapShellInjections()
+  window.addEventListener('load', bootstrapShellInjections, { once: true })
+}
+
+/**
+ * 外壳级注入的统一入口（幂等）：模块窗口去重样式 + 无边框主窗的拖拽带。
+ * 时机上**现在就试一次**，再挂 DOMContentLoaded / load 兜底——只挂事件会在"事件已过"时全丢。
+ */
+function bootstrapShellInjections() {
+  try {
+    ensureModuleWindowTrim()
+    ensureDragStrip()
+  } catch (err) {
+    console.warn('[shell] injection failed:', err)
+  }
 }
 
 /**
@@ -154,7 +171,6 @@ function applySkin(id) {
  * 这是外壳级的按需注入（与断连浮层/审阅侧栏同类），不改内核代码、不改页面结构。
  */
 function ensureDragStrip() {
-  ensureModuleWindowTrim()
   if (!document.body || document.getElementById('dsh-shell-drag-strip')) return
   const el = document.createElement('div')
   el.id = 'dsh-shell-drag-strip'
@@ -173,9 +189,23 @@ function ensureDragStrip() {
   document.body.appendChild(el)
 }
 
+/**
+ * **模块窗口的"减冗余"**（2026-10-13 项目所有者："palis 主题切换同时出现在三个窗口冗余，
+ * 只出现在工具台界面即可"）：主题装饰层 `.palis-glyphs` 在每个窗口都画一遍，三块拼在一起就重复。
+ * 模块窗口（URL 片段带 `dsh-wb-module`）里收掉它，只留工具台那一块；放在外壳而不是主题插件里
+ * ——这是"拼合时的去重"，属于外壳职责，也不去改主题项目。
+ */
+function ensureModuleWindowTrim() {
+  if (!/dsh-wb-module/.test(String(location.hash || ''))) return
+  if (document.getElementById('dsh-shell-module-trim')) return
+  const style = document.createElement('style')
+  style.id = 'dsh-shell-module-trim'
+  style.textContent = '.palis-glyphs{display:none!important;}'
+  ;(document.head || document.documentElement).appendChild(style)
+}
+
 /** 海景皮肤下注入 UI 的令牌覆盖（作用域限定在外壳自己的根元素内）。 */
-const SKIN_TOKENS = `
-  html[data-dsh-skin="seascape"] #dsh-review-root,
+const SKIN_TOKENS = `  html[data-dsh-skin="seascape"] #dsh-review-root,
   html[data-dsh-skin="seascape"] #dsh-shell-kernel-overlay {
     --dsw-alias-bg-base: #0e1012;
     --dsw-alias-bg-layer-1: #14171a;
@@ -383,4 +413,11 @@ ipcRenderer.on('shell:kernel-status', (_e, s) => {
 // 皮肤：先按当前设置落一次，之后跟随托盘切换即时变（内核页面与浮层都吃这一层）
 ipcRenderer.invoke('shell:get-state').then((s) => applySkin(s && s.theme)).catch(() => {})
 ipcRenderer.on('shell:theme', (_e, id) => applySkin(id))
+
+// **外壳级注入（拖拽带 / 模块窗口去重）走顶层**：不能挂在 `applySkin` 里——那条路径要等
+// `shell:get-state` 回来才走，页面早就 `DOMContentLoaded` 过了（2026-10-13 实机：主窗里
+// 拖拽带一个都没注入 ⇒ "整体拖动不了"）。顶层直接试一次，再加事件兜底，函数本身幂等。
+bootstrapShellInjections()
+document.addEventListener('DOMContentLoaded', bootstrapShellInjections, { once: true })
+window.addEventListener('load', bootstrapShellInjections, { once: true })
 
