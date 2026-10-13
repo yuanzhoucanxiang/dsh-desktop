@@ -481,10 +481,11 @@ try {
     // **用"开窗之后"的长条位置算缝**：开模块窗口时壳会把长条**左移腾地方**，拿 `before`（开窗前的
     // 长条位置）去算会得到 -419 这种假红（2026-10-13 实测：壳那边其实贴得正好，是探针读了旧位置）。
     const gap = (mod?.bounds?.x ?? 0) - (after.bounds.x + after.bounds.width)
-    // 缝允许 0–14：2026-10-13 起改成**无边框 + 零缝**（项目所有者："拼接有间隙"），
-    // 但主窗自己还带系统边框，实测 OS 报的矩形仍可能有几像素差；方向必须是**右侧**（gap ≥ 0）。
-    check('K 模块窗口贴在长条**右侧**（缝 0–14px）且与长条等高',
-      Boolean(mod) && gap >= 0 && gap <= 14 && Math.abs(mod.bounds.height - after.bounds.height) <= 2,
+    // 缝允许 **-12..14**：2026-10-13 起模块窗口**故意盖住长条那几像素系统边框**（长条还带边框、
+    // 模块是无边框的，外框紧贴会露缝还露阴影——项目所有者："有缝隙，容易穿层"）。
+    // 负值只能是"边框那点宽度"，压到内容里就是 bug ⇒ 下界 -12。
+    check('K 模块窗口贴在长条**右侧**（缝 -12..14px，负数=盖住长条边框）且与长条等高',
+      Boolean(mod) && gap >= -12 && gap <= 14 && Math.abs(mod.bounds.height - after.bounds.height) <= 2,
       JSON.stringify({ 长条开窗前: before.bounds, 长条开窗后: after.bounds, 模块: mod?.bounds, 缝: gap }))
     const wins = winStyles(appPid)
     const osWin = Array.isArray(wins) ? wins.find((w) => w.title.includes('模块 · probe-module')) : null

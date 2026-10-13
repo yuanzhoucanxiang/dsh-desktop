@@ -1923,7 +1923,12 @@ const MODULE_WINDOW_MAX = 900
 const MODULE_MIN_WIDTH = 220
 /** **左侧助手窗**的下限（再小就没法用了）；左侧常常只剩一百多像素，这个值决定它会不会压住长条。 */
 const MODULE_ASSISTANT_MIN_WIDTH = 160
-const MODULE_GAP = 0
+/**
+ * 模块窗口与长条之间的缝（可为负）：**长条自己带系统边框**（标题栏 + 边框 + 阴影），而模块窗口是
+ * 无边框的，所以"外框紧贴"看起来仍有一条缝、还会露出长条的阴影 ⇒ 贴边时让模块**盖住那几像素边框**
+ * （2026-10-13 项目所有者："有缝隙，容易穿层"）。根治是主窗无边框重建（列在待办里）。
+ */
+const MODULE_GAP = -8
 /** modeId → { win, width, anchored } */
 const moduleWins = new Map()
 
@@ -2191,6 +2196,9 @@ function openModuleWindow(modeId, width, kind) {
     broadcastShape()
   })
   hardenWindow(w)
+  // **同层级置顶**：长条在条状形态下是置顶的（`enforceTopmost`），模块窗口若不同样置顶，
+  // 就会**被长条盖住**——用户看到的是"穿层"（2026-10-13："容易穿层"）。两者同一层，谁也不盖谁。
+  enforceTopmost(w, currentShape() !== 'normal' && settings.workbenchStripOnTop !== false, `模块/${key}`)
   w.loadURL(moduleWindowUrl(id, kind)).catch((err) => log(`module window failed: ${err.message}`))
   // **就绪后再落一次位**：建窗那一刻长条还没左移腾地方，而且窗口未映射时系统会把 setBounds 归一化
   // （2026-10-13 实机 K 段：模块落到长条位置上、宽度也没按剩余空间缩）。三处兜：ready-to-show /
@@ -2826,16 +2834,22 @@ function shapeBounds(shape) {
   // 占位要**夹住**：长条 + 右侧模块加起来不能超出工作区，否则长条会被挤到负坐标（实机踩过 -71）。
   // 夹住的后果是模块自己变窄（在 layoutModuleWindows 里按剩余空间缩），长条始终留在屏上。
   const reserved = Math.max(0, Math.min(splice + moduleTotal, Math.max(0, area.width - g.width - 32)))
+  // **左侧助手窗的地方要预先留出来**（2026-10-13："有缝隙，容易穿层"那轮实测：长条已为右侧主界面
+  // 左移过，左边只剩 87px 而助手最少要 160 ⇒ 助手压在长条上 73px）。所以长条的 x 有个下限：
+  // 左边模块总宽 + 间距；顶不住时**让右侧主界面缩**（它按剩余空间算，本来就该缩）。
+  const leftTotal = shape === 'strip' ? moduleTotalWidth('left') : 0
+  const minX = area.x + leftTotal + (leftTotal > 0 ? Math.abs(MODULE_GAP) + 8 : 0)
   const height = g.height || Math.round(area.height * g.heightFactor)
   const mem = settings.workbenchShapeBounds && settings.workbenchShapeBounds[shape]
   const corner =
     g.corner === 'bottom-right'
-      ? { x: area.x + area.width - width - reserved - 16, y: area.y + area.height - height - 16 }
-      : { x: area.x + area.width - width - reserved - 16, y: area.y + 16 }
-  const usable = mem && validBounds({ x: mem.x - reserved, y: mem.y, width, height })
+      ? { x: Math.max(minX, area.x + area.width - width - reserved - 16), y: area.y + area.height - height - 16 }
+      : { x: Math.max(minX, area.x + area.width - width - reserved - 16), y: area.y + 16 }
+  const usable = mem && validBounds({ x: Math.max(minX, mem.x - reserved), y: mem.y, width, height })
   // 记忆里存的是**长条自己**的位置（用户拖过的那条），所以拼接/模块占位时 x 要左移那么多——
-  // 整条"长条 + 右侧模块"的右缘保持不动（2026-10-13：模块从左侧改到右侧后一并调整）
-  return { ...(usable ? { x: mem.x - reserved, y: mem.y } : corner), width, height }
+  // 整条"长条 + 右侧模块"的右缘保持不动（2026-10-13：模块从左侧改到右侧后一并调整）；
+  // 但**左边必须留够助手窗的地方**（`minX`），顶不住时右侧主界面会缩。
+  return { ...(usable ? { x: Math.max(minX, mem.x - reserved), y: mem.y } : corner), width, height }
 }
 
 function shapeState() {
