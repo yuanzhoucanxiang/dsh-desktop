@@ -1934,26 +1934,41 @@ function moduleWindowTitle(modeId) {
   return `模块 · ${modeId}`
 }
 
-/** 把还没被拖开的模块窗口依次贴到长条左侧（被拖开的保持原位＝分离）。 */
+/** 还贴着的模块窗口总宽（含缝）——长条要**左移**让出这么多地方，模块才有位置排在它右边。 */
+function moduleTotalWidth() {
+  let total = 0
+  let count = 0
+  for (const entry of moduleWins.values()) {
+    if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
+    total += Math.min(MODULE_WINDOW_MAX, Math.max(MODULE_MIN_WIDTH, entry.width))
+    count += 1
+  }
+  return count > 0 ? total + count * MODULE_GAP : 0
+}
+
+/**
+ * 把还贴着的模块窗口依次排在**长条右侧**（2026-10-13 项目所有者纠正：模式界面在工具台右边，
+ * 左边留给"该模式的子 agent 对话"）。长条本身会左移腾地方，见 `shapeBounds` 里的 `reserved`。
+ */
 function layoutModuleWindows() {
   if (!win || win.isDestroyed() || currentShape() === 'normal') return
   const strip = win.getBounds()
   const area = anchorArea(strip)
-  let rightEdge = strip.x - MODULE_GAP
+  let leftEdge = strip.x + strip.width + MODULE_GAP
+  const maxRight = area.x + area.width - 16
   for (const entry of moduleWins.values()) {
     if (!entry.anchored || !entry.win || entry.win.isDestroyed()) continue
-    // **放不下就缩到装得下**：贴边是往左排，左边到工作区边缘为止；不缩的话窗口会探出屏幕
-    // （2026-10-13 实机：副屏 1093 宽、长条占 657，720 宽的写作台直接落到 x=-71）。
-    const room = Math.max(MODULE_MIN_WIDTH, rightEdge - area.x)
+    // 放不下就缩到装得下（不许探出屏幕）：右边到工作区边缘为止
+    const room = Math.max(MODULE_MIN_WIDTH, maxRight - leftEdge)
     const width = Math.max(MODULE_MIN_WIDTH, Math.min(Math.min(MODULE_WINDOW_MAX, entry.width), room))
     entry.setting = true
     try {
-      entry.win.setBounds({ x: Math.max(area.x, rightEdge - width), y: strip.y, width, height: strip.height })
+      entry.win.setBounds({ x: leftEdge, y: strip.y, width, height: strip.height })
     } catch {
       /* 窗口刚销毁之类：忽略这一次摆位 */
     }
     entry.setting = false
-    rightEdge = rightEdge - width - MODULE_GAP
+    leftEdge = leftEdge + width + MODULE_GAP
   }
 }
 
@@ -1985,14 +2000,15 @@ function openModuleWindow(modeId, width) {
   let seedHeight = 640
   let seedWidth = wantWidth
   if (currentShape() !== 'normal') {
-    let rightEdge = anchor.x - MODULE_GAP
+    // 模块排在**长条右侧**：从长条右缘往右依次排（与 layoutModuleWindows 同一套规矩）
+    let leftEdge = anchor.x + anchor.width + MODULE_GAP
     for (const e of moduleWins.values()) {
       if (!e.anchored || !e.win || e.win.isDestroyed()) continue
-      rightEdge = rightEdge - Math.max(MODULE_WINDOW_MIN, Math.min(MODULE_WINDOW_MAX, e.width)) - MODULE_GAP
+      leftEdge = leftEdge + Math.max(MODULE_MIN_WIDTH, Math.min(MODULE_WINDOW_MAX, e.width)) + MODULE_GAP
     }
-    // 放不下就缩到装得下（同 layoutModuleWindows 的规矩：宁可窄，不能探出屏幕）
-    seedWidth = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, Math.max(MODULE_MIN_WIDTH, rightEdge - seedArea.x)))
-    seedX = Math.max(seedArea.x, rightEdge - seedWidth)
+    const room = Math.max(MODULE_MIN_WIDTH, seedArea.x + seedArea.width - leftEdge)
+    seedWidth = Math.max(MODULE_MIN_WIDTH, Math.min(wantWidth, room))
+    seedX = leftEdge
     seedY = anchor.y
     seedHeight = anchor.height
   }
@@ -2008,6 +2024,11 @@ function openModuleWindow(modeId, width) {
     backgroundColor: THEMES[themeId()].bg,
     icon: appIconImage(),
     title: moduleWindowTitle(id),
+    // **无边框 + 无阴影**：模块窗口要跟长条**真拼在一起**（2026-10-13 项目所有者："现在拼接不起来"——
+    // 各自带系统边框与投影时，看着是两块窗而不是一体）。无边框后拖动仍可用（`-webkit-app-region` 是
+    // 下一刀；现在按住标题栏区域拖不动，但可以用系统快捷键/拖边缘调整）。
+    frame: false,
+    hasShadow: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -2041,9 +2062,21 @@ function openModuleWindow(modeId, width) {
   })
   hardenWindow(w)
   w.loadURL(moduleWindowUrl(id)).catch((err) => log(`module window failed: ${err.message}`))
+  // 模块排在长条右边 ⇒ 长条要先**左移**腾地方，再把模块贴上去（否则模块会压到长条上）
+  syncStripBoundsForModules()
   layoutModuleWindows()
-  log(`模块窗口打开：${id}（宽 ${entry.width}）`)
+  log(`模块窗口打开：${id}（宽 ${entry.width}，贴在长条右侧）`)
   return { ok: true, opened: true, ...shapeState(), modules: moduleWindowState() }
+}
+
+/** 模块窗口来去时重算长条几何（腾出/收回右侧那块地方）。 */
+function syncStripBoundsForModules() {
+  if (!win || win.isDestroyed() || currentShape() !== 'strip') return
+  try {
+    win.setBounds(shapeBounds('strip'))
+  } catch {
+    /* 忽略这一次 */
+  }
 }
 
 function closeModuleWindow(modeId) {
@@ -2056,6 +2089,8 @@ function closeModuleWindow(modeId) {
     /* 已经没了 */
   }
   moduleWins.delete(id)
+  // 收回地方：长条回到"没有模块"时的位置（右缘仍贴工作区右缘）
+  syncStripBoundsForModules()
   broadcastShape()
   log(`模块窗口关闭：${id}`)
   return { ok: true, closed: true, ...shapeState(), modules: moduleWindowState() }
@@ -2416,10 +2451,10 @@ function createWindow() {
         if (!win || win.isDestroyed() || currentShape() === 'normal') return
         const b = win.getBounds()
         const shape = currentShape()
-        // **记忆里存的是"条自己"的位置，不是被拼接撑宽后的窗口位置**（2026-10-13 实机 J 段抓到）：
-        // 拼接时窗口往左长（`x -= splice`），照写就会把撑宽后的 x 记成条的位置——收起后条会跑偏
-        // （右缘从 1392 漂到 1113）。所以写回时把 splice 加回去。
-        const ownX = shape === 'strip' ? b.x + currentSplice() : b.x
+        // **记忆里存的是"条自己"的位置，不是被拼接/模块撑开后的窗口位置**（2026-10-13 实机 J 段抓到）：
+        // 拼接时窗口往左长（`x -= reserved`），照写就会把撑开后的 x 记成条的位置——收起后条会跑偏
+        // （右缘从 1392 漂到 1113）。所以写回时把占位加回去。
+        const ownX = shape === 'strip' ? b.x + currentSplice() + moduleTotalWidth() : b.x
         settings.workbenchShapeBounds = { ...(settings.workbenchShapeBounds || {}), [shape]: { x: ownX, y: b.y } }
         saveSettings()
       }, 500)
@@ -2605,15 +2640,22 @@ function shapeBounds(shape) {
   }
   const splice = shape === 'strip' ? currentSplice() : 0
   const width = g.width + splice
+  // **模块窗口占的地方要从长条右侧让出来**：模块排在长条右边（模式界面），所以长条左移这么多，
+  // 整条"长条 + 模块"的右缘才仍然贴在工作区右缘（2026-10-13 项目所有者纠正了左右方向）。
+  const moduleTotal = shape === 'strip' ? moduleTotalWidth() : 0
+  // 占位要**夹住**：长条 + 右侧模块加起来不能超出工作区，否则长条会被挤到负坐标（实机踩过 -71）。
+  // 夹住的后果是模块自己变窄（在 layoutModuleWindows 里按剩余空间缩），长条始终留在屏上。
+  const reserved = Math.max(0, Math.min(splice + moduleTotal, Math.max(0, area.width - g.width - 32)))
   const height = g.height || Math.round(area.height * g.heightFactor)
   const mem = settings.workbenchShapeBounds && settings.workbenchShapeBounds[shape]
   const corner =
     g.corner === 'bottom-right'
-      ? { x: area.x + area.width - width - 16, y: area.y + area.height - height - 16 }
-      : { x: area.x + area.width - width - 16, y: area.y + 16 }
-  const usable = mem && validBounds({ x: mem.x - splice, y: mem.y, width, height })
-  // 记忆里存的是**长条自己**的位置（用户拖过的那条），所以拼接时 x 要左移 splice——右缘保持不动
-  return { ...(usable ? { x: mem.x - splice, y: mem.y } : corner), width, height }
+      ? { x: area.x + area.width - width - reserved - 16, y: area.y + area.height - height - 16 }
+      : { x: area.x + area.width - width - reserved - 16, y: area.y + 16 }
+  const usable = mem && validBounds({ x: mem.x - reserved, y: mem.y, width, height })
+  // 记忆里存的是**长条自己**的位置（用户拖过的那条），所以拼接/模块占位时 x 要左移那么多——
+  // 整条"长条 + 右侧模块"的右缘保持不动（2026-10-13：模块从左侧改到右侧后一并调整）
+  return { ...(usable ? { x: mem.x - reserved, y: mem.y } : corner), width, height }
 }
 
 function shapeState() {

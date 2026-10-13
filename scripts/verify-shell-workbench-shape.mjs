@@ -434,9 +434,11 @@ try {
     check('K 能为一个模式开**独立模块窗口**（壳记账、默认贴边）',
       opened?.ok === true && opened?.opened === true && Boolean(mod) && mod.anchored === true,
       JSON.stringify({ 回包: opened && { ok: opened.ok, opened: opened.opened }, modules: after.modules }))
-    const gap = before.bounds.x - (mod?.bounds?.x ?? 0) - (mod?.bounds?.width ?? 0)
-    // 缝允许 2–14：窗口边框在不同 DPI/主题下宽度不同（实测 6 与 8 都出现过）
-    check('K 模块窗口贴在长条左侧（缝 2–14px）且与长条等高',
+    const gap = (mod?.bounds?.x ?? 0) - (before.bounds.x + before.bounds.width)
+    // 缝允许 2–14：窗口边框在不同 DPI/主题下宽度不同（实测 6 与 8 都出现过）。
+    // **方向判"右侧"**（2026-10-13 项目所有者纠正：模式界面在工具台右边，左边留给子对话）——
+    // gap 为负说明又排到左边去了。
+    check('K 模块窗口贴在长条**右侧**（缝 2–14px）且与长条等高',
       Boolean(mod) && gap >= 2 && gap <= 14 && Math.abs(mod.bounds.height - before.bounds.height) <= 2,
       JSON.stringify({ 长条: before.bounds, 模块: mod?.bounds, 缝: gap }))
     const wins = winStyles(appPid)
