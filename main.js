@@ -2094,6 +2094,20 @@ function openModuleWindow(modeId, width) {
   })
   hardenWindow(w)
   w.loadURL(moduleWindowUrl(id)).catch((err) => log(`module window failed: ${err.message}`))
+  // **就绪后再落一次位**：建窗那一刻长条还没左移腾地方，而且窗口未映射时系统会把 setBounds 归一化
+  // （2026-10-13 实机 K 段：模块落到长条位置上、宽度也没按剩余空间缩）。三处兜：ready-to-show /
+  // did-finish-load / 500ms 定时——都是幂等的贴边计算，重复跑无害。
+  const settleModuleLayout = () => {
+    try {
+      syncStripBoundsForModules()
+      layoutModuleWindows()
+    } catch (err) {
+      log(`模块窗口落位失败：${err.message}`)
+    }
+  }
+  w.once('ready-to-show', settleModuleLayout)
+  w.webContents.once('did-finish-load', settleModuleLayout)
+  setTimeout(settleModuleLayout, 500)
   // 模块排在长条右边 ⇒ 长条要先**左移**腾地方，再把模块贴上去（否则模块会压到长条上）
   syncStripBoundsForModules()
   layoutModuleWindows()

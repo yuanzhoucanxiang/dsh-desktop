@@ -428,9 +428,23 @@ try {
     await sleep(800)
     const before = JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ bounds: s.bounds, modules: s.modules }) })()`))
     const opened = await ev(`window.dshShell.openModuleWindow('probe-module', 420)`)
-    await sleep(1000)
-    const after = JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ bounds: s.bounds, modules: s.modules }) })()`))
-    const mod = after.modules.find((m) => m.modeId === 'probe-module')
+    // **等它落位**：模块窗口要加载整个内核页（几秒），壳在 ready-to-show / did-finish-load / 500ms
+    // 三处兜着重新贴边（2026-10-13 实机：1s 时就断言会看到它还在种子位置/长条位置上）。
+    // 轮询到"模块右缘贴住长条左侧之外、且在屏内"为止，最多 10s；超时就按现场判红并打印证据。
+    const readState = async () =>
+      JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ bounds: s.bounds, modules: s.modules }) })()`))
+    let after = await readState()
+    let mod = after.modules.find((m) => m.modeId === 'probe-module')
+    const settled = (state) => {
+      const m = state.modules.find((x) => x.modeId === 'probe-module')
+      if (!m || !m.bounds) return false
+      return m.bounds.x >= state.bounds.x + state.bounds.width - 2
+    }
+    for (let i = 0; i < 40 && !settled(after); i++) {
+      await sleep(250)
+      after = await readState()
+      mod = after.modules.find((m) => m.modeId === 'probe-module')
+    }
     check('K 能为一个模式开**独立模块窗口**（壳记账、默认贴边）',
       opened?.ok === true && opened?.opened === true && Boolean(mod) && mod.anchored === true,
       JSON.stringify({ 回包: opened && { ok: opened.ok, opened: opened.opened }, modules: after.modules }))
