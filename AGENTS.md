@@ -31,6 +31,7 @@
 | `CHANGELOG.md` 的 `[Unreleased]` | 有**用户可见**的增/改/修时 | 用用户能读懂的话写，带署名 |
 | `AGENTS.md`（本文件） | 出现新的**可执行规则**时 | 规则 + 为什么 + 指向详细文档的路径 |
 | 专业文档：`plugin/workbench/README.md`、`docs/plans/workbench-layer-v1.md` §0.1、`docs/workbench-mode-guide.md` | 契约 / 机制 / 现状变化时 | 细节、字段名、门禁名、**仍未做项** |
+| **`docs/workbench-mode-constitution.md`（模式接入宪法）** | 新增/改造一个模式、或工具台契约变化时 | 十五条条文（每条：必须/应当/禁止 + 为什么 + 指针）+ 新模式的 12 步适配清单 + 现状对照表 |
 | `prototypes/*/README.md` 的落差表 | 原型里的东西落地或推翻时 | 已落地 / 未做——**落差表不许说谎** |
 
 三条纪律（都是踩过坑换来的）：
@@ -80,9 +81,10 @@
 
 ## 工具台长条线：五条下次直接能用的规则（2026-10-13）
 
+> **加/改模式先读 `docs/workbench-mode-constitution.md`（模式接入宪法，十五条 + 12 步清单）**。
 > 细节在 `plugin/workbench/README.md` §六、`docs/plans/workbench-layer-v1.md` §0.1/§6.4.x、
 > `docs/workbench-mode-guide.md`；原型与落差表在 `prototypes/workbench-home/README.md`。
-> 这里只放"下次动手前必须先知道"的部分。
+> 下面只放"下次动手前必须先知道"的部分。
 
 1. **形态分工**：壳在位 → 主屏收成 `strip`（**对话优先，不摆瓷砖格**），模式入口是**右缘接缝**；
    桥缺席（官方壳/老包/探针假宿主）→ 宽窗主屏 + 瓷砖格。改主屏布局前先问"这是给哪种形态写的"。
