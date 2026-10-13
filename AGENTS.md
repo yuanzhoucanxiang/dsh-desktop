@@ -57,6 +57,19 @@
 - **一轮里我犯的错也要写**：2026-10-13 那轮记了两条（提交了只有调用没有定义的 preload；注入挂在
   异步路径上导致拖拽带根本没注入）。**只写成绩的日志没有维护价值**。
 - **改插件源码后记得重建桌面那份产物**：直接跑 `electron.exe .` 会绕过 `prestart`（踩坑 #45）。
+- **每轮收尾跑一次"文档覆盖审计"**（比记性可靠；2026-10-13 首次跑就发现最近 10 笔有 7 笔没进索引）：
+
+  ```powershell
+  # 在 dsh-desktop 下：逐笔查"提交号有没有落进 WORKLOG 索引 / 当日日志"
+  $hashes = git log --format="%h" -10
+  foreach ($h in $hashes) {
+    $idx = Select-String -Path WORKLOG.md -Pattern $h -SimpleMatch -Quiet
+    $log = Select-String -Path "logs/$(Get-Date -Format yyyy-MM-dd).md" -Pattern $h -SimpleMatch -Quiet
+    "{0} 索引:{1} 日志:{2}  {3}" -f $h, $(if($idx){"✓"}else{"✗"}), $(if($log){"✓"}else{"✗"}), (git log -1 --format="%s" $h)
+  }
+  ```
+
+  出现 `✗` 就**同一轮补齐**（索引行 + 日志里带上提交号）——"内容写了但没落提交号"也算缺口。
 
 ## 2.2 测试/预览实例一律放**非主屏**（2026-10-13 项目所有者要求）
 
