@@ -2375,10 +2375,12 @@ function createWindow() {
   const pinnedArea = displayPinned
     ? anchorArea(bounds && Number.isFinite(bounds.x) ? bounds : screen.getPrimaryDisplay().bounds)
     : null
-  const firstWidth = bounds?.width || 1360
-  const firstHeight = bounds?.height || 920
-  const firstX = bounds?.x ?? (pinnedArea ? pinnedArea.x + Math.round((pinnedArea.width - firstWidth) / 2) : undefined)
-  const firstY = bounds?.y ?? (pinnedArea ? pinnedArea.y + Math.round((pinnedArea.height - firstHeight) / 2) : undefined)
+  // **尺寸也要夹进目标屏**：默认 1360×920 落在 1093×698 的副屏上，居中会算出 x=-133（探出屏幕，
+  // 2026-10-13 实机预览两次都踩到）。夹完再居中。
+  const firstWidth = pinnedArea ? Math.max(980, Math.min(bounds?.width || 1360, pinnedArea.width - 16)) : bounds?.width || 1360
+  const firstHeight = pinnedArea ? Math.max(640, Math.min(bounds?.height || 920, pinnedArea.height - 16)) : bounds?.height || 920
+  const firstX = bounds?.x ?? (pinnedArea ? pinnedArea.x + Math.max(0, Math.round((pinnedArea.width - firstWidth) / 2)) : undefined)
+  const firstY = bounds?.y ?? (pinnedArea ? pinnedArea.y + Math.max(0, Math.round((pinnedArea.height - firstHeight) / 2)) : undefined)
   win = new BrowserWindow({
     width: firstWidth,
     height: firstHeight,
@@ -2579,9 +2581,13 @@ function anchorArea(anchor) {
 function preferredDisplaySeed(width, height) {
   if (!String(process.env.DSH_DESKTOP_DISPLAY || '').trim()) return {}
   const area = anchorArea(screen.getPrimaryDisplay().bounds)
-  const w = Number(width) || 1200
-  const h = Number(height) || 800
+  // **尺寸也要夹进目标屏**：默认主窗 1360 宽，落在 1093 宽的副屏上居中会算出 x=-133（探出屏幕）——
+  // 2026-10-13 实机预览实测踩到。所以宽度/高度取 min(请求值, 工作区 - 20)。
+  const w = Math.max(320, Math.min(Number(width) || 1200, area.width - 20))
+  const h = Math.max(240, Math.min(Number(height) || 800, area.height - 20))
   return {
+    width: w,
+    height: h,
     x: area.x + Math.max(0, Math.round((area.width - w) / 2)),
     y: area.y + Math.max(0, Math.round((area.height - h) / 2)),
   }
