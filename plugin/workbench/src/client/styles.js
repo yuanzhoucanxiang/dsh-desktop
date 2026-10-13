@@ -97,6 +97,13 @@ export const CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
+  // 拼接区（长条右侧那一列）：窗口已由壳加宽，这里只把列摆进去（宽度来自 spliceWidth）
+  '.dshWbHomeBody.is-spliced{gap:10px;}',
+  '.dshWbSplice{flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}',
+  '.dshWbSpliceHead{flex:none;display:flex;align-items:center;gap:8px;}',
+  '.dshWbSpliceLabel{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  '.dshWbSpliceBody{flex:1;min-height:0;overflow:auto;}',
+  '.dshWbSeamItem.is-spliced{border-color:var(--dsw-alias-brand-primary);}',
   '.dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}',
   '.dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
   // 「退出」用文字（不是字形）：它是回主界面的唯一出口，得一眼看懂（2026-10-13 项目所有者问过"怎么回去"）

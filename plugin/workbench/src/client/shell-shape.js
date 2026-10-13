@@ -29,6 +29,28 @@ export async function requestShape(shape) {
 }
 
 /**
+ * 申请**拼接宽度**（2026-10-13）：模式界面拼在长条旁边时窗口要跟着变宽。
+ * 只说"要拼多宽"——`0` = 收起，或 280–760（越界由主进程夹住）；x/y/高度永远由壳算。
+ * 桥上没有这个方法（老壳）→ 返回 `no-splice-bridge`，门面据此**不显示拼接区**（不许把界面画到窗口外）。
+ */
+export async function requestSplice(width) {
+  const bridge = getShapeBridge()
+  if (!bridge || typeof bridge.setWorkbenchSplice !== 'function') return { ok: false, error: 'no-splice-bridge' }
+  try {
+    const result = await bridge.setWorkbenchSplice(Number(width))
+    return result && typeof result === 'object' ? result : { ok: false, error: 'bad-response' }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+}
+
+/** 壳支不支持拼接（老壳没有这个方法 → 拼接入口整个不出现）。 */
+export function hasSpliceBridge(globalThisRef = typeof window === 'undefined' ? null : window) {
+  const bridge = globalThisRef && globalThisRef.dshShell
+  return Boolean(bridge && typeof bridge.setWorkbenchSplice === 'function')
+}
+
+/**
  * 读壳当前形态（用于**挂载时对账**：页面重载/插件重挂后主屏是关的，而壳可能还停在条状）。
  * 读不到就返回 null——对账失败不该影响门面能用。
  */

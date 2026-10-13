@@ -401,6 +401,13 @@ var CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
+  // 拼接区（长条右侧那一列）：窗口已由壳加宽，这里只把列摆进去（宽度来自 spliceWidth）
+  ".dshWbHomeBody.is-spliced{gap:10px;}",
+  ".dshWbSplice{flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}",
+  ".dshWbSpliceHead{flex:none;display:flex;align-items:center;gap:8px;}",
+  ".dshWbSpliceLabel{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWbSpliceBody{flex:1;min-height:0;overflow:auto;}",
+  ".dshWbSeamItem.is-spliced{border-color:var(--dsw-alias-brand-primary);}",
   ".dshWbBarBtn{flex:none;width:26px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;}",
   ".dshWbBarBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   // 「退出」用文字（不是字形）：它是回主界面的唯一出口，得一眼看懂（2026-10-13 项目所有者问过"怎么回去"）
@@ -598,6 +605,13 @@ var T = {
   seamLabel: "模式接缝",
   seamHint: "悬停右缘呼出模式",
   seamEmpty: "还没有模式可拼",
+  // 拼接（2026-10-13，用户拍板 A：接缝点模式 = **拼到右侧**；进全屏走宽窗主屏的「进入」）
+  spliceTo: (label) => `把${label}拼到右侧（要它的全屏界面就回宽窗主屏点「进入」）`,
+  spliceTitle: (label) => `${label} · 已拼接`,
+  spliceCollapse: "收起拼接",
+  spliceNoView: (label) => `${label}还没提供可嵌入视图，拼不了；回宽窗主屏点「进入」可以用它的完整界面。`,
+  spliceFailed: (err) => `拼接没成功（${err}）——窗口没变宽，界面保持原样。`,
+  spliced: "已拼接",
   activeNone: "未进入任何模式",
   exit: "退出模式",
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
@@ -1414,6 +1428,16 @@ async function requestShape(shape) {
     return { ok: false, error: String(err && err.message || err) };
   }
 }
+async function requestSplice(width) {
+  const bridge = getShapeBridge();
+  if (!bridge || typeof bridge.setWorkbenchSplice !== "function") return { ok: false, error: "no-splice-bridge" };
+  try {
+    const result = await bridge.setWorkbenchSplice(Number(width));
+    return result && typeof result === "object" ? result : { ok: false, error: "bad-response" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
 async function readShape() {
   const bridge = getShapeBridge();
   if (!bridge) return null;
@@ -1446,6 +1470,7 @@ async function requestWindowClose(globalThisRef = typeof window === "undefined" 
 }
 
 // plugin/workbench/src/client/Chrome.js
+var SPLICE_WIDTH = 420;
 var SEAM_FAN_OUT = 46;
 var SEAM_FAN_GAP = 44;
 var SEAM_FAN_STAGGER = 45;
@@ -1476,6 +1501,8 @@ function WorkbenchChrome() {
   const sessionState = useSessionSnapshot();
   const telemetry = useSessionTelemetry(sessionState.sessions, sessionState.sessionId);
   const [seamOpen, setSeamOpen] = react5.useState(false);
+  const [spliced, setSpliced] = react5.useState(null);
+  const [spliceWidth, setSpliceWidth] = react5.useState(0);
   const askedForStrip = react5.useRef(false);
   react5.useEffect(() => {
     let cancelled = false;
@@ -1505,6 +1532,7 @@ function WorkbenchChrome() {
       if (open2 || !getShapeBridge()) return;
       const now = await readShape();
       if (cancelled || !now || now.shape === "normal" || now.shape === void 0) return;
+      if (Number(now.spliceWidth) > 0) await requestSplice(0);
       const result = await requestShape("normal");
       if (!cancelled && result.ok) setShape("normal");
     })();
@@ -1550,7 +1578,29 @@ function WorkbenchChrome() {
     const result = await requestShape(next);
     setShape(result.ok ? next : `failed:${result.error}`);
   };
+  const spliceMode = async (id) => {
+    if (spliced === id) return collapseSplice();
+    const view = registry2.dockViewOf(id);
+    if (!view) {
+      setNotice({ kind: "info", text: T.spliceNoView(registry2.resolveLabel(id)) });
+      return;
+    }
+    const result = await requestSplice(SPLICE_WIDTH);
+    if (!result.ok) {
+      setNotice({ kind: "error", text: T.spliceFailed(result.error) });
+      return;
+    }
+    setSpliced(id);
+    setSpliceWidth(Number(result.spliceWidth) || SPLICE_WIDTH);
+  };
+  const collapseSplice = async () => {
+    if (!spliced) return { ok: true };
+    setSpliced(null);
+    setSpliceWidth(0);
+    return requestSplice(0);
+  };
   const exitWorkbench = async () => {
+    await collapseSplice();
     if (active) {
       const result = await exitMode(registry2);
       if (!result.ok) return;
@@ -1558,6 +1608,7 @@ function WorkbenchChrome() {
     setOpen(false);
   };
   const backToWide = async () => {
+    await collapseSplice();
     const result = await requestShape("normal");
     if (result.ok) setShape("normal");
   };
@@ -1735,6 +1786,39 @@ function WorkbenchChrome() {
       mode.active ? react5.createElement("span", { className: "dshWbRowMark" }, T.current) : null
     );
   });
+  const splicedView = spliced ? registry2.dockViewOf(spliced) : null;
+  const splicePanel = spliced && splicedView ? react5.createElement(
+    "section",
+    {
+      className: "dshWbSplice",
+      "data-wb-splice": spliced,
+      "data-wb-splice-width": String(spliceWidth || ""),
+      style: spliceWidth ? { flexBasis: `${spliceWidth}px` } : void 0,
+      "aria-label": T.spliceTitle(splicedView.label)
+    },
+    react5.createElement(
+      "div",
+      { className: "dshWbSpliceHead" },
+      react5.createElement("span", { className: "dshWbSpliceLabel" }, T.spliceTitle(splicedView.label)),
+      react5.createElement(
+        "button",
+        {
+          type: "button",
+          className: "dshWbBarBtn",
+          title: T.spliceCollapse,
+          "aria-label": T.spliceCollapse,
+          onClick: () => void collapseSplice(),
+          "data-wb-splice-collapse": ""
+        },
+        "✕"
+      )
+    ),
+    react5.createElement(
+      "div",
+      { className: "dshWbSpliceBody", "data-wb-splice-body": "" },
+      react5.createElement(splicedView.view)
+    )
+  ) : null;
   return react5.createElement(
     "div",
     { className: "dshWbHome", onKeyDown, "data-wb-switcher": "", "data-wb-shape": shape || "none" },
@@ -1758,7 +1842,7 @@ function WorkbenchChrome() {
       ) : null,
       react5.createElement(
         "div",
-        { className: "dshWbHomeBody" },
+        { className: `dshWbHomeBody${splicePanel ? " is-spliced" : ""}`, "data-wb-home-body": splicePanel ? "spliced" : "plain" },
         react5.createElement(
           "aside",
           { className: "dshWbChat", "data-wb-chat": "", "aria-label": T.chatTitle },
@@ -1767,11 +1851,13 @@ function WorkbenchChrome() {
           react5.createElement(ConversationTile, {
             onBack: backToChat,
             modes,
-            onPickMode: (id) => void switchMode(registry2, id)
+            onPickMode: (id) => void spliceMode(id)
+            // 长条下的模式入口 = 拼接（用户拍板 A）
           })
         ),
-        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
-        isStrip ? null : modes.length === 0 ? react5.createElement(
+        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格。
+        // 拼接时右侧多一列：模式的**可嵌入视图**（第一版就用它的 `dock` 视图）——窗口已由壳加宽。
+        isStrip ? splicePanel : modes.length === 0 ? react5.createElement(
           "div",
           { className: "dshWbEmpty", "data-wb-empty": "" },
           react5.createElement("div", null, T.empty),
@@ -1812,15 +1898,17 @@ function WorkbenchChrome() {
           const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t)));
           const y = Math.round((i - mid) * SEAM_FAN_GAP);
           const delay = i * SEAM_FAN_STAGGER;
+          const isSpliced = spliced === mode.id;
           return react5.createElement(
             "button",
             {
               key: mode.id,
               type: "button",
-              className: `dshWbSeamItem${mode.active ? " is-active" : ""}`,
+              className: `dshWbSeamItem${mode.active ? " is-active" : ""}${isSpliced ? " is-spliced" : ""}`,
               style: { "--wb-out": String(out), "--wb-y": String(y), "--wb-delay": `${delay}ms` },
-              onClick: () => void switchMode(registry2, mode.id),
-              title: T.switchTo(mode.label),
+              // 用户拍板 A：接缝点一下 = **拼到右侧**（进模式全屏走宽窗主屏的瓷砖「进入」）
+              onClick: () => void spliceMode(mode.id),
+              title: T.spliceTo(mode.label),
               "data-wb-seam-mode": mode.id,
               "data-wb-seam-out": String(out),
               "data-wb-seam-y": String(y),
@@ -1834,7 +1922,7 @@ function WorkbenchChrome() {
               "aria-hidden": "true"
             }),
             react5.createElement("span", { className: "dshWbSeamText" }, mode.label),
-            mode.active ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
+            isSpliced ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "spliced" }, T.spliced) : mode.active ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
           );
         })
       )

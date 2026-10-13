@@ -21,8 +21,11 @@ import { setNotice, setOpen } from './ui-store.js'
 import { useWorkbench } from './use-workbench.js'
 import { exitMode, switchMode } from './actions.js'
 import { ConversationTile } from './ConversationTile.js'
-import { getShapeBridge, openSettings, readShape, requestShape, requestWindowClose } from './shell-shape.js'
+import { getShapeBridge, hasSpliceBridge, openSettings, readShape, requestShape, requestSplice, requestWindowClose } from './shell-shape.js'
 import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
+
+/** 拼接区默认宽度（px）：壳侧允许 280–760，这里取中间值；用户拖拽调宽是下一刀。 */
+const SPLICE_WIDTH = 420
 
 /** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
 const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
@@ -74,6 +77,9 @@ export function WorkbenchChrome() {
   // 接缝扇形的开合（悬停/聚焦）。用 React 状态而不是纯 CSS `:hover`：探针能直接读
   // `data-wb-seam-open` 与逐颗的几何属性，不必去合成鼠标事件猜样式。
   const [seamOpen, setSeamOpen] = react.useState(false)
+  // 拼接：右侧拼的是哪个模式（null = 没拼）+ 实际拼到的宽度（壳回读）
+  const [spliced, setSpliced] = react.useState(null)
+  const [spliceWidth, setSpliceWidth] = react.useState(0)
   const askedForStrip = react.useRef(false)
   react.useEffect(() => {
     let cancelled = false
@@ -108,6 +114,9 @@ export function WorkbenchChrome() {
       if (open || !getShapeBridge()) return
       const now = await readShape()
       if (cancelled || !now || now.shape === 'normal' || now.shape === undefined) return
+      // 拼接宽度也一起对账：壳可能还停在上次拼宽的状态（`settings.workbenchSplice` 是持久化的），
+      // 而门面这边没有拼任何模式 → 先把它收回去，再还形态（顺序无所谓，两个都是幂等请求）。
+      if (Number(now.spliceWidth) > 0) await requestSplice(0)
       const result = await requestShape('normal')
       if (!cancelled && result.ok) setShape('normal')
     })()
@@ -173,7 +182,35 @@ export function WorkbenchChrome() {
     const result = await requestShape(next)
     setShape(result.ok ? next : `failed:${result.error}`)
   }
+  /* ── 模式拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**） ─────────────
+   * 与"进入模式"分工：进全屏走宽窗主屏的瓷砖「进入」；接缝点一下是把该模式的**可嵌入视图**
+   * 拼在长条右侧（第一版就用模式已提供的 `dock` 视图），窗口跟着变宽（壳侧 `splice` 几何）。
+   * 纪律：① 没有可嵌入视图的模式**不拼**（如实说明，不硬塞）；② 壳不支持拼接（老壳）时
+   * 整个入口不出现；③ 进入模式 / 关主屏 / 退出工具台时**先收起拼接**，别把窗口留在加宽状态。
+   */
+  const spliceMode = async (id) => {
+    if (spliced === id) return collapseSplice()
+    const view = registry.dockViewOf(id)
+    if (!view) {
+      setNotice({ kind: 'info', text: T.spliceNoView(registry.resolveLabel(id)) })
+      return
+    }
+    const result = await requestSplice(SPLICE_WIDTH)
+    if (!result.ok) {
+      setNotice({ kind: 'error', text: T.spliceFailed(result.error) })
+      return
+    }
+    setSpliced(id)
+    setSpliceWidth(Number(result.spliceWidth) || SPLICE_WIDTH)
+  }
+  const collapseSplice = async () => {
+    if (!spliced) return { ok: true }
+    setSpliced(null)
+    setSpliceWidth(0)
+    return requestSplice(0)
+  }
   const exitWorkbench = async () => {
+    await collapseSplice()
     if (active) {
       const result = await exitMode(registry)
       if (!result.ok) return
@@ -184,6 +221,7 @@ export function WorkbenchChrome() {
   // ← 与 ⎋ 的区别：← **只是把窗口变回宽窗**（主屏还在，瓷砖格随之出现 = 原型的"工作区选择"），
   // ⎋ 才是退出工具台（有模式在场时先过同一套守卫）。
   const backToWide = async () => {
+    await collapseSplice() // 回宽窗主屏 = 不拼了（主屏自己有瓷砖格，拼着的模式视图没地方站）
     const result = await requestShape('normal')
     if (result.ok) setShape('normal')
   }
@@ -374,6 +412,45 @@ export function WorkbenchChrome() {
     )
   })
 
+  // 拼接面板（长条右侧那一列）：模式的**可嵌入视图**（第一版 = 它的 `dock` 视图）+ 收起钮。
+  // 宽度由壳回读的 `spliceWidth` 定（窗口已按它加宽），这里只把列摆进去。
+  const splicedView = spliced ? registry.dockViewOf(spliced) : null
+  const splicePanel =
+    spliced && splicedView
+      ? react.createElement(
+          'section',
+          {
+            className: 'dshWbSplice',
+            'data-wb-splice': spliced,
+            'data-wb-splice-width': String(spliceWidth || ''),
+            style: spliceWidth ? { flexBasis: `${spliceWidth}px` } : undefined,
+            'aria-label': T.spliceTitle(splicedView.label),
+          },
+          react.createElement(
+            'div',
+            { className: 'dshWbSpliceHead' },
+            react.createElement('span', { className: 'dshWbSpliceLabel' }, T.spliceTitle(splicedView.label)),
+            react.createElement(
+              'button',
+              {
+                type: 'button',
+                className: 'dshWbBarBtn',
+                title: T.spliceCollapse,
+                'aria-label': T.spliceCollapse,
+                onClick: () => void collapseSplice(),
+                'data-wb-splice-collapse': '',
+              },
+              '✕',
+            ),
+          ),
+          react.createElement(
+            'div',
+            { className: 'dshWbSpliceBody', 'data-wb-splice-body': '' },
+            react.createElement(splicedView.view),
+          ),
+        )
+      : null
+
   return react.createElement(
     'div',
     { className: 'dshWbHome', onKeyDown, 'data-wb-switcher': '', 'data-wb-shape': shape || 'none' },
@@ -401,7 +478,7 @@ export function WorkbenchChrome() {
         : null,
       react.createElement(
         'div',
-        { className: 'dshWbHomeBody' },
+        { className: `dshWbHomeBody${splicePanel ? ' is-spliced' : ''}`, 'data-wb-home-body': splicePanel ? 'spliced' : 'plain' },
         react.createElement(
           'aside',
           { className: 'dshWbChat', 'data-wb-chat': '', 'aria-label': T.chatTitle },
@@ -410,12 +487,13 @@ export function WorkbenchChrome() {
           react.createElement(ConversationTile, {
             onBack: backToChat,
             modes,
-            onPickMode: (id) => void switchMode(registry, id),
+            onPickMode: (id) => void spliceMode(id), // 长条下的模式入口 = 拼接（用户拍板 A）
           }),
         ),
-        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格
+        // 长条形态：**对话优先**，瓷砖格让位给右缘接缝（原型 v2.2）；主屏（normal）仍保留瓷砖格。
+        // 拼接时右侧多一列：模式的**可嵌入视图**（第一版就用它的 `dock` 视图）——窗口已由壳加宽。
         isStrip
-          ? null
+          ? splicePanel
           : modes.length === 0
             ? react.createElement(
                 'div',
@@ -464,15 +542,17 @@ export function WorkbenchChrome() {
                   const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t))) // 中间那颗顶到最外
                   const y = Math.round((i - mid) * SEAM_FAN_GAP)
                   const delay = i * SEAM_FAN_STAGGER
+                  const isSpliced = spliced === mode.id
                   return react.createElement(
                     'button',
                     {
                       key: mode.id,
                       type: 'button',
-                      className: `dshWbSeamItem${mode.active ? ' is-active' : ''}`,
+                      className: `dshWbSeamItem${mode.active ? ' is-active' : ''}${isSpliced ? ' is-spliced' : ''}`,
                       style: { '--wb-out': String(out), '--wb-y': String(y), '--wb-delay': `${delay}ms` },
-                      onClick: () => void switchMode(registry, mode.id),
-                      title: T.switchTo(mode.label),
+                      // 用户拍板 A：接缝点一下 = **拼到右侧**（进模式全屏走宽窗主屏的瓷砖「进入」）
+                      onClick: () => void spliceMode(mode.id),
+                      title: T.spliceTo(mode.label),
                       'data-wb-seam-mode': mode.id,
                       'data-wb-seam-out': String(out),
                       'data-wb-seam-y': String(y),
@@ -486,7 +566,11 @@ export function WorkbenchChrome() {
                       'aria-hidden': 'true',
                     }),
                     react.createElement('span', { className: 'dshWbSeamText' }, mode.label),
-                    mode.active ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current) : null,
+                    isSpliced
+                      ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'spliced' }, T.spliced)
+                      : mode.active
+                        ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current)
+                        : null,
                   )
                 }),
               ),

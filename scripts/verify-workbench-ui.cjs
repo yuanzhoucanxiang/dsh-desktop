@@ -151,15 +151,23 @@ app.whenReady().then(async () => {
     window.__overlayLog = [];
     window.__closeCalls = 0;
     window.__settingsCalls = 0;
+    window.__spliceLog = [];
     window.dshShell = {
-      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false }),
+      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false, spliceWidth: 0, spliceRange: [280, 760] }),
       setWorkbenchShape: async (s) => {
         window.__shapeLog.push(s);
-        return { ok: true, shape: s, alwaysOnTop: s !== 'normal' };
+        return { ok: true, shape: s, alwaysOnTop: s !== 'normal', spliceWidth: 0, spliceRange: [280, 760] };
       },
       // 顶栏「⚙」（2026-10-13）：走壳既有的设置通道，假桥只记调用次数
       // （注意：这一段在 HTML 模板字符串里，注释**不能出现反引号**——会把模板截断，2026-10-13 踩过）
       openSettings: async () => { window.__settingsCalls += 1; return { ok: true } },
+      // 拼接宽度（2026-10-13）：假桥照真壳的口径回包（越界夹住），只记调用
+      setWorkbenchSplice: async (w) => {
+        const n = Number(w);
+        const next = !Number.isFinite(n) || n <= 0 ? 0 : Math.max(280, Math.min(760, Math.round(n)));
+        window.__spliceLog.push(next);
+        return { ok: true, shape: 'strip', spliceWidth: next, spliceRange: [280, 760] };
+      },
       // 浮标已于 2026-10-13 移除（用户："这个浮标没有用就去掉"）：假桥**不再提供**这两个方法，
       // 门面若还偷偷调用会当场抛错；下面另有守卫断言钉"一次都没调过"。
       closeWorkbenchWindow: async () => { window.__closeCalls += 1; return { ok: true } },
@@ -229,6 +237,20 @@ app.whenReady().then(async () => {
     evaluate(
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('click target missing: ' + ${JSON.stringify(selector)}); el.click(); return 0 })()`,
     )
+  // **进模式（全屏）现在只有宽窗主屏那条路**（2026-10-13 用户拍板 A：接缝点一下 = 拼接）。
+  // 所以切模式要先回宽窗（← 收拼接 + 申请 normal），再点瓷砖「进入」或按钮卡。
+  // 两个细节：① 已经在宽窗主屏时没有顶栏（← 只存在于条状）→ 跳过那一步；
+  // ② 测"守卫拒绝"时**不能等成功**（`mayBeBlocked`），否则会撞超时。
+  const enterModeViaWide = async (id, opts = {}) => {
+    if (await evaluate(`!!document.querySelector('[data-wb-btn="back"]')`)) {
+      await click('[data-wb-btn="back"]')
+    }
+    await waitFor(`document.querySelector('[data-wb-tiles]')!==null || document.querySelector('[data-wb-empty]')!==null`, '回宽窗后应看到主屏内容')
+    await click(`[data-wb-tile-enter="${id}"],[data-wb-mode="${id}"]`)
+    if (!opts.mayBeBlocked) {
+      await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='${id}'`, `应进入 ${id}`)
+    }
+  }
 
   await win.loadURL(`http://127.0.0.1:${server.address().port}`)
   await waitFor(`!!window.__wbPlugin && !!window.__wbPlugin.__workbenchRegistry()`, 'client 未加载')
@@ -435,10 +457,16 @@ app.whenReady().then(async () => {
   win.setContentSize(900, 700)
   await sleep(300)
   assert.equal(await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`), null, '主屏本身不应改当前模式')
-  await click('[data-wb-seam-mode="demo"]')
-  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '点接缝里的模式应进入它')
+  // 用户拍板 A 之后：进模式走**宽窗主屏的「进入」**（接缝点一下是拼接，见 ⑪ 组）
+  await enterModeViaWide('demo')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
-  assert.deepEqual(await evaluate(`window.__shapeLog`), ['strip', 'normal'], '关闭主屏（进入模式）应还原 normal——模式要宽窗')
+  // 进模式这条路现在会**先回宽窗**（← 申请 normal）再点「进入」，所以形态日志里多了几条——
+  // 判据改成"头一条是 strip、末一条是 normal"（不再写死整条日志）
+  {
+    const shapeLogNow = await evaluate(`window.__shapeLog`)
+    assert.equal(shapeLogNow[0], 'strip', '打开主屏应申请 strip')
+    assert.equal(shapeLogNow[shapeLogNow.length - 1], 'normal', '关闭主屏（进入模式）应还原 normal——模式要宽窗')
+  }
   assert.equal(await evaluate(`JSON.stringify(window.__act)`), JSON.stringify(['switch']))
   await waitFor(`document.querySelector('[data-wb-active-label]')!==null`, '入口应显示当前模式名')
   assert.equal(await text('[data-wb-active-label]'), '演示模式')
@@ -595,8 +623,7 @@ app.whenReady().then(async () => {
   // 收尾把状态交还给后续各组：重新进入 demo（④ 断言"任何时刻只有一个当前模式"要它在场）
   await click('[data-wb-entry]')
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '重新打开主屏')
-  await click('[data-wb-seam-mode="demo"]')
-  await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo'`, '重进 demo 模式')
+  await enterModeViaWide('demo')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入模式后主屏应关闭')
 
   // ④ 多模式：切换器列出全部，当前项有标记
@@ -610,7 +637,7 @@ app.whenReady().then(async () => {
 
   // ⑤ 关闭守卫拒绝：不切换、不自造提示、切换器留在原地
   await evaluate('window.__guardDemo = false')
-  await click('[data-wb-seam-mode="demo2"]')
+  await enterModeViaWide('demo2', { mayBeBlocked: true })
   await sleep(300)
   assert.equal(await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`), 'demo', '守卫拒绝时不得切换')
   assert.equal(await count('[data-wb-switcher]'), 1, '守卫拒绝后切换器应留在原地（由模式自己说明原因）')
@@ -619,7 +646,7 @@ app.whenReady().then(async () => {
 
   // ⑥ 放行后切换成功，且写进 host 状态文件
   await evaluate('window.__guardDemo = true')
-  await click('[data-wb-seam-mode="demo2"]')
+  await enterModeViaWide('demo2')
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo2'`, '放行后应切换')
   // 注意：切换成功与切换器关闭不在同一个 tick（setActive 先落 activeId，随后才 setOpen(false)），
   // 所以要**等**它消失——直接断言会撞上竞态（2026-10-11 实测）。
@@ -704,8 +731,47 @@ app.whenReady().then(async () => {
     '移开接缝应收起扇形',
   )
 
+  // ⑪ 拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**，不是进入模式）。
+  // 需要"提供可嵌入视图"的模式：这里现注册一个带 dock 视图的（前几组要验瓷砖，不能提前注册）。
+  await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
+    id:'demoDock', label:'带坞视图的模式', order:70,
+    dock:{ label:'坞视图', view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
+  }); return 0 })()`)
+  {
+    const activeBefore = await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`)
+    await click('[data-wb-seam-mode="demoDock"]')
+    await waitFor(`document.querySelector('[data-wb-splice]')!==null`, '点接缝里的模式应把它拼到右侧')
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-splice]').getAttribute('data-wb-splice')`),
+      'demoDock',
+      '拼接区应挂着这个模式',
+    )
+    assert.equal(
+      await evaluate(`JSON.stringify(window.__spliceLog)`),
+      JSON.stringify([420]),
+      '拼接要向壳申请 420（只发宽度这一个标量）',
+    )
+    assert.equal(
+      await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`),
+      activeBefore,
+      '拼接**不该**改当前模式（进入模式是主屏瓷砖「进入」的事）',
+    )
+    assert.equal(await count('[data-wb-splice-demo]'), 1, '拼接区应渲染模式自己的可嵌入视图')
+    assert.equal(await count('[data-wb-seam-tag="spliced"]'), 1, '接缝里应标出"已拼接"')
+    // 收起：窗口要还回去（申请 0）
+    await click('[data-wb-splice-collapse]')
+    await waitFor(`document.querySelector('[data-wb-splice]')===null`, '点收起应撤掉拼接区')
+    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog)`), JSON.stringify([420, 0]), '收起要向壳申请 0')
+    // 没有可嵌入视图的模式：**不许拼**（如实说明，窗口不变宽）
+    await click('[data-wb-seam-mode="demo"]')
+    await sleep(300)
+    assert.equal(await count('[data-wb-splice]'), 0, '没有可嵌入视图的模式不该被拼上')
+    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog)`), JSON.stringify([420, 0]), '拼不了就不该动窗口')
+    assert.ok((await text('[data-wb-switcher]')).includes('可嵌入视图'), '拼不了要如实说明原因')
+  }
+
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
-  console.log('WORKBENCH_UI_OK 10 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何）')
+  console.log('WORKBENCH_UI_OK 11 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何/拼接）')
   await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {
