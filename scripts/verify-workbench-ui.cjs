@@ -804,6 +804,31 @@ app.whenReady().then(async () => {
     )
     assert.equal(await evaluate(`document.querySelector('[data-wb-splice-wrap]').getAttribute('data-wb-splice-wrap')`), '2', '外层应报出拼了几块')
 
+    // **拼接的"形式"**（2026-10-13 实机抓到错版：长条那套竖排没被覆盖 ⇒ 对话列占满整宽、拼接区被挤到下面；
+    // 而且接缝一直贴在窗口最外缘 ⇒ 扇形跑到面板外侧）。判据：横排（拼接区在对话列右侧、两者齐顶）
+    // + 接缝站在**拼合处**（长条与拼接区之间那条缝），不是窗口最外缘。
+    // 注意：假壳不会真把窗口撑宽，所以这里**手动把视口设成"长条 + 拼接"的真实总宽**——
+    // 否则接缝的 `right: 拼接宽` 会算到视口左边去（第一次就是这么红的）。
+    win.setContentSize(420 + 10 + 840 + 2, 700)
+    await sleep(400)
+    const layout = JSON.parse(
+      await evaluate(
+        `JSON.stringify((() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) } }; return { chat: r('[data-wb-chat]'), wrap: r('[data-wb-splice-wrap]'), seam: r('[data-wb-seam]'), win: innerWidth } })())`,
+      ),
+    )
+    assert.ok(layout.wrap.x >= layout.chat.x + layout.chat.w - 4, `拼接区应在对话列右侧（横排，不许叠在下面）：${JSON.stringify(layout)}`)
+    assert.ok(Math.abs(layout.wrap.y - layout.chat.y) <= 6, `对话列与拼接区应齐顶：${JSON.stringify(layout)}`)
+    assert.ok(layout.chat.w <= layout.win * 0.6, `拼接后对话列应保持长条自己的宽度，不该占满整宽：${JSON.stringify(layout)}`)
+    assert.ok(
+      layout.seam.x >= layout.chat.x + layout.chat.w - 40 && layout.seam.x <= layout.chat.x + layout.chat.w + 4,
+      `接缝应站在长条与拼接区的拼合处：${JSON.stringify(layout)}`,
+    )
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-at')`),
+      'junction',
+      '拼接后接缝应标成 junction（拼合处），不是窗口最外缘',
+    )
+
     // 拖拽调宽：往左拖 100px → 该块 420 → 520，总宽申请 940
     await evaluate(`(() => {
       const grip = document.querySelector('[data-wb-splice-grip]');

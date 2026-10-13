@@ -84,6 +84,13 @@ export function WorkbenchChrome() {
   // 拼接：右侧拼了哪些模式（数组，**index 0 = 贴着主长条那块**；新拼的插到最前）+ 壳回读的总宽
   const [spliced, setSpliced] = react.useState([])
   const [spliceWidth, setSpliceWidth] = react.useState(0)
+  // 长条**自己**的宽度（壳报的，别在插件里写死 420）：拼接时用它把对话列钉住
+  const [stripWidth, setStripWidth] = react.useState(SPLICE_WIDTH)
+  /** 壳每次回包都带 `stripWidth`，见到就记下来（挂载读、申请形态、申请拼接三处都会过这里）。 */
+  const rememberShape = (state) => {
+    const w = Number(state && state.stripWidth)
+    if (Number.isFinite(w) && w > 0) setStripWidth(w)
+  }
   // 拖拽回调是**闭包**，拿到的 `spliced` 是渲染那一刻的旧值——松手时按它落定会把宽度改回去
   // （2026-10-13 写这刀时当场看出来的）。所以始终从 ref 读最新值。
   // **hook 必须在所有 early return 之前**：放到下面那个拼接块里会报 "Rendered more hooks than
@@ -102,6 +109,7 @@ export function WorkbenchChrome() {
       }
       const result = await requestShape(next)
       if (cancelled) return
+      rememberShape(result)
       setShape(result.ok ? next : `failed:${result.error}`)
     }
     if (open) {
@@ -125,6 +133,7 @@ export function WorkbenchChrome() {
     void (async () => {
       if (open || !getShapeBridge()) return
       const now = await readShape()
+      rememberShape(now)
       if (cancelled || !now || now.shape === 'normal' || now.shape === undefined) return
       // 拼接宽度也一起对账：壳可能还停在上次拼宽的状态（`settings.workbenchSplice` 是持久化的），
       // 而门面这边没有拼任何模式 → 先把它收回去，再还形态（顺序无所谓，两个都是幂等请求）。
@@ -207,6 +216,7 @@ export function WorkbenchChrome() {
     const want = panels.length ? Math.max(SPLICE_MIN, totalSpliceOf(panels)) : 0
     const result = await requestSplice(want)
     if (!result.ok) return result
+    rememberShape(result)
     setSpliceWidth(Number(result.spliceWidth) || want)
     return result
   }
@@ -533,7 +543,14 @@ export function WorkbenchChrome() {
 
   return react.createElement(
     'div',
-    { className: 'dshWbHome', onKeyDown, 'data-wb-switcher': '', 'data-wb-shape': shape || 'none' },
+    {
+      className: 'dshWbHome',
+      onKeyDown,
+      'data-wb-switcher': '',
+      'data-wb-shape': shape || 'none',
+      // 长条自己的宽度（壳报的）：拼接时用它把对话列钉住
+      style: { '--dsh-wb-strip-w': `${stripWidth}px` },
+    },
     bar,
     react.createElement(
       'div',
@@ -600,7 +617,12 @@ export function WorkbenchChrome() {
           'div',
           {
             className: `dshWbSeam${seamOpen ? ' is-open' : ''}`,
+            // **接缝站在"拼合处"**：拼了东西之后，它就是长条与拼接区之间那条缝（原型 v2.2 的规则：
+            // "已有模式拼着时，鼠标放在长条窗与模式窗口的拼合处"）。没拼时贴窗口右缘。
+            // 2026-10-13 实机抓到：原来一直贴在窗口最右缘，拼完之后扇形跑到了面板外侧，形式不对。
+            style: { right: spliceWidth > 0 ? `${spliceWidth}px` : 0 },
             'data-wb-seam': '',
+            'data-wb-seam-at': spliceWidth > 0 ? 'junction' : 'edge',
             'data-wb-seam-open': seamOpen ? '1' : '0',
             'data-wb-seam-count': String(modes.length),
             role: 'group',

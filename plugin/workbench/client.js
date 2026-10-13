@@ -400,6 +400,10 @@ var CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomePanel{padding:10px 12px;gap:8px;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
+  // **拼接时改回横排**（2026-10-13 实机抓到：长条那套竖排没被覆盖 ⇒ 对话列占满整宽、拼接区被挤到下面）。
+  // 对话列按壳报的"长条宽度"钉住，拼接区占剩下的宽度——两者相加正好等于窗口宽度。
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody.is-spliced{flex-direction:row;gap:10px;}',
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody.is-spliced .dshWbChat{flex:0 0 var(--dsh-wb-strip-w,420px);}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   // 右下角给**第三方浮标**留位（PALIS 主题面板的角标是 `shell.overlay` 上的固定浮层，会压住
   // 发送钮与状态条最右端——2026-10-13 目检截图实拍）。这不是我们的元素，只能自己让开。
@@ -1523,6 +1527,11 @@ function WorkbenchChrome() {
   const [seamOpen, setSeamOpen] = react5.useState(false);
   const [spliced, setSpliced] = react5.useState([]);
   const [spliceWidth, setSpliceWidth] = react5.useState(0);
+  const [stripWidth, setStripWidth] = react5.useState(SPLICE_WIDTH);
+  const rememberShape = (state) => {
+    const w = Number(state && state.stripWidth);
+    if (Number.isFinite(w) && w > 0) setStripWidth(w);
+  };
   const panelsRef = react5.useRef([]);
   react5.useEffect(() => {
     panelsRef.current = spliced;
@@ -1537,6 +1546,7 @@ function WorkbenchChrome() {
       }
       const result = await requestShape(next);
       if (cancelled) return;
+      rememberShape(result);
       setShape(result.ok ? next : `failed:${result.error}`);
     };
     if (open2) {
@@ -1555,6 +1565,7 @@ function WorkbenchChrome() {
     void (async () => {
       if (open2 || !getShapeBridge()) return;
       const now = await readShape();
+      rememberShape(now);
       if (cancelled || !now || now.shape === "normal" || now.shape === void 0) return;
       if (Number(now.spliceWidth) > 0) await requestSplice(0);
       const result = await requestShape("normal");
@@ -1607,6 +1618,7 @@ function WorkbenchChrome() {
     const want = panels.length ? Math.max(SPLICE_MIN, totalSpliceOf(panels)) : 0;
     const result = await requestSplice(want);
     if (!result.ok) return result;
+    rememberShape(result);
     setSpliceWidth(Number(result.spliceWidth) || want);
     return result;
   };
@@ -1903,7 +1915,14 @@ function WorkbenchChrome() {
   ) : null;
   return react5.createElement(
     "div",
-    { className: "dshWbHome", onKeyDown, "data-wb-switcher": "", "data-wb-shape": shape || "none" },
+    {
+      className: "dshWbHome",
+      onKeyDown,
+      "data-wb-switcher": "",
+      "data-wb-shape": shape || "none",
+      // 长条自己的宽度（壳报的）：拼接时用它把对话列钉住
+      style: { "--dsh-wb-strip-w": `${stripWidth}px` }
+    },
     bar,
     react5.createElement(
       "div",
@@ -1960,7 +1979,12 @@ function WorkbenchChrome() {
       "div",
       {
         className: `dshWbSeam${seamOpen ? " is-open" : ""}`,
+        // **接缝站在"拼合处"**：拼了东西之后，它就是长条与拼接区之间那条缝（原型 v2.2 的规则：
+        // "已有模式拼着时，鼠标放在长条窗与模式窗口的拼合处"）。没拼时贴窗口右缘。
+        // 2026-10-13 实机抓到：原来一直贴在窗口最右缘，拼完之后扇形跑到了面板外侧，形式不对。
+        style: { right: spliceWidth > 0 ? `${spliceWidth}px` : 0 },
         "data-wb-seam": "",
+        "data-wb-seam-at": spliceWidth > 0 ? "junction" : "edge",
         "data-wb-seam-open": seamOpen ? "1" : "0",
         "data-wb-seam-count": String(modes.length),
         role: "group",

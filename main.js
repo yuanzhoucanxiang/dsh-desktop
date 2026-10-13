@@ -2380,6 +2380,9 @@ function shapeState() {
     bounds: win && !win.isDestroyed() ? win.getBounds() : null,
     contentBounds: win && !win.isDestroyed() ? win.getContentBounds() : null,
     minSize: SHAPE_MIN_SIZE[shape],
+    // **长条自己的宽度**（不含拼接）：拼接时门面要按它把对话列钉住、让拼接区占剩下的宽度。
+    // 由壳报出来而不是插件写死 420——几何归壳（2026-10-13 实机发现拼接被上下叠起来的根因之一）。
+    stripWidth: SHAPE_GEOMETRY.strip.width,
     // 拼接宽度（只对 strip 生效）：页面据此知道"现在拼了多宽"，收起时是 0
     spliceWidth: shape === 'strip' ? currentSplice() : 0,
     spliceRange: [SPLICE_MIN, spliceMax()],

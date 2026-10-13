@@ -96,6 +96,10 @@ export const CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomePanel{padding:10px 12px;gap:8px;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
+  // **拼接时改回横排**（2026-10-13 实机抓到：长条那套竖排没被覆盖 ⇒ 对话列占满整宽、拼接区被挤到下面）。
+  // 对话列按壳报的"长条宽度"钉住，拼接区占剩下的宽度——两者相加正好等于窗口宽度。
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody.is-spliced{flex-direction:row;gap:10px;}',
+  '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody.is-spliced .dshWbChat{flex:0 0 var(--dsh-wb-strip-w,420px);}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   // 右下角给**第三方浮标**留位（PALIS 主题面板的角标是 `shell.overlay` 上的固定浮层，会压住
   // 发送钮与状态条最右端——2026-10-13 目检截图实拍）。这不是我们的元素，只能自己让开。
