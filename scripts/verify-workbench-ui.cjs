@@ -299,12 +299,23 @@ app.whenReady().then(async () => {
     `window.__wbSessions.__set([{ id:'s1', displayTitle:'未命名会话的派生标题', running:false, retainedBy:'none', blank:false, updatedAt:Date.now() }])`,
   )
   await waitFor(`document.querySelector('[data-wb-chat-session]')!==null`, '有会话时对话列应渲染它')
-  assert.equal(await text('[data-wb-chat-session]'), '未命名会话的派生标题', '对话列应显示 displayTitle')
+  assert.equal(await text('[data-wb-chat-title]'), '未命名会话的派生标题', '对话列应显示 displayTitle')
   // 状态条（2026-10-12 接真投影）：这条会话**没有**投影值 → 三条都得如实写"还没数据/未上报"，
   // 绝不拿 0 冒充"没有"（反例：把 telemetryOf 的空值分支改成 ?? 0，这三条立刻红）。
-  assert.ok((await text('[data-wb-metric="speed"]')).includes('还没数据'), '没有解码数据时 tok/s 要如实说明')
-  assert.ok((await text('[data-wb-metric="cache"]')).includes('还没数据'), '没有用量数据时缓存命中要如实说明')
-  assert.ok((await text('[data-wb-metric="context"]')).includes('未上报'), '没有上下文投影时要如实说明')
+  // 2026-10-13 去噪：没有数据时指标只显示 `—`（原来三处都写"还没数据"，一行刷三次），
+  // 但**具体原因必须留在 title 里**——判据从"文案里有没有'还没数据'"改成"**悬停能不能看到原因**"，
+  // 这样既守 guide §5（状态要给原因），又不让状态条变成噪音。
+  for (const [key, reason] of [
+    ['speed', '没有解码数据'],
+    ['cache', '没有用量数据'],
+    ['context', '没有上下文数据'],
+  ]) {
+    assert.equal((await text(`[data-wb-metric="${key}"]`)).includes('—'), true, `${key} 无数据时应显示 —`)
+    assert.ok(
+      (await evaluate(`document.querySelector('[data-wb-metric="${key}"]').title`)).includes(reason),
+      `${key} 的原因要留在 title 里（${reason}）`,
+    )
+  }
   // 确有持久标题的会话：内核两个字段都给，displayTitle 即该标题；再挂上真投影——
   // **形状照 2026-10-12 真内核实测**：`sessionStats` 是扁平的、`tokenUsage` 也是扁平的
   // （host 侧 durable state 才套 `{totals,last}`）。之前按嵌套写读法，命中率在真内核上永远算不出，
@@ -318,7 +329,7 @@ app.whenReady().then(async () => {
         contextPressure: { pressureTokens:15000, contextWindow:64000 },
       } }])`,
   )
-  await waitFor(`(document.querySelector('[data-wb-chat-session]')||{}).textContent==='归乡记讨论'`, '有标题的会话应显示标题')
+  await waitFor(`(document.querySelector('[data-wb-chat-title]')||{}).textContent==='归乡记讨论'`, '有标题的会话应显示标题')
   await waitFor(`(document.querySelector('[data-wb-metric="speed"]')||{}).textContent==='⚡ 38 tok/s'`, 'tok/s 应按内核口径算出真数')
   assert.equal(await text('[data-wb-metric="cache"]'), '缓存命中 92%', '缓存命中率 = cacheRead ÷ (uncached+cacheRead)')
   // 上下文按原型给 `已用/窗口`（15000/64000 → 15k/64k），并给进度条一个 0..100 的填充值
@@ -687,13 +698,13 @@ app.whenReady().then(async () => {
   await waitFor(`window.__wbPlugin.__workbenchRegistry().getActive()==='demo3'`, '点「进入」应进入该模式')
   await waitFor(`document.querySelector('[data-wb-switcher]')===null`, '进入后主屏应关闭')
 
-  // ⑩ 接缝**扇形几何**（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。
+  // ⑩ 接缝**扇形几何**（2026-10-13 第二版按原型 `.fan`：**以接缝为轴心按角度排开**、逐颗错峰弹出）。
   // 放在最后单独一组：前面各组要验瓷砖（要宽窗），而扇形只在长条形态出现；这里把壳能力装回去、
-  // 再凑够 3 个模式（少于 3 个时"中间最外"没有中间可言，断言会退化成恒真）。
+  // 再凑够 3 个模式（少于 3 个时"排开"没有中间可言，断言会退化成恒真）。
   await evaluate(`(() => {
     const s = window.dshShell; const shapes = { shape: 'normal' };
-    s.setWorkbenchShape = async (v) => { shapes.shape = v; return { ok: true, shape: v, alwaysOnTop: v !== 'normal' } };
-    s.getWorkbenchShape = async () => ({ ok: true, shape: shapes.shape, alwaysOnTop: shapes.shape !== 'normal', pid: 1 });
+    s.setWorkbenchShape = async (v) => { shapes.shape = v; return { ok: true, shape: v, alwaysOnTop: v !== 'normal', spliceWidth: 0, spliceRange: [280, 1200] } };
+    s.getWorkbenchShape = async () => ({ ok: true, shape: shapes.shape, alwaysOnTop: shapes.shape !== 'normal', pid: 1, spliceWidth: 0, spliceRange: [280, 1200] });
     return 0
   })()`)
   await evaluate(`(() => { const r = window.__wbPlugin.__workbenchRegistry();
@@ -706,20 +717,21 @@ app.whenReady().then(async () => {
   assert.equal(seamState, '0', '接缝默认收起（不该一上来就摊开）')
   const fanJson = await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-seam-mode]')).map((b) => ({
     id: b.getAttribute('data-wb-seam-mode'),
-    out: Number(b.getAttribute('data-wb-seam-out')),
-    y: Number(b.getAttribute('data-wb-seam-y')),
+    a: Number(b.getAttribute('data-wb-seam-a')),
+    r: Number(b.getAttribute('data-wb-seam-out')),
     delay: Number(b.getAttribute('data-wb-seam-delay')),
   })))`)
   const fan = JSON.parse(fanJson)
-  assert.ok(fan.length >= 3, `这一组要至少 3 个模式才谈得上"中间最外"：${fanJson}`)
+  assert.ok(fan.length >= 3, `这一组要至少 3 个模式才谈得上"扇形"：${fanJson}`)
   const mid = fan[Math.floor(fan.length / 2)]
-  assert.ok(fan.every((it) => it.out >= 0), `扇形开口不该是负的：${fanJson}`)
-  // **严格**最外：全相等（"一样远"）不算扇形——这一条是反例实证逼出来的（先前写成 <= 时，
-  // 把几何改成常数也能过，等于没锁住）。
-  assert.ok(fan.every((it) => it.out <= mid.out), `中间那颗应顶到最外：${fanJson}`)
-  assert.ok(mid.out > fan[0].out && mid.out > fan[fan.length - 1].out, `两端必须比中间收窄：${fanJson}`)
+  // 原型的扇形是**转出来的**：角度从 -34° 到 +34° 单调排开、正中那颗 0°、半径恒定；
+  // 两端必须真的分开（全相等 / 全为 0 就是没排开——弱断言在这里抓不到，所以判**严格**）
+  assert.ok(fan.every((it, i) => i === 0 || it.a > fan[i - 1].a), `角度应单调排开：${fanJson}`)
+  assert.equal(mid.a, 0, `正中那颗应在 0°：${fanJson}`)
+  assert.ok(fan[0].a < 0 && fan[fan.length - 1].a > 0, `两端应分居中间两侧：${fanJson}`)
+  assert.ok(Math.abs(fan[0].a + fan[fan.length - 1].a) <= 1, `两端角度应对称：${fanJson}`)
+  assert.ok(fan.every((it) => it.r === fan[0].r && it.r > 0), `弹出半径应恒定且为正：${fanJson}`)
   assert.ok(fan.every((it, i) => i === 0 || it.delay >= fan[i - 1].delay), `逐颗错峰应单调不减：${fanJson}`)
-  assert.ok(fan.every((it, i) => i === 0 || it.y >= fan[i - 1].y), `纵向应自上而下排开：${fanJson}`)
   // 悬停展开：React 的 onMouseEnter 由 mouseover 合成，派发一个冒泡的 mouseover 即可
   await evaluate(`(() => { document.querySelector('[data-wb-seam]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return 0 })()`)
   await waitFor(

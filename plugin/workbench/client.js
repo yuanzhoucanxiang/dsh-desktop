@@ -328,8 +328,8 @@ var CSS = [
   ".dshWbChat{flex:none;width:340px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);padding:14px;}",
   ".dshWbChatHead{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);}",
   ".dshWbChatCard{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;}",
-  ".dshWbChatSession{min-width:0;flex:1;}",
-  ".dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".dshWbChatSession{min-width:0;flex:none;display:flex;align-items:baseline;gap:10px;}",
+  ".dshWbChatSessionTitle{flex:1;min-width:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}",
   ".dshWbChatBody{flex:1;min-height:0;display:flex;flex-direction:column;}",
   ".dshWbChatBody.is-empty{justify-content:center;align-items:center;text-align:center;padding:0 8px;}",
@@ -401,6 +401,9 @@ var CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
+  // 右下角给**第三方浮标**留位（PALIS 主题面板的角标是 `shell.overlay` 上的固定浮层，会压住
+  // 发送钮与状态条最右端——2026-10-13 目检截图实拍）。这不是我们的元素，只能自己让开。
+  '.dshWbHome[data-wb-shape="strip"] .dshWbComposer,.dshWbHome[data-wb-shape="strip"] .dshWbMeter{padding-right:76px;}',
   // 拼接区（长条右侧那些列）：窗口已由壳加宽，这里只把列摆进去（总宽来自 spliceWidth）
   ".dshWbHomeBody.is-spliced{gap:10px;}",
   ".dshWbSpliceWrap{flex:none;min-width:0;display:flex;gap:8px;overflow:hidden;}",
@@ -470,23 +473,28 @@ var CSS = [
   // 长条·接缝扇形（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰滑入）。
   // 窗外画不了（窗口边界是硬的），所以是**窗内扇形**：收起态 opacity+visibility 双保险
   // （只靠 opacity 还会吃点击），展开态按 --wb-delay 逐颗错峰。
-  ".dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}",
-  ".dshWbSeamGrip{flex:none;padding:16px 6px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:9px 0 0 9px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}",
-  ".dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}",
-  ".dshWbSeamFan{position:absolute;right:0;top:50%;width:0;height:0;}",
-  ".dshWbSeamItem{position:absolute;right:0;top:0;margin-top:-14px;display:flex;align-items:center;gap:0;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translate(0,calc(var(--wb-y) * 1px));transition:transform .18s ease-out,opacity .18s ease-out,visibility .18s;}",
-  ".dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:translate(calc(var(--wb-out) * -1px),calc(var(--wb-y) * 1px));transition-delay:var(--wb-delay);}",
-  ".dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}",
+  // 2026-10-13 第二版按原型 `.edge`/`.fan` 重做：**整条右缘**是悬停区（原型 26px 宽整高），
+  // 中间一道小指示条；项是 **46px 圆形图标钮**，标签在图标**左侧**悬停才出现（原型在右侧，
+  // 但那是画在窗外的；我们收在窗内，标签只能往左），状态点是图标右下角的小徽标。
+  ".dshWbSeam{position:fixed;top:0;right:0;width:26px;height:100%;z-index:2210;pointer-events:auto;}",
+  ".dshWbSeamGrip{position:absolute;top:50%;right:6px;width:4px;height:44px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-label-tertiary);opacity:.45;transition:opacity .16s ease-out,background .16s ease-out;}",
+  ".dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{opacity:1;background:var(--dsw-alias-brand-primary);}",
+  ".dshWbSeamFan{position:absolute;right:14px;top:50%;width:0;height:0;}",
+  // 圆形图标钮：46×46（原型同尺寸）；从轴心**旋转 + 弹出**（角度由 --wb-a 给），逐颗错峰
+  ".dshWbSeamItem{position:absolute;right:0;top:0;width:46px;height:46px;margin-top:-23px;padding:0;display:grid;place-items:center;border:1px solid var(--dsw-alias-border-l2);border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;opacity:0;visibility:hidden;pointer-events:none;transform:rotate(var(--wb-a)) translateX(0);transition:transform .2s cubic-bezier(.25,.9,.3,1.15),opacity .2s ease-out,visibility .2s;}",
+  ".dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:rotate(var(--wb-a)) translateX(calc(var(--wb-out) * -1px));transition-delay:var(--wb-delay);}",
+  ".dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
   ".dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}",
-  ".dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}",
-  // 状态点（原型 `.st`）+ 当前标记：点表示状态、文字再说明一次（状态不只靠颜色）
-  ".dshWbSeamSt{flex:none;width:6px;height:6px;margin-left:6px;border-radius:999px;border:1px solid var(--dsw-alias-label-tertiary);}",
-  ".dshWbSeamSt.is-active{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}",
-  ".dshWbSeamTag{flex:none;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}",
-  ".dshWbSeam.is-open .dshWbSeamItem .dshWbSeamTag{display:none;}",
-  ".dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}",
-  ".dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}",
-  ".dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}",
+  ".dshWbSeamGlyph{font-size:19px;line-height:1;pointer-events:none;}",
+  // 状态点（原型 `.st`）：图标**右下角的小徽标**，只有"已拼接/当前"才显示（原型 `.joined .st`）
+  ".dshWbSeamSt{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid var(--dsw-alias-bg-base);background:var(--dsw-alias-label-tertiary);display:none;}",
+  ".dshWbSeamItem.is-spliced .dshWbSeamSt,.dshWbSeamItem.is-active .dshWbSeamSt{display:block;background:var(--dsw-alias-brand-primary);}",
+  // 标签：图标**左侧**（窗外画不了，所以反过来），悬停/聚焦才浮出来
+  ".dshWbSeamText{position:absolute;right:calc(100% + 9px);top:50%;transform:translateY(-50%);padding:4px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:16px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .14s ease-out;}",
+  ".dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{opacity:1;}",
+  ".dshWbSeamTag{margin-left:6px;color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}",
+  ".dshWbSeamItem.is-spliced .dshWbSeamTag,.dshWbSeamItem.is-active .dshWbSeamTag{color:var(--dsw-alias-brand-primary);}",
+  ".dshWbSeamEmpty{position:absolute;right:34px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}",
   ".dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}",
   // 状态条（原型 `.meter`）：三指标 + 上下文进度条 + 模型名
   ".dshWbMeter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}",
@@ -918,8 +926,8 @@ function tokens(value) {
   return String(value);
 }
 function formatTelemetry(t) {
-  const speed = t?.tokensPerSecond !== null && t?.tokensPerSecond !== void 0 ? { text: `⚡ ${round(t.tokensPerSecond)} tok/s`, title: "解码速度：输出 token ÷ 解码墙钟时间（内核 sessionStats 投影）" } : { text: "⚡ 还没数据", title: "这条会话还没有流式输出过，所以算不出解码速度" };
-  const cache = t?.cacheHitPercent !== null && t?.cacheHitPercent !== void 0 ? { text: `缓存命中 ${round(t.cacheHitPercent)}%`, title: "缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）" } : { text: "缓存命中 还没数据", title: "这条会话还没有带用量的请求，所以算不出命中率" };
+  const speed = t?.tokensPerSecond !== null && t?.tokensPerSecond !== void 0 ? { text: `⚡ ${round(t.tokensPerSecond)} tok/s`, title: "解码速度：输出 token ÷ 解码墙钟时间（内核 sessionStats 投影）" } : { text: "⚡ —", title: "还没有解码数据：这条会话还没流式输出过，所以算不出解码速度" };
+  const cache = t?.cacheHitPercent !== null && t?.cacheHitPercent !== void 0 ? { text: `缓存命中 ${round(t.cacheHitPercent)}%`, title: "缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）" } : { text: "缓存 —", title: "还没有用量数据：这条会话还没发过带用量的请求，所以算不出命中率" };
   const used = tokens(t?.pressureTokens);
   const window_ = tokens(t?.contextWindow);
   const context = t?.contextPercent !== null && t?.contextPercent !== void 0 ? {
@@ -927,7 +935,11 @@ function formatTelemetry(t) {
     text: used && window_ ? `上下文 ${used}/${window_}` : `上下文 ${round(t.contextPercent)}%`,
     ratio: Math.max(0, Math.min(1, t.contextPercent / 100)),
     title: `占用 ${t.pressureTokens} / 窗口 ${t.contextWindow} token（内核 contextPressure 投影）`
-  } : { text: "上下文 未上报", ratio: 0, title: "内核还没给出这条会话的上下文占用或窗口大小，所以不显示用量" };
+  } : {
+    text: "上下文 —",
+    ratio: 0,
+    title: "还没有上下文数据：内核还没给出占用或窗口大小，所以显示不了用量"
+  };
   const model = t?.model ? { text: t.model, title: "当前会话选用的模型（内核 modelSelection 投影）" } : null;
   return { speed, cache, context, model };
 }
@@ -985,13 +997,16 @@ function TelemetryMeter({ metrics, source, values, compact = false }) {
     react3.createElement("span", { className: "dshWbMeterItem", title: metrics.speed.title, "data-wb-metric": "speed" }, metrics.speed.text),
     react3.createElement("span", { className: "dshWbMeterItem", title: metrics.cache.title, "data-wb-metric": "cache" }, metrics.cache.text),
     react3.createElement("span", { className: "dshWbMeterItem", title: metrics.context.title, "data-wb-metric": "context" }, metrics.context.text),
-    compact ? null : react3.createElement(
-      "span",
-      { className: "dshWbMeterBar", "data-wb-meter-bar": "", title: metrics.context.title, "aria-hidden": "true" },
-      react3.createElement("i", {
-        style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` },
-        "data-wb-meter-fill": String(Math.round((metrics.context.ratio || 0) * 100))
-      })
+    compact ? null : (
+      // 进度条只在**有数**时画：没有数据时留一条灰杠看着像坏掉的控件（2026-10-13 目检反馈）
+      (metrics.context.ratio || 0) > 0 ? react3.createElement(
+        "span",
+        { className: "dshWbMeterBar", "data-wb-meter-bar": "", title: metrics.context.title, "aria-hidden": "true" },
+        react3.createElement("i", {
+          style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` },
+          "data-wb-meter-fill": String(Math.round((metrics.context.ratio || 0) * 100))
+        })
+      ) : null
     ),
     metrics.model ? react3.createElement("span", { className: "dshWbMeterModel", title: metrics.model.title, "data-wb-metric": "model" }, metrics.model.text) : null
   );
@@ -1382,25 +1397,23 @@ function ConversationTile({ onBack, modes = [], onPickMode }) {
         )
       )
     ),
-    // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）
-    first ? strip : null,
-    react4.createElement(
-      "div",
-      { className: "dshWbChatFoot" },
-      react4.createElement(
-        "button",
-        { type: "button", className: "dshWbLinkBtn", onClick: () => void onBack(), "data-wb-chat-back": "" },
-        T.chatBack
-      )
-    )
+    // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）；「回到完整会话」上移到会话标题行
+    first ? strip : null
   ) : null;
   return react4.createElement(
     "div",
     { className: "dshWbChatCard", "data-wb-chat-card": "", "data-wb-chat-source": transcript.source },
     !sessions2 ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "noservice" }, T.chatNoService) : !snap ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "unreadable" }, T.chatNoService) : !first ? react4.createElement("div", { className: "dshWbChatHint", "data-wb-chat-empty": "empty" }, T.chatEmpty) : react4.createElement(
+      // 会话标题行：标题在左、「回到完整会话」在右（2026-10-13 从底部右下角上移过来——
+      // 掉在最下面既乱又和右下角的状态条/角标打架）
       "div",
       { className: "dshWbChatSession", "data-wb-chat-session": "" },
-      react4.createElement("div", { className: "dshWbChatSessionTitle", title }, title)
+      react4.createElement("div", { className: "dshWbChatSessionTitle", title, "data-wb-chat-title": "" }, title),
+      react4.createElement(
+        "button",
+        { type: "button", className: "dshWbLinkBtn", onClick: () => void onBack(), "data-wb-chat-back": "" },
+        T.chatBack
+      )
     ),
     // 对话主体：有消息就是可滚动的气泡列；没消息就把说明**居中**（贴在底部会显得像页脚）
     react4.createElement(
@@ -1478,8 +1491,8 @@ async function requestWindowClose(globalThisRef = typeof window === "undefined" 
 var SPLICE_WIDTH = 420;
 var SPLICE_DRAG_MIN = 120;
 var SPLICE_MIN = 280;
-var SEAM_FAN_OUT = 46;
-var SEAM_FAN_GAP = 44;
+var SEAM_FAN_R = 58;
+var SEAM_FAN_SPREAD = 34;
 var SEAM_FAN_STAGGER = 45;
 var NOTICE_MS = 6e3;
 function contextLabelOf(registry2, id) {
@@ -1939,9 +1952,10 @@ function WorkbenchChrome() {
         react5.createElement("button", { type: "button", className: "dshWbBtn", onClick: () => void exitMode(registry2), "data-wb-exit": "" }, T.exit)
       ) : null
     ),
-    // 接缝呼出·扇形（原型 v2.2：**以接缝为轴心、中间那颗顶到最外**，逐颗错峰滑入）。
-    // 几何在 JS 里算好、用 CSS 变量摆位——探针可直接读 data-wb-seam-out / -delay 验证这两条。
-    // 窗外画不了（窗口边界是硬的，plan §12-9 的 A/B/C 里已选"收在窗口内贴右缘"），所以是**窗内扇形**。
+    // 接缝呼出·扇形（原型 `.edge`/`.fan`：**以接缝为轴心按角度排开**，逐颗错峰弹出）。
+    // 几何在 JS 里算好、用 CSS 变量摆位——探针直接读 `data-wb-seam-a`（角度）与 `-delay`。
+    // 窗外画不了（窗口边界是硬的，plan §12-9 已选"收在窗口内贴右缘"），所以是**窗内扇形**：
+    // 角度照原型（中间 0°、两端 ±34°），半径固定；图标与标签反向旋转，保证文字始终是正的。
     isStrip ? react5.createElement(
       "div",
       {
@@ -1957,15 +1971,14 @@ function WorkbenchChrome() {
         onFocus: () => setSeamOpen(true),
         onBlur: () => setSeamOpen(false)
       },
-      react5.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }, "⋮"),
+      react5.createElement("div", { className: "dshWbSeamGrip", "aria-hidden": "true" }),
       modes.length === 0 ? react5.createElement("div", { className: "dshWbSeamEmpty", "data-wb-seam-empty": "" }, T.seamEmpty) : react5.createElement(
         "div",
         { className: "dshWbSeamFan", "data-wb-seam-fan": "" },
         modes.map((mode, i) => {
           const mid = (modes.length - 1) / 2;
-          const t = mid === 0 ? 0 : (i - mid) / mid;
-          const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t)));
-          const y = Math.round((i - mid) * SEAM_FAN_GAP);
+          const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, SEAM_FAN_SPREAD * 2 / (modes.length - 1)) : 0;
+          const a = Math.round((i - mid) * step);
           const delay = i * SEAM_FAN_STAGGER;
           const isSpliced = spliced.some((it) => it.id === mode.id);
           return react5.createElement(
@@ -1974,24 +1987,33 @@ function WorkbenchChrome() {
               key: mode.id,
               type: "button",
               className: `dshWbSeamItem${mode.active ? " is-active" : ""}${isSpliced ? " is-spliced" : ""}`,
-              style: { "--wb-out": String(out), "--wb-y": String(y), "--wb-delay": `${delay}ms` },
+              style: { "--wb-a": `${a}deg`, "--wb-out": String(SEAM_FAN_R), "--wb-delay": `${delay}ms` },
               // 用户拍板 A：接缝点一下 = **拼到右侧**（进模式全屏走宽窗主屏的瓷砖「进入」）
               onClick: () => void spliceMode(mode.id),
               title: T.spliceTo(mode.label),
               "data-wb-seam-mode": mode.id,
-              "data-wb-seam-out": String(out),
-              "data-wb-seam-y": String(y),
+              "data-wb-seam-a": String(a),
+              "data-wb-seam-out": String(SEAM_FAN_R),
               "data-wb-seam-delay": String(delay)
             },
-            react5.createElement("span", { className: "dshWbSeamGlyph", "aria-hidden": "true" }, mode.label.slice(0, 1) || "·"),
-            // 状态点（原型 `.st`）：当前模式实心，其余空心——状态不只靠颜色，旁边还有 tag 文字
+            // 图标与标签**反向旋转**：扇形是转出来的，但字要正着读（原型里图标跟着斜，这里改好一点）
+            react5.createElement(
+              "span",
+              { className: "dshWbSeamGlyph", "aria-hidden": "true", style: { transform: `rotate(${-a}deg)` } },
+              mode.label.slice(0, 1) || "·"
+            ),
+            // 状态点（原型 `.st`）：图标右下角的小徽标，只有"已拼接/当前"才显示
             react5.createElement("span", {
               className: `dshWbSeamSt${mode.active ? " is-active" : ""}`,
-              "data-wb-seam-st": mode.active ? "active" : "ready",
+              "data-wb-seam-st": mode.active ? "active" : isSpliced ? "spliced" : "ready",
               "aria-hidden": "true"
             }),
-            react5.createElement("span", { className: "dshWbSeamText" }, mode.label),
-            isSpliced ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "spliced" }, T.spliced) : mode.active ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
+            react5.createElement(
+              "span",
+              { className: "dshWbSeamText", style: { transform: `translateY(-50%) rotate(${-a}deg)` } },
+              mode.label,
+              isSpliced ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "spliced" }, T.spliced) : mode.active ? react5.createElement("em", { className: "dshWbSeamTag", "data-wb-seam-tag": "active" }, T.current) : null
+            )
           );
         })
       )

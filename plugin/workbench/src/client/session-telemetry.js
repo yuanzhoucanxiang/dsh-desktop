@@ -157,11 +157,11 @@ export function formatTelemetry(t) {
   const speed =
     t?.tokensPerSecond !== null && t?.tokensPerSecond !== undefined
       ? { text: `⚡ ${round(t.tokensPerSecond)} tok/s`, title: '解码速度：输出 token ÷ 解码墙钟时间（内核 sessionStats 投影）' }
-      : { text: '⚡ 还没数据', title: '这条会话还没有流式输出过，所以算不出解码速度' }
+      : { text: '⚡ —', title: '还没有解码数据：这条会话还没流式输出过，所以算不出解码速度' }
   const cache =
     t?.cacheHitPercent !== null && t?.cacheHitPercent !== undefined
       ? { text: `缓存命中 ${round(t.cacheHitPercent)}%`, title: '缓存命中率：命中的输入 token ÷ 全部输入 token（内核 tokenUsage 投影）' }
-      : { text: '缓存命中 还没数据', title: '这条会话还没有带用量的请求，所以算不出命中率' }
+      : { text: '缓存 —', title: '还没有用量数据：这条会话还没发过带用量的请求，所以算不出命中率' }
   const used = tokens(t?.pressureTokens)
   const window_ = tokens(t?.contextWindow)
   const context =
@@ -172,7 +172,11 @@ export function formatTelemetry(t) {
           ratio: Math.max(0, Math.min(1, t.contextPercent / 100)),
           title: `占用 ${t.pressureTokens} / 窗口 ${t.contextWindow} token（内核 contextPressure 投影）`,
         }
-      : { text: '上下文 未上报', ratio: 0, title: '内核还没给出这条会话的上下文占用或窗口大小，所以不显示用量' }
+      : {
+          text: '上下文 —',
+          ratio: 0,
+          title: '还没有上下文数据：内核还没给出占用或窗口大小，所以显示不了用量',
+        }
   const model = t?.model ? { text: t.model, title: '当前会话选用的模型（内核 modelSelection 投影）' } : null
   return { speed, cache, context, model }
 }

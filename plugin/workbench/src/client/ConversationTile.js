@@ -270,17 +270,8 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
             ),
           ),
         ),
-        // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）
+        // 状态条在输入框**下方**（原型顺序：`.composer` → `.meter`）；「回到完整会话」上移到会话标题行
         first ? strip : null,
-        react.createElement(
-          'div',
-          { className: 'dshWbChatFoot' },
-          react.createElement(
-            'button',
-            { type: 'button', className: 'dshWbLinkBtn', onClick: () => void onBack(), 'data-wb-chat-back': '' },
-            T.chatBack,
-          ),
-        ),
       )
     : null
 
@@ -294,9 +285,16 @@ export function ConversationTile({ onBack, modes = [], onPickMode }) {
         : !first
           ? react.createElement('div', { className: 'dshWbChatHint', 'data-wb-chat-empty': 'empty' }, T.chatEmpty)
           : react.createElement(
+              // 会话标题行：标题在左、「回到完整会话」在右（2026-10-13 从底部右下角上移过来——
+              // 掉在最下面既乱又和右下角的状态条/角标打架）
               'div',
               { className: 'dshWbChatSession', 'data-wb-chat-session': '' },
-              react.createElement('div', { className: 'dshWbChatSessionTitle', title }, title),
+              react.createElement('div', { className: 'dshWbChatSessionTitle', title, 'data-wb-chat-title': '' }, title),
+              react.createElement(
+                'button',
+                { type: 'button', className: 'dshWbLinkBtn', onClick: () => void onBack(), 'data-wb-chat-back': '' },
+                T.chatBack,
+              ),
             ),
     // 对话主体：有消息就是可滚动的气泡列；没消息就把说明**居中**（贴在底部会显得像页脚）
     react.createElement(

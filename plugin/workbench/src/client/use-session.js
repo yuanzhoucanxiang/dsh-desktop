@@ -76,14 +76,17 @@ export function TelemetryMeter({ metrics, source, values, compact = false }) {
     react.createElement('span', { className: 'dshWbMeterItem', title: metrics.context.title, 'data-wb-metric': 'context' }, metrics.context.text),
     compact
       ? null
-      : react.createElement(
-          'span',
-          { className: 'dshWbMeterBar', 'data-wb-meter-bar': '', title: metrics.context.title, 'aria-hidden': 'true' },
-          react.createElement('i', {
-            style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` },
-            'data-wb-meter-fill': String(Math.round((metrics.context.ratio || 0) * 100)),
-          }),
-        ),
+      : // 进度条只在**有数**时画：没有数据时留一条灰杠看着像坏掉的控件（2026-10-13 目检反馈）
+        (metrics.context.ratio || 0) > 0
+        ? react.createElement(
+            'span',
+            { className: 'dshWbMeterBar', 'data-wb-meter-bar': '', title: metrics.context.title, 'aria-hidden': 'true' },
+            react.createElement('i', {
+              style: { width: `${Math.round((metrics.context.ratio || 0) * 100)}%` },
+              'data-wb-meter-fill': String(Math.round((metrics.context.ratio || 0) * 100)),
+            }),
+          )
+        : null,
     metrics.model
       ? react.createElement('span', { className: 'dshWbMeterModel', title: metrics.model.title, 'data-wb-metric': 'model' }, metrics.model.text)
       : null,

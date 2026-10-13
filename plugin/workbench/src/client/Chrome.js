@@ -31,10 +31,10 @@ const SPLICE_DRAG_MIN = 120
 /** 壳侧硬下限（与 main.js 的 SPLICE_MIN 对齐）：申请宽度时不低于它，免得每次都被夹、白跑一趟。 */
 const SPLICE_MIN = 280
 
-/** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
-const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
-const SEAM_FAN_GAP = 44 // 相邻两颗的纵向间距（px）
-const SEAM_FAN_STAGGER = 45 // 逐颗错峰的步长（ms）
+/** 接缝扇形的几何（原型 `.fan`：**以接缝为轴心按角度排开**、逐颗错峰弹出）。 */
+const SEAM_FAN_R = 58 // 弹出半径（px，原型 fanPop 的终点就是 58）
+const SEAM_FAN_SPREAD = 34 // 两端相对中间的夹角（度，原型 -34° / 0° / 34°）
+const SEAM_FAN_STAGGER = 45 // 逐颗错峰的步长（ms，原型 .02/.07/.12s）
 
 /** 通知停留时长（点一下也能立刻关掉）。 */
 const NOTICE_MS = 6000
@@ -591,9 +591,10 @@ export function WorkbenchChrome() {
           )
         : null,
     ),
-    // 接缝呼出·扇形（原型 v2.2：**以接缝为轴心、中间那颗顶到最外**，逐颗错峰滑入）。
-    // 几何在 JS 里算好、用 CSS 变量摆位——探针可直接读 data-wb-seam-out / -delay 验证这两条。
-    // 窗外画不了（窗口边界是硬的，plan §12-9 的 A/B/C 里已选"收在窗口内贴右缘"），所以是**窗内扇形**。
+    // 接缝呼出·扇形（原型 `.edge`/`.fan`：**以接缝为轴心按角度排开**，逐颗错峰弹出）。
+    // 几何在 JS 里算好、用 CSS 变量摆位——探针直接读 `data-wb-seam-a`（角度）与 `-delay`。
+    // 窗外画不了（窗口边界是硬的，plan §12-9 已选"收在窗口内贴右缘"），所以是**窗内扇形**：
+    // 角度照原型（中间 0°、两端 ±34°），半径固定；图标与标签反向旋转，保证文字始终是正的。
     isStrip
       ? react.createElement(
           'div',
@@ -610,7 +611,7 @@ export function WorkbenchChrome() {
             onFocus: () => setSeamOpen(true),
             onBlur: () => setSeamOpen(false),
           },
-          react.createElement('div', { className: 'dshWbSeamGrip', 'aria-hidden': 'true' }, '⋮'),
+          react.createElement('div', { className: 'dshWbSeamGrip', 'aria-hidden': 'true' }),
           modes.length === 0
             ? react.createElement('div', { className: 'dshWbSeamEmpty', 'data-wb-seam-empty': '' }, T.seamEmpty)
             : react.createElement(
@@ -618,9 +619,9 @@ export function WorkbenchChrome() {
                 { className: 'dshWbSeamFan', 'data-wb-seam-fan': '' },
                 modes.map((mode, i) => {
                   const mid = (modes.length - 1) / 2
-                  const t = mid === 0 ? 0 : (i - mid) / mid // -1（最上）… 0（正中）… 1（最下）
-                  const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t))) // 中间那颗顶到最外
-                  const y = Math.round((i - mid) * SEAM_FAN_GAP)
+                  // 角度：中间 0°，两端 ±SEAM_FAN_SPREAD（项数多时按项数摊开，避免叠在一起）
+                  const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, (SEAM_FAN_SPREAD * 2) / (modes.length - 1)) : 0
+                  const a = Math.round((i - mid) * step)
                   const delay = i * SEAM_FAN_STAGGER
                   const isSpliced = spliced.some((it) => it.id === mode.id)
                   return react.createElement(
@@ -629,28 +630,37 @@ export function WorkbenchChrome() {
                       key: mode.id,
                       type: 'button',
                       className: `dshWbSeamItem${mode.active ? ' is-active' : ''}${isSpliced ? ' is-spliced' : ''}`,
-                      style: { '--wb-out': String(out), '--wb-y': String(y), '--wb-delay': `${delay}ms` },
+                      style: { '--wb-a': `${a}deg`, '--wb-out': String(SEAM_FAN_R), '--wb-delay': `${delay}ms` },
                       // 用户拍板 A：接缝点一下 = **拼到右侧**（进模式全屏走宽窗主屏的瓷砖「进入」）
                       onClick: () => void spliceMode(mode.id),
                       title: T.spliceTo(mode.label),
                       'data-wb-seam-mode': mode.id,
-                      'data-wb-seam-out': String(out),
-                      'data-wb-seam-y': String(y),
+                      'data-wb-seam-a': String(a),
+                      'data-wb-seam-out': String(SEAM_FAN_R),
                       'data-wb-seam-delay': String(delay),
                     },
-                    react.createElement('span', { className: 'dshWbSeamGlyph', 'aria-hidden': 'true' }, mode.label.slice(0, 1) || '·'),
-                    // 状态点（原型 `.st`）：当前模式实心，其余空心——状态不只靠颜色，旁边还有 tag 文字
+                    // 图标与标签**反向旋转**：扇形是转出来的，但字要正着读（原型里图标跟着斜，这里改好一点）
+                    react.createElement(
+                      'span',
+                      { className: 'dshWbSeamGlyph', 'aria-hidden': 'true', style: { transform: `rotate(${-a}deg)` } },
+                      mode.label.slice(0, 1) || '·',
+                    ),
+                    // 状态点（原型 `.st`）：图标右下角的小徽标，只有"已拼接/当前"才显示
                     react.createElement('span', {
                       className: `dshWbSeamSt${mode.active ? ' is-active' : ''}`,
-                      'data-wb-seam-st': mode.active ? 'active' : 'ready',
+                      'data-wb-seam-st': mode.active ? 'active' : isSpliced ? 'spliced' : 'ready',
                       'aria-hidden': 'true',
                     }),
-                    react.createElement('span', { className: 'dshWbSeamText' }, mode.label),
-                    isSpliced
-                      ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'spliced' }, T.spliced)
-                      : mode.active
-                        ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current)
-                        : null,
+                    react.createElement(
+                      'span',
+                      { className: 'dshWbSeamText', style: { transform: `translateY(-50%) rotate(${-a}deg)` } },
+                      mode.label,
+                      isSpliced
+                        ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'spliced' }, T.spliced)
+                        : mode.active
+                          ? react.createElement('em', { className: 'dshWbSeamTag', 'data-wb-seam-tag': 'active' }, T.current)
+                          : null,
+                    ),
                   )
                 }),
               ),

@@ -24,8 +24,8 @@ export const CSS = [
   '.dshWbChat{flex:none;width:340px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);padding:14px;}',
   '.dshWbChatHead{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);}',
   '.dshWbChatCard{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;}',
-  '.dshWbChatSession{min-width:0;flex:1;}',
-  '.dshWbChatSessionTitle{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+  '.dshWbChatSession{min-width:0;flex:none;display:flex;align-items:baseline;gap:10px;}',
+  '.dshWbChatSessionTitle{flex:1;min-width:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWbChatHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   '.dshWbChatBody{flex:1;min-height:0;display:flex;flex-direction:column;}',
   '.dshWbChatBody.is-empty{justify-content:center;align-items:center;text-align:center;padding:0 8px;}',
@@ -97,6 +97,9 @@ export const CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
+  // 右下角给**第三方浮标**留位（PALIS 主题面板的角标是 `shell.overlay` 上的固定浮层，会压住
+  // 发送钮与状态条最右端——2026-10-13 目检截图实拍）。这不是我们的元素，只能自己让开。
+  '.dshWbHome[data-wb-shape="strip"] .dshWbComposer,.dshWbHome[data-wb-shape="strip"] .dshWbMeter{padding-right:76px;}',
   // 拼接区（长条右侧那些列）：窗口已由壳加宽，这里只把列摆进去（总宽来自 spliceWidth）
   '.dshWbHomeBody.is-spliced{gap:10px;}',
   '.dshWbSpliceWrap{flex:none;min-width:0;display:flex;gap:8px;overflow:hidden;}',
@@ -166,23 +169,28 @@ export const CSS = [
   // 长条·接缝扇形（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰滑入）。
   // 窗外画不了（窗口边界是硬的），所以是**窗内扇形**：收起态 opacity+visibility 双保险
   // （只靠 opacity 还会吃点击），展开态按 --wb-delay 逐颗错峰。
-  '.dshWbSeam{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:2210;display:flex;align-items:center;pointer-events:auto;}',
-  '.dshWbSeamGrip{flex:none;padding:16px 6px;border:1px solid var(--dsw-alias-border-l2);border-right:none;border-radius:9px 0 0 9px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1;}',
-  '.dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);}',
-  '.dshWbSeamFan{position:absolute;right:0;top:50%;width:0;height:0;}',
-  '.dshWbSeamItem{position:absolute;right:0;top:0;margin-top:-14px;display:flex;align-items:center;gap:0;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translate(0,calc(var(--wb-y) * 1px));transition:transform .18s ease-out,opacity .18s ease-out,visibility .18s;}',
-  '.dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:translate(calc(var(--wb-out) * -1px),calc(var(--wb-y) * 1px));transition-delay:var(--wb-delay);}',
-  '.dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);}',
+  // 2026-10-13 第二版按原型 `.edge`/`.fan` 重做：**整条右缘**是悬停区（原型 26px 宽整高），
+  // 中间一道小指示条；项是 **46px 圆形图标钮**，标签在图标**左侧**悬停才出现（原型在右侧，
+  // 但那是画在窗外的；我们收在窗内，标签只能往左），状态点是图标右下角的小徽标。
+  '.dshWbSeam{position:fixed;top:0;right:0;width:26px;height:100%;z-index:2210;pointer-events:auto;}',
+  '.dshWbSeamGrip{position:absolute;top:50%;right:6px;width:4px;height:44px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-label-tertiary);opacity:.45;transition:opacity .16s ease-out,background .16s ease-out;}',
+  '.dshWbSeam:hover .dshWbSeamGrip,.dshWbSeam.is-open .dshWbSeamGrip{opacity:1;background:var(--dsw-alias-brand-primary);}',
+  '.dshWbSeamFan{position:absolute;right:14px;top:50%;width:0;height:0;}',
+  // 圆形图标钮：46×46（原型同尺寸）；从轴心**旋转 + 弹出**（角度由 --wb-a 给），逐颗错峰
+  '.dshWbSeamItem{position:absolute;right:0;top:0;width:46px;height:46px;margin-top:-23px;padding:0;display:grid;place-items:center;border:1px solid var(--dsw-alias-border-l2);border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;opacity:0;visibility:hidden;pointer-events:none;transform:rotate(var(--wb-a)) translateX(0);transition:transform .2s cubic-bezier(.25,.9,.3,1.15),opacity .2s ease-out,visibility .2s;}',
+  '.dshWbSeam.is-open .dshWbSeamItem{opacity:1;visibility:visible;pointer-events:auto;transform:rotate(var(--wb-a)) translateX(calc(var(--wb-out) * -1px));transition-delay:var(--wb-delay);}',
+  '.dshWbSeamItem:hover,.dshWbSeamItem:focus-visible{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
   '.dshWbSeamItem.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
-  '.dshWbSeamGlyph{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:12px;}',
-  // 状态点（原型 `.st`）+ 当前标记：点表示状态、文字再说明一次（状态不只靠颜色）
-  '.dshWbSeamSt{flex:none;width:6px;height:6px;margin-left:6px;border-radius:999px;border:1px solid var(--dsw-alias-label-tertiary);}',
-  '.dshWbSeamSt.is-active{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);}',
-  '.dshWbSeamTag{flex:none;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}',
-  '.dshWbSeam.is-open .dshWbSeamItem .dshWbSeamTag{display:none;}',
-  '.dshWbSeamText{max-width:0;overflow:hidden;opacity:0;transition:max-width .16s ease-out,opacity .16s ease-out;}',
-  '.dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{max-width:150px;opacity:1;padding-right:10px;}',
-  '.dshWbSeamEmpty{position:absolute;right:34px;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
+  '.dshWbSeamGlyph{font-size:19px;line-height:1;pointer-events:none;}',
+  // 状态点（原型 `.st`）：图标**右下角的小徽标**，只有"已拼接/当前"才显示（原型 `.joined .st`）
+  '.dshWbSeamSt{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid var(--dsw-alias-bg-base);background:var(--dsw-alias-label-tertiary);display:none;}',
+  '.dshWbSeamItem.is-spliced .dshWbSeamSt,.dshWbSeamItem.is-active .dshWbSeamSt{display:block;background:var(--dsw-alias-brand-primary);}',
+  // 标签：图标**左侧**（窗外画不了，所以反过来），悬停/聚焦才浮出来
+  '.dshWbSeamText{position:absolute;right:calc(100% + 9px);top:50%;transform:translateY(-50%);padding:4px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:16px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .14s ease-out;}',
+  '.dshWbSeamItem:hover .dshWbSeamText,.dshWbSeamItem:focus-visible .dshWbSeamText{opacity:1;}',
+  '.dshWbSeamTag{margin-left:6px;color:var(--dsw-alias-label-tertiary);font-size:11px;font-style:normal;}',
+  '.dshWbSeamItem.is-spliced .dshWbSeamTag,.dshWbSeamItem.is-active .dshWbSeamTag{color:var(--dsw-alias-brand-primary);}',
+  '.dshWbSeamEmpty{position:absolute;right:34px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
   '.dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}',
   // 状态条（原型 `.meter`）：三指标 + 上下文进度条 + 模型名
   '.dshWbMeter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;}',
