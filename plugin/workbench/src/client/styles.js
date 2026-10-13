@@ -97,9 +97,13 @@ export const CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-  // 拼接区（长条右侧那一列）：窗口已由壳加宽，这里只把列摆进去（宽度来自 spliceWidth）
+  // 拼接区（长条右侧那些列）：窗口已由壳加宽，这里只把列摆进去（总宽来自 spliceWidth）
   '.dshWbHomeBody.is-spliced{gap:10px;}',
-  '.dshWbSplice{flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}',
+  '.dshWbSpliceWrap{flex:none;min-width:0;display:flex;gap:8px;overflow:hidden;}',
+  '.dshWbSplice{position:relative;flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}',
+  // 左缘拖拽把手：贴在面板左边界上，鼠标移到附近才显形（平时别抢视觉）
+  '.dshWbSpliceGrip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;background:transparent;}',
+  '.dshWbSpliceGrip:hover{background:var(--dsw-alias-brand-primary);opacity:.5;}',
   '.dshWbSpliceHead{flex:none;display:flex;align-items:center;gap:8px;}',
   '.dshWbSpliceLabel{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
   '.dshWbSpliceBody{flex:1;min-height:0;overflow:auto;}',

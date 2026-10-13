@@ -24,8 +24,12 @@ import { ConversationTile } from './ConversationTile.js'
 import { getShapeBridge, hasSpliceBridge, openSettings, readShape, requestShape, requestSplice, requestWindowClose } from './shell-shape.js'
 import { TelemetryMeter, useSessionSnapshot, useSessionTelemetry } from './use-session.js'
 
-/** 拼接区默认宽度（px）：壳侧允许 280–760，这里取中间值；用户拖拽调宽是下一刀。 */
+/** 拼接区默认宽度（px）：壳侧允许 280 到"工作区上限"，这里取中间值；拖拽调宽是同一刀的后半。 */
 const SPLICE_WIDTH = 420
+/** 面板最小宽度（px）：拖拽阶段先夹到这个值，落定时再由壳夹到 280。 */
+const SPLICE_DRAG_MIN = 120
+/** 壳侧硬下限（与 main.js 的 SPLICE_MIN 对齐）：申请宽度时不低于它，免得每次都被夹、白跑一趟。 */
+const SPLICE_MIN = 280
 
 /** 接缝扇形的几何（原型 v2.2：以接缝为轴心、中间那颗顶到最外、逐颗错峰）。 */
 const SEAM_FAN_OUT = 46 // 中间那颗离接缝多远（px）；两侧按 |t| 线性收窄
@@ -77,9 +81,17 @@ export function WorkbenchChrome() {
   // 接缝扇形的开合（悬停/聚焦）。用 React 状态而不是纯 CSS `:hover`：探针能直接读
   // `data-wb-seam-open` 与逐颗的几何属性，不必去合成鼠标事件猜样式。
   const [seamOpen, setSeamOpen] = react.useState(false)
-  // 拼接：右侧拼的是哪个模式（null = 没拼）+ 实际拼到的宽度（壳回读）
-  const [spliced, setSpliced] = react.useState(null)
+  // 拼接：右侧拼了哪些模式（数组，**index 0 = 贴着主长条那块**；新拼的插到最前）+ 壳回读的总宽
+  const [spliced, setSpliced] = react.useState([])
   const [spliceWidth, setSpliceWidth] = react.useState(0)
+  // 拖拽回调是**闭包**，拿到的 `spliced` 是渲染那一刻的旧值——松手时按它落定会把宽度改回去
+  // （2026-10-13 写这刀时当场看出来的）。所以始终从 ref 读最新值。
+  // **hook 必须在所有 early return 之前**：放到下面那个拼接块里会报 "Rendered more hooks than
+  // during the previous render"（主屏关着时不走那段，开着时多两个 hook——2026-10-13 实付过学费）。
+  const panelsRef = react.useRef([])
+  react.useEffect(() => {
+    panelsRef.current = spliced
+  }, [spliced])
   const askedForStrip = react.useRef(false)
   react.useEffect(() => {
     let cancelled = false
@@ -185,29 +197,80 @@ export function WorkbenchChrome() {
   /* ── 模式拼接（2026-10-13，用户拍板 A：**接缝点模式 = 拼到右侧**） ─────────────
    * 与"进入模式"分工：进全屏走宽窗主屏的瓷砖「进入」；接缝点一下是把该模式的**可嵌入视图**
    * 拼在长条右侧（第一版就用模式已提供的 `dock` 视图），窗口跟着变宽（壳侧 `splice` 几何）。
+   * 2026-10-13 第二版：**可以拼多个**（新拼的贴主长条插入，旧的整体外顶——原型 v2.2 的规则），
+   * 每块左缘可**拖拽调宽**（280–上限，壳侧夹住；宽度记忆在壳的 `settings.workbenchSplice` 里）。
    * 纪律：① 没有可嵌入视图的模式**不拼**（如实说明，不硬塞）；② 壳不支持拼接（老壳）时
    * 整个入口不出现；③ 进入模式 / 关主屏 / 退出工具台时**先收起拼接**，别把窗口留在加宽状态。
    */
+  const totalSpliceOf = (panels) => panels.reduce((sum, it) => sum + (Number(it.width) || SPLICE_WIDTH), 0)
+  const applySpliceWidth = async (panels) => {
+    const want = panels.length ? Math.max(SPLICE_MIN, totalSpliceOf(panels)) : 0
+    const result = await requestSplice(want)
+    if (!result.ok) return result
+    setSpliceWidth(Number(result.spliceWidth) || want)
+    return result
+  }
   const spliceMode = async (id) => {
-    if (spliced === id) return collapseSplice()
+    if (spliced.some((it) => it.id === id)) return unsplice(id)
     const view = registry.dockViewOf(id)
     if (!view) {
       setNotice({ kind: 'info', text: T.spliceNoView(registry.resolveLabel(id)) })
       return
     }
-    const result = await requestSplice(SPLICE_WIDTH)
+    // 新拼的**贴主长条插入**（原型 v2.2：右侧新界面贴长条、旧界面依次外顶）
+    const next = [{ id, width: SPLICE_WIDTH }, ...spliced]
+    const result = await applySpliceWidth(next)
     if (!result.ok) {
       setNotice({ kind: 'error', text: T.spliceFailed(result.error) })
       return
     }
-    setSpliced(id)
-    setSpliceWidth(Number(result.spliceWidth) || SPLICE_WIDTH)
+    setSpliced(next)
+  }
+  const unsplice = async (id) => {
+    const next = spliced.filter((it) => it.id !== id)
+    await applySpliceWidth(next)
+    setSpliced(next)
   }
   const collapseSplice = async () => {
-    if (!spliced) return { ok: true }
-    setSpliced(null)
+    if (!spliced.length) return { ok: true }
+    setSpliced([])
     setSpliceWidth(0)
     return requestSplice(0)
+  }
+  // 拖拽调宽（面板左缘的 grip）：往左拖 = 变宽。用 pointer capture，拖的过程中**节流**申请，
+  // 松手再落一次最终值——壳侧本来就会夹到 280–上限，这里不重复夹（只保证不发负数）。
+  const dragSplice = (id) => (event) => {
+    const panel = spliced.find((it) => it.id === id)
+    if (!panel) return
+    const startX = event.clientX
+    const startWidth = Number(panel.width) || SPLICE_WIDTH
+    const target = event.currentTarget
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      /* 拿不到捕获也能拖，只是移出元素就断 */
+    }
+    let last = 0
+    const onMove = (moveEvent) => {
+      const want = Math.max(SPLICE_DRAG_MIN, Math.round(startWidth + (startX - moveEvent.clientX)))
+      const now = Date.now()
+      if (now - last < 80) return
+      last = now
+      const nextPanels = panelsRef.current.map((it) => (it.id === id ? { ...it, width: want } : it))
+      // **立刻同步 ref**：effect 要等这一轮渲染之后才跑，而 pointerup 可能就在同一 tick 里
+      // （探针一次 evaluate 里连发 down/move/up 就是这种情形）——只靠 effect 会读到旧数组，
+      // 松手那一下把宽度又改回去（2026-10-13 探针实测抓到）。
+      panelsRef.current = nextPanels
+      void requestSplice(Math.max(SPLICE_MIN, totalSpliceOf(nextPanels)))
+      setSpliced(nextPanels)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      void applySpliceWidth(panelsRef.current)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }
   const exitWorkbench = async () => {
     await collapseSplice()
@@ -412,44 +475,61 @@ export function WorkbenchChrome() {
     )
   })
 
-  // 拼接面板（长条右侧那一列）：模式的**可嵌入视图**（第一版 = 它的 `dock` 视图）+ 收起钮。
-  // 宽度由壳回读的 `spliceWidth` 定（窗口已按它加宽），这里只把列摆进去。
-  const splicedView = spliced ? registry.dockViewOf(spliced) : null
-  const splicePanel =
-    spliced && splicedView
-      ? react.createElement(
-          'section',
-          {
-            className: 'dshWbSplice',
-            'data-wb-splice': spliced,
-            'data-wb-splice-width': String(spliceWidth || ''),
-            style: spliceWidth ? { flexBasis: `${spliceWidth}px` } : undefined,
-            'aria-label': T.spliceTitle(splicedView.label),
-          },
+  // 拼接面板（长条右侧那些列）：每块 = 模式的**可嵌入视图**（第一版 = 它的 `dock` 视图）+ 头部
+  // （模式名 + ✕）+ 左缘**拖拽把手**。宽度由壳回读的 `spliceWidth` 定（窗口已按它加宽）。
+  const splicePanels = spliced
+    .map((panel) => {
+      const view = registry.dockViewOf(panel.id)
+      if (!view) return null
+      return react.createElement(
+        'section',
+        {
+          key: panel.id,
+          className: 'dshWbSplice',
+          'data-wb-splice': panel.id,
+          'data-wb-splice-width': String(panel.width || SPLICE_WIDTH),
+          style: { flexBasis: `${Number(panel.width) || SPLICE_WIDTH}px` },
+          'aria-label': T.spliceTitle(view.label),
+        },
+        react.createElement('div', {
+          className: 'dshWbSpliceGrip',
+          title: T.spliceResize,
+          'aria-hidden': 'true',
+          'data-wb-splice-grip': panel.id,
+          onPointerDown: dragSplice(panel.id),
+        }),
+        react.createElement(
+          'div',
+          { className: 'dshWbSpliceHead' },
+          react.createElement('span', { className: 'dshWbSpliceLabel' }, T.spliceTitle(view.label)),
           react.createElement(
-            'div',
-            { className: 'dshWbSpliceHead' },
-            react.createElement('span', { className: 'dshWbSpliceLabel' }, T.spliceTitle(splicedView.label)),
-            react.createElement(
-              'button',
-              {
-                type: 'button',
-                className: 'dshWbBarBtn',
-                title: T.spliceCollapse,
-                'aria-label': T.spliceCollapse,
-                onClick: () => void collapseSplice(),
-                'data-wb-splice-collapse': '',
-              },
-              '✕',
-            ),
+            'button',
+            {
+              type: 'button',
+              className: 'dshWbBarBtn',
+              title: T.spliceCollapse,
+              'aria-label': T.spliceCollapse,
+              onClick: () => void unsplice(panel.id),
+              'data-wb-splice-collapse': panel.id,
+            },
+            '✕',
           ),
-          react.createElement(
-            'div',
-            { className: 'dshWbSpliceBody', 'data-wb-splice-body': '' },
-            react.createElement(splicedView.view),
-          ),
-        )
-      : null
+        ),
+        react.createElement(
+          'div',
+          { className: 'dshWbSpliceBody', 'data-wb-splice-body': '' },
+          react.createElement(view.view),
+        ),
+      )
+    })
+    .filter(Boolean)
+  const splicePanel = splicePanels.length
+    ? react.createElement(
+        'div',
+        { className: 'dshWbSpliceWrap', 'data-wb-splice-wrap': String(splicePanels.length), style: { flexBasis: `${spliceWidth || SPLICE_WIDTH}px` } },
+        splicePanels,
+      )
+    : null
 
   return react.createElement(
     'div',
@@ -542,7 +622,7 @@ export function WorkbenchChrome() {
                   const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t))) // 中间那颗顶到最外
                   const y = Math.round((i - mid) * SEAM_FAN_GAP)
                   const delay = i * SEAM_FAN_STAGGER
-                  const isSpliced = spliced === mode.id
+                  const isSpliced = spliced.some((it) => it.id === mode.id)
                   return react.createElement(
                     'button',
                     {

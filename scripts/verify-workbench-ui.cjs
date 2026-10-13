@@ -161,12 +161,13 @@ app.whenReady().then(async () => {
       // 顶栏「⚙」（2026-10-13）：走壳既有的设置通道，假桥只记调用次数
       // （注意：这一段在 HTML 模板字符串里，注释**不能出现反引号**——会把模板截断，2026-10-13 踩过）
       openSettings: async () => { window.__settingsCalls += 1; return { ok: true } },
-      // 拼接宽度（2026-10-13）：假桥照真壳的口径回包（越界夹住），只记调用
+      // 拼接宽度（2026-10-13）：假桥照真壳的口径回包（0 = 收起，280..上限，越界夹住）。
+      // 上限在真壳里是**按显示器工作区算**的（多模式同时拼要更宽），探针里给一个固定上限即可。
       setWorkbenchSplice: async (w) => {
         const n = Number(w);
-        const next = !Number.isFinite(n) || n <= 0 ? 0 : Math.max(280, Math.min(760, Math.round(n)));
+        const next = !Number.isFinite(n) || n <= 0 ? 0 : Math.max(280, Math.min(1200, Math.round(n)));
         window.__spliceLog.push(next);
-        return { ok: true, shape: 'strip', spliceWidth: next, spliceRange: [280, 760] };
+        return { ok: true, shape: 'strip', spliceWidth: next, spliceRange: [280, 1200] };
       },
       // 浮标已于 2026-10-13 移除（用户："这个浮标没有用就去掉"）：假桥**不再提供**这两个方法，
       // 门面若还偷偷调用会当场抛错；下面另有守卫断言钉"一次都没调过"。
@@ -737,6 +738,10 @@ app.whenReady().then(async () => {
     id:'demoDock', label:'带坞视图的模式', order:70,
     dock:{ label:'坞视图', view: () => window.React.createElement('div', {'data-wb-splice-demo':'1'}, '拼接内容') },
   }); return 0 })()`)
+  await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
+    id:'demoDock2', label:'第二个带坞视图的模式', order:80,
+    dock:{ label:'坞视图二', view: () => window.React.createElement('div', {'data-wb-splice-demo':'2'}, '拼接内容二') },
+  }); return 0 })()`)
   {
     const activeBefore = await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`)
     await click('[data-wb-seam-mode="demoDock"]')
@@ -758,15 +763,48 @@ app.whenReady().then(async () => {
     )
     assert.equal(await count('[data-wb-splice-demo]'), 1, '拼接区应渲染模式自己的可嵌入视图')
     assert.equal(await count('[data-wb-seam-tag="spliced"]'), 1, '接缝里应标出"已拼接"')
-    // 收起：窗口要还回去（申请 0）
-    await click('[data-wb-splice-collapse]')
+
+    // 第二块：**可以同时拼多个**，新拼的贴主长条插入（原型 v2.2 的规则）
+    await click('[data-wb-seam-mode="demoDock2"]')
+    await waitFor(`document.querySelectorAll('[data-wb-splice]').length===2`, '应能同时拼两个模式')
+    assert.equal(
+      await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-splice]')).map((el) => el.getAttribute('data-wb-splice')))`),
+      JSON.stringify(['demoDock2', 'demoDock']),
+      '新拼的那块要**贴主长条**插入（旧的整体外顶）',
+    )
+    assert.equal(
+      await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`),
+      '840',
+      '两块各 420，总宽应向壳申请 840',
+    )
+    assert.equal(await evaluate(`document.querySelector('[data-wb-splice-wrap]').getAttribute('data-wb-splice-wrap')`), '2', '外层应报出拼了几块')
+
+    // 拖拽调宽：往左拖 100px → 该块 420 → 520，总宽申请 940
+    await evaluate(`(() => {
+      const grip = document.querySelector('[data-wb-splice-grip]');
+      grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 400 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 300 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 300 }));
+      return 0 })()`)
+    await waitFor(`window.__spliceLog.slice(-1)[0]===940`, '拖拽 100px 应把总宽申请到 940（420+100+420）')
+    assert.equal(
+      await evaluate(`document.querySelector('[data-wb-splice="demoDock2"]').getAttribute('data-wb-splice-width')`),
+      '520',
+      '被拖的那块宽度要变成 520（松手后不会被旧值改回去）',
+    )
+
+    // 收起其中一块：另一块还在，总宽回到 420
+    await click('[data-wb-splice-collapse="demoDock2"]')
+    await waitFor(`document.querySelectorAll('[data-wb-splice]').length===1`, '收起一块后另一块应还在')
+    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '420', '收起一块后总宽申请应回到 420')
+    await click('[data-wb-splice-collapse="demoDock"]')
     await waitFor(`document.querySelector('[data-wb-splice]')===null`, '点收起应撤掉拼接区')
-    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog)`), JSON.stringify([420, 0]), '收起要向壳申请 0')
+    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '0', '全收起要向壳申请 0')
     // 没有可嵌入视图的模式：**不许拼**（如实说明，窗口不变宽）
     await click('[data-wb-seam-mode="demo"]')
     await sleep(300)
     assert.equal(await count('[data-wb-splice]'), 0, '没有可嵌入视图的模式不该被拼上')
-    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog)`), JSON.stringify([420, 0]), '拼不了就不该动窗口')
+    assert.equal(await evaluate(`JSON.stringify(window.__spliceLog.slice(-1)[0])`), '0', '拼不了就不该动窗口')
     assert.ok((await text('[data-wb-switcher]')).includes('可嵌入视图'), '拼不了要如实说明原因')
   }
 

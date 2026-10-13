@@ -401,9 +401,13 @@ var CSS = [
   '.dshWbHome[data-wb-shape="strip"] .dshWbChat{width:auto;flex:1;min-height:0;border:none;border-radius:0;background:transparent;padding:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomeBody{flex-direction:column;gap:0;}',
   '.dshWbHome[data-wb-shape="strip"] .dshWbChatSessionTitle{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-  // 拼接区（长条右侧那一列）：窗口已由壳加宽，这里只把列摆进去（宽度来自 spliceWidth）
+  // 拼接区（长条右侧那些列）：窗口已由壳加宽，这里只把列摆进去（总宽来自 spliceWidth）
   ".dshWbHomeBody.is-spliced{gap:10px;}",
-  ".dshWbSplice{flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}",
+  ".dshWbSpliceWrap{flex:none;min-width:0;display:flex;gap:8px;overflow:hidden;}",
+  ".dshWbSplice{position:relative;flex:none;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:10px;border-left:1px solid var(--dsw-alias-border-l1);overflow:auto;}",
+  // 左缘拖拽把手：贴在面板左边界上，鼠标移到附近才显形（平时别抢视觉）
+  ".dshWbSpliceGrip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;background:transparent;}",
+  ".dshWbSpliceGrip:hover{background:var(--dsw-alias-brand-primary);opacity:.5;}",
   ".dshWbSpliceHead{flex:none;display:flex;align-items:center;gap:8px;}",
   ".dshWbSpliceLabel{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".dshWbSpliceBody{flex:1;min-height:0;overflow:auto;}",
@@ -608,7 +612,8 @@ var T = {
   // 拼接（2026-10-13，用户拍板 A：接缝点模式 = **拼到右侧**；进全屏走宽窗主屏的「进入」）
   spliceTo: (label) => `把${label}拼到右侧（要它的全屏界面就回宽窗主屏点「进入」）`,
   spliceTitle: (label) => `${label} · 已拼接`,
-  spliceCollapse: "收起拼接",
+  spliceCollapse: "收起这块拼接",
+  spliceResize: "拖拽调整拼接宽度（往左拖变宽）",
   spliceNoView: (label) => `${label}还没提供可嵌入视图，拼不了；回宽窗主屏点「进入」可以用它的完整界面。`,
   spliceFailed: (err) => `拼接没成功（${err}）——窗口没变宽，界面保持原样。`,
   spliced: "已拼接",
@@ -1471,6 +1476,8 @@ async function requestWindowClose(globalThisRef = typeof window === "undefined" 
 
 // plugin/workbench/src/client/Chrome.js
 var SPLICE_WIDTH = 420;
+var SPLICE_DRAG_MIN = 120;
+var SPLICE_MIN = 280;
 var SEAM_FAN_OUT = 46;
 var SEAM_FAN_GAP = 44;
 var SEAM_FAN_STAGGER = 45;
@@ -1501,8 +1508,12 @@ function WorkbenchChrome() {
   const sessionState = useSessionSnapshot();
   const telemetry = useSessionTelemetry(sessionState.sessions, sessionState.sessionId);
   const [seamOpen, setSeamOpen] = react5.useState(false);
-  const [spliced, setSpliced] = react5.useState(null);
+  const [spliced, setSpliced] = react5.useState([]);
   const [spliceWidth, setSpliceWidth] = react5.useState(0);
+  const panelsRef = react5.useRef([]);
+  react5.useEffect(() => {
+    panelsRef.current = spliced;
+  }, [spliced]);
   const askedForStrip = react5.useRef(false);
   react5.useEffect(() => {
     let cancelled = false;
@@ -1578,26 +1589,68 @@ function WorkbenchChrome() {
     const result = await requestShape(next);
     setShape(result.ok ? next : `failed:${result.error}`);
   };
+  const totalSpliceOf = (panels) => panels.reduce((sum, it) => sum + (Number(it.width) || SPLICE_WIDTH), 0);
+  const applySpliceWidth = async (panels) => {
+    const want = panels.length ? Math.max(SPLICE_MIN, totalSpliceOf(panels)) : 0;
+    const result = await requestSplice(want);
+    if (!result.ok) return result;
+    setSpliceWidth(Number(result.spliceWidth) || want);
+    return result;
+  };
   const spliceMode = async (id) => {
-    if (spliced === id) return collapseSplice();
+    if (spliced.some((it) => it.id === id)) return unsplice(id);
     const view = registry2.dockViewOf(id);
     if (!view) {
       setNotice({ kind: "info", text: T.spliceNoView(registry2.resolveLabel(id)) });
       return;
     }
-    const result = await requestSplice(SPLICE_WIDTH);
+    const next = [{ id, width: SPLICE_WIDTH }, ...spliced];
+    const result = await applySpliceWidth(next);
     if (!result.ok) {
       setNotice({ kind: "error", text: T.spliceFailed(result.error) });
       return;
     }
-    setSpliced(id);
-    setSpliceWidth(Number(result.spliceWidth) || SPLICE_WIDTH);
+    setSpliced(next);
+  };
+  const unsplice = async (id) => {
+    const next = spliced.filter((it) => it.id !== id);
+    await applySpliceWidth(next);
+    setSpliced(next);
   };
   const collapseSplice = async () => {
-    if (!spliced) return { ok: true };
-    setSpliced(null);
+    if (!spliced.length) return { ok: true };
+    setSpliced([]);
     setSpliceWidth(0);
     return requestSplice(0);
+  };
+  const dragSplice = (id) => (event) => {
+    const panel = spliced.find((it) => it.id === id);
+    if (!panel) return;
+    const startX = event.clientX;
+    const startWidth = Number(panel.width) || SPLICE_WIDTH;
+    const target = event.currentTarget;
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+    }
+    let last = 0;
+    const onMove = (moveEvent) => {
+      const want = Math.max(SPLICE_DRAG_MIN, Math.round(startWidth + (startX - moveEvent.clientX)));
+      const now = Date.now();
+      if (now - last < 80) return;
+      last = now;
+      const nextPanels = panelsRef.current.map((it) => it.id === id ? { ...it, width: want } : it);
+      panelsRef.current = nextPanels;
+      void requestSplice(Math.max(SPLICE_MIN, totalSpliceOf(nextPanels)));
+      setSpliced(nextPanels);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      void applySpliceWidth(panelsRef.current);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
   const exitWorkbench = async () => {
     await collapseSplice();
@@ -1786,38 +1839,54 @@ function WorkbenchChrome() {
       mode.active ? react5.createElement("span", { className: "dshWbRowMark" }, T.current) : null
     );
   });
-  const splicedView = spliced ? registry2.dockViewOf(spliced) : null;
-  const splicePanel = spliced && splicedView ? react5.createElement(
-    "section",
-    {
-      className: "dshWbSplice",
-      "data-wb-splice": spliced,
-      "data-wb-splice-width": String(spliceWidth || ""),
-      style: spliceWidth ? { flexBasis: `${spliceWidth}px` } : void 0,
-      "aria-label": T.spliceTitle(splicedView.label)
-    },
-    react5.createElement(
-      "div",
-      { className: "dshWbSpliceHead" },
-      react5.createElement("span", { className: "dshWbSpliceLabel" }, T.spliceTitle(splicedView.label)),
+  const splicePanels = spliced.map((panel) => {
+    const view = registry2.dockViewOf(panel.id);
+    if (!view) return null;
+    return react5.createElement(
+      "section",
+      {
+        key: panel.id,
+        className: "dshWbSplice",
+        "data-wb-splice": panel.id,
+        "data-wb-splice-width": String(panel.width || SPLICE_WIDTH),
+        style: { flexBasis: `${Number(panel.width) || SPLICE_WIDTH}px` },
+        "aria-label": T.spliceTitle(view.label)
+      },
+      react5.createElement("div", {
+        className: "dshWbSpliceGrip",
+        title: T.spliceResize,
+        "aria-hidden": "true",
+        "data-wb-splice-grip": panel.id,
+        onPointerDown: dragSplice(panel.id)
+      }),
       react5.createElement(
-        "button",
-        {
-          type: "button",
-          className: "dshWbBarBtn",
-          title: T.spliceCollapse,
-          "aria-label": T.spliceCollapse,
-          onClick: () => void collapseSplice(),
-          "data-wb-splice-collapse": ""
-        },
-        "✕"
+        "div",
+        { className: "dshWbSpliceHead" },
+        react5.createElement("span", { className: "dshWbSpliceLabel" }, T.spliceTitle(view.label)),
+        react5.createElement(
+          "button",
+          {
+            type: "button",
+            className: "dshWbBarBtn",
+            title: T.spliceCollapse,
+            "aria-label": T.spliceCollapse,
+            onClick: () => void unsplice(panel.id),
+            "data-wb-splice-collapse": panel.id
+          },
+          "✕"
+        )
+      ),
+      react5.createElement(
+        "div",
+        { className: "dshWbSpliceBody", "data-wb-splice-body": "" },
+        react5.createElement(view.view)
       )
-    ),
-    react5.createElement(
-      "div",
-      { className: "dshWbSpliceBody", "data-wb-splice-body": "" },
-      react5.createElement(splicedView.view)
-    )
+    );
+  }).filter(Boolean);
+  const splicePanel = splicePanels.length ? react5.createElement(
+    "div",
+    { className: "dshWbSpliceWrap", "data-wb-splice-wrap": String(splicePanels.length), style: { flexBasis: `${spliceWidth || SPLICE_WIDTH}px` } },
+    splicePanels
   ) : null;
   return react5.createElement(
     "div",
@@ -1898,7 +1967,7 @@ function WorkbenchChrome() {
           const out = Math.round(SEAM_FAN_OUT * (1 - Math.abs(t)));
           const y = Math.round((i - mid) * SEAM_FAN_GAP);
           const delay = i * SEAM_FAN_STAGGER;
-          const isSpliced = spliced === mode.id;
+          const isSpliced = spliced.some((it) => it.id === mode.id);
           return react5.createElement(
             "button",
             {

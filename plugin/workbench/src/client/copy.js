@@ -34,7 +34,8 @@ export const T = {
   // 拼接（2026-10-13，用户拍板 A：接缝点模式 = **拼到右侧**；进全屏走宽窗主屏的「进入」）
   spliceTo: (label) => `把${label}拼到右侧（要它的全屏界面就回宽窗主屏点「进入」）`,
   spliceTitle: (label) => `${label} · 已拼接`,
-  spliceCollapse: '收起拼接',
+  spliceCollapse: '收起这块拼接',
+  spliceResize: '拖拽调整拼接宽度（往左拖变宽）',
   spliceNoView: (label) => `${label}还没提供可嵌入视图，拼不了；回宽窗主屏点「进入」可以用它的完整界面。`,
   spliceFailed: (err) => `拼接没成功（${err}）——窗口没变宽，界面保持原样。`,
   spliced: '已拼接',

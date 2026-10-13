@@ -387,14 +387,15 @@ try {
     check('J 拼接时长条的**右缘不动**（只能往左长，不许把窗口推出屏幕）',
       Math.abs(after.right - b0.right) <= 2,
       JSON.stringify({ 右缘前: b0.right, 右缘后: after.right }))
-    // 越界要夹住（有界标量）：5000 → 760，100 → 280，0 → 收起
+    // 越界要夹住（有界标量）：上限**随工作区算**（多模式同时拼要更宽），所以按壳回读的 range 判，
+    // 不写死数字——写死就变成"钉实现"，屏幕一变就假红。
     const clampedHigh = await ev(`window.dshShell.setWorkbenchSplice(5000)`)
     await sleep(500)
     const clampedLow = await ev(`window.dshShell.setWorkbenchSplice(100)`)
     await sleep(500)
-    check('J 拼接宽度是有界标量：越界被夹住（5000→760、100→280）',
-      clampedHigh?.spliceWidth === 760 && clampedLow?.spliceWidth === 280,
-      JSON.stringify({ 上限回包: clampedHigh?.spliceWidth, 下限回包: clampedLow?.spliceWidth, 允许区间: clampedHigh?.spliceRange }))
+    check('J 拼接宽度是有界标量：越界被夹住（5000→上限、100→下限）',
+      clampedHigh?.spliceWidth === b0.range[1] && clampedLow?.spliceWidth === b0.range[0],
+      JSON.stringify({ 上限回包: clampedHigh?.spliceWidth, 下限回包: clampedLow?.spliceWidth, 壳报区间: b0.range }))
     const collapsed = await ev(`window.dshShell.setWorkbenchSplice(0)`)
     await sleep(700)
     const back = JSON.parse(await ev(`(async () => { const s = await window.dshShell.getWorkbenchShape(); return JSON.stringify({ w: s.bounds.width, right: s.bounds.x + s.bounds.width, splice: s.spliceWidth }) })()`))

@@ -2235,7 +2235,11 @@ function createWindow() {
         if (!win || win.isDestroyed() || currentShape() === 'normal') return
         const b = win.getBounds()
         const shape = currentShape()
-        settings.workbenchShapeBounds = { ...(settings.workbenchShapeBounds || {}), [shape]: { x: b.x, y: b.y } }
+        // **记忆里存的是"条自己"的位置，不是被拼接撑宽后的窗口位置**（2026-10-13 实机 J 段抓到）：
+        // 拼接时窗口往左长（`x -= splice`），照写就会把撑宽后的 x 记成条的位置——收起后条会跑偏
+        // （右缘从 1392 漂到 1113）。所以写回时把 splice 加回去。
+        const ownX = shape === 'strip' ? b.x + currentSplice() : b.x
+        settings.workbenchShapeBounds = { ...(settings.workbenchShapeBounds || {}), [shape]: { x: ownX, y: b.y } }
         saveSettings()
       }, 500)
       return
@@ -2319,12 +2323,27 @@ const SHAPE_GEOMETRY = {
  * 只有 `strip` 用得上；`mini` 是小条（塞不下拼接区），但**值会留着**，切回 strip 时恢复。
  */
 const SPLICE_MIN = 280
-const SPLICE_MAX = 760
+const SPLICE_HARD_MAX = 1200
+
+/**
+ * 拼接上限**随显示器工作区算**（2026-10-13 第二版）：窗口右缘贴着工作区右缘、只能往左长，
+ * 所以往左最多长到"工作区宽 − 长条宽 − 32"。多个模式同时拼时宽度要加起来，写死 760 会不够。
+ * 仍然是**一个标量**（页面还是只说"要拼多宽"），上限只是由壳按屏幕算出来。
+ */
+function spliceMax() {
+  try {
+    const anchor = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds
+    const area = screen.getDisplayMatching(anchor).workArea
+    return Math.max(SPLICE_MIN, Math.min(SPLICE_HARD_MAX, Math.round(area.width - SHAPE_GEOMETRY.strip.width - 32)))
+  } catch {
+    return SPLICE_MIN
+  }
+}
 
 function currentSplice() {
   const raw = Number(settings.workbenchSplice)
   if (!Number.isFinite(raw) || raw <= 0) return 0
-  return Math.max(SPLICE_MIN, Math.min(SPLICE_MAX, Math.round(raw)))
+  return Math.max(SPLICE_MIN, Math.min(spliceMax(), Math.round(raw)))
 }
 
 function currentShape() {
@@ -2363,7 +2382,7 @@ function shapeState() {
     minSize: SHAPE_MIN_SIZE[shape],
     // 拼接宽度（只对 strip 生效）：页面据此知道"现在拼了多宽"，收起时是 0
     spliceWidth: shape === 'strip' ? currentSplice() : 0,
-    spliceRange: [SPLICE_MIN, SPLICE_MAX],
+    spliceRange: [SPLICE_MIN, spliceMax()],
     // 自报进程号：实机门禁按它过滤窗口，避免读到**另一个实例**（比如常驻的预览实例）的同名窗口
     pid: process.pid,
     mainFocused: Boolean(win && !win.isDestroyed() && win.isFocused()),
@@ -3199,8 +3218,8 @@ function registerIpc() {
     return { ok: true, ...shapeState() }
   })
 
-  // 拼接宽度（2026-10-13）：页面只说"要拼多宽"（有界标量：0 = 收起 / 280–760），几何全在主进程算。
-  // 只对 strip 生效；normal 下只记住值（下次进长条时生效），mini 下不动窗口（小条塞不下拼接区）。
+  // 拼接宽度（2026-10-13）：页面只说"要拼多宽"（有界标量：0 = 收起 / 280 到工作区上限），
+  // 几何全在主进程算。只对 strip 生效；normal 下只记住值（下次进长条时生效），mini 下不动窗口。
   ipcMain.handle('shell:set-workbench-splice', (event, raw) => {
     if (!isKernelPageSender(event)) {
       log('set-workbench-splice: rejected（发送方不是内核页面主帧）')
@@ -3209,9 +3228,9 @@ function registerIpc() {
     const value = typeof raw === 'number' ? raw : Number(raw && typeof raw === 'object' ? raw.width : raw)
     if (!Number.isFinite(value)) {
       log(`set-workbench-splice: rejected（宽度不是数 ${JSON.stringify(raw)}）`)
-      return { ok: false, error: 'bad-width', allowed: { collapse: 0, min: SPLICE_MIN, max: SPLICE_MAX } }
+      return { ok: false, error: 'bad-width', allowed: { collapse: 0, min: SPLICE_MIN, max: spliceMax() } }
     }
-    const next = value <= 0 ? 0 : Math.max(SPLICE_MIN, Math.min(SPLICE_MAX, Math.round(value)))
+    const next = value <= 0 ? 0 : Math.max(SPLICE_MIN, Math.min(spliceMax(), Math.round(value)))
     settings.workbenchSplice = next
     saveSettings()
     if (win && !win.isDestroyed() && currentShape() === 'strip') {
