@@ -2088,6 +2088,10 @@ function openModuleWindow(modeId, width, kind) {
     // **无边框 + 无阴影**：模块窗口要跟长条**真拼在一起**（2026-10-13 项目所有者："现在拼接不起来"——
     // 各自带系统边框与投影时，看着是两块窗而不是一体）。无边框后拖动仍可用（`-webkit-app-region` 是
     // 下一刀；现在按住标题栏区域拖不动，但可以用系统快捷键/拖边缘调整）。
+    // **不许用户拉伸**（2026-10-13 项目所有者："拖动还是会有拉伸"）：无边框窗口默认能被拖边缘改大小，
+    // 而模块的尺寸归壳管（贴边时按剩余空间算）⇒ 关掉 resizable，改成"整窗跟着长条走"。
+    // 分离仍可用：页面给了拖拽区（`-webkit-app-region: drag`），拖走即分离。
+    resizable: false,
     frame: false,
     hasShadow: false,
     autoHideMenuBar: true,
