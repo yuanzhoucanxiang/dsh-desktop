@@ -748,6 +748,19 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-seam]')!==null`, '装回壳能力后主屏应收成长条并出现接缝')
   const seamState = await evaluate(`document.querySelector('[data-wb-seam]').getAttribute('data-wb-seam-open')`)
   assert.equal(seamState, '0', '接缝默认收起（不该一上来就摊开）')
+  // **顶栏必须是拖拽区**（2026-10-13 无边框重建后项目所有者："整体拖动好像拖动不了"）：
+  // 主窗 `frame:false` 没有标题栏，用户抓的就是"工具台"这一行；读**计算样式**把它钉住，
+  // 否则下次改样式又会"拖不动"，而这是只能靠手感受、探针量不到的东西。
+  assert.equal(
+    await evaluate(`getComputedStyle(document.querySelector('[data-wb-bar]')).getPropertyValue('-webkit-app-region')`),
+    'drag',
+    '长条顶栏必须是 -webkit-app-region:drag（无边框主窗靠它拖动）',
+  )
+  assert.equal(
+    await evaluate(`getComputedStyle(document.querySelector('[data-wb-bar] .dshWbBarBtn')).getPropertyValue('-webkit-app-region')`),
+    'no-drag',
+    '顶栏里的按钮必须 no-drag，否则点击会被拖拽区吃掉',
+  )
   const fanJson = await evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-wb-seam-mode]')).map((b) => ({
     id: b.getAttribute('data-wb-seam-mode'),
     a: Number(b.getAttribute('data-wb-seam-a')),

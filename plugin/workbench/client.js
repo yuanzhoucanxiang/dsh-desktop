@@ -436,6 +436,11 @@ var CSS = [
   // 长条自绘顶栏三钮（2026-10-12 拍板）：只在条状形态出现；normal 仍走原生标题栏，两套并排就是混乱。
   // 刻意**不写 -webkit-app-region**——这一刀窗口还有原生边框，拖拽归原生标题栏；无边框那一刀再补。
   ".dshWbBar{flex:none;display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);}",
+  // **顶栏就是拖拽区**（2026-10-13 无边框重建之后）：主窗 `frame:false` 没有标题栏，
+  // 用户自然会抓"工具台"这一行来拖窗口；不设 `-webkit-app-region:drag` 就是"拖不动"。
+  // 里面的按钮/标题必须显式 `no-drag`，否则被拖拽区吃掉点击。
+  ".dshWbBar{-webkit-app-region:drag;}",
+  '.dshWbBar button,.dshWbBar a,.dshWbBar input,.dshWbBar select,.dshWbBar [role="button"]{-webkit-app-region:no-drag;}',
   ".dshWbBarTitle{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   // 长条形态的收紧：412px 宽里 20/24 的内边距太奢侈；对话列撑满、输入区钉底（原型是一列到底）
   '.dshWbHome[data-wb-shape="strip"] .dshWbHomePanel{padding:10px 12px;gap:8px;}',
