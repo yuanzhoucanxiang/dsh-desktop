@@ -14,7 +14,36 @@
 import * as react from 'react'
 import { T } from './copy.js'
 import { setDockModeId, setDockOpen, setDockWidth } from './ui-store.js'
+import { getShapeBridge, readShape } from './shell-shape.js'
 import { useWorkbench } from './use-workbench.js'
+
+/**
+ * 壳当前形态（坞据此决定显不显示）。桥缺席 → 空串（官方壳：没有长条这回事，坞照常）。
+ * 订阅一次 + 先读一次，别在回调里重建订阅（踩坑 #24）。
+ */
+function useShellShape() {
+  const [shape, setShape] = react.useState('')
+  react.useEffect(() => {
+    const bridge = getShapeBridge()
+    if (!bridge) return undefined
+    let cancelled = false
+    void (async () => {
+      const now = await readShape()
+      if (!cancelled && now && now.shape) setShape(now.shape)
+    })()
+    const off =
+      typeof bridge.onWorkbenchShape === 'function'
+        ? bridge.onWorkbenchShape((state) => {
+            if (state && state.shape) setShape(state.shape)
+          })
+        : null
+    return () => {
+      cancelled = true
+      if (typeof off === 'function') off()
+    }
+  }, [])
+  return shape
+}
 
 /** 坞宽度同步到 CSS 变量：模式用 `padding-right: var(--dsh-wb-dock-width, 0px)` 让位。 */
 function useDockInset(open, width) {
@@ -37,6 +66,12 @@ function useDockInset(open, width) {
 export function WorkbenchDock() {
   const { modes, active, dockOpen, dockWidth, dockModeId, registry } = useWorkbench()
 
+  // **长条形态下不显示辅助坞**（2026-10-13 实机定位）：坞的 rail 本来挂在右缘，和长条的**接缝**
+  // 挤在同一块地方——项目所有者点了 rail 上的"写作"，以为点的是扇形，结果"直接跳进了写作模式"。
+  // 语义上也该分开：接缝是长条的**拼接**入口（用户拍板 A），坞是**宽窗主屏**的"同屏共存"附属面。
+  const shape = useShellShape()
+  const inStrip = shape === 'strip' || shape === 'mini'
+
   // 候选：提供了坞视图、且不是当前主视图的模式
   const candidates = modes
     .filter((m) => m.hasDock && m.id !== active)
@@ -44,9 +79,9 @@ export function WorkbenchDock() {
     .filter(Boolean)
     .sort((a, b) => (a.order === b.order ? a.id.localeCompare(b.id, 'en') : a.order - b.order))
 
-  useDockInset(dockOpen && candidates.length > 0, dockWidth)
+  useDockInset(!inStrip && dockOpen && candidates.length > 0, dockWidth)
 
-  if (candidates.length === 0) return null
+  if (inStrip || candidates.length === 0) return null
   const chosen = candidates.find((c) => c.id === dockModeId) || candidates[0]
 
   if (!dockOpen) {

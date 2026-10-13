@@ -152,12 +152,17 @@ app.whenReady().then(async () => {
     window.__closeCalls = 0;
     window.__settingsCalls = 0;
     window.__spliceLog = [];
+    window.__shapeSubs = [];
     window.dshShell = {
-      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false, spliceWidth: 0, spliceRange: [280, 760] }),
+      getWorkbenchShape: async () => ({ ok: true, shape: 'normal', alwaysOnTop: false, spliceWidth: 0, spliceRange: [280, 1200] }),
       setWorkbenchShape: async (s) => {
         window.__shapeLog.push(s);
-        return { ok: true, shape: s, alwaysOnTop: s !== 'normal', spliceWidth: 0, spliceRange: [280, 760] };
+        const state = { ok: true, shape: s, alwaysOnTop: s !== 'normal', spliceWidth: 0, spliceRange: [280, 1200] };
+        // 形态推送：辅助坞据此决定显不显示（长条下不显示，见 Dock.js）
+        (window.__shapeSubs || []).forEach((cb) => { try { cb(state) } catch (e) {} });
+        return state;
       },
+      onWorkbenchShape: (cb) => { window.__shapeSubs.push(cb); return () => {} },
       // 顶栏「⚙」（2026-10-13）：走壳既有的设置通道，假桥只记调用次数
       // （注意：这一段在 HTML 模板字符串里，注释**不能出现反引号**——会把模板截断，2026-10-13 踩过）
       openSettings: async () => { window.__settingsCalls += 1; return { ok: true } },
@@ -724,11 +729,12 @@ app.whenReady().then(async () => {
   const fan = JSON.parse(fanJson)
   assert.ok(fan.length >= 3, `这一组要至少 3 个模式才谈得上"扇形"：${fanJson}`)
   const mid = fan[Math.floor(fan.length / 2)]
-  // 原型的扇形是**转出来的**：角度从 -34° 到 +34° 单调排开、正中那颗 0°、半径恒定；
-  // 两端必须真的分开（全相等 / 全为 0 就是没排开——弱断言在这里抓不到，所以判**严格**）
-  assert.ok(fan.every((it, i) => i === 0 || it.a > fan[i - 1].a), `角度应单调排开：${fanJson}`)
+  // 原型的扇形是**转出来的**：角度从第一颗到最后一颗**递减**（第一颗在上）、正中那颗 0°、半径恒定；
+  // 两端必须真的分开、且**上下顺序不能反**（2026-10-13 实机量到反了：writing 在下面、gir 在上面，
+  // 看着像"朝内翻"——所以这条判据判的是**方向**，不只是"排开了"）
+  assert.ok(fan.every((it, i) => i === 0 || it.a < fan[i - 1].a), `角度应从上到下递减（第一颗在上）：${fanJson}`)
   assert.equal(mid.a, 0, `正中那颗应在 0°：${fanJson}`)
-  assert.ok(fan[0].a < 0 && fan[fan.length - 1].a > 0, `两端应分居中间两侧：${fanJson}`)
+  assert.ok(fan[0].a > 0 && fan[fan.length - 1].a < 0, `第一颗应在上（正角）、最后一颗在下（负角）：${fanJson}`)
   assert.ok(Math.abs(fan[0].a + fan[fan.length - 1].a) <= 1, `两端角度应对称：${fanJson}`)
   assert.ok(fan.every((it) => it.r === fan[0].r && it.r > 0), `弹出半径应恒定且为正：${fanJson}`)
   assert.ok(fan.every((it, i) => i === 0 || it.delay >= fan[i - 1].delay), `逐颗错峰应单调不减：${fanJson}`)
@@ -754,6 +760,13 @@ app.whenReady().then(async () => {
     id:'demoDock2', label:'第二个带坞视图的模式', order:80,
     dock:{ label:'坞视图二', view: () => window.React.createElement('div', {'data-wb-splice-demo':'2'}, '拼接内容二') },
   }); return 0 })()`)
+  // **长条形态下辅助坞不出现**（2026-10-13 实机定位）：坞的 rail 挂在右缘、和接缝挤在一起——
+  // 项目所有者点了 rail 上的"写作"，以为点的是扇形，结果"直接跳进了写作模式"。
+  assert.equal(
+    await count('[data-wb-dock-rail]'),
+    0,
+    '长条形态下不该出现辅助坞 rail（它和接缝挤在右缘，会让人以为点的是扇形）',
+  )
   {
     const activeBefore = await evaluate(`window.__wbPlugin.__workbenchRegistry().getActive()`)
     await click('[data-wb-seam-mode="demoDock"]')

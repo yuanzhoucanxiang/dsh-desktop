@@ -619,9 +619,10 @@ export function WorkbenchChrome() {
                 { className: 'dshWbSeamFan', 'data-wb-seam-fan': '' },
                 modes.map((mode, i) => {
                   const mid = (modes.length - 1) / 2
-                  // 角度：中间 0°，两端 ±SEAM_FAN_SPREAD（项数多时按项数摊开，避免叠在一起）
+                  // 角度：**第一颗在上、最后一颗在下**（`mid - i`，不是 `i - mid`——2026-10-13 实机量到
+                  // 顺序反了：writing 落在 y=304、gir 落在 y=270，看着像"朝内翻"）。中间那颗 0°。
                   const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, (SEAM_FAN_SPREAD * 2) / (modes.length - 1)) : 0
-                  const a = Math.round((i - mid) * step)
+                  const a = Math.round((mid - i) * step)
                   const delay = i * SEAM_FAN_STAGGER
                   const isSpliced = spliced.some((it) => it.id === mode.id)
                   return react.createElement(

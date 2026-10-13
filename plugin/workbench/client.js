@@ -1978,7 +1978,7 @@ function WorkbenchChrome() {
         modes.map((mode, i) => {
           const mid = (modes.length - 1) / 2;
           const step = modes.length > 1 ? Math.min(SEAM_FAN_SPREAD, SEAM_FAN_SPREAD * 2 / (modes.length - 1)) : 0;
-          const a = Math.round((i - mid) * step);
+          const a = Math.round((mid - i) * step);
           const delay = i * SEAM_FAN_STAGGER;
           const isSpliced = spliced.some((it) => it.id === mode.id);
           return react5.createElement(
@@ -2024,6 +2024,26 @@ function WorkbenchChrome() {
 
 // plugin/workbench/src/client/Dock.js
 var react6 = __toESM(require("react"), 1);
+function useShellShape() {
+  const [shape, setShape] = react6.useState("");
+  react6.useEffect(() => {
+    const bridge = getShapeBridge();
+    if (!bridge) return void 0;
+    let cancelled = false;
+    void (async () => {
+      const now = await readShape();
+      if (!cancelled && now && now.shape) setShape(now.shape);
+    })();
+    const off = typeof bridge.onWorkbenchShape === "function" ? bridge.onWorkbenchShape((state) => {
+      if (state && state.shape) setShape(state.shape);
+    }) : null;
+    return () => {
+      cancelled = true;
+      if (typeof off === "function") off();
+    };
+  }, []);
+  return shape;
+}
 function useDockInset(open2, width) {
   react6.useEffect(() => {
     try {
@@ -2040,9 +2060,11 @@ function useDockInset(open2, width) {
 }
 function WorkbenchDock() {
   const { modes, active, dockOpen: dockOpen2, dockWidth: dockWidth2, dockModeId: dockModeId2, registry: registry2 } = useWorkbench();
+  const shape = useShellShape();
+  const inStrip = shape === "strip" || shape === "mini";
   const candidates = modes.filter((m) => m.hasDock && m.id !== active).map((m) => registry2.dockViewOf(m.id)).filter(Boolean).sort((a, b) => a.order === b.order ? a.id.localeCompare(b.id, "en") : a.order - b.order);
-  useDockInset(dockOpen2 && candidates.length > 0, dockWidth2);
-  if (candidates.length === 0) return null;
+  useDockInset(!inStrip && dockOpen2 && candidates.length > 0, dockWidth2);
+  if (inStrip || candidates.length === 0) return null;
   const chosen = candidates.find((c) => c.id === dockModeId2) || candidates[0];
   if (!dockOpen2) {
     return react6.createElement(
