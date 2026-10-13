@@ -2599,6 +2599,18 @@ function createWindow() {
     icon: appIconImage(),
     title: APP_NAME,
     autoHideMenuBar: true,
+    // **无边框重建**（2026-10-13 项目所有者："有缝隙，容易穿层"的最后一环）：
+    // 主窗原来带系统边框（标题栏+边框+阴影），而模块窗口是无边框的 ⇒ 外框紧贴也会露缝、还会露阴影。
+    // 改成 `frame: false` 后 `getBounds() === getContentBounds()`（内容就是整窗），三块才真的无缝。
+    // 但不能把窗口变得没法管：`titleBarOverlay` 让**系统继续画最小化/最大化/关闭**三个按钮，
+    // 颜色跟主题走；拖动由 preload 在页面顶部注入的一条拖拽带负责（无边框后没有标题栏可拖）。
+    frame: false,
+    titleBarOverlay: {
+      color: THEMES[themeId()].bg,
+      // 三个主题都是深色底 ⇒ 按钮符号用浅色（THEMES 里只定义了 bg，没有前景色）
+      symbolColor: '#e8e8e8',
+      height: 32,
+    },
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

@@ -143,7 +143,33 @@ function applySkin(id) {
   // preload 可能早于 <html> 存在：等 DOM 就绪再补上
   document.addEventListener('DOMContentLoaded', () => {
     if (document.documentElement && pendingSkin) document.documentElement.dataset[SKIN_ATTR] = pendingSkin
+    ensureDragStrip()
   }, { once: true })
+}
+
+/**
+ * **无边框主窗的拖拽带**（2026-10-13 无边框重建）：主窗改成 `frame: false` 之后没有标题栏可拖，
+ * 而 `titleBarOverlay` 只给系统按钮、不给拖拽区 ⇒ 在页面顶部注入一条**极窄的透明拖拽带**
+ * （`-webkit-app-region: drag`）。默认 8px：只够"按住顶部拖窗口"，不挡页面上的按钮。
+ * 这是外壳级的按需注入（与断连浮层/审阅侧栏同类），不改内核代码、不改页面结构。
+ */
+function ensureDragStrip() {
+  if (!document.body || document.getElementById('dsh-shell-drag-strip')) return
+  const el = document.createElement('div')
+  el.id = 'dsh-shell-drag-strip'
+  el.setAttribute('aria-hidden', 'true')
+  el.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'height:8px',
+    'z-index:2147483000',
+    '-webkit-app-region:drag',
+    'background:transparent',
+    'pointer-events:auto',
+  ].join(';')
+  document.body.appendChild(el)
 }
 
 /** 海景皮肤下注入 UI 的令牌覆盖（作用域限定在外壳自己的根元素内）。 */
