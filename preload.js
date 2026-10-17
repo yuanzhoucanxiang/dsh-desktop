@@ -199,13 +199,18 @@ function ensureDragStrip() {
 function ensureModuleWindowTrim() {
   if (!/dsh-wb-module/.test(String(location.hash || ''))) return
   if (document.getElementById('dsh-shell-module-trim')) return
+  // **preload 顶层执行时 document 可能还没有 head/documentElement**（2026-10-17 流程探针抓到
+  // `Cannot read properties of null (reading 'appendChild')`）⇒ 拿不到挂载点就等下一次
+  // （bootstrapShellInjections 在 DOMContentLoaded / load 还会再试）。
+  const mountPoint = document.head || document.documentElement
+  if (!mountPoint) return
   const style = document.createElement('style')
   style.id = 'dsh-shell-module-trim'
   // `.palis-glyphs` = 主题装饰层；`.ptp-float` = PALIS 主题面板自己的浮钮（46×46 固定右下）
   // ——两者都在**每个窗口**注入一遍，三块拼在一起就重复（2026-10-13 项目所有者：
   // "'palis' 主题切换同时出现在三个窗口冗余，只出现在工具台界面即可"）。
   style.textContent = '.palis-glyphs,.ptp-float{display:none!important;}'
-  ;(document.head || document.documentElement).appendChild(style)
+  mountPoint.appendChild(style)
 }
 
 /**
@@ -216,10 +221,13 @@ function ensureModuleWindowTrim() {
  */
 function ensureThemeChrome() {
   if (document.getElementById('dsh-shell-theme-chrome')) return
+  // 同上：preload 顶层时可能还没有 head/documentElement
+  const mountPoint = document.head || document.documentElement
+  if (!mountPoint) return
   const style = document.createElement('style')
   style.id = 'dsh-shell-theme-chrome'
   style.textContent = '.ptp-float{width:34px!important;height:34px!important;}'
-  ;(document.head || document.documentElement).appendChild(style)
+  mountPoint.appendChild(style)
 }
 
 /** 海景皮肤下注入 UI 的令牌覆盖（作用域限定在外壳自己的根元素内）。 */
