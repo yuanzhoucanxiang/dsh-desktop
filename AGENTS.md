@@ -84,6 +84,33 @@
 - 门禁守着这条：hardening S9「每个弹出窗口都带目标屏」，少一处就红（`main.js` 里 6 个窗口全部覆盖）。
 - **验证方式**：起实例后读 `<userData>/settings.json` 的 `windowBounds`，看 x/y 是否落在目标屏工作区内。
 
+### 2.3 预览实例必须带**独立私有数据目录**（2026-10-17 用户实报 401 后定的）
+
+> 用户报："预览内核页面取回失败: 内核对 `/` 返回 **401**"。
+> 根因：预览实例与**别的实例**共用同一份私有数据（默认 `~/.dsh-desktop` 的 token/端口状态），
+> 后启动的实例把 token 换掉 ⇒ 先起的那个页面再用旧 token 取回就被 401。
+
+- **拉预览一律带独立 HOME**（数据都放 `%TEMP%\dsh-preview\` 下）：
+
+  ```powershell
+  $homeDir = Join-Path $env:TEMP "dsh-preview\home-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+  $ud      = Join-Path $env:TEMP "dsh-preview\userdata-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+  New-Item -ItemType Directory -Force -Path $homeDir, $ud | Out-Null
+  $env:DSH_DESKTOP_HOME = $homeDir        # 私有数据（token/端口/profile 都在这）
+  $env:DSH_DESKTOP_USER_DATA = $ud        # Chromium 用户数据（隔离实例，自动去非主屏）
+  $env:DSH_DESKTOP_DISPLAY = 'secondary'
+  Start-Process -FilePath ".\node_modules\electron\dist\electron.exe" -ArgumentList '.'
+  ```
+
+- **验证"取回成功"不能只看进程在不在**：用 CDP 查页面里 `!!document.querySelector('[data-wb-entry]')`
+  （工具台入口渲染出来 = 内核页面真的取回了），并确认日志里**没有** `401`。
+- **PowerShell 里绝对不要把变量命名成 `$home`**（只读自动变量 `HOME`）：赋值会失败，
+  而后续 `$env:DSH_DESKTOP_HOME = $home` 会把 HOME 设成 `C:\Users\<你的用户名>` ——
+  内核会往**用户主目录**写 `profiles/ sessions/ storages/ .credentials.yaml` 等（2026-10-17 我踩了，
+  已按创建时间识别并清理）。用 `$homeDir` 这类名字。
+- 起预览用 `spawn(..., { detached: true }); child.unref()` 或 `Start-Process`：**别用"挂着不退出"的
+  启动脚本**，否则会留下常驻后台任务。
+
 ## 3. 构建 / 发布
 
 - Windows：`npm run dist`（= `build.ps1`，自包含 + NSIS 安装包）
