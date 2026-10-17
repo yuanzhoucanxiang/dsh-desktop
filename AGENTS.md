@@ -60,18 +60,15 @@
 - **每轮收尾跑一次"文档覆盖审计"**（比记性可靠；2026-10-13 首次跑就发现最近 10 笔有 7 笔没进索引）：
 
   ```powershell
-  # 在 dsh-desktop 下：逐笔查"提交号有没有落进 WORKLOG 索引 / 当日日志"
-  $hashes = git log --format="%h" -10
-  foreach ($h in $hashes) {
-    $idx = Select-String -Path WORKLOG.md -Pattern $h -SimpleMatch -Quiet
-    $log = Select-String -Path "logs/$(Get-Date -Format yyyy-MM-dd).md" -Pattern $h -SimpleMatch -Quiet
-    "{0} 索引:{1} 日志:{2}  {3}" -f $h, $(if($idx){"✓"}else{"✗"}), $(if($log){"✓"}else{"✗"}), (git log -1 --format="%s" $h)
-  }
+  # 在 dsh-desktop 下（也适用于 plugin/writing-mode）：
+  node scripts/audit-docs.mjs --n 12
   ```
 
+  脚本做的事：逐笔查"提交号有没有落进 `WORKLOG.md` 索引 / **任一** `logs/YYYY-MM-DD.md`"，
+  并自动**豁免文档类提交**（`docs:`/`chore:` 的提交不可能引用自己的哈希）。
+  **为什么要有脚本**：手打命令版只查 `logs/<今天>.md`——查往期提交必然 ✗ 会误判
+  （2026-10-17 实测：外壳 11/12 可追溯是假象，插件仓库真实是 **0/6**）。
   出现 `✗` 就**同一轮补齐**（索引行 + 日志里带上提交号）——"内容写了但没落提交号"也算缺口。
-  **注意自指**：执行审计的那笔"补文档"提交**必然**显示 `✗`（它不可能引用自己的哈希），
-  这是正常的；判据看的是**它之前**那些提交。
 
 ## 2.2 测试/预览实例一律放**非主屏**（2026-10-13 项目所有者要求）
 
