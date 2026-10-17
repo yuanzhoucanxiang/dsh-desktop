@@ -135,6 +135,14 @@ export function WorkbenchChrome() {
     if (!bridge || typeof bridge.onWorkbenchShape !== 'function') return undefined
     const off = bridge.onWorkbenchShape((state) => {
       if (state && Array.isArray(state.modules)) setModules(state.modules)
+      /**
+       * **形态也要跟着壳走**（G6，2026-10-17 使用流程探针抓到）：以前这里只同步 `modules`，
+       * 不同步 `shape` ⇒ 壳被**外部**改形态时（「最小化小条」再回来、程序化 setWorkbenchShape、
+       * 别处入口改），门面还按旧形态渲染 ⇒ **接缝整个不出现**、什么模式都拼不上
+       * （项目所有者说的"一些按钮好像没反应"）。
+       * 纪律：**壳是形态的唯一事实源**，门面只跟随（自己的申请也用壳的回报来落状态）。
+       */
+      if (state && typeof state.shape === 'string' && state.shape) setShape(state.shape)
     })
     return () => {
       if (typeof off === 'function') off()

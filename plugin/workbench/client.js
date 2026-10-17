@@ -1677,6 +1677,7 @@ function WorkbenchChrome() {
     if (!bridge || typeof bridge.onWorkbenchShape !== "function") return void 0;
     const off = bridge.onWorkbenchShape((state) => {
       if (state && Array.isArray(state.modules)) setModules(state.modules);
+      if (state && typeof state.shape === "string" && state.shape) setShape(state.shape);
     });
     return () => {
       if (typeof off === "function") off();
