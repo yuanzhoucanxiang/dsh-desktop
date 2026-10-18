@@ -737,6 +737,10 @@ export function WorkbenchChrome() {
                   const isSpliced = moduleIds.includes(mode.id) || spliced.some((it) => it.id === mode.id)
                   // 分离（壳记账里 `anchored:false`）与"还拼着"要区分显示——用户拖开后得看得出来
                   const modeDetached = modules.some((m) => m.modeId === mode.id && m.anchored === false)
+                  // **G4（2026-10-18）**：接缝上也要看得见模式"正在做什么"（作品/章节/路径）。
+                  // 以前 `contextLabelOf` 只用在宽窗主屏的瓷砖/卡片里，长条接缝上完全没有 ⇒
+                  // 用户只能靠记。空值就如实空着（`contextOf` 报不出来时返回 null，不编造）。
+                  const modeCtx = contextLabelOf(registry, mode.id)
                   return react.createElement(
                     'button',
                     {
@@ -768,6 +772,14 @@ export function WorkbenchChrome() {
                       'span',
                       { className: 'dshWbSeamText', style: { transform: `translateY(-50%) rotate(${-a}deg)` } },
                       mode.label,
+                      // 「正在写什么」：小字第二行（CSS 里省略号截断，title 里给全文）
+                      modeCtx
+                        ? react.createElement(
+                            'span',
+                            { className: 'dshWbSeamCtx', 'data-wb-seam-ctx': '', title: modeCtx },
+                            modeCtx,
+                          )
+                        : null,
                       isSpliced
                         ? react.createElement(
                             'em',

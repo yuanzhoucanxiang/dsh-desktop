@@ -128,7 +128,7 @@ async function runClicks(v, label, targets) {
       console.log(`  · ${state.padEnd(8)} ${t.name}`)
       continue
     }
-    await sleep(900)
+    await sleep(1200)
     const mut = Number(await ev(`window.__flow ? window.__flow.mut : 0`)) || 0
     const pagesAfter = (await pages().catch(() => [])).length
     const newWindow = pagesAfter > pagesBefore
@@ -277,7 +277,12 @@ async function runClicks(v, label, targets) {
     const evA = async (x) => (await assistant.send('Runtime.evaluate', { expression: x, returnByValue: true, awaitPromise: true })).result?.result?.value
     const hasInput = await evA(`!!document.querySelector('.dshWmCompanion textarea, .dshWmCompanion input[type="text"]')`)
     const before = Number(await evA(`document.querySelectorAll('.dshWmMessage, [class*="Message"]').length`)) || 0
+    // **G8 验证（2026-10-18）**：写作台没打开稿时，助手窗口必须**如实提示**"先去打开一篇"，
+    // 而不是让用户点「发送」后发现没反应（修前探针实测消息数 397→397）。
+    const hasHint = await evA(`!!document.querySelector('[data-wm-assistant-hint]')`)
     console.log(`\n== 助手窗口（模块 assistant）==\n  输入框：${hasInput ? '✓' : '✗'}；消息数 ${before}`)
+    console.log(`  无稿提示（G8）：${hasHint ? '✓ 有（如实说明原因）' : '✗ 没有（用户会以为点了没反应）'}`)
+    rows.push({ name: '助手窗口无稿提示（G8）', state: hasHint ? 'REACTED' : 'DEAD' })
     if (hasInput) {
       await evA(`(() => {
         const ta = document.querySelector('.dshWmCompanion textarea, .dshWmCompanion input[type="text"]');

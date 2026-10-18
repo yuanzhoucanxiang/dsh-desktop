@@ -305,10 +305,12 @@ app.whenReady().then(async () => {
   assert.ok(settingsText.includes('还没有') || settingsText.includes('没有模式'), `设置段应说明没有模式：${settingsText}`)
 
   // ② 注册一个模式（走真实服务，不碰内部实现）
+  //    带 `context`（2026-10-18 G4）：模式报"正在做什么"，接缝上要能看见。
   await evaluate(`(() => { window.__wbPlugin.__workbenchRegistry().registerMode({
     id:'demo', label:'演示模式', order:20,
     canDeactivate: () => window.__guardDemo !== false,
     onActivate: (e) => { window.__act = (window.__act||[]).concat([e.reason]) },
+    context: { get: () => ({ title: '第 3 章 · 雨夜' }) },
   }); return 0 })()`)
   await waitFor(`document.querySelector('[data-wb-entry]')!==null`, '注册后入口应出现')
   assert.equal(await evaluate(`document.querySelector('[data-wb-entry]').getAttribute('data-wb-count')`), '1')
@@ -514,7 +516,13 @@ app.whenReady().then(async () => {
   }
   assert.equal(await evaluate(`JSON.stringify(window.__act)`), JSON.stringify(['switch']))
   await waitFor(`document.querySelector('[data-wb-active-label]')!==null`, '入口应显示当前模式名')
-  assert.equal(await text('[data-wb-active-label]'), '演示模式')
+  {
+    // 2026-10-18：demo 现在带 context ⇒ 入口标签会带上"正在做什么"（`演示模式 · 第 3 章 · 雨夜`），
+    // 所以这里判"以模式名开头"，不再死等严格相等（严格相等会把带上下文的正确行为判红）。
+    const entryLabel = await text('[data-wb-active-label]')
+    assert.ok(entryLabel.startsWith('演示模式'), `入口应显示当前模式名，实际：${entryLabel}`)
+    assert.ok(entryLabel.includes('第 3 章 · 雨夜'), `入口也应带上 context，实际：${entryLabel}`)
+  }
 
   // ③e 长条自绘顶栏**五钮**（2026-10-13 起对齐原型 `.topbar`：← 回宽窗主屏 / ⚙ 设置 / — 小条 /
   // ⎋ 退出并还原 / ✕ 走既有关窗语义）。纪律各自有断言：门面**只申请档位**（不自己搬窗口）、
@@ -678,6 +686,13 @@ app.whenReady().then(async () => {
   await waitFor(`document.querySelector('[data-wb-switcher]')!==null`, '多模式时点入口应弹切换器')
   assert.equal(await count('[data-wb-seam-mode]'), 2, '接缝应列出两个模式（长条下它是唯一入口）')
   assert.equal(await count('[data-wb-seam-mode].is-active'), 1, '任何时刻只有一个当前模式')
+  // **G4（2026-10-18）**：接缝上要显示模式上报的"正在做什么"（这里 demo 报「第 3 章 · 雨夜」）。
+  // 以前 context 只用在宽窗主屏的瓷砖/卡片里，长条接缝上完全没有 ⇒ 用户只能靠记。
+  // 判据用"容器文本包含"（上下文与标签同在一个胶囊里：`演示模式 · 第 3 章 · 雨夜`）。
+  assert.ok(
+    (await text('[data-wb-seam-mode="demo"] .dshWbSeamText')).includes('第 3 章 · 雨夜'),
+    '接缝上应显示模式的 context（正在写什么）',
+  )
   assert.equal(await evaluate(`document.querySelector('[data-wb-seam-mode].is-active').getAttribute('data-wb-seam-mode')`), 'demo')
 
   // ⑤ 关闭守卫拒绝：不切换、不自造提示、切换器留在原地
