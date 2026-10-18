@@ -22,25 +22,62 @@ const ELECTRON = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.e
 const DEBUG_PORT = 9461
 const KEEP = process.argv.includes('--keep')
 /**
- * ★ 默认**不隔离 HOME**（`--iso` 才隔离）：写作模式/工具台这些**插件**装在共享的
- * `~/.dsh-desktop` 里，隔离 HOME 的实例里根本没有插件 ⇒ 接缝 0 个模式（2026-10-17 实测踩到）。
- * 401 的根因是"两个实例同时用同一份 HOME"，所以这里只隔离 `USER_DATA`（各自一份 Chromium 数据），
- * 不隔离 HOME；跑之前不要在另一个实例里用共享 HOME（本项目预览用隔离 HOME，不冲突）。
+ * ★ 实例的私有数据目录：**复制一份** `~/.dsh-desktop` 到临时目录，而不是共用它。
+ *
+ * 两个坑（2026-10-17/18 各踩一次）：
+ * 1. **共用** `~/.dsh-desktop`：两个实例同时跑 ⇒ 后起的把 token 换掉 ⇒ 先起的页面
+ *    `内核对 / 返回 401`（用户实报过，探针也复现）；
+ * 2. **完全隔离**（空 HOME）：写作模式/工具台这些**插件**装在 `~/.dsh-desktop` 里 ⇒
+ *    空 HOME 里接缝 0 个模式、插件加载标记都是 false。
+ * 所以：**复制**（只挑加载插件需要的几项，跳过 sessions/storages/attachments 这类大目录）。
  */
-const USE_ISO_HOME = process.argv.includes('--iso')
+const COPY_ENTRIES = [
+  'profiles',
+  'plugins',
+  'workbench.json',
+  'writing-mode.json',
+  'settings.yaml.imported',
+  '.credentials.yaml',
+  '.anonymous-user-id',
+  '.migrated-from-dsh.json',
+  '.agent-presets',
+  'remote-web-ui-registry',
+  'writing-mode',
+  '.writing-mode',
+  'super-injector',
+  'llm-deepseek',
+  'writing-harness',
+]
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 const base = path.join(os.tmpdir(), 'dsh-flow-probe')
 const HOME = path.join(base, `home-${stamp}`)
 const USER_DATA = path.join(base, `userdata-${stamp}`)
-if (USE_ISO_HOME) fs.mkdirSync(HOME, { recursive: true })
+fs.mkdirSync(HOME, { recursive: true })
 fs.mkdirSync(USER_DATA, { recursive: true })
+{
+  const shared = path.join(os.homedir(), '.dsh-desktop')
+  let copied = 0
+  if (fs.existsSync(shared)) {
+    for (const entry of COPY_ENTRIES) {
+      const src = path.join(shared, entry)
+      if (!fs.existsSync(src)) continue
+      try {
+        fs.cpSync(src, path.join(HOME, entry), { recursive: true, force: true })
+        copied += 1
+      } catch (err) {
+        console.log(`（复制 ${entry} 失败：${err.message}）`)
+      }
+    }
+  }
+  console.log(`（已把 ${copied} 项插件配置复制进临时 HOME：${HOME}）`)
+}
 
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 Object.assign(env, {
-  ...(USE_ISO_HOME ? { DSH_DESKTOP_HOME: HOME } : {}),
+  DSH_DESKTOP_HOME: HOME,
   DSH_DESKTOP_USER_DATA: USER_DATA,
   DSH_DESKTOP_DISPLAY: process.env.DSH_DESKTOP_DISPLAY || 'secondary',
 })
@@ -186,7 +223,11 @@ async function runClicks(v, label, targets) {
   //    而且那个窗口会把后续点击挡住 ⇒ 列为人工项（见日志）。
   //    **小条要还原**：点 ─ 进 mini，再点一次回 strip（按钮语义是切换）。
   rows.push(...await runClicks(main, '长条顶栏（工具台）', [
-    { name: '最小化小条 ─ / ▢（切换）', sel: '[data-wb-btn="mini"]' },
+    // 这个按钮是**切换**（`title` 随形态变、handler 是 toggleMini）：点一次进 mini，
+    // **再点一次**才回 strip。只点一次会把形态留在 mini ⇒ 后面拼接连接缝都找不到
+    // （2026-10-18 为此白跑一轮）。
+    { name: '最小化小条 ─（进 mini）', sel: '[data-wb-btn="mini"]' },
+    { name: '▢ 再点回 strip', sel: '[data-wb-btn="mini"]' },
   ]))
   // 还原成 strip（mini 下接缝仍可用，但后续模块窗口布局按 strip 验更稳）
   for (let i = 0; i < 2; i += 1) {
