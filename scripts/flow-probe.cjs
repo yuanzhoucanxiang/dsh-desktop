@@ -106,10 +106,26 @@ function connect(url) {
   return {
     ready,
     errors,
-    send(method, params = {}) {
+    /**
+     * **每条 CDP 调用都带超时**（2026-10-18 踩到）：拼接模块窗口时主页面可能忙 ⇒ `evaluate` 迟迟不回
+     * ⇒ 挂起的 Promise **不会**保持事件循环 ⇒ node 直接以 0 退出、探针静默结束（看起来"跑完了"）。
+     * 超时后返回空结果，让流程继续往下走。
+     */
+    send(method, params = {}, timeoutMs = 15000) {
       const mid = ++id
       ws.send(JSON.stringify({ id: mid, method, params }))
-      return new Promise((res) => pending.set(mid, res))
+      return new Promise((res) => {
+        const timer = setTimeout(() => {
+          if (pending.has(mid)) {
+            pending.delete(mid)
+            res({ __timeout: true })
+          }
+        }, timeoutMs)
+        pending.set(mid, (m) => {
+          clearTimeout(timer)
+          res(m)
+        })
+      })
     },
     close: () => ws.close(),
   }
@@ -316,6 +332,13 @@ async function runClicks(v, label, targets) {
     await assistant.ready
     await assistant.send('Runtime.enable')
     const evA = async (x) => (await assistant.send('Runtime.evaluate', { expression: x, returnByValue: true, awaitPromise: true })).result?.result?.value
+    // **等助手窗口把面板渲染出来**（模块窗口是独立页面，加载比主窗慢；轮询最多 15s）。
+    // 2026-10-18 实测：不等就会判成"没输入框、没提示"，其实只是还没渲染。
+    for (let i = 0; i < 15; i += 1) {
+      const readyNow = await evA(`(() => !!document.querySelector('.dshWmCompanion') || !!document.querySelector('[data-wm-assistant-hint]'))()`)
+      if (readyNow) break
+      await sleep(1000)
+    }
     const hasInput = await evA(`!!document.querySelector('.dshWmCompanion textarea, .dshWmCompanion input[type="text"]')`)
     const before = Number(await evA(`document.querySelectorAll('.dshWmMessage, [class*="Message"]').length`)) || 0
     // **G8 验证（2026-10-18）**：写作台没打开稿时，助手窗口必须**如实提示**"先去打开一篇"，
@@ -335,12 +358,27 @@ async function runClicks(v, label, targets) {
         return 1;
       })()`)
       await sleep(400)
-      const clicked = await evA(`(() => { const btn = Array.from(document.querySelectorAll('.dshWmCompanion button')).find((b) => /发送|送/.test(b.textContent || '')); if (!btn) return 0; btn.click(); return 1 })()`)
-      console.log(`  发送按钮：${clicked ? '已点' : '✗ 找不到'}`)
-      await sleep(5000)
+      // **G11（2026-10-18）**：发送键是**图标按钮**（`↑`），按文本 `/发送/` 找不到 ⇒ 之前误判
+      // "找不到按钮"。改成**按结构**找：先按文案/箭头，再退化成"最后一个可用按钮"，并打标记后点它。
+      const sendMarked = await evA(`(() => {
+        const scope = document.querySelector('.dshWmCompanion');
+        if (!scope) return 'no-scope';
+        const btns = Array.from(scope.querySelectorAll('button')).filter((b) => !b.disabled);
+        const pick = btns.find((b) => /发送|^↑$|^➤$|^\\u{2191}$/u.test((b.textContent || '').trim()))
+          || btns.find((b) => (b.querySelector('svg') && !(b.textContent || '').trim()))
+          || btns[btns.length - 1];
+        if (!pick) return 'no-button';
+        pick.setAttribute('data-flow-send', '1');
+        return 'ok:' + ((pick.textContent || '').trim().slice(0, 6) || pick.className.slice(0, 20));
+      })()`)
+      console.log(`  发送按钮：${sendMarked === 'ok' || String(sendMarked).startsWith('ok:') ? `已标记（${String(sendMarked).slice(3)}）` : `✗ ${sendMarked}`}`)
+      const clicked = await evA(`(() => { const btn = document.querySelector('[data-flow-send="1"]'); if (!btn) return 0; btn.click(); return 1 })()`)
+      // 判据用**输入框是否被清空**（比"消息条数"稳：历史会话本来就有很多条）
+      await sleep(2500)
+      const cleared = await evA(`(() => { const ta = document.querySelector('.dshWmCompanion textarea, .dshWmCompanion input[type="text"]'); return ta ? String(ta.value || '').trim() === '' : null })()`)
       const after = Number(await evA(`document.querySelectorAll('.dshWmMessage, [class*="Message"]').length`)) || 0
-      const state = after > before ? 'REACTED' : 'DEAD'
-      console.log(`  发送结果：消息数 ${before} → ${after} ${state === 'REACTED' ? '✓' : '✗ DEAD（点了没反应）'}`)
+      const state = clicked && (cleared === true || after > before) ? 'REACTED' : 'DEAD'
+      console.log(`  发送结果：点了=${clicked} 输入框已清空=${cleared} 消息 ${before} → ${after} ${state === 'REACTED' ? '✓' : '✗ DEAD（点了没反应）'}`)
       rows.push({ name: '写作助手发送', state })
     }
     assistant.close()
