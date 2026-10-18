@@ -174,6 +174,11 @@ node 模式启动、`app` 为 undefined；② `ELECTRON_ENABLE_LOGGING=1` 要带
 
 ## 六、已知边界（别当成已有）
 
+> **三条已确认但未修的缺陷（2026-10-18 体检，代码另开一轮）**：D1 置顶开关没有入口
+> （preload 有 `setWorkbenchStripOnTop`，门面零调用、设置窗口也没有）；D2 模块窗口里点模式的「退出」
+> 界面不变（失活 ≠ 消失）；D3 分离出去的模块窗口没有窗口内关闭钮。
+> 证据与影响见 `docs/workbench-mode-plan.md` §9.1。**修之前别在别处写"有置顶开关"这类话。**
+
 - **壳的"窗口形态"能力已接上第一口**（2026-10-12 刀 2）：外壳提供 `shell:set-workbench-shape`
   （`normal` / `strip` 长条 / `mini` 小条，**只收档位枚举**，几何由主进程按显示器算）、
   `shell:get-workbench-shape`、`shell:set-workbench-strip-on-top`、**`shell:set-workbench-splice`**、
