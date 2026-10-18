@@ -1,13 +1,15 @@
-# `@dsh-local/workbench` —— 创作工具台
+# `@dsh-local/workbench` —— 创作工作台（历史名：工具台）
 
 把 dsh 的若干**创作模式**（写作、GIR 生图，将来还有导演等）收进一个统一门面：**一个入口、一个当前模式、
-一套上下文与交接、一块辅助坞、一块主屏**。设计依据 [`docs/plans/workbench-layer-v1.md`](../../docs/plans/workbench-layer-v1.md)；
-2026-10-11 从 P0 骨架一路做到 L2 第二刀（主屏）。
+一套上下文与交接、一条长条窗 + 右缘接缝、一块辅助坞、一块宽窗主屏**。
 
 > 本文件是**契约**（怎么注册、字段什么语义、路由与状态怎么管）。
+> **用户体验与交互规则**（形态分工 / 主流程 / 可调参数 / 体验验收）见
+> [`docs/workbench-mode-plan.md`](../../docs/workbench-mode-plan.md)（**策划案 v2，产品口径以它为准**）；
 > **开发纪律**（流程 / UI 规则 / 验收清单 / 启动指令）见
 > [`docs/workbench-mode-guide.md`](../../docs/workbench-mode-guide.md)；
-> **现状与路线**见设计文档 §0.1。
+> **架构与决策记录**见 [`docs/plans/workbench-layer-v1.md`](../../docs/plans/workbench-layer-v1.md)。
+> 三处冲突时：**字段与机制以本文件为准，体验口径以策划案为准**。
 
 定位三条（决定了很多"为什么不那样做"）：
 
