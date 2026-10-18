@@ -7,8 +7,20 @@
 //   W4' 状态：工具台记住当前模式（host 状态文件）
 //   W5 降级：不加载工具台时，GIR 自己的入口照旧可用（官方壳路径）
 //
-// GIR 的 client.js 在**另一个仓库**（默认 E:\GIR\gir-dsh），可用 GIR_UI_CLIENT 覆盖；
-// 找不到时本探针打印 SKIP 并以 0 退出（跨仓依赖不该让 dsh-desktop 的门禁红）。
+// GIR 的 client.js 在**另一个仓库**，不在本仓库里。解析顺序（2026-10-18 改）：
+//   ① `$GIR_UI_CLIENT`（显式指定，最高优先）
+//   ② GIR 最新源码线 `E:\GIR\gir-camera-baseline`
+//   ③ 冻结快照 r4（工具台 P2/L1 验收当时用的产物）
+//   ④ 旧开发树 `E:\GIR\gir-dsh`
+//
+// **为什么改了默认值**：原来默认指着 ④，而 P2 的接入早已从那条陈旧 main 撤掉（见 logs/2026-10-11.md），
+// 于是默认路径下必然红在 `W1：侧栏底部只应有一个按钮` —— 看着像回归，其实是指错了树
+// （2026-10-18 实测复现）。跨仓探针应当默认指向**当前真实落点**。
+//
+// 两种情况都以 **SKIP + 退出码 0** 收场（跨仓依赖不该让 dsh-desktop 的门禁红）：
+//   · 根本找不到 client.js；
+//   · 找到了，但那棵树**没有接入工具台**（没有 `__workbenchBridge`）—— 那种树下 W1/W2 必然红，
+//     报红只会制造假警报。
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -18,11 +30,28 @@ const assert = require('node:assert/strict')
 const { pathToFileURL } = require('node:url')
 
 const repo = path.resolve(__dirname, '..')
-const GIR_CLIENT = process.env.GIR_UI_CLIENT || path.join('E:', 'GIR', 'gir-dsh', 'dsh-plugins', 'gir-ui', 'client.js')
-if (!fs.existsSync(GIR_CLIENT)) {
-  console.log(`WORKBENCH_GIR_SKIP 找不到 GIR 插件客户端：${GIR_CLIENT}（用 GIR_UI_CLIENT 指定）`)
+const GIR_CANDIDATES = process.env.GIR_UI_CLIENT
+  ? [process.env.GIR_UI_CLIENT]
+  : [
+      path.join('E:', 'GIR', 'gir-camera-baseline', 'dsh-plugins', 'gir-ui', 'client.js'),
+      path.join('E:', 'GIR', 'gir-runtime', 'releases', '0.57.1-alpha-43a7a18-r4', 'dsh-plugins', 'gir-ui', 'client.js'),
+      path.join('E:', 'GIR', 'gir-dsh', 'dsh-plugins', 'gir-ui', 'client.js'),
+    ]
+
+const GIR_CLIENT = GIR_CANDIDATES.find((p) => fs.existsSync(p))
+if (!GIR_CLIENT) {
+  console.log('WORKBENCH_GIR_SKIP 找不到 GIR 插件客户端。试过：')
+  for (const p of GIR_CANDIDATES) console.log(`  - ${p}`)
+  console.log('用 GIR_UI_CLIENT=<client.js 路径> 指定。')
   process.exit(0)
 }
+// 有文件不等于有接入：没装桥的树跑下去只会在 W1 假红。
+if (!fs.readFileSync(GIR_CLIENT, 'utf8').includes('__workbenchBridge')) {
+  console.log(`WORKBENCH_GIR_SKIP 该 GIR 客户端未接入工具台（没有 __workbenchBridge）：${GIR_CLIENT}`)
+  console.log('  这条探针验的是"接入之后的行为"，接入本身缺失属于 GIR 仓库的事，不该在本仓库判红。')
+  process.exit(0)
+}
+console.log(`（GIR 客户端：${GIR_CLIENT}）`)
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-wb-gir-'))
 app.setPath('userData', path.join(temp, 'user-data'))

@@ -34,6 +34,7 @@
     "verify:workbench-build": "node scripts/verify-workbench-build.mjs",
     "verify:workbench-ui": "electron scripts/verify-workbench-ui.cjs",
     "verify:workbench-gir": "electron scripts/verify-workbench-gir-integration.cjs",
+    "audit-docs": "node scripts/audit-docs.mjs --n 10",
     "test:workbench": "node plugin/workbench/test/registry.mjs && node plugin/workbench/test/host-state.mjs",
     "test:mode-kit": "node packages/mode-kit/test/exports.mjs",
     "verify:writing-build": "node scripts/verify-writing-build.mjs",
