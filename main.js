@@ -2019,8 +2019,12 @@ function layoutModuleWindows() {
  *   · **已分离的**：再拖回目标位附近 ⇒ **吸附拼回**（重新进拼合）。
  * 判定用同一套目标矩形 + `MODULE_SNAP_PX` 阈值；纵向也一起比（拼合是一横排，歪着不算贴上）。
  * 2026-10-13 项目所有者："（拼接和分离要做逻辑互动方面的细节）"。
+ *
+ * **G5 调值（2026-10-18）**：48px 被项目所有者反馈"不够黏"（拖开一点点就被判成分离）。
+ * 收紧到 **32px**（约半个图标宽）—— 手抖一定吸回、真要分开得明确拖出这个范围。
+ * 这是**手感旋钮**：还嫌不够就继续往下调（24/16），嫌太黏就往回调（40/48）。
  */
-const MODULE_SNAP_PX = 48
+const MODULE_SNAP_PX = 32
 function settleModuleAfterDrag(key) {
   const entry = moduleWins.get(key)
   if (!entry || !entry.win || entry.win.isDestroyed()) return

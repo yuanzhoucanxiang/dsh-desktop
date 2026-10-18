@@ -52,6 +52,22 @@ function contextLabelOf(registry, id) {
   return c.title || c.project || c.doc || c.path || ''
 }
 
+/**
+ * **「忙什么」小标记**（G3，2026-10-18）：模式在 context 里报的动态状态 ——
+ * `dirty`（未保存）/ `saving`（保存中）/ `health > 0`（体检发现 N 处）。
+ * 工具台**只展示、不解释**（宪法第十一条）：字段名与含义归模式，这里只挑三个已知的显示。
+ * 模式没报就返回空数组（不编造"正常"）。
+ */
+function contextFlagsOf(registry, id) {
+  const c = registry.contextOf(id)
+  if (!c) return []
+  const flags = []
+  if (c.saving === true) flags.push({ key: 'saving', text: '保存中' })
+  else if (c.dirty === true) flags.push({ key: 'dirty', text: '未保存' })
+  if (Number(c.health) > 0) flags.push({ key: 'health', text: `体检 ${Number(c.health)}` })
+  return flags
+}
+
 export function WorkbenchChrome() {
   const { modes, active, context, lastHandoff, open, notice, registry } = useWorkbench()
   const panelRef = react.useRef(null)
@@ -741,6 +757,7 @@ export function WorkbenchChrome() {
                   // 以前 `contextLabelOf` 只用在宽窗主屏的瓷砖/卡片里，长条接缝上完全没有 ⇒
                   // 用户只能靠记。空值就如实空着（`contextOf` 报不出来时返回 null，不编造）。
                   const modeCtx = contextLabelOf(registry, mode.id)
+                  const modeFlags = contextFlagsOf(registry, mode.id)
                   return react.createElement(
                     'button',
                     {
@@ -778,6 +795,20 @@ export function WorkbenchChrome() {
                             'span',
                             { className: 'dshWbSeamCtx', 'data-wb-seam-ctx': '', title: modeCtx },
                             modeCtx,
+                          )
+                        : null,
+                      // **「忙什么」小标记**（G3）：未保存 / 保存中 / 体检 N 处 —— 只展示模式报的事实
+                      modeFlags.length
+                        ? react.createElement(
+                            'span',
+                            { className: 'dshWbSeamFlags' },
+                            modeFlags.map((f) =>
+                              react.createElement(
+                                'em',
+                                { key: f.key, className: `dshWbSeamFlag is-${f.key}`, 'data-wb-seam-flag': f.key },
+                                f.text,
+                              ),
+                            ),
                           )
                         : null,
                       isSpliced

@@ -310,7 +310,7 @@ app.whenReady().then(async () => {
     id:'demo', label:'演示模式', order:20,
     canDeactivate: () => window.__guardDemo !== false,
     onActivate: (e) => { window.__act = (window.__act||[]).concat([e.reason]) },
-    context: { get: () => ({ title: '第 3 章 · 雨夜' }) },
+    context: { get: () => ({ title: '第 3 章 · 雨夜', dirty: true, health: 2 }) },
   }); return 0 })()`)
   await waitFor(`document.querySelector('[data-wb-entry]')!==null`, '注册后入口应出现')
   assert.equal(await evaluate(`document.querySelector('[data-wb-entry]').getAttribute('data-wb-count')`), '1')
@@ -692,6 +692,16 @@ app.whenReady().then(async () => {
   assert.ok(
     (await text('[data-wb-seam-mode="demo"] .dshWbSeamText')).includes('第 3 章 · 雨夜'),
     '接缝上应显示模式的 context（正在写什么）',
+  )
+  // **G3（2026-10-18）**：context 里的动态状态要变成接缝上的小标记（未保存 / 体检 N 处）。
+  // 工具台只**展示**模式报的事实（宪法第十一条），不解释、不编造。
+  assert.ok(
+    (await text('[data-wb-seam-mode="demo"]')).includes('未保存'),
+    '模式报 dirty:true 时接缝上应出现「未保存」标记',
+  )
+  assert.ok(
+    (await text('[data-wb-seam-mode="demo"]')).includes('体检 2'),
+    '模式报 health:2 时接缝上应出现「体检 2」标记',
   )
   assert.equal(await evaluate(`document.querySelector('[data-wb-seam-mode].is-active').getAttribute('data-wb-seam-mode')`), 'demo')
 

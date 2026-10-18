@@ -208,6 +208,13 @@ export const CSS = [
   // **G4（2026-10-18）**：接缝上显示模式"正在做什么"（作品/章节/路径）。标签是胶囊形、
   // 一行放不下 ⇒ 上下文另起一行、小字、超长省略（全文在 title 里）。
   '.dshWbSeamCtx{display:block;margin-top:2px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:13px;color:var(--dsw-alias-label-tertiary);}',
+  // **G3（2026-10-18）**：模式上报的"忙什么"——未保存 / 保存中 / 体检 N 处。
+  // 一行小徽标；未保存用警示色、保存中用中性色、体检用提醒色（都不解释含义，只传达状态）。
+  '.dshWbSeamFlags{display:flex;gap:4px;margin-top:2px;}',
+  '.dshWbSeamFlag{font-style:normal;font-size:9px;line-height:12px;padding:0 5px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);white-space:nowrap;}',
+  '.dshWbSeamFlag.is-dirty{color:var(--dsw-alias-label-warning, #d8a657);border-color:currentColor;}',
+  '.dshWbSeamFlag.is-saving{opacity:.8;}',
+  '.dshWbSeamFlag.is-health{color:var(--dsw-alias-brand-primary);border-color:currentColor;}',
   '.dshWbSeamItem.is-spliced .dshWbSeamTag,.dshWbSeamItem.is-active .dshWbSeamTag{color:var(--dsw-alias-brand-primary);}',
   '.dshWbSeamEmpty{position:absolute;right:34px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
   '.dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}',
