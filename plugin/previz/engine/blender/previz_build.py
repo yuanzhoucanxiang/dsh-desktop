@@ -362,6 +362,8 @@ def actor_pose_at(blocking, actor_id, t):
 
 def animate_actors(blocking, actors, fps, total_frames):
     scene = bpy.context.scene
+    # 每只脚的落地锚点：{actor: {side: (x, y)}}；支撑相内把骨盆拉回去，避免滑步。
+    plant_anchor = {aid: {} for aid in actors}
     for frame in range(1, total_frames + 1):
         t = (frame - 1) / fps
         scene.frame_set(frame)
@@ -409,10 +411,36 @@ def animate_actors(blocking, actors, fps, total_frames):
             bpy.context.view_layer.update()
             deps = bpy.context.evaluated_depsgraph_get()
             zs = []
-            for leg in ("leg_l", "leg_r", "foot_l", "foot_r"):
+            feet_now = {}
+            for side, leg, foot in (("L", "leg_l", "foot_l"), ("R", "leg_r", "foot_r")):
                 ob = parts[leg].evaluated_get(deps)
                 zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
-            root.location = (x, y, -min(zs) if zs else 0.0)
+                fob = parts[foot].evaluated_get(deps)
+                feet_now[side] = sum((fob.matrix_world @ Vector(c) for c in fob.bound_box), Vector((0, 0, 0))) / 8
+            root.location = (x, y, -(min(zs) if zs else 0.0))
+            # 支撑脚（几何最低那只）钉住世界坐标；漂移用骨盆反向补偿。
+            if pose in ("walk", "run"):
+                support = min(("L", "R"), key=lambda sd: feet_now[sd].z)
+                anchor = plant_anchor[actor_id].get(support)
+                if anchor is None:
+                    plant_anchor[actor_id] = {support: (feet_now[support].x, feet_now[support].y)}
+                else:
+                    root.location = (
+                        root.location.x - (feet_now[support].x - anchor[0]),
+                        root.location.y - (feet_now[support].y - anchor[1]),
+                        root.location.z,
+                    )
+            else:
+                plant_anchor[actor_id] = {}
+            # 补偿后再测一次最低点，防止把脚压进地面。
+            bpy.context.view_layer.update()
+            deps = bpy.context.evaluated_depsgraph_get()
+            zs2 = []
+            for leg in ("leg_l", "leg_r", "foot_l", "foot_r"):
+                ob = parts[leg].evaluated_get(deps)
+                zs2.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
+            if zs2 and min(zs2) < 0:
+                root.location.z -= min(zs2)
             root.keyframe_insert("location", frame=frame)
             root.keyframe_insert("rotation_euler", frame=frame)
             for ob in parts.values():
@@ -932,6 +960,32 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
                     "tag": tag,
                     "min_z": round(min(zs), 4),
                     "pitch_deg": round(max(pitches, key=abs), 2),
+                })
+        # P1：滑步测量。支撑脚=当前最低脚；支撑相（同一只脚连续为最低）内 world xy 漂移就是滑步。
+        entry["foot_plant"] = []
+        for frame in range(info["start_frame"], info["end_frame"] + 1):
+            sc.frame_set(frame)
+            bpy.context.view_layer.update()
+            deps = bpy.context.evaluated_depsgraph_get()
+            for sid in shot["subjects"]:
+                if sid not in actors:
+                    continue
+                _root, parts, _s = actors[sid]
+                cand = []
+                for side, foot in (("L", "foot_l"), ("R", "foot_r")):
+                    ob = parts[foot].evaluated_get(deps)
+                    z = min((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
+                    center = sum((ob.matrix_world @ Vector(c) for c in ob.bound_box), Vector((0, 0, 0))) / 8
+                    cand.append((z, side, center))
+                cand.sort(key=lambda x: x[0])
+                z, side, pos = cand[0]
+                entry["foot_plant"].append({
+                    "subject": sid,
+                    "frame": frame,
+                    "side": side,
+                    "x": round(pos.x, 4),
+                    "y": round(pos.y, 4),
+                    "z": round(z, 4),
                 })
         facts["shots"].append(entry)
     return facts

@@ -64,6 +64,56 @@ export function runQc({ outDir }) {
       warnings.push({ path: `${sp}.feet`, message: '缺少脚部接触 facts（重跑构建）' })
     }
 
+    // P1：滑步。按支撑脚（最低脚）连续段算 world 漂移；> 6cm 判滑步。
+    if (Array.isArray(shot.foot_plant)) {
+      let run = null
+      const runs = []
+      for (const p of shot.foot_plant) {
+        if (!run || run.side !== p.side || run.subject !== p.subject) {
+          if (run) runs.push(run)
+          run = { subject: p.subject, side: p.side, f0: p.frame, x0: p.x, y0: p.y, f1: p.frame, x1: p.x, y1: p.y }
+        } else {
+          run.f1 = p.frame
+          run.x1 = p.x
+          run.y1 = p.y
+        }
+      }
+      if (run) runs.push(run)
+      for (const r of runs) {
+        const drift = Math.hypot(r.x1 - r.x0, r.y1 - r.y0)
+        if (drift > 0.06) {
+          push(errors, `${sp}.foot_plant`, `主体 ${r.subject} 支撑脚 ${r.side} 在帧 ${r.f0}-${r.f1} 漂移 ${drift.toFixed(3)}m > 0.06m`)
+        }
+      }
+    } else {
+      warnings.push({ path: `${sp}.foot_plant`, message: '缺少滑步测量 facts（重跑构建）' })
+    }
+
+    // P1：滑步。按支撑脚（最低脚）连续段算 world 漂移；> 6cm 判滑步。
+    if (Array.isArray(shot.foot_plant)) {
+      let run = null
+      const runs = []
+      for (const p of shot.foot_plant) {
+        if (!run || run.side !== p.side || run.subject !== p.subject) {
+          if (run) runs.push(run)
+          run = { subject: p.subject, side: p.side, f0: p.frame, x0: p.x, y0: p.y, f1: p.frame, x1: p.x, y1: p.y }
+        } else {
+          run.f1 = p.frame
+          run.x1 = p.x
+          run.y1 = p.y
+        }
+      }
+      if (run) runs.push(run)
+      for (const r of runs) {
+        const drift = Math.hypot(r.x1 - r.x0, r.y1 - r.y0)
+        if (drift > 0.06) {
+          push(errors, `${sp}.foot_plant`, `主体 ${r.subject} 支撑脚 ${r.side} 在帧 ${r.f0}-${r.f1} 漂移 ${drift.toFixed(3)}m > 0.06m`)
+        }
+      }
+    } else {
+      warnings.push({ path: `${sp}.foot_plant`, message: '缺少滑步测量 facts（重跑构建）' })
+    }
+
     if (!(shot.camera && Number.isFinite(shot.camera.distance) && shot.camera.distance > 0.3)) {
       push(errors, `${sp}.camera.distance`, '相机距离必须 > 0.3m')
     }
