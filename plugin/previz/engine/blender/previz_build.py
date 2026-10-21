@@ -652,6 +652,42 @@ def handheld_noise(t_sec, freq_hz, seed, octaves=2):
     return total / max(norm, 1e-6)
 
 
+def resolve_feel(feel):
+    """
+    抖动层（谁端机）的预设 → 具体参数。
+
+    与 camera.response 的预设是**两件事**：
+      - response 预设 = 操作响应（位置/瞄准滞后、限速、限加速度）；
+      - feel 预设     = 抖动质感（幅度、频率、横滚、步频）。
+    两者可以同时用，互不替代。
+
+    预设值是按物理量级估的（不是实拍标定）：安静手持幅度最小、行走次之、奔跑最大；
+    稳定器幅度介于安静与行走之间但频率最低（重机器晃得慢）。
+    """
+    if not feel:
+        return feel
+    preset = feel.get("preset")
+    table = {
+        # 安静手持：极小幅度、接近呼吸/心跳的慢频
+        "handheld_quiet": {"type": "handheld", "degrees": 0.22, "hz": 1.15, "roll_degrees": 0.18, "stride_hz": 1.6},
+        # 行走手持：幅度中等，主频接近步频
+        "handheld_walk": {"type": "handheld", "degrees": 0.45, "hz": 1.9, "roll_degrees": 0.35, "stride_hz": 2.0},
+        # 奔跑手持：幅度最大、频率最高
+        "handheld_run": {"type": "handheld", "degrees": 0.85, "hz": 2.6, "roll_degrees": 0.6, "stride_hz": 2.8},
+        # 稳定器：幅度小于行走手持，但频率最低（重、慢、顺）
+        "steadicam": {"type": "steadicam", "degrees": 0.14, "hz": 0.55, "roll_degrees": 0.1, "stride_hz": 1.2},
+    }
+    if not preset:
+        return feel
+    base = dict(table.get(preset, {}))
+    if not base:
+        return feel  # 未知预设：交给解析层保持原样（schema 会报错）
+    for k, v in feel.items():
+        if k != "preset":
+            base[k] = v  # 显式参数覆盖预设
+    return base
+
+
 def resolve_response(shot):
     """
     响应预设 → 具体参数。让“稳定器跟拍/行走手持”能一行启用，而不是每次手调六个数字。
@@ -776,6 +812,9 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
     feel = move.get("feel") or {}
     if isinstance(feel, str):
         feel = {"type": feel}
+    # 先解析预设再判类型：只写 {preset:"steadicam"} 时没有 type，
+    # 若先判 type 会在这里被清空（曾经因此四个预设测出来一模一样）。
+    feel = resolve_feel(feel)
     if feel.get("type") in ("handheld", "steadicam"):
         path_kind = move.get("path") or ("static" if kind in ("handheld", "steadicam") else kind)
     else:

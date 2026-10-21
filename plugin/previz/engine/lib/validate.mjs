@@ -14,6 +14,9 @@ export const SCREEN_DIRECTIONS = new Set(['left_to_right', 'right_to_left', 'tow
 export const AXIS_SIDES = new Set(['left', 'right'])
 export const RESPONSE_PRESETS = new Set(['steadicam', 'handheld_quiet', 'handheld_walk', 'handheld_run'])
 
+/** 抖动质感预设（move.feel.preset）——与 response 预设是两件事：一个管响应，一个管抖动。 */
+export const FEEL_PRESETS = new Set(['steadicam', 'handheld_quiet', 'handheld_walk', 'handheld_run'])
+
 export const MOVES = new Set([
   'static', 'pan', 'tilt', 'dolly_in', 'dolly_out', 'truck', 'pedestal', 'crane', 'orbit', 'handheld', 'whip_pan', 'zoom', 'steadicam',
 ])
@@ -325,8 +328,18 @@ export function validateShots(shots, { blocking, set, project } = {}) {
         }
         if (s.move.feel !== undefined) {
           const f = typeof s.move.feel === 'string' ? { type: s.move.feel } : s.move.feel
-          if (!isObj(f) || !['handheld', 'steadicam'].includes(f.type)) {
-            err(e, `${p}.move.feel.type`, 'feel 只支持 handheld / steadicam')
+          if (!isObj(f)) {
+            err(e, `${p}.move.feel`, '必须是对象或字符串')
+          } else if (f.preset !== undefined) {
+            // 只写 preset 即可（一行拿到完整抖动参数）；写了就校验名字
+            if (!FEEL_PRESETS.has(f.preset)) {
+              err(e, `${p}.move.feel.preset`, `未知质感预设: ${f.preset}（可选 ${[...FEEL_PRESETS].join('/')}）`)
+            }
+            if (f.type !== undefined && !['handheld', 'steadicam'].includes(f.type)) {
+              err(e, `${p}.move.feel.type`, 'feel 只支持 handheld / steadicam')
+            }
+          } else if (!['handheld', 'steadicam'].includes(f.type)) {
+            err(e, `${p}.move.feel.type`, 'feel 需要 preset，或显式写 type=handheld/steadicam')
           }
         }
       }

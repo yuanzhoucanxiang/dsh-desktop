@@ -30,8 +30,9 @@
     "demo:force": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --force",
     "acceptance": "node scripts/acceptance.mjs",
     "acceptance:quick": "node scripts/acceptance.mjs --quick",
-    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs test/panels.test.mjs test/scenes.test.mjs test/multiscene.test.mjs test/panels-csv.test.mjs test/camera-feel.test.mjs test/camera-response.test.mjs test/camera-layering.test.mjs test/shutter.test.mjs test/calibration.test.mjs",
-    "calibrate": "node scripts/calibrate.mjs"
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs test/panels.test.mjs test/scenes.test.mjs test/multiscene.test.mjs test/panels-csv.test.mjs test/camera-feel.test.mjs test/camera-response.test.mjs test/camera-layering.test.mjs test/shutter.test.mjs test/calibration.test.mjs test/preset-matrix.test.mjs test/feel-presets.test.mjs",
+    "calibrate": "node scripts/calibrate.mjs",
+    "check:feel": "node scripts/check-feel-presets.mjs"
   },
   "engines": {
     "node": ">=22"
