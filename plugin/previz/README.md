@@ -18,7 +18,7 @@ plugin/previz/
   client.js             # 构建产物（npm run build:previz）
   src/client/           # entry / mode / panel / entry / overlay / store / api
   lib/http.js           # 环回 + Host/Origin + body 读取（复制自 workbench，不跨插件 import）
-  engine/               # vendored blender-previz P0 引擎（lib/blender/scripts/fixtures）
+  engine/               # vendored blender-previz 运行时子集（lib/blender/scripts/fixtures；不含测试）
   runtime-manifest.json # profile 同步清单
   test/host.mjs         # 纯函数/host 探测测试
 ```
