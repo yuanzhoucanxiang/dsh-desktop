@@ -612,19 +612,42 @@ def ease_value(name, u):
     return t
 
 
-def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
+def handheld_noise(t_sec, freq_hz, seed, octaves=2):
+    """
+    按**秒**计的手持噪声：确定性、有种子、多倍频叠加。
+    之前用归一化 u 驱动正弦，导致 3 秒镜头 2.43Hz、12 秒镜头 0.61Hz——
+    同一套参数只因为镜头变长就变慢，等于“换了个摄影师”。
+    """
+    total = 0.0
+    amp = 1.0
+    norm = 0.0
+    f = max(0.05, float(freq_hz))
+    for i in range(max(1, octaves)):
+        # 每个倍频用不同相位，避免两层完全同相叠成一条正弦
+        ph = seed * (0.7 + 0.6 * i) + i * 1.9
+        total += amp * math.sin(2.0 * math.pi * f * t_sec * (1.0 + 0.37 * i) + ph)
+        norm += amp
+        amp *= 0.55
+    return total / max(norm, 1e-6)
+
+
+def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=None, t_sec=None):
     """
     通用运镜：以 solve_camera 的起始位为基准，按 move 参数生成随时间变化的机位。
-    支持 pan/tilt/truck/pedestal/crane/zoom/dolly_in/dolly_out/orbit，全部按“角度/倍率/米”表达，
-    不再依赖 follow 才动。返回 (pos, target, dist, span, fill, sensor_h)。
+    返回 (pos, target, dist, span, fill, sensor_h, roll_rad)。
+    手持类用**绝对秒**驱动，不随镜长改变节奏。
     """
     pos0, target, dist0, span, fill, sensor_h = solve_camera(shot, project, blocking, actors, bag_objs, t, fps)
     move = shot.get("move", {}) or {}
     kind = move.get("type", "static")
     if kind == "static":
-        return pos0, target, dist0, span, fill, sensor_h
+        return pos0, target, dist0, span, fill, sensor_h, 0.0
 
     e = ease_value(move.get("ease", "in_out"), u)
+    # 绝对秒数：优先用调用方传入的镜内秒数，否则按 u × 时长反推
+    if t_sec is None:
+        t_sec = (u * float(duration)) if duration else u
+    roll_out = 0.0
     # 机位相对目标的方向与距离
     offset = pos0 - target
     if offset.length < 1e-6:
@@ -639,8 +662,8 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
         f = move.get("from", 1.0) + (move.get("to", 1.0) - move.get("from", 1.0)) * e
         radius *= f
     elif kind == "zoom":
-        # zoom 不改机位，改焦距；这里返回一个 lens_scale 供上层改相机焦距
-        return pos0, target, dist0, span, fill, sensor_h
+        # zoom 不改机位，改焦距；这里返回原机位，上层逐帧改 lens
+        return pos0, target, dist0, span, fill, sensor_h, 0.0
     elif kind == "pan":
         # 水平摇：绕目标转 degrees 度
         yaw0 += math.radians(move.get("degrees", 15.0)) * e
@@ -651,7 +674,7 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
         # 平移：沿画面右方向移动 meters
         right = Vector((math.cos(yaw0), math.sin(yaw0), 0))
         pos0 = pos0 + right * move.get("meters", 0.5) * e
-        return pos0, target, (pos0 - target).length, span, fill, sensor_h
+        return pos0, target, (pos0 - target).length, span, fill, sensor_h, 0.0
     elif kind == "pedestal":
         # 升降：直接改机位高度，同时保持水平半径（不走后面的 pitch 重算，否则高度会被覆盖）
         lift = move.get("meters", 0.3) * e
@@ -673,7 +696,7 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
             dir_h = Vector((0.0, -1.0, 0.0))
         dir_h.normalize()
         new_pos = Vector((target.x + dir_h.x * horiz, target.y + dir_h.y * horiz, pos0.z + lift))
-        return new_pos, target, (new_pos - target).length, span, fill, sensor_h
+        return new_pos, target, (new_pos - target).length, span, fill, sensor_h, 0.0
     elif kind == "orbit":
         # 绕目标转圈，同时可带半径变化
         yaw0 += math.radians(move.get("degrees", 30.0)) * e
@@ -686,12 +709,42 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
         else:
             yaw0 += total
     elif kind == "handheld":
-        # 手持抖动：高频小幅噪声。用 7.3 / 11.7 个周期（非整数）保证首尾不会恰好抵消。
+        # 手持：按赫兹计的多倍频噪声，节奏与镜长无关（3 秒和 12 秒的手抖速度一致）。
         amp = math.radians(move.get("degrees", 0.4))
-        yaw0 += amp * math.sin(u * math.pi * 2.0 * 7.3)
-        pitch0 += amp * 0.7 * math.sin(u * math.pi * 2.0 * 11.7 + 0.7)
+        hz = float(move.get("hz", 1.6))
+        seed = float(move.get("seed", 1.0))
+        # 步速耦合：走动/奔跑时机器跟着人一起颠，幅度和频率都上去。
+        # 以前只有“放大 degree”这一个旋钮，跑起来还是同一条慢正弦。
+        # 判据是主体真实移动速度（m/s），不依赖姿态标签，避免“写了字段但没读”。
+        speed_gain = 1.0
+        if move.get("follow_speed", True):
+            try:
+                sid = shot["subjects"][0]
+                dt = 1.0 / max(fps, 1)
+                x_now, y_now = actor_pos_at(blocking, sid, t)
+                x_next, y_next = actor_pos_at(blocking, sid, t + dt)
+                v = math.hypot(x_next - x_now, y_next - y_now) / dt  # m/s
+                if v > 0.15:
+                    speed_gain = 1.0 + min(v, 3.0) * 0.45
+            except Exception:
+                speed_gain = 1.0
+        amp *= speed_gain
+        hz *= 1.0 + (speed_gain - 1.0) * 0.6
+        yaw0 += amp * handheld_noise(t_sec, hz, seed)
+        pitch0 += amp * 0.7 * handheld_noise(t_sec, hz * 1.6, seed + 11.0)
+        # 横滚：真实手持几乎不可能完全水平；单独给一个小幅度
+        roll_out = math.radians(move.get("roll_degrees", 0.25)) * handheld_noise(t_sec, hz * 0.7, seed + 23.0)
+    elif kind == "steadicam":
+        # 稳定器：位移平滑跟随、朝向缓慢修正。抖动幅度远小于 handheld，
+        # 且只作用在瞄准/朝向上，不制造位置抖动。
+        amp = math.radians(move.get("degrees", 0.12))
+        hz = float(move.get("hz", 0.6))
+        seed = float(move.get("seed", 3.0))
+        yaw0 += amp * handheld_noise(t_sec, hz, seed)
+        pitch0 += amp * 0.5 * handheld_noise(t_sec, hz * 1.3, seed + 5.0)
+        roll_out = math.radians(move.get("roll_degrees", 0.1)) * handheld_noise(t_sec, hz * 0.5, seed + 9.0)
     else:
-        return pos0, target, dist0, span, fill, sensor_h
+        return pos0, target, dist0, span, fill, sensor_h, 0.0
 
     pitch0 = max(math.radians(-80.0), min(math.radians(80.0), pitch0))
     horizontal = radius * math.cos(pitch0)
@@ -700,7 +753,7 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
         target.y + horizontal * math.sin(yaw0),
         target.z + radius * math.sin(pitch0),
     ))
-    return new_pos, target, (new_pos - target).length, span, fill, sensor_h
+    return new_pos, target, (new_pos - target).length, span, fill, sensor_h, roll_out
 
 
 def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
@@ -751,31 +804,45 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
             if follow:
                 # 跟拍：相机以演员为基准整体平移；主主体换成了跟随对象也仍然按主演员取景
                 pass
+            # lag：跟拍滞后（秒）。人物先动，相机在 lag 秒后才到位，形成“跟得上但不即时”的操作感。
+            follow_lag = float((follow or {}).get("lag", 0.0) or 0.0)
+            # 记录人物历史位置，用于按 lag 回溯
+            actor_history = {}
+            shot_seconds = (end - start) / max(fps, 1)
             for frame in range(start, end + 1):
                 bpy.context.scene.frame_set(frame)
                 u = (frame - start) / max(end - start, 1)
+                t_sec = (frame - start) / max(fps, 1)
                 if follow:
-                    # 跟拍：机位随演员平移，距离按“当前全体主体的组宽”实时保底——
-                    # 固定起始距离会在人物靠近后填不满（0.50 vs 目标 0.70），
-                    # 每帧全解又会把 fill 拉到 0.84，所以只让半径随组宽变化，构图对准起点。
                     base_now = Vector((actor_root.location.x, actor_root.location.y, 0))
-                    p2, t2, _d2, _s2, _f2, _sh2 = camera_orbit(
+                    actor_history[frame] = base_now.copy()
+                    if follow_lag > 0.0:
+                        # 用 lag 秒前的演员位置当基准 —— 之前 lag 完全没被读取，配置是装饰
+                        lag_frames = int(round(follow_lag * fps))
+                        src = max(start, frame - lag_frames)
+                        base_now = actor_history.get(src, base_now)
+                    p2, t2, _d2, _s2, _f2, _sh2, _roll2 = camera_orbit(
                         dict(base_shot, subjects=shot["subjects"]), project, blocking, actors, bag_objs,
-                        (frame - 1) / fps, fps, u,
+                        (frame - 1) / fps, fps, u, duration=shot_seconds, t_sec=t_sec,
                     )
-                    # 用当前解算的机位方向，但半径取“起始机位到当前目标”的长度比例修正
                     cur_off = p2 - t2
                     ref = base_now + tgt_off
                     new_pos = ref + cur_off
                     new_target = ref
                 else:
-                    new_pos, new_target, _dist, _span, _fill, _sh = camera_orbit(
-                        base_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u
+                    new_pos, new_target, _dist, _span, _fill, _sh, _roll2 = camera_orbit(
+                        base_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u,
+                        duration=shot_seconds, t_sec=t_sec,
                     )
                 cam.location = new_pos
                 tgt.location = new_target
                 cam.keyframe_insert("location", frame=frame)
                 tgt.keyframe_insert("location", frame=frame)
+                # 横滚：TRACK_TO 会锁死水平，所以用相机自身的 Z 旋转表达机身倾斜
+                if abs(_roll2) > 1e-6:
+                    cam.rotation_mode = "XYZ"
+                    cam.rotation_euler = (0.0, 0.0, _roll2)
+                    cam.keyframe_insert("rotation_euler", frame=frame)
                 # zoom：不改机位，改焦距（from/to 单位 mm；缺省用当前镜头值）
                 if move_kind == "zoom":
                     lens_from = float(move.get("from", shot["lens_mm"]))

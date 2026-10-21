@@ -13,7 +13,7 @@ export const SHOT_SIZES = new Set(['ELS', 'LS', 'FS', 'MLS', 'MS', 'MCU', 'CU', 
 export const SCREEN_DIRECTIONS = new Set(['left_to_right', 'right_to_left', 'toward_camera', 'away_from_camera', 'hold'])
 export const AXIS_SIDES = new Set(['left', 'right'])
 export const MOVES = new Set([
-  'static', 'pan', 'tilt', 'dolly_in', 'dolly_out', 'truck', 'pedestal', 'crane', 'orbit', 'handheld', 'whip_pan', 'zoom',
+  'static', 'pan', 'tilt', 'dolly_in', 'dolly_out', 'truck', 'pedestal', 'crane', 'orbit', 'handheld', 'whip_pan', 'zoom', 'steadicam',
 ])
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
