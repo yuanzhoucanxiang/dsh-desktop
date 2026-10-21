@@ -23,11 +23,12 @@
     "import": "node scripts/previz.mjs import fixtures/boutique/storyboard.csv",
     "script": "node scripts/previz.mjs script fixtures/boutique/script.txt",
     "board": "node scripts/previz.mjs board fixtures/boutique/script.txt",
+    "panels": "node scripts/previz.mjs panels fixtures/boutique",
     "projects": "node scripts/previz.mjs projects",
     "demo": "node scripts/previz.mjs demo fixtures/boutique --out demo-out",
     "demo:burnin": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --burn-in",
     "demo:force": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --force",
-    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs"
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs test/panels.test.mjs"
   },
   "engines": {
     "node": ">=22"

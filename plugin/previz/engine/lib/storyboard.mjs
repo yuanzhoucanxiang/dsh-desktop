@@ -93,6 +93,11 @@ export function parseStoryboard(text, { fps = 24 } = {}) {
     }
     const panel = get('panel')
     const line = `row[${r + 1}]`
+    // 分镜图草案必须先人工确认：draft 不能直接当输入。
+    if (/\bstatus=draft\b/.test(get('notes'))) {
+      errors.push({ path: `${line}.notes`, message: '这是未确认的分镜草案（status=draft）；先跑 previz panels-confirm' })
+      continue
+    }
     const duration = num(get('duration'))
     if (!Number.isFinite(duration) || duration <= 0) {
       errors.push({ path: `${line}.duration`, message: `duration 必须是正数（收到 ${JSON.stringify(get('duration'))}）` })

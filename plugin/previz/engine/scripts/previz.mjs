@@ -18,8 +18,9 @@ import path from 'node:path'
 import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
 import { importStoryboard } from '../lib/storyboard.mjs'
 import { parseAliases, writeScript, writeStoryboard } from '../lib/script.mjs'
+import { confirmPanelDraft, writePanelDraft } from '../lib/panels.mjs'
 import { listProjects, resolveProjectRef, scaffoldProject } from '../lib/projects.mjs'
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking', 'only'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking', 'only', 'subject', 'duration', 'by'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -85,6 +86,8 @@ try {
   previz import  <storyboard.csv> [--out <shots.json>] [--scene <id>] [--fps 24]
   previz script  <script.txt> [--out <script.json>] [--title <标题>] [--alias "林=LIN,周=ZHOU"] [--scene S03]
   previz board   <script.txt> [--out <storyboard.csv>] [--title <标题>] [--alias "林=LIN,周=ZHOU"] [--scene S03] [--fit-blocking blocking.json]
+  previz panels  [project] [--scene S03] [--subject LIN] [--duration 3] [--size MS]
+  previz panels-confirm [project] [--by <名字>]
   previz projects [--json]
   previz project new <id> [--title <标题>] [--root <root>]
   previz burn-in <outDir> [--font <path>]
@@ -146,6 +149,33 @@ try {
     const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
+  }
+
+  if (command === 'panels' || command === 'panels-confirm') {
+    try {
+      if (command === 'panels') {
+        const r = writePanelDraft(projectDir, {
+          scene: arg('scene', 'S01'),
+          subject: arg('subject', 'SUBJECT'),
+          duration: Number(arg('duration', '3')),
+          size: arg('size', 'MS'),
+        })
+        if (json) print({ ok: true, out: r.out, panels: r.rows.length, missingSize: r.missingSize })
+        else {
+          console.log(`[previz] panels -> ${path.relative(process.cwd(), r.out)}（${r.rows.length} 张）`)
+          if (r.missingSize) console.log(`[previz] ${r.missingSize} 张读不出尺寸（仍入选，notes 标 unknown-size）`)
+          console.log('[previz] 这是草案（status=draft）：确认前不能当输入。核对后跑 previz panels-confirm。')
+        }
+        process.exit(0)
+      }
+      const r = confirmPanelDraft(projectDir, { confirmedBy: arg('by', 'human'), log })
+      if (json) print({ ok: true, out: r.out, rows: r.rows })
+      process.exit(0)
+    } catch (err) {
+      if (json) print({ ok: false, error: err.message })
+      else console.error(`[previz] ${err.message}`)
+      process.exit(1)
+    }
   }
 
   if (command === 'script' || command === 'board') {

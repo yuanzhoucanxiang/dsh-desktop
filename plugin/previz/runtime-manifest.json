@@ -16,6 +16,7 @@
     "plugin/previz/engine/lib/export.mjs",
     "plugin/previz/engine/lib/storyboard.mjs",
     "plugin/previz/engine/lib/script.mjs",
+    "plugin/previz/engine/lib/panels.mjs",
     "plugin/previz/engine/lib/errors.mjs",
     "plugin/previz/engine/lib/projects.mjs",
     "plugin/previz/engine/blender/previz_build.py",

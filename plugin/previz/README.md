@@ -5,6 +5,7 @@
 
 - **项目**：面板顶部可切项目 + 「新建」（内联表单，host `POST ?route=project|project-create`）；每个项目独立输出目录；`fixtures/bad-occlusion` 因 `fixture:true` 不列入。
 - **剧本**：引擎 `previz script` / `previz board` 可从 `script.txt` 生成 `script.json` 与分镜草案；工作台面板只做展示/运行。
+- **分镜图**：`previz panels` → `panels.draft.csv`（`status=draft`）→ `previz panels-confirm` 人工确认；未确认草案 import 会被拒。
 - **缓存**：整项目 + 逐镜指纹；只重渲脏镜，`--only S03-02` 可指定。
 - **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
   也可先 `previz import storyboard.csv` 生成 `shots.json` 再跑。本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
