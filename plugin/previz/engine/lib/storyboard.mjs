@@ -122,6 +122,12 @@ export function parseStoryboard(text, { fps = 24 } = {}) {
     if (!transition) assumptions.push(`${shot}: transition 缺省 ${DEFAULT_TRANSITION}`)
     if (!get('beat')) assumptions.push(`${shot}: beat 缺省按累计时间推断（未填）`)
 
+    const notes = get('notes')
+    const camera = { mode: 'solve', azimuth_deg: 0, height: 1.5, target: 'subject_center' }
+    // notes 里的 key=value 作为生成器/人工覆盖：azimuth_deg=..., height=...
+    for (const m of notes.matchAll(/([a-z_]+)=(-?\d+(?:\.\d+)?)/g)) {
+      if (m[1] === 'azimuth_deg' || m[1] === 'height') camera[m[1]] = Number(m[2])
+    }
     shots.push({
       id: shot,
       panel: Number(panel) || shots.length + 1,
@@ -133,11 +139,11 @@ export function parseStoryboard(text, { fps = 24 } = {}) {
       size: size || DEFAULT_SIZE,
       angle: angle || DEFAULT_ANGLE,
       lens_mm: Number.isFinite(lens) && lens !== null ? lens : DEFAULT_LENS,
-      camera: { mode: 'solve', azimuth_deg: 0, height: 1.5, target: 'subject_center' },
+      camera,
       framing: { fill: size === 'INSERT' ? 0.6 : 0.7, headroom: size === 'INSERT' ? 0 : 0.07, look_room: 0.12 },
       move: { type: move || DEFAULT_MOVE },
       transition: transition || DEFAULT_TRANSITION,
-      source: { action: get('action'), dialogue: get('dialogue'), image: get('image') || null, notes: get('notes') || null },
+      source: { action: get('action'), dialogue: get('dialogue'), image: get('image') || null, notes: notes || null },
     })
     takes.push({ panel, shot, duration })
     cursor = out

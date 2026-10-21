@@ -13,11 +13,13 @@
  *
  * 通用参数：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
  */
+import fs from 'node:fs'
 import path from 'node:path'
 import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
 import { importStoryboard } from '../lib/storyboard.mjs'
+import { parseAliases, writeScript, writeStoryboard } from '../lib/script.mjs'
 import { listProjects, resolveProjectRef, scaffoldProject } from '../lib/projects.mjs'
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -81,6 +83,8 @@ try {
   previz qc      <outDir>
   previz export  <outDir>
   previz import  <storyboard.csv> [--out <shots.json>] [--scene <id>] [--fps 24]
+  previz script  <script.txt> [--out <script.json>] [--title <标题>] [--alias "林=LIN,周=ZHOU"] [--scene S03]
+  previz board   <script.txt> [--out <storyboard.csv>] [--title <标题>] [--alias "林=LIN,周=ZHOU"] [--scene S03] [--fit-blocking blocking.json]
   previz projects [--json]
   previz project new <id> [--title <标题>] [--root <root>]
   previz burn-in <outDir> [--font <path>]
@@ -142,6 +146,49 @@ try {
     const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
+  }
+
+  if (command === 'script' || command === 'board') {
+    const file = arg('file', positional[0])
+    if (!file) fail(`用法：previz ${command} <script.txt> [--out <path>] [--title <标题>] [--alias "林=LIN,周=ZHOU"]`, 2)
+    const shared = {
+      title: arg('title', undefined),
+      aliases: parseAliases(arg('alias', '')),
+      sceneId: arg('scene', undefined),
+      size: arg('size', undefined),
+      angle: arg('angle', 'eye'),
+      lens: Number(arg('lens', '35')),
+      move: arg('move', 'static'),
+      log,
+    }
+    try {
+      const fitBlocking = arg('fit-blocking', undefined)
+      let fitDuration = null
+      let blocking = null
+      if (fitBlocking && command === 'board') {
+        blocking = JSON.parse(fs.readFileSync(path.resolve(fitBlocking), 'utf8'))
+        fitDuration = Number(blocking.duration)
+        if (!Number.isFinite(fitDuration) || fitDuration <= 0) fail(`${fitBlocking} 里没有有效的 duration`, 2)
+      }
+      const result = command === 'script'
+        ? writeScript(file, { ...shared, outFile: arg('out', undefined) })
+        : writeStoryboard(file, { ...shared, fitDuration, blocking, outFile: arg('out', undefined) })
+      if (json) print({ ok: true, outFile: result.outFile, warnings: result.warnings })
+      else if (command === 'script') {
+        const s = result.script
+        console.log(`[previz] ${s.title} · ${s.scenes.length} 场 · ${s.scenes.reduce((a, x) => a + x.beats.length, 0)} beats · 角色 ${result.characters.join(', ') || '（无）'}`)
+      } else {
+        const s = result.script
+        const beats = s.scenes.reduce((a, x) => a + x.beats.length, 0)
+        console.log(`[previz] ${s.title} · ${beats} 镜草案 · 角色 ${result.characters.join(', ') || '（无）'}`)
+        console.log('[previz] 这是草案：景别/机位是默认值，跑 build 前请先核对；scene id/时长需与 set/blocking 对齐。')
+      }
+      process.exit(0)
+    } catch (err) {
+      if (json) print({ ok: false, error: err.message })
+      else console.error(`[previz] ${err.message}`)
+      process.exit(1)
+    }
   }
 
   if (command === 'projects') {

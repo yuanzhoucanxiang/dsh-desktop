@@ -523,6 +523,10 @@ def solve_camera(shot, project, blocking, actors, bag_objs, t, fps=24):
     sensor_h = sensor_w / aspect_ratio(project)
     fill = shot.get("framing", {}).get("fill", 0.8)
     d = span * lens / (sensor_h * fill)
+    # 多人/横向铺开的主体：只按高度算距离会让画幅边缘的人出画，再按组宽度反算一次。
+    group_w = max(bbox[3] - bbox[0], bbox[4] - bbox[1], 1e-6)
+    d_w = group_w * lens / (sensor_w * fill)
+    d = max(d, d_w)
     cam_cfg = shot.get("camera", {})
     az = math.radians(cam_cfg.get("azimuth_deg", 0))
     cam_h = cam_cfg.get("height", cz)
@@ -560,9 +564,14 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
         start = round(shot["in"] * fps) + 1
         t0 = shot["in"]
         bpy.context.scene.frame_set(start)
+        # 取景距离按主主体算；多人镜头的横向覆盖由 solve_camera 的组宽度兜底。
+        lead_id = shot.get("framing", {}).get("lead") or shot["subjects"][0]
         bbox = subject_bbox(shot["subjects"], actors, bag_objs, blocking, t0, fps)
+        lead_bbox = subject_bbox([lead_id], actors, bag_objs, blocking, t0, fps)
         sensor_h = project.get("defaults", {}).get("sensor_mm", 36) / aspect_ratio(project)
         fill = shot.get("framing", {}).get("fill", 0.8)
+        lead_shot = dict(shot)
+        lead_shot["subjects"] = [lead_id]
         if shot["size"] == "OTS" and len(shot["subjects"]) >= 2 and all(s in actors for s in shot["subjects"][:2]):
             fg, bg = shot["subjects"][0], shot["subjects"][1]
             fx, fy = actor_pos_at(blocking, fg, t0)
@@ -576,9 +585,9 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
             pos.z = shot.get("camera", {}).get("height", 1.55)
             target = Vector((bx, by, 1.3))
             dist = (pos - target).length
-            cx, cy, cz, span = size_span("OTS", bbox)
+            cx, cy, cz, span = size_span("OTS", lead_bbox)
         else:
-            pos, target, dist, span, fill, sensor_h = solve_camera(shot, project, blocking, actors, bag_objs, t0, fps)
+            pos, target, dist, span, fill, sensor_h = solve_camera(lead_shot, project, blocking, actors, bag_objs, t0, fps)
         cam, tgt = create_camera(shot["id"], shot["lens_mm"], project.get("defaults", {}).get("sensor_mm", 36), coll)
         cam.location = pos
         tgt.location = target
@@ -811,7 +820,9 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
             "subjects": {},
         }
         # 目标取景范围的 fill（不是头顶到脚底；MS/OTS 本来就会切脚）
-        bbox0 = subject_bbox(shot["subjects"], actors, bag_objs, blocking, shot["in"], fps)
+        # 多人镜头按“主主体”（framing.lead 或第一个主体）算占幅；按组 bbox 算会把横向距离算进来而永远不达标。
+        lead_id = shot.get("framing", {}).get("lead") or shot["subjects"][0]
+        bbox0 = subject_bbox([lead_id], actors, bag_objs, blocking, shot["in"], fps)
         cx, cy, cz, span = size_span(shot["size"], bbox0)
         sc.frame_set(info["start_frame"])
         bpy.context.view_layer.update()

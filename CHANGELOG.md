@@ -26,7 +26,8 @@
   接触表每格烧镜号/首中尾。**脚部**：脚掌独立建模并随腿摆反向保持水平，QC 同时查脚底高度与脚掌倾斜。
   **输入**：`previz import storyboard.csv` 可直接生成 `shots.json` 并跑完整 demo；缺省字段会列 assumption。
   **项目**：工作台「预演」面板顶部有项目下拉；CLI 用 `previz projects` / `project new` / `--project <id>`；
-  每个项目独立输出目录。— 署名：deepseek-flash
+  每个项目独立输出目录。**剧本**：`previz script` 把 `script.txt` 解析成 `script.json`，`previz board` 出分镜草案
+  （`--fit-blocking` 对齐场次时长、自动机位方位）；已实测剧本 → 2 镜 demo QC OK。— 署名：deepseek-flash
 
 - **又查出两件"用起来会懵"的事**（2026-10-19，**只记录，本轮不改代码**）：
   ① **按 `Esc` 能绕过"还有没保存的稿"这道拦截**：工作台在宽窗界面下，按 `Esc` 是直接关掉，

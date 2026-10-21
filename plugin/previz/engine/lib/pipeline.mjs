@@ -211,19 +211,36 @@ export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = fa
     stills.push(path.join(dir, 'first.png'), path.join(dir, 'mid.png'), path.join(dir, 'last.png'))
   }
   if (stills.every((f) => fs.existsSync(f))) {
+    // 按实际镜头数布局：每镜一行 × 3 格；不足 3 镜时补黑格，避免硬编码 9 个输入越界。
+    const cols = 3
+    const rows = Math.max(1, facts.shots.length)
     const sheet = path.join(resolvedOut, 'contact_sheet.png')
     const fontPath = findFont()
     const args = ['-y']
     for (const f of stills) args.push('-i', f)
-    let filter = '[0:v][1:v][2:v]hstack=inputs=3[r0];[3:v][4:v][5:v]hstack=inputs=3[r1];[6:v][7:v][8:v]hstack=inputs=3[r2];[r0][r1][r2]vstack=inputs=3[out]'
+    const layout = [] // [row, col, inputIndex, label]
+    facts.shots.forEach((shot, row) => {
+      for (const [col, phase] of [[0, 'first'], [1, 'mid'], [2, 'last']]) {
+        layout.push([row, col, row * 3 + col, `${shot.id} ${phase}`])
+      }
+    })
+    const inputs = facts.shots.length * 3
+    const filters = []
+    for (let r = 0; r < rows; r++) {
+      const cells = [0, 1, 2].map((c) => {
+        const idx = r * 3 + c
+        if (idx < inputs) return `[${idx}:v]`
+        return `color=c=black:s=640x360:d=1[pad${r}${c}]`
+      })
+      filters.push(`${cells.join('')}hstack=inputs=3[r${r}]`)
+    }
+    filters.push(`${Array.from({ length: rows }, (_, r) => `[r${r}]`).join('')}vstack=inputs=${rows}[out]`)
+    let filter = filters.join(';')
     if (fontPath) {
       const escFont = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:')
-      const labels = []
-      facts.shots.forEach((shot, row) => {
-        for (const [col, phase] of [[0, 'first'], [1, 'mid'], [2, 'last']]) {
-          labels.push(`drawtext=fontfile='${escFont}':text='${shot.id} ${phase}':x=${col}*w/3+8:y=${row}*h/3+8:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.55`)
-        }
-      })
+      const labels = layout.map(([r, c, _idx, label]) =>
+        `drawtext=fontfile='${escFont}':text='${label}':x=${r === 0 ? `${c}*w/${cols}` : `${c}*w/${cols}`}+8:y=${r}*h/${rows}+8:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.55`,
+      )
       filter = `${filter};[out]${labels.join(',')}[labeled]`
       args.push('-filter_complex', filter, '-map', '[labeled]', '-frames:v', '1', sheet)
     } else {
