@@ -266,8 +266,16 @@ def make_actor(actor_id, height, coll):
         ob.matrix_parent_inverse = root.matrix_world.inverted()
         return ob
 
+    def parent_to(ob, parent_ob):
+        ob.parent = parent_ob
+        ob.matrix_parent_inverse = parent_ob.matrix_world.inverted()
+        return ob
+
     parts["leg_l"] = parent(add_cylinder(f"{actor_id}_leg_l", (-0.11 * s, 0, 0.425 * s), 0.075 * s, 0.85 * s, "BODY", coll))
     parts["leg_r"] = parent(add_cylinder(f"{actor_id}_leg_r", (0.11 * s, 0, 0.425 * s), 0.075 * s, 0.85 * s, "BODY", coll))
+    # 脚掌是独立 box，父到小腿；动画里反向旋转保持脚底水平（脚掌不随腿翻）。
+    parts["foot_l"] = parent_to(add_box(f"{actor_id}_foot_l", (-0.11 * s, 0.07 * s, 0.035 * s), (0.13 * s, 0.28 * s, 0.07 * s), "BODY", coll), parts["leg_l"])
+    parts["foot_r"] = parent_to(add_box(f"{actor_id}_foot_r", (0.11 * s, 0.07 * s, 0.035 * s), (0.13 * s, 0.28 * s, 0.07 * s), "BODY", coll), parts["leg_r"])
     parts["torso"] = parent(add_cylinder(f"{actor_id}_torso", (0, 0, 1.15 * s), 0.18 * s, 0.60 * s, "BODY", coll))
     parts["head"] = parent(add_sphere(f"{actor_id}_head", (0, 0, 1.62 * s), 0.115 * s, "BODY", coll))
     parts["arm_l"] = parent(add_cylinder(f"{actor_id}_arm_l", (-0.25 * s, 0, 1.18 * s), 0.055 * s, 0.52 * s, "BODY", coll))
@@ -376,6 +384,9 @@ def animate_actors(blocking, actors, fps, total_frames):
             if pose in ("walk", "run"):
                 parts["leg_l"].rotation_euler.x = swing
                 parts["leg_r"].rotation_euler.x = -swing
+                # 脚掌反向旋转，保持脚底水平；腿摆动时脚不会跟着“翻”。
+                parts["foot_l"].rotation_euler.x = -swing
+                parts["foot_r"].rotation_euler.x = swing
                 parts["arm_l"].rotation_euler.x = -swing * 0.55
                 parts["arm_r"].rotation_euler.x = swing * 0.55
             elif pose == "reach_r":
@@ -394,7 +405,7 @@ def animate_actors(blocking, actors, fps, total_frames):
             bpy.context.view_layer.update()
             deps = bpy.context.evaluated_depsgraph_get()
             zs = []
-            for leg in ("leg_l", "leg_r"):
+            for leg in ("leg_l", "leg_r", "foot_l", "foot_r"):
                 ob = parts[leg].evaluated_get(deps)
                 zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
             root.location = (x, y, -min(zs) if zs else 0.0)
@@ -891,14 +902,19 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
                     continue
                 _root, parts, _s = actors[sid]
                 zs = []
-                for leg in ("leg_l", "leg_r"):
+                tilts = []
+                for leg in ("leg_l", "leg_r", "foot_l", "foot_r"):
                     ob = parts[leg].evaluated_get(deps)
                     zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
+                for foot in ("foot_l", "foot_r"):
+                    ob = parts[foot].evaluated_get(deps)
+                    tilts.append(abs(math.degrees(ob.matrix_world.to_euler().x)))
                 entry["feet"].append({
                     "subject": sid,
                     "frame": frame,
                     "tag": tag,
                     "min_z": round(min(zs), 4),
+                    "tilt_deg": round(max(tilts), 2),
                 })
         facts["shots"].append(entry)
     return facts

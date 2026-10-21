@@ -56,6 +56,9 @@ export function runQc({ outDir }) {
         } else if (f.min_z < -0.02 || f.min_z > 0.03) {
           push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 最低脚 z=${f.min_z}，不在 [-0.02, 0.03]`)
         }
+        if (Number.isFinite(f.tilt_deg) && f.tilt_deg > 3) {
+          push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 脚掌倾斜 ${f.tilt_deg}° > 3°`)
+        }
       }
     } else {
       warnings.push({ path: `${sp}.feet`, message: '缺少脚部接触 facts（重跑构建）' })
