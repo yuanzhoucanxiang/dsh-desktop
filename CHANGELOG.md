@@ -34,6 +34,7 @@
   **走路不再滑步**：支撑脚在支撑相内锁在世界坐标，QC 按支撑段漂移 >6cm 报错。
   **分镜图入库**：把分镜图丢进项目的 `panels/`，`previz panels` 生成草案（标 `status=draft`），
   `previz panels-confirm` 人工确认后才能进 `storyboard.csv`——未确认草案会被 import 直接拒绝。
+  **多场景**：项目可用 `scenes.json` + `scenes/<id>/` 组织多个场景，逐场景渲染/QC，最后拼一条跨场景 animatic。
   — 署名：deepseek-flash
 
 - **又查出两件"用起来会懵"的事**（2026-10-19，**只记录，本轮不改代码**）：

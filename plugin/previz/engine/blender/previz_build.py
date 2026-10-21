@@ -830,7 +830,7 @@ def occlusion_at(sc, cam, sid, actors, bag_objs, allowed_actor=False):
 
 def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
     sc = bpy.context.scene
-    facts = {"scene": shots["scene"], "fps": fps, "axis": shots.get("axis"), "shots": []}
+    facts = {"scene": shots["scene"], "fps": fps, "axis": shots.get("axis"), "expected_frames": round(blocking["duration"] * fps), "shots": []}
     for shot in shots["shots"]:
         cam, tgt, info = cams[shot["id"]]
         sc.camera = cam
@@ -1080,7 +1080,7 @@ def main():
     if mode in ("all", "render"):
         for shot in target_shots:
             cam, tgt, info = cams[shot["id"]]
-            render_shot(shot, cam, info, os.path.join(out_dir, "S03", shot["id"], "review"))
+            render_shot(shot, cam, info, os.path.join(out_dir, shots["scene"], shot["id"], "review"))
     if mode in ("all", "plan"):
         render_plan(project, shots, cams, out_dir, plan_res)
 

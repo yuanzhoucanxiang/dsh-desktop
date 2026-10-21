@@ -308,6 +308,8 @@ export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = fa
     }
     filters.push(`${Array.from({ length: rows }, (_, r) => `[r${r}]`).join('')}vstack=inputs=${rows}[out]`)
     let filter = filters.join(';')
+    // vstack 最少要 2 个输入；只有一行时直接把它当 out。
+    filter = rows === 1 ? filter.replace(`[r0]vstack=inputs=1[out]`, '[r0]null[out]') : filter
     if (fontPath) {
       const escFont = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:')
       const labels = layout.map(([r, c, _idx, label]) =>
@@ -403,6 +405,7 @@ export function runQcReport(outDir) {
 
 /**
  * 一条命令：校验 → Blender 构建/渲染/平面图 → 编码 → QC。
+ * 多场景项目逐场景跑，最后拼跨场景 animatic。
  * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
  */
 export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, only = null, log = console.log } = {}) {
@@ -413,6 +416,9 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
     return { ok: false, stage: 'validate', projectDir: resolvedProject, errors: validation.errors }
   }
   log(`[previz] schema OK: ${resolvedProject}`)
+  if (validation.scenes) {
+    return runMultiScene({ projectDir: resolvedProject, outDir: resolvedOut, scenes: validation.scenes, blender, ffmpeg, skipRender, skipEncode, log })
+  }
 
   const useCache = !skipRender && !skipEncode && !force && !(only && only.length)
   const fingerprint = useCache ? projectFingerprint(resolvedProject, doBurnIn ? 'burnin' : '') : null
@@ -466,6 +472,43 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
     )
   }
   return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'miss', encoded, burnIn: burned, qc, exports: qc.ok ? exportTimeline(resolvedOut, { log }) : null }
+}
+
+/**
+ * 多场景：每个场景独立构建/渲染/编码/QC，产物在 `<out>/<sceneId>/`；
+ * 最后把各场景 animatic 拼成 `<out>/animatic.mp4`，QC 汇总。
+ */
+export function runMultiScene({ projectDir, outDir, scenes, blender, ffmpeg, skipRender = false, skipEncode = false, log = console.log }) {
+  const results = []
+  for (const scene of scenes) {
+    log(`[previz] scene ${scene.id} …`)
+    const sceneOut = path.join(outDir, scene.id)
+    if (!skipRender) runBlender({ projectDir: scene.dir, outDir: sceneOut, mode: 'all', blender, log })
+    if (!skipEncode) encodeOutputs(sceneOut, { ffmpeg, log })
+    const qc = runQcReport(sceneOut)
+    results.push({ id: scene.id, out: sceneOut, qc })
+    if (!qc.ok) {
+      return { ok: false, stage: 'qc', projectDir, outDir, scenes: results, qc }
+    }
+  }
+  let animatic = null
+  if (!skipEncode && results.length > 1) {
+    const exe = findFfmpeg()
+    if (exe) {
+      const list = path.join(outDir, 'scenes-concat.txt')
+      fs.writeFileSync(list, results.map((r) => `file '${path.join(r.out, 'animatic.mp4').replace(/\\/g, '/')}'`).join('\n') + '\n', 'utf8')
+      animatic = path.join(outDir, 'animatic.mp4')
+      runCommand(exe, ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', animatic])
+      log(`[previz] multi-scene animatic -> ${path.relative(process.cwd(), animatic)}`)
+    }
+  } else if (results.length === 1) {
+    animatic = path.join(results[0].out, 'animatic.mp4')
+  }
+  const shots = results.reduce((a, r) => a + (r.qc.stats?.shots || 0), 0)
+  const frames = results.reduce((a, r) => a + (r.qc.stats?.frames || 0), 0)
+  const qc = { ok: results.every((r) => r.qc.ok), errors: results.flatMap((r) => r.qc.errors.map((e) => ({ ...e, path: `${r.id}.${e.path}` }))), warnings: results.flatMap((r) => r.qc.warnings.map((w) => ({ ...w, path: `${r.id}.${w.path}` }))), stats: { shots, frames, scenes: results.length, animatic } }
+  fs.writeFileSync(path.join(outDir, 'qc_report.json'), JSON.stringify(qc, null, 2), 'utf8')
+  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir, outDir, scenes: results, qc, animatic }
 }
 
 export { validateAll, runQc, exportTimeline }

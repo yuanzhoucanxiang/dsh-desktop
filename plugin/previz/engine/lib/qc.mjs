@@ -180,8 +180,10 @@ export function runQc({ outDir }) {
     }
   }
 
-  // 总时长/帧数（fixture 是 9s@24fps=216）
-  if (totalFrames !== 216) warnings.push({ path: 'facts.shots', message: `总帧数 ${totalFrames}，demo 预期 216` })
+  // 总帧数只做“与 blocking 时长一致”的提示；不再假定 demo 一定是 216 帧（多场景/其它项目会误报）。
+  if (facts.expected_frames && totalFrames !== facts.expected_frames) {
+    warnings.push({ path: 'facts.shots', message: `总帧数 ${totalFrames}，与期望 ${facts.expected_frames} 不一致` })
+  }
 
   const animatic = path.join(outDir, 'animatic.mp4')
   const stats = {

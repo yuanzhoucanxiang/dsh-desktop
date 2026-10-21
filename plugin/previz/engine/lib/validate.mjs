@@ -6,6 +6,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { loadScenes } from './scenes.mjs'
 
 export const ROLES = new Set(['BODY', 'PROP', 'WOOD', 'DARK', 'WALL', 'RELIEF', 'FLOOR', 'EXTRA', 'SCRN'])
 export const SHOT_SIZES = new Set(['ELS', 'LS', 'FS', 'MLS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'TWO', 'INSERT'])
@@ -253,6 +254,11 @@ export function validateShots(shots, { blocking, set, project } = {}) {
     checkStr(e, `${p}.id`, s.id)
     if (s.id && ids.has(s.id)) err(e, `${p}.id`, `重复的镜号: ${s.id}`)
     if (s.id) ids.add(s.id)
+    // 镜号前缀应与场景 id 一致（S04-01 属于 S04）；否则渲染目录会 S04/S03-01，人和机器都会看错。
+    if (isStr(s.id) && isStr(shots.scene) && /^([A-Za-z]+\d+)-/.test(s.id)) {
+      const prefix = s.id.split('-')[0]
+      if (prefix !== shots.scene) err(e, `${p}.id`, `镜号前缀 ${prefix} 与场景 ${shots.scene} 不一致`)
+    }
     checkNum(e, `${p}.in`, s.in, 0, blocking?.duration ?? 600)
     checkNum(e, `${p}.out`, s.out, 0, blocking?.duration ?? 600)
     if (isNum(s.in) && isNum(s.out)) {
@@ -294,33 +300,68 @@ export function validateShots(shots, { blocking, set, project } = {}) {
   return e
 }
 
-export function validateAll(dir) {
+export function validateSceneDir(dir, prefix = '') {
   const read = (name) => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
   let project, set, blocking, shots
   const e = []
+  const at = (p) => (prefix ? `${prefix}.${p}` : p)
   try {
     project = read('project.json')
-    e.push(...validateProject(project))
+    e.push(...validateProject(project).map((x) => ({ ...x, path: at(x.path) })))
   } catch (ex) {
-    err(e, 'project.json', `读取/解析失败: ${ex.message}`)
+    err(e, at('project.json'), `读取/解析失败: ${ex.message}`)
   }
   try {
     set = read('set.json')
-    e.push(...validateSet(set, { project }))
+    e.push(...validateSet(set, { project }).map((x) => ({ ...x, path: at(x.path) })))
   } catch (ex) {
-    err(e, 'set.json', `读取/解析失败: ${ex.message}`)
+    err(e, at('set.json'), `读取/解析失败: ${ex.message}`)
   }
   try {
     blocking = read('blocking.json')
-    e.push(...validateBlocking(blocking, { set }))
+    e.push(...validateBlocking(blocking, { set }).map((x) => ({ ...x, path: at(x.path) })))
   } catch (ex) {
-    err(e, 'blocking.json', `读取/解析失败: ${ex.message}`)
+    err(e, at('blocking.json'), `读取/解析失败: ${ex.message}`)
   }
   try {
     shots = read('shots.json')
-    e.push(...validateShots(shots, { blocking, set, project }))
+    e.push(...validateShots(shots, { blocking, set, project }).map((x) => ({ ...x, path: at(x.path) })))
   } catch (ex) {
-    err(e, 'shots.json', `读取/解析失败: ${ex.message}`)
+    err(e, at('shots.json'), `读取/解析失败: ${ex.message}`)
   }
   return { ok: e.length === 0, errors: e, data: { project, set, blocking, shots } }
+}
+
+/** 校验项目：多场景读 scenes.json 逐场景校验；旧结构直接校验根目录。 */
+export function validateAll(dir) {
+  const root = path.resolve(dir)
+  const manifest = path.join(root, 'scenes.json')
+  if (!fs.existsSync(manifest)) {
+    return { ...validateSceneDir(root), scenes: null }
+  }
+  const e = []
+  let scenes = []
+  try {
+    scenes = loadScenes(root)
+  } catch (ex) {
+    err(e, 'scenes.json', ex.message)
+    return { ok: false, errors: e, data: {}, scenes: null }
+  }
+  const data = {}
+  for (const scene of scenes) {
+    // 场景目录没有 project.json：用项目根的 project 补齐
+    const projectPath = path.join(scene.dir, 'project.json')
+    if (!fs.existsSync(projectPath)) {
+      try {
+        fs.copyFileSync(path.join(root, 'project.json'), projectPath)
+      } catch (ex) {
+        err(e, `scenes.${scene.id}.project.json`, `无法补齐: ${ex.message}`)
+        continue
+      }
+    }
+    const r = validateSceneDir(scene.dir, `scenes.${scene.id}`)
+    e.push(...r.errors)
+    data[scene.id] = r.data
+  }
+  return { ok: e.length === 0, errors: e, data, scenes }
 }
