@@ -308,6 +308,18 @@ export function validateShots(shots, { blocking, set, project } = {}) {
     }
     if (s.move !== undefined) {
       if (!isObj(s.move) || !MOVES.has(s.move.type)) err(e, `${p}.move.type`, `未知运镜: ${s.move?.type}`)
+      else {
+        // 质感层可叠加：move.feel 独立于 move.type（路径）。之前 handheld 和 dolly 只能二选一。
+        if (s.move.path !== undefined && !MOVES.has(s.move.path)) {
+          err(e, `${p}.move.path`, `未知路径: ${s.move.path}`)
+        }
+        if (s.move.feel !== undefined) {
+          const f = typeof s.move.feel === 'string' ? { type: s.move.feel } : s.move.feel
+          if (!isObj(f) || !['handheld', 'steadicam'].includes(f.type)) {
+            err(e, `${p}.move.feel.type`, 'feel 只支持 handheld / steadicam')
+          }
+        }
+      }
     }
     if (s.transition !== undefined && !['cut', 'dissolve', 'fade', 'fade_in', 'fade_out'].includes(s.transition)) {
       err(e, `${p}.transition`, `未知转场: ${s.transition}`)

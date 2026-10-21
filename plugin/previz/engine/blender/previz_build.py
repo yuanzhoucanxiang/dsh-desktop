@@ -28,7 +28,7 @@ import shutil
 import sys
 import time
 
-from mathutils import Vector
+from mathutils import Matrix, Vector
 from bpy_extras.object_utils import world_to_camera_view
 
 # ---------------------------------------------------------------- args / io
@@ -590,6 +590,27 @@ def create_camera(name, lens, sensor_w, coll):
     return cam, target
 
 
+def aim_with_roll(cam, target_vec, roll_rad):
+    """
+    让相机朝 target 看，并绕视线轴滚转。
+
+    为什么不能用 rotation_euler / 父级 pivot：TRACK_TO 约束在**世界空间**完全决定朝向，
+    这两者都会被覆盖（实测滚转 5° 后画面倾斜仍是 0.000°）。
+    所以这里改用四元数手动朝向：指向目标 × 绕视线轴 roll。
+    只有需要 roll 的镜头才这么做；其余镜头保留 TRACK_TO（更省、也便于人工在 Blender 里调）。
+    """
+    dirv = (Vector(target_vec) - cam.matrix_world.translation)
+    if dirv.length < 1e-6:
+        return
+    dirv.normalize()
+    q = dirv.to_track_quat("-Z", "Y")
+    if abs(roll_rad) > 1e-9:
+        roll_q = Matrix.Rotation(roll_rad, 4, dirv).to_quaternion()
+        q = roll_q @ q
+    cam.rotation_mode = "QUATERNION"
+    cam.rotation_quaternion = q
+
+
 def ease_value(name, u):
     """把 0..1 的归一化时间映射成缓动后的 0..1。故意只做少量确定曲线，便于复现。"""
     t = max(0.0, min(1.0, u))
@@ -750,7 +771,17 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
     pos0, target, dist0, span, fill, sensor_h = solve_camera(shot, project, blocking, actors, bag_objs, t, fps)
     move = shot.get("move", {}) or {}
     kind = move.get("type", "static")
-    if kind == "static":
+    # 质感层：handheld/steadicam 可以单独用，也可以作为叠加层（move.feel）压在路径上。
+    # 之前 handheld 和 dolly 共用单 type，二选一；现在“去哪”（path）和“谁来端机”（feel）分开。
+    feel = move.get("feel") or {}
+    if isinstance(feel, str):
+        feel = {"type": feel}
+    if feel.get("type") in ("handheld", "steadicam"):
+        path_kind = move.get("path") or ("static" if kind in ("handheld", "steadicam") else kind)
+    else:
+        feel = {}
+        path_kind = kind
+    if path_kind == "static" and not feel:
         return pos0, target, dist0, span, fill, sensor_h, 0.0
 
     e = ease_value(move.get("ease", "in_out"), u)
@@ -767,6 +798,8 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
     radius = offset.length
     cam_height = pos0.z
 
+    # 先算路径（去哪），再叠质感（怎么端）。kind 保持向后兼容。
+    kind = path_kind
     if kind in ("dolly_in", "dolly_out"):
         # from/to 是距离倍率：1.0 = 原距离
         f = move.get("from", 1.0) + (move.get("to", 1.0) - move.get("from", 1.0)) * e
@@ -820,14 +853,15 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
             yaw0 += total
     elif kind == "handheld":
         # 手持：按赫兹计的多倍频噪声，节奏与镜长无关（3 秒和 12 秒的手抖速度一致）。
-        amp = math.radians(move.get("degrees", 0.4))
-        hz = float(move.get("hz", 1.6))
-        seed = float(move.get("seed", 1.0))
+        src = feel if feel else move
+        amp = math.radians(src.get("degrees", 0.4))
+        hz = float(src.get("hz", 1.6))
+        seed = float(src.get("seed", 1.0))
         # 步速耦合：走动/奔跑时机器跟着人一起颠，幅度和频率都上去。
         # 以前只有“放大 degree”这一个旋钮，跑起来还是同一条慢正弦。
         # 判据是主体真实移动速度（m/s），不依赖姿态标签，避免“写了字段但没读”。
         speed_gain = 1.0
-        if move.get("follow_speed", True):
+        if src.get("follow_speed", True):
             try:
                 sid = shot["subjects"][0]
                 dt = 1.0 / max(fps, 1)
@@ -843,18 +877,34 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
         yaw0 += amp * handheld_noise(t_sec, hz, seed)
         pitch0 += amp * 0.7 * handheld_noise(t_sec, hz * 1.6, seed + 11.0)
         # 横滚：真实手持几乎不可能完全水平；单独给一个小幅度
-        roll_out = math.radians(move.get("roll_degrees", 0.25)) * handheld_noise(t_sec, hz * 0.7, seed + 23.0)
+        roll_out = math.radians(src.get("roll_degrees", 0.25)) * handheld_noise(t_sec, hz * 0.7, seed + 23.0)
     elif kind == "steadicam":
         # 稳定器：位移平滑跟随、朝向缓慢修正。抖动幅度远小于 handheld，
         # 且只作用在瞄准/朝向上，不制造位置抖动。
-        amp = math.radians(move.get("degrees", 0.12))
-        hz = float(move.get("hz", 0.6))
-        seed = float(move.get("seed", 3.0))
+        src = feel if feel else move
+        amp = math.radians(src.get("degrees", 0.12))
+        hz = float(src.get("hz", 0.6))
+        seed = float(src.get("seed", 3.0))
         yaw0 += amp * handheld_noise(t_sec, hz, seed)
         pitch0 += amp * 0.5 * handheld_noise(t_sec, hz * 1.3, seed + 5.0)
-        roll_out = math.radians(move.get("roll_degrees", 0.1)) * handheld_noise(t_sec, hz * 0.5, seed + 9.0)
+        roll_out = math.radians(src.get("roll_degrees", 0.1)) * handheld_noise(t_sec, hz * 0.5, seed + 9.0)
+    elif kind == "static" and feel:
+        # 纯叠加：路径不动，只加质感（相当于“原地手持/原地稳定器”）
+        roll_out = 0.0
     else:
         return pos0, target, dist0, span, fill, sensor_h, 0.0
+
+    # 叠加层：路径已算完，再把 feel 的抖动叠上去（不影响“去哪”，只影响“怎么端”）。
+    if feel and path_kind not in ("handheld", "steadicam"):
+        fsrc = feel
+        famp = math.radians(fsrc.get("degrees", 0.4 if fsrc.get("type") == "handheld" else 0.12))
+        fhz = float(fsrc.get("hz", 1.6 if fsrc.get("type") == "handheld" else 0.6))
+        fseed = float(fsrc.get("seed", 1.0))
+        yaw0 += famp * handheld_noise(t_sec, fhz, fseed)
+        pitch0 += famp * 0.7 * handheld_noise(t_sec, fhz * 1.6, fseed + 11.0)
+        roll_out = math.radians(fsrc.get("roll_degrees", 0.25 if fsrc.get("type") == "handheld" else 0.1)) * handheld_noise(
+            t_sec, fhz * 0.7, fseed + 23.0
+        )
 
     pitch0 = max(math.radians(-80.0), min(math.radians(80.0), pitch0))
     horizontal = radius * math.cos(pitch0)
@@ -904,7 +954,11 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
         move = shot.get("move", {}) or {}
         move_kind = move.get("type", "static")
         end = round(shot["out"] * fps)
-        animated = bool(follow) or move_kind != "static"
+        # 是否要逐帧算：凡是有 follow、有非 static 路径、或带质感层（feel）的镜头都要。
+        # 只看 move.type 会漏掉 {type:"static", path:"orbit", feel:{...}} 这种叠加写法——
+        # 曾经因为这里只判 type，path 被静默忽略（travel=0）。
+        _feel = move.get("feel")
+        animated = bool(follow) or move_kind != "static" or bool(move.get("path")) or bool(_feel)
         if animated:
             actor_root = actors[follow["actor"]][0] if follow else None
             base = Vector((actor_root.location.x, actor_root.location.y, 0)) if actor_root else None
@@ -922,6 +976,7 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
             op_state = make_operator_state()
             # 预设/显式参数先解析一次（不随帧变化）
             response = resolve_response(shot)
+            rolled = False
             for frame in range(start, end + 1):
                 bpy.context.scene.frame_set(frame)
                 u = (frame - start) / max(end - start, 1)
@@ -957,11 +1012,17 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
                 tgt.location = new_target
                 cam.keyframe_insert("location", frame=frame)
                 tgt.keyframe_insert("location", frame=frame)
-                # 横滚：TRACK_TO 会锁死水平，所以用相机自身的 Z 旋转表达机身倾斜
-                if abs(_roll2) > 1e-6:
-                    cam.rotation_mode = "XYZ"
-                    cam.rotation_euler = (0.0, 0.0, _roll2)
-                    cam.keyframe_insert("rotation_euler", frame=frame)
+                # 横滚：TRACK_TO 在世界空间锁死朝向（euler/父级都会被覆盖，实测画面倾斜仍是 0°），
+                # 所以一旦本镜需要 roll，就整段改用四元数手动朝向（避免中途 roll 归零导致“不再看目标”）。
+                if abs(_roll2) > 1e-6 and not rolled:
+                    con = next((c for c in cam.constraints if c.type == "TRACK_TO"), None)
+                    if con is not None:
+                        cam.constraints.remove(con)
+                    rolled = True
+                if rolled:
+                    bpy.context.view_layer.update()
+                    aim_with_roll(cam, new_target, _roll2)
+                    cam.keyframe_insert("rotation_quaternion", frame=frame)
                 # zoom：不改机位，改焦距（from/to 单位 mm；缺省用当前镜头值）
                 if move_kind == "zoom":
                     lens_from = float(move.get("from", shot["lens_mm"]))
