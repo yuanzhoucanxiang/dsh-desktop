@@ -56,6 +56,8 @@ const report = rows
       抖动幅度均值_m: r.handheld_dev_mean_m,
       抖动幅度峰值_m: r.handheld_dev_max_m,
       抖动主频_Hz: r.handheld_hz,
+      主频置信度: r.hz_confidence,
+      主频可信: r.hz_reliable,
       真横滚_deg: r.true_roll_abs_max_deg,
       行程_m: r.travel_m,
     }
