@@ -7,7 +7,7 @@
   本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
 - **状态**：探测 Blender / ffmpeg（3s 有界、2s 缓存），接缝/瓷砖显示「Blender 未启动 / 渲染中 42%」；
 - **任务**：一个「运行 demo」= 构建 + 渲染 + 编码 + QC；可取消（只杀自己 spawn 的进程树）；
-- **产物**：animatic.mp4、`animatic_burnin.mp4`（有则列出）、俯视平面图、3×3 接触表、QC 报告、facts、每镜 mp4；
+- **产物**：animatic.mp4、`animatic_burnin.mp4`（有则列出）、俯视平面图、3×3 接触表（带镜号/首中尾标签）、QC 报告、facts、`shots.csv`、`timeline.otio`、每镜 mp4；
 - **P1 质量**：引擎已做遮挡/越轴/屏幕方向/脚部接触 QC；工作台面板只展示产物，烧字用 `previz burn-in`；
 - **预览**：面板里直接播 animatic / 看平面图；要实时拖机位点「打开 Blender」。
 

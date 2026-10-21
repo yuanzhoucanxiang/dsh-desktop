@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { validateAll } from './validate.mjs'
 import { runQc } from './qc.mjs'
+import { exportTimeline } from './export.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const PACKAGE_ROOT = path.dirname(__dirname)
@@ -211,13 +212,23 @@ export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = fa
   }
   if (stills.every((f) => fs.existsSync(f))) {
     const sheet = path.join(resolvedOut, 'contact_sheet.png')
+    const fontPath = findFont()
     const args = ['-y']
     for (const f of stills) args.push('-i', f)
-    args.push(
-      '-filter_complex',
-      '[0:v][1:v][2:v]hstack=inputs=3[r0];[3:v][4:v][5:v]hstack=inputs=3[r1];[6:v][7:v][8:v]hstack=inputs=3[r2];[r0][r1][r2]vstack=inputs=3[out]',
-      '-map', '[out]', '-frames:v', '1', sheet,
-    )
+    let filter = '[0:v][1:v][2:v]hstack=inputs=3[r0];[3:v][4:v][5:v]hstack=inputs=3[r1];[6:v][7:v][8:v]hstack=inputs=3[r2];[r0][r1][r2]vstack=inputs=3[out]'
+    if (fontPath) {
+      const escFont = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+      const labels = []
+      facts.shots.forEach((shot, row) => {
+        for (const [col, phase] of [[0, 'first'], [1, 'mid'], [2, 'last']]) {
+          labels.push(`drawtext=fontfile='${escFont}':text='${shot.id} ${phase}':x=${col}*w/3+8:y=${row}*h/3+8:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.55`)
+        }
+      })
+      filter = `${filter};[out]${labels.join(',')}[labeled]`
+      args.push('-filter_complex', filter, '-map', '[labeled]', '-frames:v', '1', sheet)
+    } else {
+      args.push('-filter_complex', filter, '-map', '[out]', '-frames:v', '1', sheet)
+    }
     runCommand(exe, args)
     log(`[previz] contact sheet -> ${path.relative(process.cwd(), sheet)}`)
   } else {
@@ -331,7 +342,7 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
       burned = burnIn(resolvedOut, { ffmpeg, font, log })
     }
     const qc = runQcReport(resolvedOut)
-    return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'hit', burnIn: burned, qc }
+    return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'hit', burnIn: burned, qc, exports: qc.ok ? exportTimeline(resolvedOut, { log }) : null }
   }
   if (useCache) log(`[previz] cache miss (${fingerprint.slice(0, 12)})`)
 
@@ -350,7 +361,7 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
       'utf8',
     )
   }
-  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'miss', encoded, burnIn: burned, qc }
+  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'miss', encoded, burnIn: burned, qc, exports: qc.ok ? exportTimeline(resolvedOut, { log }) : null }
 }
 
-export { validateAll, runQc }
+export { validateAll, runQc, exportTimeline }

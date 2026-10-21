@@ -14,7 +14,7 @@
  * 通用参数：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
  */
 import path from 'node:path'
-import { PACKAGE_ROOT, burnIn, encodeOutputs, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
+import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
 
 const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font'])
 const raw = process.argv.slice(2)
@@ -76,6 +76,7 @@ try {
   previz encode  <outDir> [--ffmpeg <path>]
   previz qc      <outDir>
   previz burn-in <outDir> [--font <path>]
+  previz export  <outDir>
   previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force]
 
 通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --font <path> --json --quiet
@@ -126,6 +127,12 @@ try {
 
   if (command === 'burn-in') {
     const result = burnIn(outDir, { ffmpeg, font: arg('font', undefined), log })
+    if (json) print({ ok: true, outDir, ...result })
+    process.exit(0)
+  }
+
+  if (command === 'export') {
+    const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
   }

@@ -278,6 +278,8 @@ export function listArtifacts() {
   add('contact_sheet.png', 'image', '3×3 接触表')
   add('qc_report.json', 'report', 'QC 报告')
   add('facts.json', 'data', 'facts.json')
+  add('shots.csv', 'data', 'shots.csv')
+  add('timeline.otio', 'data', 'timeline.otio')
   for (const shot of ['S03-01', 'S03-02', 'S03-03']) {
     add(path.join('S03', shot, `${shot}.mp4`), 'shot', `${shot}.mp4`)
   }

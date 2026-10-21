@@ -1,7 +1,31 @@
 {
-  "name": "@dsh-local/previz-engine",
+  "name": "blender-previz",
   "version": "0.1.0",
   "private": true,
+  "description": "Blender 白模预演引擎（schema / builder / render / QC / CLI / Node API）",
   "type": "module",
-  "description": "blender-previz 的 vendored 运行时子集（工作台 host 用；完整 CLI/测试在 blender-previz 仓库）"
+  "main": "lib/pipeline.mjs",
+  "exports": {
+    ".": "./lib/pipeline.mjs"
+  },
+  "bin": {
+    "previz": "scripts/previz.mjs"
+  },
+  "scripts": {
+    "previz": "node scripts/previz.mjs",
+    "validate": "node scripts/previz.mjs validate fixtures/boutique",
+    "build:scene": "node scripts/previz.mjs build fixtures/boutique --out demo-out",
+    "render:scene": "node scripts/previz.mjs render fixtures/boutique --out demo-out",
+    "encode": "node scripts/previz.mjs encode demo-out",
+    "qc": "node scripts/previz.mjs qc demo-out",
+    "burnin": "node scripts/previz.mjs burn-in demo-out",
+    "export": "node scripts/previz.mjs export demo-out",
+    "demo": "node scripts/previz.mjs demo fixtures/boutique --out demo-out",
+    "demo:burnin": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --burn-in",
+    "demo:force": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --force",
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }
