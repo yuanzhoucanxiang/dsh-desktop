@@ -930,11 +930,54 @@ app.whenReady().then(async () => {
     assert.equal(await count('[data-wb-splice-mounted]'), 0, 'dispose 后模式的内容应被清掉')
   }
 
+  // ⑬ 外部工具型（宪法第十六～二十条）：接缝上必须看得见「后端未启动」与「渲染中 42%」。
+  // 两个假模式：一个 runtime down + 空任务，一个 ready + 一个 42% 的任务；只验 UI 与注册表读取，
+  // 不真的起后端（那是模式自己的事）。
+  await evaluate(`(() => {
+    window.__wbPlugin.__workbenchRegistry().registerMode({
+      id:'demoBackendDown', label:'后端未启动', order:110,
+      runtime:{ probe: async () => ({ state:'down', detail:'没找到 Blender' }) },
+      jobs:{ list: () => [] },
+      artifacts:{ list: () => [] },
+    });
+    window.__wbPlugin.__workbenchRegistry().registerMode({
+      id:'demoBackendJob', label:'渲染中', order:120,
+      runtime:{ probe: async () => ({ state:'ready', version:'5.2' }) },
+      jobs:{ list: () => [{ id:'j1', label:'S03-01', progress:0.42, state:'running' }] },
+      artifacts:{ list: () => [{ mode:'demoBackendJob', kind:'animatic', id:'a1', title:'v001' }] },
+    });
+    return 0
+  })()`)
+  {
+    await waitFor(`document.querySelector('[data-wb-seam-mode="demoBackendDown"]')!==null`, '外部工具型模式应出现在接缝上')
+    await waitFor(
+      `document.querySelector('[data-wb-seam-mode="demoBackendDown"] [data-wb-runtime="down"]')!==null`,
+      'runtime down 时接缝应显示「后端未启动」',
+    )
+    assert.ok(
+      (await text('[data-wb-seam-mode="demoBackendDown"]')).includes('后端未启动'),
+      'down 徽标要带文字，不只靠颜色',
+    )
+    await waitFor(
+      `document.querySelector('[data-wb-seam-mode="demoBackendJob"] [data-wb-runtime="job"]')!==null`,
+      '有 running 任务时接缝应显示进度',
+    )
+    assert.ok(
+      (await text('[data-wb-seam-mode="demoBackendJob"]')).includes('渲染中 42%'),
+      '进度要按任务 progress 显示，不画假进度',
+    )
+    assert.equal(
+      await evaluate(`window.__wbPlugin.__workbenchRegistry().artifactsOf('demoBackendJob').length`),
+      1,
+      'artifacts.list 应能被读到（只读句柄）',
+    )
+  }
+
   assert.equal(errors.length, 0, `控制台不应有 error：${errors.join(' | ')}`)
   // 收尾恢复模块窗口能力（免得影响后续新增的组）
   await evaluate(`(() => { window.dshShell.openModuleWindow = window.__origOpenModule; window.dshShell.closeModuleWindow = window.__origCloseModule; return 0 })()`)
 
-  console.log('WORKBENCH_UI_OK 11 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何/拼接）')
+  console.log('WORKBENCH_UI_OK 12 组断言通过（入口/主屏/对话列（含真实会话形状与 displayTitle 口径）/长条接线与三钮/瓷砖/切换/守卫/host 状态/设置段/接缝扇形几何/拼接/外部工具状态）')
   await closeServer(server)
   app.exit(0)
 }).catch(async (err) => {

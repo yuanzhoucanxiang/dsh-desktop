@@ -232,7 +232,9 @@ test('对外视图不带内部钩子（只有 UI 需要的字段）', () => {
   const r = createRegistry()
   r.registerMode({ id: 'a', label: 'A', onActivate: () => {}, canDeactivate: () => true })
   const view = r.list()[0]
-  assert.deepEqual(Object.keys(view).sort(), ['active', 'hasContext', 'hasDock', 'hasSplice', 'hasTile', 'id', 'label', 'mount', 'order'])
+  assert.deepEqual(Object.keys(view).sort(), [
+    'active', 'hasArtifacts', 'hasContext', 'hasDock', 'hasJobs', 'hasRuntime', 'hasSplice', 'hasTile', 'id', 'label', 'mount', 'order',
+  ])
 })
 
 test('拼接视图（2026-10-13）：spliceViewOf 认 mount 与 view；list() 如实标 hasSplice', () => {
@@ -405,6 +407,152 @@ await test('tile：主屏瓷砖视图登记与查询（没提供就如实 null�
   r2.registerMode({ id: 'bad', label: '坏', tile: { label: '坏' } })
   assert.equal(r2.list()[0].hasTile, false)
   assert.equal(r2.tileViewOf('bad'), null)
+})
+
+// ── 外部工具型：runtime / jobs / artifacts（宪法第十六～二十条） ──────────────
+
+test('外部工具型：runtime/jobs/artifacts 登记；publicView 如实标有无', () => {
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    runtime: { probe: async () => ({ state: 'ready' }) },
+    jobs: { list: () => [] },
+    artifacts: { list: () => [] },
+  })
+  r.registerMode({ id: 'plain', label: '普通' })
+  const previz = r.list().find((m) => m.id === 'previz')
+  const plain = r.list().find((m) => m.id === 'plain')
+  assert.equal(previz.hasRuntime, true)
+  assert.equal(previz.hasJobs, true)
+  assert.equal(previz.hasArtifacts, true)
+  assert.equal(plain.hasRuntime, false)
+  assert.equal(plain.hasJobs, false)
+  assert.equal(plain.hasArtifacts, false)
+  // 只给半套（没有 probe / list）不算数——不假装有后端面
+  r.registerMode({ id: 'half', label: '半套', runtime: {}, jobs: {}, artifacts: {} })
+  const half = r.list().find((m) => m.id === 'half')
+  assert.equal(half.hasRuntime, false)
+  assert.equal(half.hasJobs, false)
+  assert.equal(half.hasArtifacts, false)
+})
+
+await testAsync('healthOf：ready 归一 + 2s 缓存 + 没 runtime 返回 null', async () => {
+  let probes = 0
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    runtime: {
+      probe: async () => {
+        probes++
+        return { state: 'ready', detail: 'Blender 5.2', version: '5.2.0' }
+      },
+    },
+  })
+  const a = await r.healthOf('previz')
+  const b = await r.healthOf('previz')
+  assert.deepEqual(a, { state: 'ready', detail: 'Blender 5.2', version: '5.2.0' })
+  assert.deepEqual(b, a)
+  assert.equal(probes, 1, '2 秒内应命中缓存，不该重复 probe')
+  assert.equal(r.healthOf('nope'), null)
+  assert.equal(r.healthOf('plain'), null)
+})
+
+await testAsync('healthOf：probe 抛错 -> error（绝不炸 registry）', async () => {
+  const r = createRegistry()
+  r.registerMode({ id: 'bad', label: '坏', runtime: { probe: () => { throw new Error('没装 Blender') } } })
+  const h = await r.healthOf('bad')
+  assert.equal(h.state, 'error')
+  assert.match(h.detail, /没装 Blender/)
+})
+
+await testAsync('runtime.subscribe：清缓存并触发重新 probe', async () => {
+  let probes = 0
+  let fire = null
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    runtime: {
+      probe: async () => {
+        probes++
+        return { state: 'ready' }
+      },
+      subscribe: (fn) => {
+        fire = fn
+        return () => { fire = null }
+      },
+    },
+  })
+  await r.healthOf('previz')
+  await r.healthOf('previz')
+  assert.equal(probes, 1)
+  fire()
+  await r.healthOf('previz')
+  assert.equal(probes, 2, '模式报状态变化后应重新 probe 一次')
+})
+
+await testAsync('startRuntime：调用模式自己的 start；没有 start 如实 no-start', async () => {
+  let started = 0
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    runtime: {
+      probe: async () => ({ state: 'ready' }),
+      start: async () => {
+        started++
+        return { ok: true }
+      },
+    },
+  })
+  assert.deepEqual(await r.startRuntime('previz'), { ok: true })
+  assert.equal(started, 1)
+  r.registerMode({ id: 'nostart', label: '无启动', runtime: { probe: async () => ({ state: 'down' }) } })
+  assert.deepEqual(await r.startRuntime('nostart'), { ok: false, error: 'no-start' })
+  assert.deepEqual(await r.startRuntime('nope'), { ok: false, error: 'no-runtime' })
+})
+
+await testAsync('jobsOf / cancelJob：有 cancel 才转；没有如实 no-cancel', async () => {
+  const cancelled = []
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    jobs: {
+      list: () => [{ id: 'j1', label: '渲染 S03-01', progress: 0.42, state: 'running' }],
+      cancel: async (id) => {
+        cancelled.push(id)
+        return { ok: true }
+      },
+    },
+  })
+  assert.equal(r.jobsOf('previz')[0].progress, 0.42)
+  assert.deepEqual(await r.cancelJob('previz', 'j1'), { ok: true })
+  assert.deepEqual(cancelled, ['j1'])
+  r.registerMode({ id: 'nocancel', label: '不能取消', jobs: { list: () => [] } })
+  assert.deepEqual(await r.cancelJob('nocancel', 'x'), { ok: false, error: 'no-cancel' })
+  assert.deepEqual(await r.cancelJob('nope', 'x'), { ok: false, error: 'no-jobs' })
+})
+
+await testAsync('artifactsOf / openArtifact：只读 list；没 open 如实 false', async () => {
+  let opened = null
+  const r = createRegistry()
+  r.registerMode({
+    id: 'previz',
+    label: '预演',
+    artifacts: {
+      list: () => [{ mode: 'previz', kind: 'animatic', id: 'a1', title: 'v001' }],
+      open: (ref) => { opened = ref },
+    },
+  })
+  assert.equal(r.artifactsOf('previz')[0].id, 'a1')
+  assert.equal(r.openArtifact('previz', { id: 'a1' }), true)
+  assert.deepEqual(opened, { id: 'a1' })
+  r.registerMode({ id: 'noopen', label: '只读', artifacts: { list: () => [] } })
+  assert.equal(r.openArtifact('noopen', {}), false)
+  assert.equal(r.openArtifact('nope', {}), false)
 })
 
 console.log(`WORKBENCH_REGISTRY_OK ${passed} passed / ${failed} failed`)

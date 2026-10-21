@@ -21,6 +21,8 @@ export function useWorkbench() {
       dockOpen: isDockOpen(),
       dockWidth: getDockWidth(),
       dockModeId: getDockModeId(),
+      // 外部工具型的状态徽标要在 registry 通知后重新探一次（probe 有缓存，不会每次都 spawn）
+      revision: registry.getRevision(),
     }),
     [registry],
   )

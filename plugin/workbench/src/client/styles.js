@@ -215,6 +215,13 @@ export const CSS = [
   '.dshWbSeamFlag.is-dirty{color:var(--dsw-alias-label-warning, #d8a657);border-color:currentColor;}',
   '.dshWbSeamFlag.is-saving{opacity:.8;}',
   '.dshWbSeamFlag.is-health{color:var(--dsw-alias-brand-primary);border-color:currentColor;}',
+  // 外部工具型：后端状态 / 任务进度（带文字，不只靠颜色；down/error 用可读的暖色/错误色）
+  '.dshWbModeStatus{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal;font-size:10px;line-height:15px;padding:0 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);}',
+  '.dshWbModeStatus.is-down{color:var(--dsw-alias-label-warning, #d8a657);border-color:currentColor;}',
+  '.dshWbModeStatus.is-error{color:var(--dsw-alias-label-danger, #e06c75);border-color:currentColor;}',
+  '.dshWbModeStatus.is-starting{opacity:.85;}',
+  '.dshWbModeStatus.is-job{color:var(--dsw-alias-brand-primary);border-color:currentColor;}',
+  '.dshWbSeamText .dshWbModeStatus{margin-top:2px;font-size:9px;line-height:13px;padding:0 5px;}',
   '.dshWbSeamItem.is-spliced .dshWbSeamTag,.dshWbSeamItem.is-active .dshWbSeamTag{color:var(--dsw-alias-brand-primary);}',
   '.dshWbSeamEmpty{position:absolute;right:34px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}',
   '.dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}',

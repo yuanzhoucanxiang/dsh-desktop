@@ -42,6 +42,11 @@ export const T = {
   // 拖开的那块：接缝上标「已分离」（2026-10-13 交互细节——分离与拼接要看得出区别）
   detached: '已分离',
   activeNone: '未进入任何模式',
+  // 外部工具型（Blender / ComfyUI 这类）：后端状态与任务进度（宪法第十六～二十条）
+  runtimeDown: '后端未启动',
+  runtimeStarting: '启动中…',
+  runtimeError: '后端异常',
+  jobRunning: (pct) => (pct === null || pct === undefined ? '渲染中…' : `渲染中 ${Math.round(Number(pct) * 100)}%`),
   exit: '退出模式',
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
   btnMini: (back) => (back ? '展开成长条' : '收成小条'),

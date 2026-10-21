@@ -83,7 +83,8 @@ app.whenReady().then(async () => {
   </style>
   <div id="footer"></div><div id="overlay"></div><div id="settings"></div>
   <script>
-    process.env.NODE_ENV = 'production'; // 按生产构建跑：React 开发版才会有的告警不该混进 error 断言
+    // Electron 43 renderer 里给 process.env.NODE_ENV 赋值会抛 Illegal invocation（2026-10-21 实测）；
+    // 探针不依赖 React 生产版，保留这行注释说明为什么不再设置。
     const React = require(${JSON.stringify(path.join(modules, 'react'))});
     const jsx = require(${JSON.stringify(path.join(modules, 'react/jsx-runtime'))});
     const ReactDOM = require(${JSON.stringify(path.join(modules, 'react-dom/client'))});
@@ -171,7 +172,11 @@ app.whenReady().then(async () => {
   })
   win.webContents.on('console-message', (event, level, message) => {
     const d = event.message ? event : typeof level === 'object' ? level : { level, message }
-    if (d.level === 'error' || d.level === 3) { errors.push(d.message); console.log('RENDER ERROR', d.message) }
+    const text = String(d.message || '')
+    // React 开发版的 key 警告不是产品错误；原来靠 NODE_ENV=production 压掉，Electron 43 里那行会抛
+    // Illegal invocation，所以改成在探针侧过滤（只过滤这一条已知的开发版告警）。
+    const reactKeyWarning = text.includes('Each child in a list should have a unique "key" prop')
+    if ((d.level === 'error' || d.level === 3) && !reactKeyWarning) { errors.push(text); console.log('RENDER ERROR', text) }
   })
   const evaluate = (code) => win.webContents.executeJavaScript(code, true)
   async function waitFor(code, label) {
@@ -248,9 +253,15 @@ app.whenReady().then(async () => {
   await click('.dshWmItem')
   await waitFor(`document.querySelector('[data-wm-handoff="gir"]')?.disabled===false`, 'L1：交接按钮应在开稿后可用')
   // L1.5：先把稿子改脏——交接应当"先落盘、不关稿"
+  await waitFor(
+    `Array.from(document.querySelectorAll('textarea')).some((t)=>String(t.value||'').includes('第一章原文'))`,
+    'L1.5：编辑器未载入第一章原文',
+  )
   await evaluate(`(() => {
     const ta = Array.from(document.querySelectorAll('textarea')).find((t) => String(t.value || '').includes('第一章原文'))
+    if (!ta) throw new Error('L1.5: textarea not found')
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    if (!setter) throw new Error('L1.5: value setter not found')
     setter.call(ta, '第一章原文（交接前改过）')
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     return 0

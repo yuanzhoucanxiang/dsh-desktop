@@ -52,8 +52,43 @@ var react9 = __toESM(require("react"), 1);
 
 // plugin/workbench/src/client/registry.js
 var MOUNTS = /* @__PURE__ */ new Set(["overlay", "panel"]);
+var HEALTH_STATES = /* @__PURE__ */ new Set(["ready", "starting", "down", "error"]);
+var HEALTH_TIMEOUT_MS = 3e3;
+var HEALTH_CACHE_MS = 2e3;
 var MODULE_ASSISTANT_DEFAULT = 360;
 var MODULE_ASSISTANT_MIN = 260;
+function normalizeRuntime(runtime) {
+  if (!runtime || typeof runtime !== "object" || typeof runtime.probe !== "function") return null;
+  return {
+    probe: runtime.probe,
+    start: typeof runtime.start === "function" ? runtime.start : null,
+    subscribe: typeof runtime.subscribe === "function" ? runtime.subscribe : null
+  };
+}
+function normalizeJobs(jobs) {
+  if (!jobs || typeof jobs !== "object" || typeof jobs.list !== "function") return null;
+  return {
+    list: jobs.list,
+    cancel: typeof jobs.cancel === "function" ? jobs.cancel : null,
+    subscribe: typeof jobs.subscribe === "function" ? jobs.subscribe : null
+  };
+}
+function normalizeArtifacts(artifacts) {
+  if (!artifacts || typeof artifacts !== "object" || typeof artifacts.list !== "function") return null;
+  return {
+    list: artifacts.list,
+    open: typeof artifacts.open === "function" ? artifacts.open : null
+  };
+}
+function normalizeHealth(raw) {
+  const value = raw && typeof raw === "object" ? raw : {};
+  const state = HEALTH_STATES.has(value.state) ? value.state : "error";
+  return {
+    state,
+    detail: value.detail === void 0 || value.detail === null ? "" : String(value.detail),
+    version: value.version === void 0 || value.version === null ? null : String(value.version)
+  };
+}
 function normalizeLabel(label) {
   if (typeof label === "function") {
     try {
@@ -116,7 +151,11 @@ function normalizeMode(descriptor, id) {
     } : null,
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
     // 会被如实标成 delivered:false（工具台不替它假装收到了）。
-    onHandoff: typeof descriptor.onHandoff === "function" ? descriptor.onHandoff : null
+    onHandoff: typeof descriptor.onHandoff === "function" ? descriptor.onHandoff : null,
+    // 外部工具型模式的三面（Blender / ComfyUI 这类）：只登记，不代管进程（宪法第十八条）。
+    runtime: normalizeRuntime(descriptor.runtime),
+    jobs: normalizeJobs(descriptor.jobs),
+    artifacts: normalizeArtifacts(descriptor.artifacts)
   };
 }
 function publicView(mode, activeId) {
@@ -130,7 +169,11 @@ function publicView(mode, activeId) {
     hasDock: mode.dock !== null,
     hasTile: mode.tile !== null,
     // 能不能拼（2026-10-13）：给 splice 视图的模式优先，退而求其次用坞视图（旧的"轻视图"路径）。
-    hasSplice: mode.splice !== null
+    hasSplice: mode.splice !== null,
+    // 外部工具型：有没有后端/任务/产物面（具体状态要异步 probe / 读 list，不在这里编）
+    hasRuntime: mode.runtime !== null,
+    hasJobs: mode.jobs !== null,
+    hasArtifacts: mode.artifacts !== null
   };
 }
 function sortModes(modes) {
@@ -141,9 +184,12 @@ function createRegistry(options = {}) {
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const modes = /* @__PURE__ */ new Map();
   const listeners2 = /* @__PURE__ */ new Set();
+  const healthCache = /* @__PURE__ */ new Map();
   let activeId = null;
   let lastHandoffRecord = null;
+  let revision = 0;
   function notify() {
+    revision += 1;
     for (const fn of [...listeners2]) {
       try {
         fn();
@@ -169,6 +215,23 @@ function createRegistry(options = {}) {
         console.warn("[workbench] context.subscribe failed:", err);
       }
     }
+    if (mode.runtime && typeof mode.runtime.subscribe === "function") {
+      try {
+        mode.offRuntime = mode.runtime.subscribe(() => {
+          healthCache.delete(id);
+          notify();
+        });
+      } catch (err) {
+        console.warn("[workbench] runtime.subscribe failed:", err);
+      }
+    }
+    if (mode.jobs && typeof mode.jobs.subscribe === "function") {
+      try {
+        mode.offJobs = mode.jobs.subscribe(() => notify());
+      } catch (err) {
+        console.warn("[workbench] jobs.subscribe failed:", err);
+      }
+    }
     notify();
     return function unregister() {
       if (modes.get(id) !== mode) return;
@@ -178,6 +241,17 @@ function createRegistry(options = {}) {
       } catch (err) {
         console.warn("[workbench] context unsubscribe failed:", err);
       }
+      try {
+        mode.offRuntime?.();
+      } catch (err) {
+        console.warn("[workbench] runtime unsubscribe failed:", err);
+      }
+      try {
+        mode.offJobs?.();
+      } catch (err) {
+        console.warn("[workbench] jobs unsubscribe failed:", err);
+      }
+      healthCache.delete(id);
       if (activeId === id) {
         activeId = null;
         try {
@@ -345,7 +419,118 @@ function createRegistry(options = {}) {
   function lastHandoff() {
     return lastHandoffRecord;
   }
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe: subscribe2, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf, spliceViewOf };
+  function getRevision() {
+    return revision;
+  }
+  function healthOf(id) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.runtime) return null;
+    const cached = healthCache.get(key);
+    if (cached && now() - cached.at < HEALTH_CACHE_MS) return cached.value;
+    let timer = null;
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ state: "down", detail: `probe timeout > ${HEALTH_TIMEOUT_MS}ms` }), HEALTH_TIMEOUT_MS);
+    });
+    return Promise.race([Promise.resolve().then(() => mode.runtime.probe()), timeout]).then((raw) => {
+      const value = normalizeHealth(raw);
+      healthCache.set(key, { at: now(), value });
+      return value;
+    }).catch((err) => {
+      const value = { state: "error", detail: String(err?.message || err), version: null };
+      healthCache.set(key, { at: now(), value });
+      return value;
+    }).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+  async function startRuntime(id) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.runtime) return { ok: false, error: "no-runtime" };
+    if (!mode.runtime.start) return { ok: false, error: "no-start" };
+    try {
+      const result = await mode.runtime.start();
+      healthCache.delete(key);
+      notify();
+      return result && typeof result === "object" ? result : { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  }
+  function jobsOf(id) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.jobs) return [];
+    try {
+      const list2 = mode.jobs.list();
+      return Array.isArray(list2) ? list2 : [];
+    } catch (err) {
+      console.warn("[workbench] jobs.list failed:", err);
+      return [];
+    }
+  }
+  async function cancelJob(id, jobId) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.jobs) return { ok: false, error: "no-jobs" };
+    if (!mode.jobs.cancel) return { ok: false, error: "no-cancel" };
+    try {
+      const result = await mode.jobs.cancel(jobId);
+      notify();
+      return result && typeof result === "object" ? result : { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  }
+  function artifactsOf(id) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.artifacts) return [];
+    try {
+      const list2 = mode.artifacts.list();
+      return Array.isArray(list2) ? list2 : [];
+    } catch (err) {
+      console.warn("[workbench] artifacts.list failed:", err);
+      return [];
+    }
+  }
+  function openArtifact(id, ref) {
+    const key = String(id ?? "").trim();
+    const mode = modes.get(key);
+    if (!mode || !mode.artifacts || !mode.artifacts.open) return false;
+    try {
+      mode.artifacts.open(ref);
+      return true;
+    } catch (err) {
+      console.warn("[workbench] artifacts.open failed:", err);
+      return false;
+    }
+  }
+  return {
+    registerMode,
+    list,
+    setActive,
+    adopt,
+    getActive,
+    has,
+    size,
+    subscribe: subscribe2,
+    resolveLabel,
+    contextOf,
+    handoff,
+    lastHandoff,
+    dockViewOf,
+    tileViewOf,
+    spliceViewOf,
+    getRevision,
+    healthOf,
+    startRuntime,
+    jobsOf,
+    cancelJob,
+    artifactsOf,
+    openArtifact
+  };
 }
 
 // plugin/workbench/src/client/styles.js
@@ -560,6 +745,13 @@ var CSS = [
   ".dshWbSeamFlag.is-dirty{color:var(--dsw-alias-label-warning, #d8a657);border-color:currentColor;}",
   ".dshWbSeamFlag.is-saving{opacity:.8;}",
   ".dshWbSeamFlag.is-health{color:var(--dsw-alias-brand-primary);border-color:currentColor;}",
+  // 外部工具型：后端状态 / 任务进度（带文字，不只靠颜色；down/error 用可读的暖色/错误色）
+  ".dshWbModeStatus{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal;font-size:10px;line-height:15px;padding:0 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);}",
+  ".dshWbModeStatus.is-down{color:var(--dsw-alias-label-warning, #d8a657);border-color:currentColor;}",
+  ".dshWbModeStatus.is-error{color:var(--dsw-alias-label-danger, #e06c75);border-color:currentColor;}",
+  ".dshWbModeStatus.is-starting{opacity:.85;}",
+  ".dshWbModeStatus.is-job{color:var(--dsw-alias-brand-primary);border-color:currentColor;}",
+  ".dshWbSeamText .dshWbModeStatus{margin-top:2px;font-size:9px;line-height:13px;padding:0 5px;}",
   ".dshWbSeamItem.is-spliced .dshWbSeamTag,.dshWbSeamItem.is-active .dshWbSeamTag{color:var(--dsw-alias-brand-primary);}",
   ".dshWbSeamEmpty{position:absolute;right:34px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .16s ease-out,visibility .16s;}",
   ".dshWbSeam.is-open .dshWbSeamEmpty{opacity:1;visibility:visible;}",
@@ -695,6 +887,11 @@ var T = {
   // 拖开的那块：接缝上标「已分离」（2026-10-13 交互细节——分离与拼接要看得出区别）
   detached: "已分离",
   activeNone: "未进入任何模式",
+  // 外部工具型（Blender / ComfyUI 这类）：后端状态与任务进度（宪法第十六～二十条）
+  runtimeDown: "后端未启动",
+  runtimeStarting: "启动中…",
+  runtimeError: "后端异常",
+  jobRunning: (pct) => pct === null || pct === void 0 ? "渲染中…" : `渲染中 ${Math.round(Number(pct) * 100)}%`,
   exit: "退出模式",
   // 长条自绘顶栏三钮（2026-10-12 拍板语义：`—` 收小条 / `⎋` 退出工具台并还原窗口 / `✕` 走既有关窗语义）
   btnMini: (back) => back ? "展开成长条" : "收成小条",
@@ -833,7 +1030,9 @@ function useWorkbench() {
       // 辅助坞（L2）：开合/宽度/显示哪个模式
       dockOpen: isDockOpen(),
       dockWidth: getDockWidth(),
-      dockModeId: getDockModeId()
+      dockModeId: getDockModeId(),
+      // 外部工具型的状态徽标要在 registry 通知后重新探一次（probe 有缓存，不会每次都 spawn）
+      revision: registry2.getRevision()
     }),
     [registry2]
   );
@@ -1635,8 +1834,37 @@ function contextFlagsOf(registry2, id) {
   if (Number(c.health) > 0) flags.push({ key: "health", text: `体检 ${Number(c.health)}` });
   return flags;
 }
+function ModeStatus({ registry: registry2, mode, revision }) {
+  const [health, setHealth] = react6.useState(null);
+  react6.useEffect(() => {
+    let alive = true;
+    if (!mode.hasRuntime) {
+      setHealth(null);
+      return void 0;
+    }
+    void Promise.resolve(registry2.healthOf(mode.id)).then((h) => {
+      if (alive) setHealth(h);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [registry2, mode.id, mode.hasRuntime, revision]);
+  if (!mode.hasRuntime) return null;
+  const jobs = mode.hasJobs ? registry2.jobsOf(mode.id) : [];
+  const running = jobs.find((job) => job && ["running", "queued"].includes(job.state));
+  if (running) {
+    return react6.createElement("em", { className: "dshWbModeStatus is-job", "data-wb-runtime": "job" }, T.jobRunning(running.progress));
+  }
+  if (!health || health.state === "ready") return null;
+  const text = health.state === "starting" ? T.runtimeStarting : health.state === "down" ? T.runtimeDown : T.runtimeError;
+  return react6.createElement(
+    "em",
+    { className: `dshWbModeStatus is-${health.state}`, "data-wb-runtime": health.state, title: health.detail || "" },
+    text
+  );
+}
 function WorkbenchChrome() {
-  const { modes, active, context, lastHandoff, open: open2, notice: notice2, registry: registry2 } = useWorkbench();
+  const { modes, active, context, lastHandoff, open: open2, notice: notice2, registry: registry2, revision } = useWorkbench();
   const panelRef = react6.useRef(null);
   const seenHandoffAt = react6.useRef(0);
   react6.useEffect(() => {
@@ -2014,6 +2242,7 @@ function WorkbenchChrome() {
           "div",
           { className: "dshWbTileHead" },
           react6.createElement("span", { className: "dshWbTileLabel" }, tile.label),
+          react6.createElement(ModeStatus, { registry: registry2, mode, revision }),
           mode.active ? react6.createElement("span", { className: "dshWbRowMark" }, T.current) : null,
           react6.createElement(
             "button",
@@ -2046,7 +2275,8 @@ function WorkbenchChrome() {
         "span",
         { className: "dshWbModeBody" },
         react6.createElement("span", { className: "dshWbModeLabel" }, mode.label),
-        ctxLabel ? react6.createElement("span", { className: "dshWbModeCtx", title: ctxLabel }, ctxLabel) : react6.createElement("span", { className: "dshWbModeCtx" }, T.tileEmpty)
+        ctxLabel ? react6.createElement("span", { className: "dshWbModeCtx", title: ctxLabel }, ctxLabel) : react6.createElement("span", { className: "dshWbModeCtx" }, T.tileEmpty),
+        react6.createElement(ModeStatus, { registry: registry2, mode, revision })
       ),
       mode.active ? react6.createElement("span", { className: "dshWbRowMark" }, T.current) : null
     );
@@ -2238,6 +2468,8 @@ function WorkbenchChrome() {
                 { className: "dshWbSeamCtx", "data-wb-seam-ctx": "", title: modeCtx },
                 modeCtx
               ) : null,
+              // 外部工具型：后端 down/starting/error 或任务进度（只展示，不解释）
+              react6.createElement(ModeStatus, { registry: registry2, mode, revision }),
               // **「忙什么」小标记**（G3）：未保存 / 保存中 / 体检 N 处 —— 只展示模式报的事实
               modeFlags.length ? react6.createElement(
                 "span",

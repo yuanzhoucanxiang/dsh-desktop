@@ -215,8 +215,8 @@ Blender 的 web 面板）内嵌进工作台。
 ## 六、现状对照表（写作模式 = 参考实现）
 
 > ⚠ **本章只覆盖第一～十五条**：写作模式是"纯前端 + 内核会话"的形状，**没有外部后端**，
-> 所以第十六～二十条**没有对应落点**——那是给 Blender / ComfyUI 这类模式准备的，
-> 而且**工作台侧的 `runtime/jobs/artifacts` 尚未实现**（§七 已知边界最后一条）。
+> 所以第十六～二十条**没有对应落点**——那是给 Blender / ComfyUI 这类模式准备的。
+> 工作台侧注册表/接缝状态已于 2026-10-21 接上；启动/取消/产物列表 UI 仍未做（§七 已知边界）。
 
 | 条文 | 写作模式的落点 |
 |---|---|
@@ -258,12 +258,12 @@ Blender 的 web 面板）内嵌进工作台。
   **仍是手感旋钮**，等上手摸过再定稿（命名常量，改一个数即可；hardening 只校验 16–64 区间）。
 - **助手窗口的现场是只读的**：能看、能说，编辑权只在写作台那块窗口（宪法第五条之二）。
   "端到端实测（写作台开稿 → 助手窗口同步）"截至 2026-10-18 **仍待人眼确认**。
-- **`runtime` / `jobs` / `artifacts` 只是契约设计，工作台侧尚未实现**（2026-10-18）：
-  注册表还不收这三个字段（`normalizeMode` 只认到 `dock/tile/splice/onHandoff`），
-  `publicView` 也不暴露 `health`（`registry.js:107` 那几个 `hasXxx` 里没有它），
-  接缝上更没有任何"后端未就绪"的标记。**第一个外部工具型模式（Blender/ComfyUI）落地时，
-  这三件事要一起做**：① 注册表收字段 + `healthOf/jobsOf/artifactsOf` 三个读口；
-  ② 接缝与瓷砖显示后端状态与任务进度；③ 探针加对应判据（真起一个假后端验 `down → ready → down`）。
+- **`runtime` / `jobs` / `artifacts`：注册表/接缝状态已实现，UI 仍有未做**（2026-10-21）：
+  注册表收字段（`normalizeMode`）；`healthOf`（3s 有界、2s 缓存、绝不抛）/`jobsOf`/`artifactsOf`/
+  `openArtifact`/`startRuntime`/`cancelJob` 已可读；接缝与瓷砖显示 `down/starting/error` 与运行中任务进度。
+  **仍未做**：① 接缝/瓷砖上的「启动」按钮（现在是模式自己的完整界面负责）；
+  ② 任务「取消」按钮（API 有 `cancelJob`，UI 未渲染）；③ 最近产物列表 UI；④ 真后端 `down → ready → down`
+  的探针（当前 UI 探针用假 runtime；真 Blender 探针在 `blender-previz` 侧单独跑）。
 - **外部 Web UI 不内嵌**（第二十条之二，2026-10-18 拍板 A）：`moduleWindowUrl()` 只拼内核页，
   `hardenWindow` 把非内核 `http` 一律甩给系统浏览器。要内嵌必须新增壳能力并重定 CSP/凭据边界，**本轮不做**。
 - **四条已确认但未修的缺陷（2026-10-18/19 体检，代码另开一轮）**——写在这里是为了让**写模式的人**知道

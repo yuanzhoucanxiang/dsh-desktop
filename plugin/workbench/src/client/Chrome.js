@@ -68,8 +68,47 @@ function contextFlagsOf(registry, id) {
   return flags
 }
 
+/**
+ * 外部工具型模式的状态徽标（宪法第十六～二十条）：
+ * - 有任务在跑：显示「渲染中 42%」（模式没报进度就写「渲染中…」，不画假进度条）；
+ * - 后端 down/starting/error：显示对应文字 + title 给原因；
+ * - ready：不显示（正常态不占地方）；
+ * - 没 runtime 面：不渲染。
+ * probe 有 3s 界 + 2s 缓存，registry 通知后才重问，不在这里轮询。
+ */
+function ModeStatus({ registry, mode, revision }) {
+  const [health, setHealth] = react.useState(null)
+  react.useEffect(() => {
+    let alive = true
+    if (!mode.hasRuntime) {
+      setHealth(null)
+      return undefined
+    }
+    void Promise.resolve(registry.healthOf(mode.id)).then((h) => {
+      if (alive) setHealth(h)
+    })
+    return () => {
+      alive = false
+    }
+  }, [registry, mode.id, mode.hasRuntime, revision])
+
+  if (!mode.hasRuntime) return null
+  const jobs = mode.hasJobs ? registry.jobsOf(mode.id) : []
+  const running = jobs.find((job) => job && ['running', 'queued'].includes(job.state))
+  if (running) {
+    return react.createElement('em', { className: 'dshWbModeStatus is-job', 'data-wb-runtime': 'job' }, T.jobRunning(running.progress))
+  }
+  if (!health || health.state === 'ready') return null
+  const text = health.state === 'starting' ? T.runtimeStarting : health.state === 'down' ? T.runtimeDown : T.runtimeError
+  return react.createElement(
+    'em',
+    { className: `dshWbModeStatus is-${health.state}`, 'data-wb-runtime': health.state, title: health.detail || '' },
+    text,
+  )
+}
+
 export function WorkbenchChrome() {
-  const { modes, active, context, lastHandoff, open, notice, registry } = useWorkbench()
+  const { modes, active, context, lastHandoff, open, notice, registry, revision } = useWorkbench()
   const panelRef = react.useRef(null)
 
   // 交接结果 → 工具台通知出口（交付成功/目标没有接收端，两种都如实说）
@@ -538,6 +577,7 @@ export function WorkbenchChrome() {
           'div',
           { className: 'dshWbTileHead' },
           react.createElement('span', { className: 'dshWbTileLabel' }, tile.label),
+          react.createElement(ModeStatus, { registry, mode, revision }),
           mode.active ? react.createElement('span', { className: 'dshWbRowMark' }, T.current) : null,
           react.createElement(
             'button',
@@ -574,6 +614,7 @@ export function WorkbenchChrome() {
         ctxLabel
           ? react.createElement('span', { className: 'dshWbModeCtx', title: ctxLabel }, ctxLabel)
           : react.createElement('span', { className: 'dshWbModeCtx' }, T.tileEmpty),
+        react.createElement(ModeStatus, { registry, mode, revision }),
       ),
       mode.active ? react.createElement('span', { className: 'dshWbRowMark' }, T.current) : null,
     )
@@ -797,6 +838,8 @@ export function WorkbenchChrome() {
                             modeCtx,
                           )
                         : null,
+                      // 外部工具型：后端 down/starting/error 或任务进度（只展示，不解释）
+                      react.createElement(ModeStatus, { registry, mode, revision }),
                       // **「忙什么」小标记**（G3）：未保存 / 保存中 / 体检 N 处 —— 只展示模式报的事实
                       modeFlags.length
                         ? react.createElement(

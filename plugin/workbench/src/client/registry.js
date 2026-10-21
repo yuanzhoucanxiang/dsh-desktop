@@ -11,10 +11,56 @@
  */
 
 const MOUNTS = new Set(['overlay', 'panel'])
+const HEALTH_STATES = new Set(['ready', 'starting', 'down', 'error'])
+const HEALTH_TIMEOUT_MS = 3000
+const HEALTH_CACHE_MS = 2000
 
 /** 助手模块窗口（`splice.assistant`）的默认宽度与下限；壳侧仍会按屏幕夹一次（2026-10-13）。 */
 const MODULE_ASSISTANT_DEFAULT = 360
 const MODULE_ASSISTANT_MIN = 260
+
+/**
+ * 外部工具型模式的三个可选面（宪法第十六～二十条）：
+ * - runtime.probe 必须有界、绝不抛；start/subscribe 可选
+ * - jobs.list 必须有；cancel 可选（不能取消就别实现）
+ * - artifacts.list 必须有；open 可选
+ * 这里只做**结构归一**，不替模式探测/轮询。
+ */
+function normalizeRuntime(runtime) {
+  if (!runtime || typeof runtime !== 'object' || typeof runtime.probe !== 'function') return null
+  return {
+    probe: runtime.probe,
+    start: typeof runtime.start === 'function' ? runtime.start : null,
+    subscribe: typeof runtime.subscribe === 'function' ? runtime.subscribe : null,
+  }
+}
+
+function normalizeJobs(jobs) {
+  if (!jobs || typeof jobs !== 'object' || typeof jobs.list !== 'function') return null
+  return {
+    list: jobs.list,
+    cancel: typeof jobs.cancel === 'function' ? jobs.cancel : null,
+    subscribe: typeof jobs.subscribe === 'function' ? jobs.subscribe : null,
+  }
+}
+
+function normalizeArtifacts(artifacts) {
+  if (!artifacts || typeof artifacts !== 'object' || typeof artifacts.list !== 'function') return null
+  return {
+    list: artifacts.list,
+    open: typeof artifacts.open === 'function' ? artifacts.open : null,
+  }
+}
+
+function normalizeHealth(raw) {
+  const value = raw && typeof raw === 'object' ? raw : {}
+  const state = HEALTH_STATES.has(value.state) ? value.state : 'error'
+  return {
+    state,
+    detail: value.detail === undefined || value.detail === null ? '' : String(value.detail),
+    version: value.version === undefined || value.version === null ? null : String(value.version),
+  }
+}
 
 function normalizeLabel(label) {
   if (typeof label === 'function') {
@@ -100,6 +146,10 @@ function normalizeMode(descriptor, id) {
     // 交接接收端（可选）：别的模式把一份不透明载荷交给它时调用。没有这个钩子的模式收到交接
     // 会被如实标成 delivered:false（工具台不替它假装收到了）。
     onHandoff: typeof descriptor.onHandoff === 'function' ? descriptor.onHandoff : null,
+    // 外部工具型模式的三面（Blender / ComfyUI 这类）：只登记，不代管进程（宪法第十八条）。
+    runtime: normalizeRuntime(descriptor.runtime),
+    jobs: normalizeJobs(descriptor.jobs),
+    artifacts: normalizeArtifacts(descriptor.artifacts),
   }
 }
 
@@ -116,6 +166,10 @@ function publicView(mode, activeId) {
     hasTile: mode.tile !== null,
     // 能不能拼（2026-10-13）：给 splice 视图的模式优先，退而求其次用坞视图（旧的"轻视图"路径）。
     hasSplice: mode.splice !== null,
+    // 外部工具型：有没有后端/任务/产物面（具体状态要异步 probe / 读 list，不在这里编）
+    hasRuntime: mode.runtime !== null,
+    hasJobs: mode.jobs !== null,
+    hasArtifacts: mode.artifacts !== null,
   }
 }
 
@@ -128,10 +182,13 @@ export function createRegistry(options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now()
   const modes = new Map()
   const listeners = new Set()
+  const healthCache = new Map()
   let activeId = null
   let lastHandoffRecord = null
+  let revision = 0
 
   function notify() {
+    revision += 1
     for (const fn of [...listeners]) {
       try {
         fn()
@@ -161,6 +218,24 @@ export function createRegistry(options = {}) {
         console.warn('[workbench] context.subscribe failed:', err)
       }
     }
+    // 外部工具型：模式说后端/任务变了，工具台只**重新问一次**（probe 有 3s 界、有缓存），不替它轮询。
+    if (mode.runtime && typeof mode.runtime.subscribe === 'function') {
+      try {
+        mode.offRuntime = mode.runtime.subscribe(() => {
+          healthCache.delete(id)
+          notify()
+        })
+      } catch (err) {
+        console.warn('[workbench] runtime.subscribe failed:', err)
+      }
+    }
+    if (mode.jobs && typeof mode.jobs.subscribe === 'function') {
+      try {
+        mode.offJobs = mode.jobs.subscribe(() => notify())
+      } catch (err) {
+        console.warn('[workbench] jobs.subscribe failed:', err)
+      }
+    }
     notify()
     return function unregister() {
       if (modes.get(id) !== mode) return
@@ -170,6 +245,17 @@ export function createRegistry(options = {}) {
       } catch (err) {
         console.warn('[workbench] context unsubscribe failed:', err)
       }
+      try {
+        mode.offRuntime?.()
+      } catch (err) {
+        console.warn('[workbench] runtime unsubscribe failed:', err)
+      }
+      try {
+        mode.offJobs?.()
+      } catch (err) {
+        console.warn('[workbench] jobs unsubscribe failed:', err)
+      }
+      healthCache.delete(id)
       if (activeId === id) {
         activeId = null
         try {
@@ -387,5 +473,136 @@ export function createRegistry(options = {}) {
     return lastHandoffRecord
   }
 
-  return { registerMode, list, setActive, adopt, getActive, has, size, subscribe, resolveLabel, contextOf, handoff, lastHandoff, dockViewOf, tileViewOf, spliceViewOf }
+  function getRevision() {
+    return revision
+  }
+
+  /**
+   * 后端健康（外部工具型，宪法第十六条）：**3 秒内有界、绝不抛**。
+   * 结果进 2 秒缓存，避免每次渲染都 spawn 一次探测；模式自己 subscribe 时清缓存再问。
+   * 没有 runtime 面的模式返回 null（不编造"就绪"）。
+   */
+  function healthOf(id) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.runtime) return null
+    const cached = healthCache.get(key)
+    if (cached && now() - cached.at < HEALTH_CACHE_MS) return cached.value
+    let timer = null
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ state: 'down', detail: `probe timeout > ${HEALTH_TIMEOUT_MS}ms` }), HEALTH_TIMEOUT_MS)
+    })
+    return Promise.race([Promise.resolve().then(() => mode.runtime.probe()), timeout])
+      .then((raw) => {
+        const value = normalizeHealth(raw)
+        healthCache.set(key, { at: now(), value })
+        return value
+      })
+      .catch((err) => {
+        const value = { state: 'error', detail: String(err?.message || err), version: null }
+        healthCache.set(key, { at: now(), value })
+        return value
+      })
+      .finally(() => {
+        if (timer) clearTimeout(timer)
+      })
+  }
+
+  /** 让模式自己拉起后端（宪法第十八条：工具台只调用并如实回报，不 spawn/kill）。 */
+  async function startRuntime(id) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.runtime) return { ok: false, error: 'no-runtime' }
+    if (!mode.runtime.start) return { ok: false, error: 'no-start' }
+    try {
+      const result = await mode.runtime.start()
+      healthCache.delete(key)
+      notify()
+      return result && typeof result === 'object' ? result : { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) }
+    }
+  }
+
+  /** 当前任务列表；模式抛错时返回空数组（UI 不编造"没有任务"以外的状态）。 */
+  function jobsOf(id) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.jobs) return []
+    try {
+      const list = mode.jobs.list()
+      return Array.isArray(list) ? list : []
+    } catch (err) {
+      console.warn('[workbench] jobs.list failed:', err)
+      return []
+    }
+  }
+
+  /** 取消任务；不能取消的模式如实返回 no-cancel（UI 据此不显示取消钮）。 */
+  async function cancelJob(id, jobId) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.jobs) return { ok: false, error: 'no-jobs' }
+    if (!mode.jobs.cancel) return { ok: false, error: 'no-cancel' }
+    try {
+      const result = await mode.jobs.cancel(jobId)
+      notify()
+      return result && typeof result === 'object' ? result : { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) }
+    }
+  }
+
+  /** 最近产物句柄；只读 list，不搬文件（宪法第二十条）。 */
+  function artifactsOf(id) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.artifacts) return []
+    try {
+      const list = mode.artifacts.list()
+      return Array.isArray(list) ? list : []
+    } catch (err) {
+      console.warn('[workbench] artifacts.list failed:', err)
+      return []
+    }
+  }
+
+  /** 点产物跳回模式；没 open 或模式抛错都如实 false。 */
+  function openArtifact(id, ref) {
+    const key = String(id ?? '').trim()
+    const mode = modes.get(key)
+    if (!mode || !mode.artifacts || !mode.artifacts.open) return false
+    try {
+      mode.artifacts.open(ref)
+      return true
+    } catch (err) {
+      console.warn('[workbench] artifacts.open failed:', err)
+      return false
+    }
+  }
+
+  return {
+    registerMode,
+    list,
+    setActive,
+    adopt,
+    getActive,
+    has,
+    size,
+    subscribe,
+    resolveLabel,
+    contextOf,
+    handoff,
+    lastHandoff,
+    dockViewOf,
+    tileViewOf,
+    spliceViewOf,
+    getRevision,
+    healthOf,
+    startRuntime,
+    jobsOf,
+    cancelJob,
+    artifactsOf,
+    openArtifact,
+  }
 }
