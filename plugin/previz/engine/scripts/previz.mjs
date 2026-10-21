@@ -15,8 +15,9 @@
  */
 import path from 'node:path'
 import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
+import { importStoryboard } from '../lib/storyboard.mjs'
 
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -75,8 +76,9 @@ try {
   previz plan    [project] --out <dir>
   previz encode  <outDir> [--ffmpeg <path>]
   previz qc      <outDir>
-  previz burn-in <outDir> [--font <path>]
   previz export  <outDir>
+  previz import  <storyboard.csv> [--out <shots.json>] [--scene <id>] [--fps 24]
+  previz burn-in <outDir> [--font <path>]
   previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force]
 
 通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --font <path> --json --quiet
@@ -135,6 +137,27 @@ try {
     const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
+  }
+
+  if (command === 'import') {
+    const file = arg('file', positional[0])
+    if (!file) fail('用法：previz import <storyboard.csv> [--out shots.json]', 2)
+    try {
+      const result = importStoryboard(file, {
+        outFile: arg('out', undefined),
+        fps: Number(arg('fps', '24')),
+        log,
+      })
+      if (json) print({ ok: true, outFile: result.outFile, assumptions: result.assumptions, shots: result.shots.shots.length })
+      process.exit(0)
+    } catch (err) {
+      if (json) print({ ok: false, error: err.message, errors: err.errors || [] })
+      else {
+        console.error(`[previz] ${err.message}`)
+        for (const e of err.errors || []) console.error(`  ${e.path}: ${e.message}`)
+      }
+      process.exit(1)
+    }
   }
 
   if (command === 'qc') {

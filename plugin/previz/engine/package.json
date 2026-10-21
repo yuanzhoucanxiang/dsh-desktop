@@ -20,10 +20,11 @@
     "qc": "node scripts/previz.mjs qc demo-out",
     "burnin": "node scripts/previz.mjs burn-in demo-out",
     "export": "node scripts/previz.mjs export demo-out",
+    "import": "node scripts/previz.mjs import fixtures/boutique/storyboard.csv",
     "demo": "node scripts/previz.mjs demo fixtures/boutique --out demo-out",
     "demo:burnin": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --burn-in",
     "demo:force": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --force",
-    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs"
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs"
   },
   "engines": {
     "node": ">=22"

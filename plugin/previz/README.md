@@ -4,7 +4,7 @@
 引擎本身可直接用 `blender-previz/scripts/previz.mjs` 或 `lib/pipeline.mjs` 调用，不需要工作台。
 
 - **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
-  本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
+  也可先 `previz import storyboard.csv` 生成 `shots.json` 再跑。本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
 - **状态**：探测 Blender / ffmpeg（3s 有界、2s 缓存），接缝/瓷砖显示「Blender 未启动 / 渲染中 42%」；
 - **任务**：一个「运行 demo」= 构建 + 渲染 + 编码 + QC；可取消（只杀自己 spawn 的进程树）；
 - **产物**：animatic.mp4、`animatic_burnin.mp4`（有则列出）、俯视平面图、3×3 接触表（带镜号/首中尾标签）、QC 报告、facts、`shots.csv`、`timeline.otio`、每镜 mp4；

@@ -14,6 +14,8 @@
     "plugin/previz/engine/lib/qc.mjs",
     "plugin/previz/engine/lib/pipeline.mjs",
     "plugin/previz/engine/lib/export.mjs",
+    "plugin/previz/engine/lib/storyboard.mjs",
+    "plugin/previz/engine/lib/errors.mjs",
     "plugin/previz/engine/blender/previz_build.py",
     "plugin/previz/engine/scripts/run-demo.mjs",
     "plugin/previz/engine/scripts/previz.mjs",
