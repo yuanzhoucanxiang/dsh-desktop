@@ -31,11 +31,16 @@
     "verify:writing-native": "electron scripts/verify-writing-native.cjs",
     "build:writing": "node scripts/build-writing-client.mjs",
     "build:workbench": "node scripts/build-workbench-client.mjs",
+    "build:previz": "node scripts/build-previz-client.mjs",
     "verify:workbench-build": "node scripts/verify-workbench-build.mjs",
     "verify:workbench-ui": "electron scripts/verify-workbench-ui.cjs",
     "verify:workbench-gir": "electron scripts/verify-workbench-gir-integration.cjs",
     "audit-docs": "node scripts/audit-docs.mjs --n 10",
     "test:workbench": "node plugin/workbench/test/registry.mjs && node plugin/workbench/test/host-state.mjs",
+    "test:previz": "node plugin/previz/test/host.mjs && node plugin/previz/test/mode.mjs && node plugin/previz/test/sync.mjs",
+    "test:previz-integration": "node plugin/previz/test/integration.mjs",
+    "verify:previz-build": "node scripts/verify-previz-build.mjs",
+    "verify:previz-ui": "electron scripts/verify-previz-ui.cjs",
     "test:mode-kit": "node packages/mode-kit/test/exports.mjs",
     "verify:writing-build": "node scripts/verify-writing-build.mjs",
     "test:writing-f": "node plugin/writing-mode/test/review-f01-f06.mjs",
@@ -53,8 +58,8 @@
     "test:writing-snapshot": "node plugin/writing-mode/test/snapshot.mjs",
     "test:writing-bridge": "node plugin/writing-mode/test/workbench-bridge.mjs",
     "verify:workbench-writing": "electron scripts/verify-workbench-writing-integration.cjs",
-    "prestart": "npm run build:writing && npm run build:workbench",
-    "predev": "npm run build:writing && npm run build:workbench",
+    "prestart": "npm run build:writing && npm run build:workbench && npm run build:previz",
+    "predev": "npm run build:writing && npm run build:workbench && npm run build:previz",
     "verify:writing-architecture": "node scripts/verify-writing-architecture.mjs && node scripts/verify-writing-imports.mjs && node scripts/verify-writing-imports.selftest.mjs",
     "verify:writing-package": "node scripts/verify-writing-package.mjs && node scripts/verify-writing-coldstart.mjs",
     "plugin-sync-test": "node lib/plugin-sync.test.js",
@@ -177,6 +182,19 @@
           "client.js",
           "runtime-manifest.json",
           "lib/*"
+        ]
+      },
+      {
+        "from": "plugin/previz",
+        "to": "plugin/previz",
+        "filter": [
+          "package.json",
+          "index.js",
+          "client.js",
+          "runtime-manifest.json",
+          "README.md",
+          "lib/*",
+          "engine/**/*"
         ]
       },
       {

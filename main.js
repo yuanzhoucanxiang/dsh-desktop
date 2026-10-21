@@ -456,7 +456,7 @@ function dshHome() {
  * 启动即崩（2026-08-24 实测）。皮肤联动的内核侧归属 = palis-theme-panel bundle，
  * 扁平内置版（plugin/palis-theme/ 源码保留）只是未启用的备选实现。
  */
-const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings', 'writing-mode', 'workbench']
+const BUILTIN_PLUGINS = ['dialog-optimize', 'shell-settings', 'writing-mode', 'workbench', 'previz']
 
 function syncBuiltinPlugin(name) {
   const src = path.join(pluginRoot(), name)

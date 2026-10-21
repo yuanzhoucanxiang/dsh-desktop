@@ -261,9 +261,10 @@ Blender 的 web 面板）内嵌进工作台。
 - **`runtime` / `jobs` / `artifacts`：注册表/接缝状态已实现，UI 仍有未做**（2026-10-21）：
   注册表收字段（`normalizeMode`）；`healthOf`（3s 有界、2s 缓存、绝不抛）/`jobsOf`/`artifactsOf`/
   `openArtifact`/`startRuntime`/`cancelJob` 已可读；接缝与瓷砖显示 `down/starting/error` 与运行中任务进度。
+  **首个模式 `@dsh-local/previz` 已按契约实现**（`plugin/previz`，固定 boutique demo）。
   **仍未做**：① 接缝/瓷砖上的「启动」按钮（现在是模式自己的完整界面负责）；
   ② 任务「取消」按钮（API 有 `cancelJob`，UI 未渲染）；③ 最近产物列表 UI；④ 真后端 `down → ready → down`
-  的探针（当前 UI 探针用假 runtime；真 Blender 探针在 `blender-previz` 侧单独跑）。
+  的探针（当前 UI 探针用假 runtime；真 Blender 探针在 `plugin/previz` 侧单独跑）。
 - **外部 Web UI 不内嵌**（第二十条之二，2026-10-18 拍板 A）：`moduleWindowUrl()` 只拼内核页，
   `hardenWindow` 把非内核 `http` 一律甩给系统浏览器。要内嵌必须新增壳能力并重定 CSP/凭据边界，**本轮不做**。
 - **四条已确认但未修的缺陷（2026-10-18/19 体检，代码另开一轮）**——写在这里是为了让**写模式的人**知道

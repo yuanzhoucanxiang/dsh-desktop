@@ -1,0 +1,23 @@
+{
+  "name": "@dsh-local/previz",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Blender 白模预演模式（P0 demo：状态 / 构建 / 渲染 / animatic / 平面图 / 接触表 / QC）",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  }
+}

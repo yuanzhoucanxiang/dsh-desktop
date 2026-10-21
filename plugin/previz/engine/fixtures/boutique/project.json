@@ -1,0 +1,22 @@
+{
+  "schema": "dsh.previz/project@1",
+  "id": "boutique",
+  "title": "小店",
+  "fps": 24,
+  "aspect": "16:9",
+  "units": "meters",
+  "up_axis": "Z",
+  "coordinate": {
+    "x": "east / screen-right when camera looks +Y",
+    "y": "north / depth",
+    "z": "up"
+  },
+  "defaults": {
+    "lens_mm": 35,
+    "sensor_mm": 36,
+    "review_res": [640, 360],
+    "draft_res": [480, 270],
+    "shot_duration": 3.0
+  },
+  "blender": { "min_version": "5.2", "pinned": "5.2.0" }
+}

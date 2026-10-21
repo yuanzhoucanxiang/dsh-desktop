@@ -1,0 +1,59 @@
+{
+  "schema": "dsh.previz/shots@1",
+  "scene": "S03",
+  "axis": {
+    "line": [[-2.0, 1.6], [2.0, 1.6]],
+    "side": "right",
+    "screen_direction": "left_to_right"
+  },
+  "shots": [
+    {
+      "id": "S03-01",
+      "beat": "B1",
+      "in": 0.0,
+      "out": 3.0,
+      "subjects": ["LIN"],
+      "size": "MS",
+      "angle": "eye",
+      "lens_mm": 35,
+      "framing": { "fill": 0.7, "headroom": 0.08, "look_room": 0.12, "lead": "LIN" },
+      "camera": {
+        "mode": "solve",
+        "azimuth_deg": -25,
+        "height": 1.35,
+        "target": "subject_center",
+        "follow": { "actor": "LIN", "keep": "fill" }
+      },
+      "move": { "type": "dolly_in", "from": 1.0, "to": 0.9, "ease": "in_out" },
+      "transition": "cut"
+    },
+    {
+      "id": "S03-02",
+      "beat": "B2",
+      "in": 3.0,
+      "out": 7.5,
+      "subjects": ["LIN", "ZHOU"],
+      "size": "OTS",
+      "angle": "eye",
+      "lens_mm": 50,
+      "framing": { "fill": 0.72, "headroom": 0.07, "look_room": 0.15, "lead": "ZHOU" },
+      "camera": { "mode": "solve", "azimuth_deg": -15, "height": 1.45, "target": "group_center" },
+      "move": { "type": "static" },
+      "transition": "cut"
+    },
+    {
+      "id": "S03-03",
+      "beat": "B3",
+      "in": 7.5,
+      "out": 9.0,
+      "subjects": ["bag"],
+      "size": "INSERT",
+      "angle": "high",
+      "lens_mm": 85,
+      "framing": { "fill": 0.6, "headroom": 0.0, "look_room": 0.0 },
+      "camera": { "mode": "solve", "azimuth_deg": 30, "height": 1.9, "target": "subject_center" },
+      "move": { "type": "static" },
+      "transition": "cut"
+    }
+  ]
+}

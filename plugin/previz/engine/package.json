@@ -1,0 +1,15 @@
+{
+  "name": "blender-previz",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Blender 白模预演引擎（schema / builder / render / QC）",
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate.mjs fixtures/boutique",
+    "demo": "node scripts/run-demo.mjs",
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -82,8 +82,9 @@ ctx.inject(['workbench'], (scope) => {
 
 > **状态（2026-10-21）**：注册表已收这三个字段；`healthOf` / `jobsOf` / `artifactsOf` / `openArtifact`
 > 已可读；接缝与瓷砖会显示 `down/starting/error` 和运行中任务的进度（「后端未启动」「渲染中 42%」）。
+> **第一个外部工具型模式 `@dsh-local/previz` 已落地**（`plugin/previz`，固定 boutique demo）。
 > **仍未做**：接缝/瓷砖上的「启动」按钮、任务「取消」按钮、最近产物列表 UI；UI 探针里的后端是假 runtime
-> （真 Blender 探针由 `blender-previz` 侧负责）。模式侧仍要自己实现 `probe/start/jobs/artifacts`。
+> （真 Blender 探针由 `plugin/previz` 侧负责）。模式侧仍要自己实现 `probe/start/jobs/artifacts`。
 > 设计理由与条文见宪法第十六～二十条；用户侧形态见策划案 §6.4。
 
 **什么时候需要**：模式背后是一个**不在 dsh 进程里的外部工具**（Blender 的 CLI/后台、ComfyUI 的 `:8188` 服务、

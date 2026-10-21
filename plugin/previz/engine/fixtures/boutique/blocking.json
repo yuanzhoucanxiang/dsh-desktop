@@ -1,0 +1,46 @@
+{
+  "schema": "dsh.previz/blocking@1",
+  "scene": "S03",
+  "duration": 9.0,
+  "actors": {
+    "LIN": {
+      "height": 1.72,
+      "proxy": "mannequin_a",
+      "keys": [
+        { "t": 0.0, "pos": [-2.0, 2.7], "facing": 147, "pose": "stand_idle" },
+        { "t": 2.0, "pos": [-0.9, 1.0], "facing": 55, "pose": "stand_idle" },
+        { "t": 7.0, "pos": [-0.9, 1.0], "facing": 55, "pose": "reach_r" },
+        { "t": 8.0, "pos": [-0.9, 1.0], "facing": 55, "pose": "place_r" }
+      ]
+    },
+    "ZHOU": {
+      "height": 1.8,
+      "proxy": "mannequin_b",
+      "keys": [
+        { "t": 0.0, "pos": [0.8, 2.2], "facing": 235, "pose": "stand_idle" },
+        { "t": 3.0, "pos": [0.8, 2.2], "facing": 235, "pose": "talk_idle" }
+      ]
+    }
+  },
+  "moves": [
+    {
+      "actor": "LIN",
+      "from": 0.0,
+      "to": 2.0,
+      "path": [[-2.0, 2.7], [-1.5, 1.8], [-0.9, 1.0]],
+      "gait": "walk",
+      "speed": 1.0
+    }
+  ],
+  "props": [
+    {
+      "id": "bag",
+      "type": "box",
+      "size": [0.35, 0.12, 0.28],
+      "role": "PROP",
+      "attach": { "actor": "LIN", "hand": "R", "offset": [0, 0, -0.05] },
+      "from": 0.0,
+      "to": 8.0
+    }
+  ]
+}

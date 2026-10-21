@@ -1,0 +1,32 @@
+{
+  "schema": "dsh.previz/set@1",
+  "scene": "S03",
+  "name": "小店·内景",
+  "bounds": { "w": 8.0, "d": 6.0, "h": 3.0 },
+  "origin": [0, 0, 0],
+  "elements": [
+    { "id": "floor", "type": "box", "role": "FLOOR", "pos": [0, 0, -0.05], "size": [8, 6, 0.1] },
+    {
+      "id": "wall_back",
+      "type": "wall",
+      "role": "WALL",
+      "from": [-4, 3],
+      "to": [4, 3],
+      "height": 3.0,
+      "thickness": 0.2,
+      "openings": [
+        { "id": "door_1", "rect": [-2.55, 0.0, -1.45, 2.1] },
+        { "id": "window_1", "rect": [1.2, 1.0, 2.2, 2.0] }
+      ]
+    },
+    { "id": "wall_left", "type": "wall", "role": "WALL", "from": [-4, -3], "to": [-4, 3], "height": 3.0, "thickness": 0.2 },
+    { "id": "wall_right", "type": "wall", "role": "WALL", "from": [4, -3], "to": [4, 3], "height": 3.0, "thickness": 0.2 }
+  ],
+  "props": [
+    { "id": "counter", "type": "box", "role": "WOOD", "pos": [0, 1.6, 0.55], "size": [2.6, 0.6, 1.1] },
+    { "id": "stool", "type": "box", "role": "DARK", "pos": [-1.0, 0.6, 0.225], "size": [0.4, 0.4, 0.45] }
+  ],
+  "markers": [
+    { "id": "north", "pos": [0, 0, 0], "dir": [0, 1, 0] }
+  ]
+}
