@@ -305,11 +305,14 @@ export function validateSceneDir(dir, prefix = '') {
   let project, set, blocking, shots
   const e = []
   const at = (p) => (prefix ? `${prefix}.${p}` : p)
-  try {
-    project = read('project.json')
-    e.push(...validateProject(project).map((x) => ({ ...x, path: at(x.path) })))
-  } catch (ex) {
-    err(e, at('project.json'), `读取/解析失败: ${ex.message}`)
+  // project.json 在场景目录里是可选的：多场景项目用根目录的配置（由 validateAll 合并进来）。
+  if (fs.existsSync(path.join(dir, 'project.json'))) {
+    try {
+      project = read('project.json')
+      e.push(...validateProject(project).map((x) => ({ ...x, path: at(x.path) })))
+    } catch (ex) {
+      err(e, at('project.json'), `读取/解析失败: ${ex.message}`)
+    }
   }
   try {
     set = read('set.json')
@@ -348,20 +351,26 @@ export function validateAll(dir) {
     return { ok: false, errors: e, data: {}, scenes: null }
   }
   const data = {}
+  // 项目级配置（fps/aspect/defaults）由根 project.json 提供，场景继承。
+  // 之前把根 project.json 复制进场景目录，之后改根配置场景仍用旧副本——改成运行时合并，不落盘。
+  let rootProject = null
+  try {
+    rootProject = JSON.parse(fs.readFileSync(path.join(root, 'project.json'), 'utf8'))
+  } catch (ex) {
+    err(e, 'project.json', `读取/解析失败: ${ex.message}`)
+  }
   for (const scene of scenes) {
-    // 场景目录没有 project.json：用项目根的 project 补齐
-    const projectPath = path.join(scene.dir, 'project.json')
-    if (!fs.existsSync(projectPath)) {
-      try {
-        fs.copyFileSync(path.join(root, 'project.json'), projectPath)
-      } catch (ex) {
-        err(e, `scenes.${scene.id}.project.json`, `无法补齐: ${ex.message}`)
-        continue
-      }
-    }
     const r = validateSceneDir(scene.dir, `scenes.${scene.id}`)
     e.push(...r.errors)
+    // 场景目录自己带 project.json 时以它为覆盖，否则继承根配置
+    const ownProject = r.data?.project
+    if (rootProject && !ownProject) {
+      r.data.project = { ...rootProject }
+      scene.inheritsProject = true
+    } else if (rootProject && ownProject) {
+      r.data.project = { ...rootProject, ...ownProject }
+    }
     data[scene.id] = r.data
   }
-  return { ok: e.length === 0, errors: e, data, scenes }
+  return { ok: e.length === 0, errors: e, data, scenes, project: rootProject }
 }

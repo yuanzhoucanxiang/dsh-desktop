@@ -162,14 +162,31 @@ function azimuthTowardSubjects(blocking, subjectIds) {
   if (!pts.length) return 0
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length
   const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length
-  // 场景中心（优先 bounds 原点，否则 0）
-  const ox = 0
-  const oy = 0
-  const dx = cx - ox
-  const dy = cy - oy
+  // 多人同框：相机要垂直于“主体连线”，否则两人横向铺开时侧边的人会出画。
+  // 取连线方向 (dx, dy)，相机方向取其法线 (-dy, dx) 或 (dy, -dx)，选朝向场景中心的那侧。
+  if (pts.length >= 2) {
+    let lx = pts[1][0] - pts[0][0]
+    let ly = pts[1][1] - pts[0][1]
+    const len = Math.hypot(lx, ly)
+    if (len > 1e-6) {
+      lx /= len
+      ly /= len
+      // 法线两条，选让相机更靠近场景中心（0,0）的那条
+      let nx = -ly
+      let ny = lx
+      const toCenter = (x, y) => Math.hypot(cx + x, cy + y)
+      if (toCenter(-nx, -ny) < toCenter(nx, ny)) {
+        nx = -nx
+        ny = -ny
+      }
+      // direction = (sin az, -cos az) 应等于 (nx, ny)
+      return Math.round((Math.atan2(nx, -ny) * 180) / Math.PI)
+    }
+  }
+  // 单人：把相机放在场景中心一侧
+  const dx = cx - 0
+  const dy = cy - 0
   if (Math.hypot(dx, dy) < 1e-6) return 0
-  // 相机位置 = 主体均值 + direction*d，direction=(sin az, -cos az)。
-  // 要让相机落在场景中心一侧，direction 应指向“从主体回中心”：(-dx, -dy)。
   return Math.round((Math.atan2(-dx, dy) * 180) / Math.PI)
 }
 
@@ -205,7 +222,8 @@ export function storyboardFromScript(script, { size = null, angle = 'eye', lens 
         dialogue,
         'cut',
         '',
-        `azimuth_deg=${azimuthTowardSubjects(blocking, beat.actors)}`,
+        // 默认跟拍第一主角：static 相机在多秒走位里会把人甩出画。
+        `azimuth_deg=${azimuthTowardSubjects(blocking, beat.actors)}; follow=${beat.actors[0]}`,
       ])
     })
   }

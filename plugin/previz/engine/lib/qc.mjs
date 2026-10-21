@@ -119,29 +119,84 @@ export function runQc({ outDir }) {
     }
 
     if (shot.fill_check) {
-      const diff = Math.abs(Number(shot.frame_span?.fill_actual) - Number(shot.fill_target))
-      if (!Number.isFinite(diff)) {
+      const actual = Number(shot.frame_span?.fill_actual)
+      if (!Number.isFinite(actual)) {
         push(errors, `${sp}.frame_span`, '缺少 frame_span.fill_actual')
-      } else if (diff > FILL_TOLERANCE) {
-        push(errors, `${sp}.frame_span`, `占幅 ${shot.frame_span.fill_actual} 与目标 ${shot.fill_target} 相差 ${diff.toFixed(3)} > ${FILL_TOLERANCE}`)
-      } else if (diff > 0.08) {
-        warnings.push({ path: `${sp}.frame_span`, message: `占幅偏差 ${diff.toFixed(3)}，接近容差` })
+      } else if ((shot.subject_ids || []).length >= 2) {
+        // 多人同框：相机为“全体不出画”让步，主主体占幅必然低于单人目标
+        //（实测两人相距 2.84m 时 0.35 vs 单人 0.49）。只挡“太小”。
+        const minMulti = Number(shot.fill_target) * 0.6
+        if (actual < minMulti) {
+          warnings.push({
+            path: `${sp}.frame_span`,
+            message: `多人镜头主主体占幅 ${actual} 偏小（< ${minMulti.toFixed(2)}），主体可能太小`,
+          })
+        }
+      } else {
+        const diff = Math.abs(actual - Number(shot.fill_target))
+        if (diff > FILL_TOLERANCE) {
+          push(errors, `${sp}.frame_span`, `占幅 ${actual} 与目标 ${shot.fill_target} 相差 ${diff.toFixed(3)} > ${FILL_TOLERANCE}`)
+        } else if (diff > 0.08) {
+          warnings.push({ path: `${sp}.frame_span`, message: `占幅偏差 ${diff.toFixed(3)}，接近容差` })
+        }
       }
     }
 
-    // 头部安全区：OTS 只查后景（lead），前景允许切头
+    // 头部安全区：OTS 只查后景（lead），前景允许切头；首/中/尾都查。
     const lead = shot.framing_lead || (shot.size === 'OTS' ? shot.subject_ids?.[1] : shot.subject_ids?.[0])
     const start = shot.start || {}
-    const subject = lead && start[lead]
-    if (subject && subject.head) {
-      const [x, y] = subject.head
-      if (x < SAFE_MIN || x > SAFE_MAX || y < SAFE_MIN || y > SAFE_MAX) {
-        push(errors, `${sp}.${lead}.head`, `头部 NDC (${x}, ${y}) 超出安全区`)
-      } else if (y > 0.9) {
-        warnings.push({ path: `${sp}.${lead}.head`, message: `头部偏高（NDC y=${y}），留白可能不足` })
+    for (const phase of ['start', 'mid', 'end']) {
+      const node = shot[phase]
+      if (!node) continue
+      const subject = lead && node[lead]
+      if (subject && subject.head) {
+        const [x, y] = subject.head
+        if (x < SAFE_MIN || x > SAFE_MAX || y < SAFE_MIN || y > SAFE_MAX) {
+          push(errors, `${sp}.${phase}.${lead}.head`, `头部 NDC (${x}, ${y}) 超出安全区`)
+        } else if (y > 0.9) {
+          warnings.push({ path: `${sp}.${phase}.${lead}.head`, message: `头部偏高（NDC y=${y}），留白可能不足` })
+        }
+      } else if (phase === 'start' && shot.size !== 'INSERT') {
+        push(errors, `${sp}.${lead ?? 'subject'}.head`, '缺少主体头部 NDC')
       }
-    } else if (shot.size !== 'INSERT') {
-      push(errors, `${sp}.${lead ?? 'subject'}.head`, '缺少主体头部 NDC')
+    }
+
+    // 取景：首/中/尾都要查。只查起点会漏掉“人物走到画外”的镜头。
+    // OTS 的前景本来就该在画面边缘/被切，只做“是否完全离画”的宽松检查；lead（后景/主主体）才查贴边。
+    const phases = ['start', 'mid', 'end'].filter((k) => shot[k] && typeof shot[k] === 'object')
+    for (const phase of phases) {
+      const node = shot[phase]
+      const label = phase === 'start' ? '首帧' : phase === 'mid' ? '中帧' : '尾帧'
+      const ids = shot.subject_ids || []
+      for (const sid of ids) {
+        const sub = node[sid]
+        if (!sub) continue
+        const isOtsForeground = shot.size === 'OTS' && ids.indexOf(sid) === 0 && ids.length >= 2
+        const isLead = sid === lead
+        if (Array.isArray(sub.head)) {
+          const [hx, hy] = sub.head
+          const outside = hx < -1 || hx > 1 || hy < -1 || hy > 1
+          if (outside) {
+            // OTS 前景允许被切边，但不该整个人离开画面
+            if (isOtsForeground) {
+              const farOut = hx < -1.6 || hx > 1.6 || hy < -1.6 || hy > 1.6
+              if (farOut) push(errors, `${sp}.${phase}.${sid}.head`, `${label} OTS 前景 ${sid} 完全离画（NDC ${hx}, ${hy}）`)
+            } else {
+              push(errors, `${sp}.${phase}.${sid}.head`, `${label}主体 ${sid} 头部 NDC (${hx}, ${hy}) 已出画`)
+            }
+          } else if (isLead && (hy > 0.92 || hy < -0.92 || hx > 0.92 || hx < -0.92)) {
+            warnings.push({ path: `${sp}.${phase}.${sid}.head`, message: `${label}主体 ${sid} 贴近画面边缘（NDC ${hx}, ${hy}）` })
+          }
+        } else if (Array.isArray(sub.center)) {
+          const [cx2, cy2] = sub.center
+          if (cx2 < -1 || cx2 > 1 || cy2 < -1 || cy2 > 1) {
+            push(errors, `${sp}.${phase}.${sid}.center`, `${label}道具 ${sid} 中心已出画（NDC ${cx2}, ${cy2}）`)
+          }
+        }
+      }
+    }
+    if (phases.length && !phases.includes('mid')) {
+      warnings.push({ path: `${sp}.mid`, message: '缺少中帧取景数据（重跑构建）' })
     }
 
     // 地板接触
@@ -184,7 +239,25 @@ export function runQc({ outDir }) {
         }
       }
       if (kind === 'whip_pan' && Number.isFinite(rotate) && rotate > 90) {
-        warnings.push({ path: `${sp}.move`, message: `甩镜 ${rotate.toFixed(0)}°，确认首尾有可读帧（当前只校验幅度）` })
+        warnings.push({ path: `${sp}.move`, message: `甩镜 ${rotate.toFixed(0)}°，幅度大；已检查首尾帧主体是否在画面内` })
+      }
+      // 甩镜/快速运动：首尾帧主体必须仍在画面内且可辨（人在画外=甩丢了）。
+      if ((kind === 'whip_pan' || (Number.isFinite(rotate) && rotate >= 60)) && shot.start && shot.end) {
+        for (const edge of ['start', 'end']) {
+          const node = shot[edge] || {}
+          for (const sid of shot.subject_ids || []) {
+            const sub = node[sid]
+            if (!sub || !Array.isArray(sub.head)) continue
+            const [, hy] = sub.head
+            const [, fy] = Array.isArray(sub.feet) ? sub.feet : [0, -1]
+            const inside = hy >= -1 && hy <= 1 && fy >= -1.4 && fy <= 1.4
+            if (!inside) {
+              push(errors, `${sp}.${edge}.${sid}`, `甩镜${edge === 'start' ? '首' : '尾'}帧主体 ${sid} 已出画（head.y=${hy}）`)
+            } else if (hy > 0.92 || hy < -0.92) {
+              warnings.push({ path: `${sp}.${edge}.${sid}`, message: `甩镜${edge === 'start' ? '首' : '尾'}帧主体 ${sid} 贴边（head.y=${hy}），可读性差` })
+            }
+          }
+        }
       }
     }
 
@@ -216,13 +289,35 @@ export function runQc({ outDir }) {
     warnings.push({ path: 'facts.shots', message: `总帧数 ${totalFrames}，与期望 ${facts.expected_frames} 不一致` })
   }
 
+  // animatic：只判断“文件存在”会让 0 字节文件通过。检查大小 + MP4 头尾结构。
   const animatic = path.join(outDir, 'animatic.mp4')
+  let animaticInfo = null
+  if (!fs.existsSync(animatic)) {
+    // 允许只跑 build/plan 的场景：没有 animatic 时不报错，但标记清楚
+    warnings.push({ path: 'animatic.mp4', message: '没有 animatic.mp4（只跑了 build/render 时正常）' })
+  } else {
+    const size = fs.statSync(animatic).size
+    if (size < 1024) {
+      push(errors, 'animatic.mp4', `animatic 只有 ${size} 字节，不是有效视频`)
+    } else {
+      // MP4 至少要有 ftyp box 与 mdat/moov 之一
+      const head = Buffer.alloc(Math.min(size, 64))
+      const fd = fs.openSync(animatic, 'r')
+      fs.readSync(fd, head, 0, head.length, 0)
+      fs.closeSync(fd)
+      const hasFtyp = head.includes(Buffer.from('ftyp', 'ascii'))
+      if (!hasFtyp) push(errors, 'animatic.mp4', 'animatic 不像有效 MP4（缺 ftyp）')
+      animaticInfo = { path: animatic, bytes: size, has_ftyp: hasFtyp }
+    }
+  }
+
   const stats = {
     shots: facts.shots.length,
     frames: totalFrames,
     occlusion_checks: occlusionChecks,
     occlusion_blocked: occlusionBlocked,
-    animatic: fs.existsSync(animatic) ? animatic : null,
+    animatic: animaticInfo ? animaticInfo.path : null,
+    animatic_bytes: animaticInfo ? animaticInfo.bytes : null,
     plan: fs.existsSync(path.join(outDir, 'plan.png')) ? path.join(outDir, 'plan.png') : null,
   }
   return { ok: errors.length === 0, errors, warnings, stats }

@@ -65,24 +65,54 @@ export function shotFingerprints(projectDir) {
   const set = read('set.json')
   const blocking = read('blocking.json')
   const shots = read('shots.json')
+  // 全局摄影设置也进指纹：改 fps/sensor/aspect 会改变所有镜头的画面
+  let project = {}
+  try {
+    project = read('project.json')
+  } catch {
+    project = {}
+  }
   const builderHash = crypto.createHash('sha256').update(fs.readFileSync(BUILDER)).digest('hex')
-  const shared = { set, duration: blocking.duration, builder: builderHash }
+  const shared = {
+    set,
+    duration: blocking.duration,
+    builder: builderHash,
+    camera_globals: {
+      fps: project.fps,
+      defaults: project.defaults,
+      resolution: project.resolution,
+      aspect: project.aspect,
+    },
+  }
   const out = {}
   for (const shot of shots.shots || []) {
     const h = crypto.createHash('sha256')
     h.update(JSON.stringify(shared))
     h.update(JSON.stringify(shot))
-    const actors = {}
+
+    // 参与本镜的人物集合：声明主体 + 手持道具的所有者 + 该道具的 attach 演员。
+    // 之前只收 shot.subjects，导致“演员手持道具、主体写的是道具”时，演员走位改了镜头不失效。
+    const owners = new Set()
+    const relatedProps = []
+    for (const p of blocking.props || []) {
+      const isSubject = (shot.subjects || []).includes(p.id)
+      const owner = p.attach?.actor
+      if (!isSubject && !owner) continue
+      relatedProps.push(p)
+      if (owner) owners.add(owner)
+    }
     for (const id of shot.subjects || []) {
+      if (blocking.actors?.[id]) owners.add(id)
+    }
+    // 主体是道具、但道具挂在某人手上：该演员的走位/姿态必须进指纹
+    const actors = {}
+    for (const id of owners) {
       if (blocking.actors?.[id]) actors[id] = blocking.actors[id]
     }
+    h.update(JSON.stringify([...owners].sort()))
     h.update(JSON.stringify(actors))
-    h.update(JSON.stringify((blocking.moves || []).filter((m) => actors[m.actor])))
-    h.update(
-      JSON.stringify(
-        (blocking.props || []).filter((p) => (shot.subjects || []).includes(p.id) || actors[p.attach?.actor]),
-      ),
-    )
+    h.update(JSON.stringify((blocking.moves || []).filter((m) => owners.has(m.actor))))
+    h.update(JSON.stringify(relatedProps))
     out[shot.id] = h.digest('hex')
   }
   return out
@@ -219,8 +249,9 @@ export function runBlender({ projectDir, outDir, mode = 'all', only = null, blen
   log(`[previz] blender: ${exe}`)
   const args = [
     '-b', '--factory-startup',
-    '--python', BUILDER,
+    // --python-exit-code 必须排在 --python 之前；放后面 Blender 不认，脚本异常会被当成退出 0
     '--python-exit-code', '2',
+    '--python', BUILDER,
     '--',
     '--project', resolvedProject,
     '--out', resolvedOut,
@@ -230,11 +261,38 @@ export function runBlender({ projectDir, outDir, mode = 'all', only = null, blen
   const r = runCommand(exe, args, { cwd: PACKAGE_ROOT })
   const lines = String(r.stdout || '').split(/\r?\n/).filter(Boolean)
   for (const line of lines.slice(-10)) log(`[blender] ${line}`)
+  // 构建成功必须看到 PREVIZ_DONE；没有它说明脚本中途异常，不能当成功
+  const done = lines.some((l) => l.startsWith('PREVIZ_DONE '))
+  if (!done) {
+    throw new Error(`Blender 构建未完成（没有 PREVIZ_DONE）：\n${String(r.stderr || r.stdout || '').split(/\r?\n/).slice(-25).join('\n')}`)
+  }
   return { ok: true, projectDir: resolvedProject, outDir: resolvedOut, mode, only: only || [], stdout: r.stdout, stderr: r.stderr }
 }
 
 /** PNG 序列 → 每镜 mp4 → animatic → 3×3 接触表。 */
-export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = false } = {}) {
+/**
+ * 运动模糊：Blender 的 Workbench 没有 motion blur，EEVEE 在 `-b` 单帧渲染下实测也不生效
+ * （开关前后像素差 0.000000）。所以用 ffmpeg 的时间混合做后处理：
+ *   tmix=frames=N 对连续帧做加权平均，快速摇/甩时产生拖尾。
+ * 只对“动得快”的镜头开，静态镜头开了只会变糊。
+ */
+export function motionBlurFilter(mode, frames, fps, shot) {
+  if (!mode || mode === 'off') return null
+  if (mode === 'auto') {
+    const rotate = Number(shot?.camera?.rotate_deg) || 0
+    const travel = Number(shot?.camera?.travel) || 0
+    const dur = Math.max((Number(shot?.out) || 0) - (Number(shot?.in) || 0), 1)
+    // 只在明显快速运动时启用：>45°/s 或 >1.2 m/s
+    const fast = rotate / dur > 45 || travel / dur > 1.2
+    if (!fast) return null
+  }
+  const raw = Math.round(Number(frames))
+  const n = Math.max(2, Math.min(8, Number.isFinite(raw) ? raw : 3))
+  // tmix 会把亮度平均掉，用 eq 轻微提亮补偿
+  return `tmix=frames=${n},eq=brightness=0.02`
+}
+
+export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = false, blurMode = 'off', blurFrames = 3 } = {}) {
   const resolvedOut = path.resolve(outDir || 'demo-out')
   const exe = findFfmpeg(ffmpeg)
   if (!exe) {
@@ -255,12 +313,14 @@ export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = fa
     if (!fs.existsSync(firstFrame)) {
       throw new Error(`缺少渲染帧：${firstFrame}（先跑 previz render --pass review，或 previz demo）`)
     }
+    const extra = motionBlurFilter(blurMode, blurFrames, facts.fps, shot)
     runCommand(exe, [
       '-y',
       '-framerate', String(facts.fps),
       '-start_number', String(start),
       '-i', path.join(dir, 'f_%04d.png'),
       '-frames:v', String(shot.frames),
+      ...(extra ? ['-vf', extra] : []),
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-crf', '18',
@@ -408,7 +468,7 @@ export function runQcReport(outDir) {
  * 多场景项目逐场景跑，最后拼跨场景 animatic。
  * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
  */
-export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, only = null, log = console.log } = {}) {
+export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, only = null, blurMode = 'off', blurFrames = 3, log = console.log } = {}) {
   const resolvedProject = path.resolve(projectDir)
   const resolvedOut = path.resolve(outDir)
   const validation = validateAll(resolvedProject)
@@ -417,7 +477,7 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   }
   log(`[previz] schema OK: ${resolvedProject}`)
   if (validation.scenes) {
-    return runMultiScene({ projectDir: resolvedProject, outDir: resolvedOut, scenes: validation.scenes, blender, ffmpeg, skipRender, skipEncode, log })
+    return runMultiScene({ projectDir: resolvedProject, outDir: resolvedOut, scenes: validation.scenes, blender, ffmpeg, skipRender, skipEncode, blurMode, blurFrames, log })
   }
 
   const useCache = !skipRender && !skipEncode && !force && !(only && only.length)
@@ -458,7 +518,7 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
     runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', only: rendered, blender, log })
   }
   let encoded = null
-  if (!skipEncode) encoded = encodeOutputs(resolvedOut, { ffmpeg, log })
+  if (!skipEncode) encoded = encodeOutputs(resolvedOut, { ffmpeg, log, blurMode, blurFrames })
   let burned = null
   if (doBurnIn) burned = burnIn(resolvedOut, { ffmpeg, font, log })
   const qc = runQcReport(resolvedOut)
@@ -478,13 +538,13 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
  * 多场景：每个场景独立构建/渲染/编码/QC，产物在 `<out>/<sceneId>/`；
  * 最后把各场景 animatic 拼成 `<out>/animatic.mp4`，QC 汇总。
  */
-export function runMultiScene({ projectDir, outDir, scenes, blender, ffmpeg, skipRender = false, skipEncode = false, log = console.log }) {
+export function runMultiScene({ projectDir, outDir, scenes, blender, ffmpeg, skipRender = false, skipEncode = false, blurMode = 'off', blurFrames = 3, log = console.log }) {
   const results = []
   for (const scene of scenes) {
     log(`[previz] scene ${scene.id} …`)
     const sceneOut = path.join(outDir, scene.id)
     if (!skipRender) runBlender({ projectDir: scene.dir, outDir: sceneOut, mode: 'all', blender, log })
-    if (!skipEncode) encodeOutputs(sceneOut, { ffmpeg, log })
+    if (!skipEncode) encodeOutputs(sceneOut, { ffmpeg, log, blurMode, blurFrames })
     const qc = runQcReport(sceneOut)
     results.push({ id: scene.id, out: sceneOut, qc })
     if (!qc.ok) {

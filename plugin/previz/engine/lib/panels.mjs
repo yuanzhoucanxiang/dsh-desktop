@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { parseCsv } from './storyboard.mjs'
 import { ScreenwriterError } from './errors.mjs'
 
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp'])
@@ -119,7 +120,8 @@ export function draftRows({ files, dir, scene = 'S01', subject = 'SUBJECT', dura
       dialogue: '',
       transition: 'cut',
       image: `panels/${name}`,
-      notes: `status=draft; ${dim ? `${dim.width}x${dim.height}` : 'unknown-size'}`,
+      // 分镜图草案不知道走位，默认跟拍主体：否则一台 static 相机在几秒里会把人甩出画。
+      notes: `status=draft; follow=${subject}; ${dim ? `${dim.width}x${dim.height}` : 'unknown-size'}`,
       width: dim?.width ?? null,
       height: dim?.height ?? null,
     }
@@ -155,10 +157,15 @@ export function confirmPanelDraft(projectDir, { confirmedBy = 'human', log = con
   if (!fs.existsSync(draftPath)) throw new ScreenwriterError(`没有草案：${draftPath}（先跑 previz panels <project>）`)
   const text = fs.readFileSync(draftPath, 'utf8')
   if (!/status=draft/.test(text)) throw new ScreenwriterError('草案里没有 status=draft 标记，拒绝确认（可能已被改过）')
-  const rows = text.trim().split('\n').slice(1).map((line) => line.split(','))
+  // 用 RFC 4180 解析，而不是 split(',')：图片名/动作里出现逗号或引号时 split 会错位。
+  const rows = parseCsv(text).slice(1).filter((cells) => cells.some((c) => String(c).trim() !== ''))
+  const header = parseCsv(text)[0] || []
+  const imageCol = header.indexOf('image')
+  if (imageCol < 0) throw new ScreenwriterError('草案缺少 image 列，拒绝确认')
   for (const [i, cells] of rows.entries()) {
-    if (cells.length < 15) throw new ScreenwriterError(`第 ${i + 2} 行列数不足，拒绝确认`)
-    const image = cells[13]
+    if (cells.length < header.length) throw new ScreenwriterError(`第 ${i + 2} 行列数 ${cells.length} 少于表头 ${header.length}，拒绝确认`)
+    const image = cells[imageCol]
+    if (!image) throw new ScreenwriterError(`第 ${i + 2} 行 image 为空，拒绝确认`)
     if (!fs.existsSync(path.join(project, image))) throw new ScreenwriterError(`第 ${i + 2} 行的分镜图不存在：${image}`)
   }
   const target = path.join(project, 'storyboard.csv')

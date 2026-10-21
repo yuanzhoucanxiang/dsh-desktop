@@ -133,6 +133,10 @@ export function parseStoryboard(text, { fps = 24 } = {}) {
     for (const m of notes.matchAll(/([a-z_]+)=(-?\d+(?:\.\d+)?)/g)) {
       if (m[1] === 'azimuth_deg' || m[1] === 'height') camera[m[1]] = Number(m[2])
     }
+    // follow=ActorId：让相机跟着该演员走。剧本草案默认给主角跟拍，
+    // 否则一台 static 相机在 9 秒里会把走动的人甩出画面（只查起始帧时看不出来）。
+    const followMatch = /follow=([A-Za-z0-9_-]+)/.exec(notes)
+    if (followMatch) camera.follow = { actor: followMatch[1], keep: 'fill' }
     shots.push({
       id: shot,
       panel: Number(panel) || shots.length + 1,
@@ -145,7 +149,14 @@ export function parseStoryboard(text, { fps = 24 } = {}) {
       angle: angle || DEFAULT_ANGLE,
       lens_mm: Number.isFinite(lens) && lens !== null ? lens : DEFAULT_LENS,
       camera,
-      framing: { fill: size === 'INSERT' ? 0.6 : 0.7, headroom: size === 'INSERT' ? 0 : 0.07, look_room: 0.12 },
+      // 多人同框：fill 是“主角占画面高度”的比例，两人并排时相机要让位给组宽，
+      // 主角占幅必然低于单人 0.7；按人数给一个合理的默认，避免 QC 拿单人标准判多人镜头。
+      framing: (() => {
+        const subjectCount = String(get('subject') || '').split('+').filter(Boolean).length
+        const base = size === 'INSERT' ? 0.6 : 0.7
+        const fill = subjectCount >= 2 ? Math.max(0.45, base * 0.7) : base
+        return { fill: Math.round(fill * 100) / 100, headroom: size === 'INSERT' ? 0 : 0.07, look_room: 0.12 }
+      })(),
       move: { type: move || DEFAULT_MOVE },
       transition: transition || DEFAULT_TRANSITION,
       source: { action: get('action'), dialogue: get('dialogue'), image: get('image') || null, notes: notes || null },

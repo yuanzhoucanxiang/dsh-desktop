@@ -716,7 +716,8 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
         sensor_h = project.get("defaults", {}).get("sensor_mm", 36) / aspect_ratio(project)
         fill = shot.get("framing", {}).get("fill", 0.8)
         lead_shot = dict(shot)
-        lead_shot["subjects"] = [lead_id]
+        # 跟拍时用全组主体解距离：只按 lead 算，两人相距较远时同行的人会出画。
+        lead_shot["subjects"] = list(shot["subjects"]) if shot.get("camera", {}).get("follow") else [lead_id]
         if shot["size"] == "OTS" and len(shot["subjects"]) >= 2 and all(s in actors for s in shot["subjects"][:2]):
             fg, bg = shot["subjects"][0], shot["subjects"][1]
             fx, fy = actor_pos_at(blocking, fg, t0)
@@ -754,19 +755,23 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
                 bpy.context.scene.frame_set(frame)
                 u = (frame - start) / max(end - start, 1)
                 if follow:
+                    # 跟拍：机位随演员平移，距离按“当前全体主体的组宽”实时保底——
+                    # 固定起始距离会在人物靠近后填不满（0.50 vs 目标 0.70），
+                    # 每帧全解又会把 fill 拉到 0.84，所以只让半径随组宽变化，构图对准起点。
                     base_now = Vector((actor_root.location.x, actor_root.location.y, 0))
-                    # follow 镜头用演员位置作基准，再叠加通用运镜（dolly 的倍率由 orbit 处理）
-                    local = dict(base_shot)
-                    local["subjects"] = [follow["actor"]] + [s for s in shot["subjects"] if s != follow["actor"]]
-                    solve_shot = local
+                    p2, t2, _d2, _s2, _f2, _sh2 = camera_orbit(
+                        dict(base_shot, subjects=shot["subjects"]), project, blocking, actors, bag_objs,
+                        (frame - 1) / fps, fps, u,
+                    )
+                    # 用当前解算的机位方向，但半径取“起始机位到当前目标”的长度比例修正
+                    cur_off = p2 - t2
+                    ref = base_now + tgt_off
+                    new_pos = ref + cur_off
+                    new_target = ref
                 else:
-                    solve_shot = base_shot
-                new_pos, new_target, _dist, _span, _fill, _sh = camera_orbit(
-                    solve_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u
-                )
-                if follow:
-                    # 通用运镜已经按当前演员位置解过；这里只需把相对基准的偏移挪到 actor 上
-                    new_pos = Vector((new_pos.x, new_pos.y, new_pos.z))
+                    new_pos, new_target, _dist, _span, _fill, _sh = camera_orbit(
+                        base_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u
+                    )
                 cam.location = new_pos
                 tgt.location = new_target
                 cam.keyframe_insert("location", frame=frame)
@@ -1023,6 +1028,9 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
         # 目标取景范围的 fill（不是头顶到脚底；MS/OTS 本来就会切脚）
         # 多人镜头按“主主体”（framing.lead 或第一个主体）算占幅；按组 bbox 算会把横向距离算进来而永远不达标。
         lead_id = shot.get("framing", {}).get("lead") or shot["subjects"][0]
+        # fill 是“主主体占画面高度的比例”，所以量的是 lead 的 bbox，而不是全组。
+        # 多人镜头相机距离会为组宽让步（否则边缘的人出画），此时 group fill 必然小于 0.7，
+        # 用 lead 口径才和 fill_target 可比。
         bbox0 = subject_bbox([lead_id], actors, bag_objs, blocking, shot["in"], fps)
         cx, cy, cz, span = size_span(shot["size"], bbox0)
         sc.frame_set(info["start_frame"])
@@ -1033,8 +1041,11 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
             "top": span_top,
             "bottom": span_bottom,
             "fill_actual": round(abs(span_top[1] - span_bottom[1]), 4),
+            "measured_on": lead_id,
         }
-        for tag, frame in (("start", info["start_frame"]), ("end", info["end_frame"])):
+        # 首/中/尾都采样：只查起点会漏掉“人走到画外”的镜头（镜尾出画但 QC 全绿）。
+        mid_frame = info["start_frame"] + (info["end_frame"] - info["start_frame"]) // 2
+        for tag, frame in (("start", info["start_frame"]), ("mid", mid_frame), ("end", info["end_frame"])):
             sc.frame_set(frame)
             bpy.context.view_layer.update()
             entry[tag] = {"frame": frame}

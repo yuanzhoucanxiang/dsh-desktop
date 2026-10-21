@@ -6,6 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isMultiScene, loadScenes } from './scenes.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const PACKAGE_ROOT = path.dirname(__dirname)
@@ -45,9 +46,20 @@ export function listProjects(root = projectsRoot()) {
     const dir = path.join(root, entry.name)
     const meta = readProjectMeta(dir)
     if (!meta || meta.fixture) continue
-    const files = ['set.json', 'blocking.json', 'shots.json']
-    const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)))
-    out.push({ ...meta, valid: missing.length === 0, missing })
+    // 单场景：根目录三个 JSON；多场景：scenes.json + 场景目录。
+    // 之前只查根目录，导致多场景项目在列表里永远 valid:false，UI 不可选。
+    let missing = []
+    let scenes = null
+    if (isMultiScene(dir)) {
+      try {
+        scenes = loadScenes(dir).map((s) => s.id)
+      } catch (err) {
+        missing = [`scenes: ${err.message}`]
+      }
+    } else {
+      missing = ['set.json', 'blocking.json', 'shots.json'].filter((f) => !fs.existsSync(path.join(dir, f)))
+    }
+    out.push({ ...meta, multiScene: scenes !== null, scenes, valid: missing.length === 0, missing })
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
 }
