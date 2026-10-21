@@ -3,7 +3,7 @@
  * 跑法：node plugin/previz/test/host.mjs
  */
 import assert from 'node:assert/strict'
-import { API, apply, cancelJob, listArtifacts, probeRuntime, safeResolveOut, state } from '../index.js'
+import { API, apply, cancelJob, listArtifacts, listProjects, probeRuntime, safeResolveOut, state } from '../index.js'
 
 let passed = 0
 let failed = 0
@@ -59,6 +59,19 @@ test('listArtifacts：返回数组，元素有 mode/kind/id/path', () => {
     assert.equal(a.mode, 'previz')
     assert.ok(a.id && a.path && a.kind)
   }
+})
+
+test('listProjects：至少一个可用项目，反例 fixture 不出现', () => {
+  const list = listProjects()
+  assert.ok(list.length >= 1)
+  assert.ok(list.some((p) => p.id === 'boutique' && p.valid))
+  assert.ok(!list.some((p) => p.id === 'bad-occlusion'), 'fixture 不应出现在可选项目里')
+})
+
+test('state：project/projects 一致', () => {
+  const s = state()
+  assert.ok(s.projects.some((p) => p.id === s.project.id))
+  assert.equal(s.project.path.endsWith(s.project.id), true)
 })
 
 test('cancelJob：没有任务时如实 no-job', () => {

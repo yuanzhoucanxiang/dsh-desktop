@@ -1,5 +1,5 @@
 import * as react from 'react'
-import { api, artifactUrl } from './api.js'
+import { api, artifactUrl, selectProject } from './api.js'
 import { refresh, setUi } from './store.js'
 import { useSnapshot, useUiState } from './usePreviz.js'
 
@@ -121,6 +121,8 @@ export function PrevizPanel({ compact = false } = {}) {
   const runtime = snap?.runtime || null
   const job = snap?.job || null
   const artifacts = snap?.artifacts || []
+  const projects = snap?.projects || []
+  const project = snap?.project || null
   const selected =
     artifacts.find((a) => a.path === ui.selected) ||
     artifacts.find((a) => a.kind === 'animatic') ||
@@ -151,11 +153,32 @@ export function PrevizPanel({ compact = false } = {}) {
   const cancel = () => act(() => api('cancel', {}), '已取消')
   const probe = () => act(() => api('probe'), '已重新探测')
   const openBlender = () => act(() => api('open-blender', {}), '已请求打开 Blender')
+  const switchProject = (e) => {
+    const id = e.target.value
+    if (!id || id === project?.id) return
+    void act(() => selectProject(id), `已切到 ${id}`)
+  }
+
+  const projectPicker = h(
+    'select',
+    {
+      value: project?.id || '',
+      onChange: switchProject,
+      disabled: busy || running,
+      title: running ? '有任务在跑，先取消再切项目' : '切换项目',
+      style: { ...S.btn(), paddingRight: 18 },
+      'data-previz-project': '',
+    },
+    projects.length
+      ? projects.map((p) => h('option', { key: p.id, value: p.id, disabled: !p.valid }, `${p.valid ? '' : '（缺文件）'}${p.id} · ${p.title}`))
+      : h('option', { value: project?.id || '' }, project?.title || 'boutique'),
+  )
 
   const header = h(
     'div',
     { style: S.header },
-    h('span', { style: S.title }, '预演 · 小店 S03'),
+    h('span', { style: S.title }, '预演'),
+    projectPicker,
     h('span', { style: S.pill(runtimeColor(runtime?.state)) }, runtimeText(runtime)),
     h('span', { style: S.pill(running ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)') }, jobText(job)),
     h('span', { style: { flex: 1 } }),
@@ -227,8 +250,7 @@ export function PrevizPanel({ compact = false } = {}) {
           '在新窗口打开原文件',
         )
       : null,
-    h('div', { style: { ...S.muted, marginTop: 'auto' } }, 'P0 demo · 2 人 3 镜 9 秒 · 产出在临时目录'),
-  )
+    h('div', { style: { ...S.muted, marginTop: 'auto' } }, 'P0 demo · 2 人 3 镜 9 秒 · 产出在临时目录'),  )
 
   const log = job?.logTail?.length
     ? h('pre', { style: S.log }, job.logTail.slice(-12).join('\n'))

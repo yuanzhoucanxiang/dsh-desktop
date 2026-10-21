@@ -18,9 +18,47 @@ import { readBody, trustedRequest, writeJson } from './lib/http.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const ENGINE = path.join(__dirname, 'engine')
-export const PROJECT = path.join(ENGINE, 'fixtures/boutique')
-export const OUT = path.join(os.tmpdir(), 'dsh-previz-runs', 'boutique')
+export const PROJECTS_ROOT = path.join(ENGINE, 'fixtures')
+export const PROJECT = path.join(PROJECTS_ROOT, 'boutique')
 export const API = '/api/previz'
+
+/** 当前选中的项目；未选时回落到 boutique。 */
+let currentProject = null
+
+function projectMeta(dir) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'))
+    return { id: String(meta.id || path.basename(dir)), title: String(meta.title || meta.id || path.basename(dir)), path: dir, fps: Number(meta.fps) || 24 }
+  } catch {
+    return null
+  }
+}
+
+export function listProjects() {
+  if (!fs.existsSync(PROJECTS_ROOT)) return []
+  const out = []
+  for (const entry of fs.readdirSync(PROJECTS_ROOT, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const dir = path.join(PROJECTS_ROOT, entry.name)
+    const meta = projectMeta(dir)
+    if (!meta || meta.fixture) continue
+    const missing = ['set.json', 'blocking.json', 'shots.json'].filter((f) => !fs.existsSync(path.join(dir, f)))
+    out.push({ ...meta, valid: missing.length === 0, missing })
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id))
+}
+
+export function activeProject() {
+  if (currentProject && fs.existsSync(path.join(currentProject, 'project.json'))) return currentProject
+  const first = listProjects().find((p) => p.valid)
+  return first ? first.path : PROJECT
+}
+
+export function outDirFor(dir) {
+  return path.join(os.tmpdir(), 'dsh-previz-runs', path.basename(dir))
+}
+
+export const OUT = outDirFor(PROJECT)
 
 export const name = 'previz'
 export const inject = ['webServer']
@@ -154,8 +192,8 @@ function appendLog(line) {
   else if (/QC OK/.test(text)) job.progress = 0.99
 }
 
-/** 启动一次 demo；同一时间只允许一个任务。 */
-export function startDemo() {
+/** 启动一次 demo；可选项目 id/路径；同一时间只允许一个任务。 */
+export function startDemo(ref) {
   const p = probeRuntime(true)
   if (p.state !== 'ready') {
     return { ok: false, error: 'runtime-down', detail: p.detail }
@@ -163,7 +201,16 @@ export function startDemo() {
   if (job && (job.state === 'running' || job.state === 'queued')) {
     return { ok: false, error: 'busy', detail: '已有任务在跑' }
   }
-  fs.mkdirSync(OUT, { recursive: true })
+  let projectDir = activeProject()
+  if (ref) {
+    const abs = path.resolve(String(ref))
+    const hit = fs.existsSync(path.join(abs, 'project.json')) ? abs : listProjects().find((x) => x.id === ref)
+    if (!hit) return { ok: false, error: 'project-not-found', detail: `找不到项目 ${ref}` }
+    projectDir = typeof hit === 'string' ? hit : hit.path
+  }
+  currentProject = projectDir
+  const outDir = outDirFor(projectDir)
+  fs.mkdirSync(outDir, { recursive: true })
   const id = `job-${Date.now()}-${++seq}`
   job = {
     id,
@@ -173,10 +220,11 @@ export function startDemo() {
     startedAt: new Date().toISOString(),
     finishedAt: null,
     error: null,
+    project: path.basename(projectDir),
     logTail: [],
   }
   const script = path.join(ENGINE, 'scripts/run-demo.mjs')
-  const args = [script, '--project', PROJECT, '--out', OUT]
+  const args = [script, '--project', projectDir, '--out', outDir]
   try {
     child = spawn(process.execPath, args, {
       cwd: ENGINE,
@@ -213,7 +261,7 @@ export function startDemo() {
       child = null
       return
     }
-    job.state = code === 0 && fs.existsSync(path.join(OUT, 'animatic.mp4')) ? 'done' : 'failed'
+    job.state = code === 0 && fs.existsSync(path.join(outDir, 'animatic.mp4')) ? 'done' : 'failed'
     job.exitCode = code
     job.finishedAt = new Date().toISOString()
     if (job.state === 'done') job.progress = 1
@@ -252,21 +300,23 @@ export function openBlender() {
   if (p.state !== 'ready' || !p._paths?.blender) {
     return { ok: false, error: 'runtime-down', detail: p.detail }
   }
-  const blend = path.join(OUT, 'boutique.blend')
+  const dir = activeProject()
+  const blend = path.join(outDirFor(dir), `${path.basename(dir)}.blend`)
   const args = fs.existsSync(blend) ? [blend] : []
   try {
     const gui = spawn(p._paths.blender, args, { detached: true, stdio: 'ignore', windowsHide: false })
     gui.unref()
-    return { ok: true, detail: fs.existsSync(blend) ? '已打开 boutique.blend' : '已打开 Blender' }
+    return { ok: true, detail: fs.existsSync(blend) ? `已打开 ${path.basename(blend)}` : '已打开 Blender' }
   } catch (err) {
     return { ok: false, error: 'spawn-failed', detail: String(err?.message || err) }
   }
 }
 
-export function listArtifacts() {
+export function listArtifacts(projectDir = activeProject()) {
+  const base = outDirFor(projectDir)
   const out = []
   const add = (rel, kind, title) => {
-    const abs = path.join(OUT, rel)
+    const abs = path.join(base, rel)
     if (!fs.existsSync(abs)) return
     const st = fs.statSync(abs)
     if (!st.isFile()) return
@@ -286,10 +336,11 @@ export function listArtifacts() {
   return out
 }
 
-export function safeResolveOut(rel) {
+export function safeResolveOut(rel, projectDir = activeProject()) {
   if (typeof rel !== 'string' || !rel) return null
-  const abs = path.resolve(OUT, rel)
-  const relPath = path.relative(OUT, abs)
+  const base = outDirFor(projectDir)
+  const abs = path.resolve(base, rel)
+  const relPath = path.relative(base, abs)
   if (!relPath || relPath.startsWith('..') || path.isAbsolute(relPath)) return null
   return abs
 }
@@ -345,13 +396,16 @@ function serveFile(req, res, rel) {
 
 export function state() {
   const p = probeRuntime(false)
+  const dir = activeProject()
+  const meta = projectMeta(dir) || { id: path.basename(dir), title: path.basename(dir), fps: 24 }
   return {
     ok: true,
     runtime: publicProbe(p),
-    project: { id: 'boutique', title: '小店', path: PROJECT },
-    out: OUT,
+    project: { ...meta, path: dir },
+    projects: listProjects(),
+    out: outDirFor(dir),
     job: publicJob(),
-    artifacts: listArtifacts(),
+    artifacts: listArtifacts(dir),
   }
 }
 
@@ -361,6 +415,7 @@ const ROUTE_METHODS = {
   demo: ['POST'],
   cancel: ['POST'],
   'open-blender': ['POST'],
+  project: ['POST'],
   artifact: ['GET'],
 }
 
@@ -394,10 +449,21 @@ async function handler(req, res) {
       writeJson(res, 415, { ok: false, error: 'json-required' })
       return
     }
+    if (route === 'project') {
+      try {
+        const body = raw ? JSON.parse(raw) : {}
+        const hit = listProjects().find((x) => x.id === body.id)
+        if (!hit) return writeJson(res, 404, { ok: false, error: 'project-not-found' })
+        currentProject = hit.path
+        return writeJson(res, 200, { ok: true, project: { ...hit } })
+      } catch {
+        return writeJson(res, 400, { ok: false, error: 'bad-json' })
+      }
+    }
   }
   if (route === 'state') return writeJson(res, 200, state())
   if (route === 'probe') return writeJson(res, 200, { ok: true, runtime: publicProbe(probeRuntime(true)) })
-  if (route === 'demo') return writeJson(res, 200, startDemo())
+  if (route === 'demo') return writeJson(res, 200, startDemo(url.searchParams.get('project') || undefined))
   if (route === 'cancel') return writeJson(res, 200, cancelJob())
   if (route === 'open-blender') return writeJson(res, 200, openBlender())
   writeJson(res, 404, { ok: false, error: 'unknown-route' })

@@ -25,7 +25,8 @@
   **审片交付**：`previz export` 出 `shots.csv` 和 `timeline.otio`（时间线可直接进剪辑/下游），
   接触表每格烧镜号/首中尾。**脚部**：脚掌独立建模并随腿摆反向保持水平，QC 同时查脚底高度与脚掌倾斜。
   **输入**：`previz import storyboard.csv` 可直接生成 `shots.json` 并跑完整 demo；缺省字段会列 assumption。
-  — 署名：deepseek-flash
+  **项目**：工作台「预演」面板顶部有项目下拉；CLI 用 `previz projects` / `project new` / `--project <id>`；
+  每个项目独立输出目录。— 署名：deepseek-flash
 
 - **又查出两件"用起来会懵"的事**（2026-10-19，**只记录，本轮不改代码**）：
   ① **按 `Esc` 能绕过"还有没保存的稿"这道拦截**：工作台在宽窗界面下，按 `Esc` 是直接关掉，

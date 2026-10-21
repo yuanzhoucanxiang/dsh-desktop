@@ -73,6 +73,9 @@ async function api(route, body) {
 function artifactUrl(rel) {
   return `${API}?route=artifact&path=${encodeURIComponent(String(rel || ""))}`;
 }
+function selectProject(id) {
+  return api("project", { id });
+}
 
 // plugin/previz/src/client/store.js
 var last = null;
@@ -384,6 +387,8 @@ function PrevizPanel({ compact = false } = {}) {
   const runtime = snap?.runtime || null;
   const job = snap?.job || null;
   const artifacts = snap?.artifacts || [];
+  const projects = snap?.projects || [];
+  const project = snap?.project || null;
   const selected = artifacts.find((a) => a.path === ui2.selected) || artifacts.find((a) => a.kind === "animatic") || artifacts.find((a) => a.kind === "image") || null;
   const running = job?.state === "running" || job?.state === "queued";
   async function act(fn, okText) {
@@ -408,10 +413,28 @@ function PrevizPanel({ compact = false } = {}) {
   const cancel = () => act(() => api("cancel", {}), "已取消");
   const probe = () => act(() => api("probe"), "已重新探测");
   const openBlender = () => act(() => api("open-blender", {}), "已请求打开 Blender");
+  const switchProject = (e) => {
+    const id = e.target.value;
+    if (!id || id === project?.id) return;
+    void act(() => selectProject(id), `已切到 ${id}`);
+  };
+  const projectPicker = h2(
+    "select",
+    {
+      value: project?.id || "",
+      onChange: switchProject,
+      disabled: busy || running,
+      title: running ? "有任务在跑，先取消再切项目" : "切换项目",
+      style: { ...S.btn(), paddingRight: 18 },
+      "data-previz-project": ""
+    },
+    projects.length ? projects.map((p) => h2("option", { key: p.id, value: p.id, disabled: !p.valid }, `${p.valid ? "" : "（缺文件）"}${p.id} · ${p.title}`)) : h2("option", { value: project?.id || "" }, project?.title || "boutique")
+  );
   const header = h2(
     "div",
     { style: S.header },
-    h2("span", { style: S.title }, "预演 · 小店 S03"),
+    h2("span", { style: S.title }, "预演"),
+    projectPicker,
     h2("span", { style: S.pill(runtimeColor(runtime?.state)) }, runtimeText(runtime)),
     h2("span", { style: S.pill(running ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)") }, jobText(job)),
     h2("span", { style: { flex: 1 } }),

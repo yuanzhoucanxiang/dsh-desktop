@@ -24,3 +24,8 @@ export async function api(route, body) {
 export function artifactUrl(rel) {
   return `${API}?route=artifact&path=${encodeURIComponent(String(rel || ''))}`
 }
+
+/** 切换当前项目（host 会把它写进 currentProject）。 */
+export function selectProject(id) {
+  return api('project', { id })
+}

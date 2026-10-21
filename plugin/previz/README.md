@@ -3,6 +3,7 @@
 把 `blender-previz` 的 P0 引擎包成工作台的一个外部工具型模式。**它只是兼容外壳**：
 引擎本身可直接用 `blender-previz/scripts/previz.mjs` 或 `lib/pipeline.mjs` 调用，不需要工作台。
 
+- **项目**：面板顶部可切项目（host `POST ?route=project`）；每个项目独立输出目录；`fixtures/bad-occlusion` 因 `fixture:true` 不列入。
 - **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
   也可先 `previz import storyboard.csv` 生成 `shots.json` 再跑。本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
 - **状态**：探测 Blender / ffmpeg（3s 有界、2s 缓存），接缝/瓷砖显示「Blender 未启动 / 渲染中 42%」；

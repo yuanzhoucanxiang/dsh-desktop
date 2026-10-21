@@ -16,8 +16,8 @@
 import path from 'node:path'
 import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
 import { importStoryboard } from '../lib/storyboard.mjs'
-
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps'])
+import { listProjects, resolveProjectRef, scaffoldProject } from '../lib/projects.mjs'
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -46,7 +46,10 @@ const fail = (msg, code = 1) => {
 const print = (obj) => {
   if (json) console.log(JSON.stringify(obj, null, 2))
 }
-const projectDir = path.resolve(arg('project', positional[0] || path.join(PACKAGE_ROOT, 'fixtures/boutique')))
+const projectArg = arg('project', positional[0] || '')
+const projectDir = projectArg
+  ? (resolveProjectRef(projectArg) || path.resolve(projectArg))
+  : path.join(PACKAGE_ROOT, 'fixtures/boutique')
 const outDir = path.resolve(arg('out', command === 'encode' || command === 'qc' ? positional[0] || 'demo-out' : positional[1] || 'demo-out'))
 const blender = arg('blender', undefined)
 const ffmpeg = arg('ffmpeg', undefined)
@@ -78,6 +81,8 @@ try {
   previz qc      <outDir>
   previz export  <outDir>
   previz import  <storyboard.csv> [--out <shots.json>] [--scene <id>] [--fps 24]
+  previz projects [--json]
+  previz project new <id> [--title <标题>] [--root <root>]
   previz burn-in <outDir> [--font <path>]
   previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force]
 
@@ -137,6 +142,31 @@ try {
     const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
+  }
+
+  if (command === 'projects') {
+    const list = listProjects()
+    if (json) print({ ok: true, projects: list })
+    else {
+      if (!list.length) console.log('（没有项目；用 previz project new <id> 建一个）')
+      for (const p of list) console.log(`${p.valid ? '✓' : '✗'} ${p.id}  ${p.title}  ${p.fps}fps  ${p.path}${p.valid ? '' : `  缺: ${p.missing.join(',')}`}`)
+    }
+    process.exit(0)
+  }
+
+  if (command === 'project') {
+    const sub = raw[0]
+    if (sub !== 'new') fail('用法：previz project new <id> [--title <标题>] [--root <root>]', 2)
+    const id = arg('project', positional[1] || '')
+    if (!id) fail('用法：previz project new <id> [--title <标题>] [--root <root>]', 2)
+    try {
+      const dest = scaffoldProject({ root: arg('root', undefined), id, title: arg('title', undefined) })
+      if (json) print({ ok: true, project: dest })
+      else console.log(`[previz] created ${dest}`)
+      process.exit(0)
+    } catch (err) {
+      fail(err.message)
+    }
   }
 
   if (command === 'import') {

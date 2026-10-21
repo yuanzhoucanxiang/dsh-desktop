@@ -49,6 +49,10 @@ app.whenReady().then(async () => {
       ok: true,
       runtime: { state: 'ready', detail: 'Blender 5.2 · ffmpeg 8.1', version: '5.2.0' },
       project: { id: 'boutique', title: '小店' },
+      projects: [
+        { id: 'boutique', title: '小店', valid: true },
+        { id: 'shop2', title: '第二家店', valid: true },
+      ],
       out: 'C:/temp/dsh-previz-runs/boutique',
       job: { id: 'job-ui', state: 'running', progress: 0.42, logTail: ['[previz] render S03-01'] },
       artifacts: [
@@ -183,8 +187,10 @@ app.whenReady().then(async () => {
     await waitFor(`document.querySelector('[data-previz-panel]')!==null`, 'overlay 里应有面板')
     await waitFor(`document.body.textContent.includes('Blender 就绪')`, '应显示后端就绪')
     await waitFor(`document.body.textContent.includes('渲染中 42%')`, '应显示任务进度')
-    assert.equal(await count('[data-previz-panel] img'), 1, '默认应预览平面图')
+    await waitFor(`document.querySelector('[data-previz-panel] img')!==null`, '默认应预览平面图')
     assert.ok((await text('[data-previz-panel]')).includes('最近产物'), '应有产物列表')
+    assert.equal(await evaluate(`document.querySelector('[data-previz-project]')?.value`), 'boutique', '项目下拉应显示当前项目')
+    assert.equal(await count('[data-previz-project] option'), 2, '应有 2 个项目选项')
 
     // 工作台出现：让出入口、注册完整模式描述；点「进入」时模式自己要有全屏 overlay
     await evaluate(`(() => {
