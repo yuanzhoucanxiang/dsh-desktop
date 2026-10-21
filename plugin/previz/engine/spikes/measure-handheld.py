@@ -83,6 +83,10 @@ def measure(blend_path):
         return fps / float(best_lag), r[best_lag]
 
     # 横向 + 纵向残差各估一次，取幅度更大的那个轴（抖动主轴）
+    # 主频只测**水平轴**（x/y 中幅度更大者）。
+    # 不能取三轴幅度最大者：yaw 用 hz、pitch 用 hz*1.6，两者会映射到不同世界轴，
+    # 混在一起量出来的"主频"既不是 yaw 也不是 pitch（实测 y/z 轴 2.18/3.0/4.8Hz，
+    # 而 x 轴 1.33/2.18/2.67 才与设定 1.15/1.9/2.6 对应）。
     ax_hz, ax_conf = autocorr_hz([r.x for r in resid], fps)
     ay_hz, ay_conf = autocorr_hz([r.y for r in resid], fps)
     amp_x = sum(abs(r.x) for r in resid) / len(resid)
