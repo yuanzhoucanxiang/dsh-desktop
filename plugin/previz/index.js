@@ -273,6 +273,7 @@ export function listArtifacts() {
     out.push({ mode: 'previz', kind, id: rel, path: rel.replace(/\\/g, '/'), title, at: st.mtime.toISOString() })
   }
   add('animatic.mp4', 'animatic', 'animatic.mp4')
+  add('animatic_burnin.mp4', 'animatic', 'animatic_burnin.mp4（烧字）')
   add('plan.png', 'image', '俯视平面图')
   add('contact_sheet.png', 'image', '3×3 接触表')
   add('qc_report.json', 'report', 'QC 报告')

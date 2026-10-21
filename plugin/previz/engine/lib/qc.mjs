@@ -25,21 +25,24 @@ export function runQc({ outDir }) {
     push(errors, 'facts.shots', '没有镜头')
     return { ok: false, errors, warnings, stats: null }
   }
+  const scene = facts.scene || 'S03'
 
   let totalFrames = 0
+  let occlusionChecks = 0
+  let occlusionBlocked = 0
   for (const shot of facts.shots) {
     const sp = `shots.${shot.id}`
     if (!(shot.frames > 0)) push(errors, `${sp}.frames`, '帧数必须 > 0')
     totalFrames += shot.frames || 0
 
-    const dir = path.join(outDir, 'S03', shot.id, 'review')
+    const dir = path.join(outDir, scene, shot.id, 'review')
     if (!fs.existsSync(dir)) {
       push(errors, `${sp}.review`, `缺少渲染目录 ${dir}`)
     } else {
       const pngs = fs.readdirSync(dir).filter((f) => /^f_\d+\.png$/.test(f))
       if (pngs.length !== shot.frames) push(errors, `${sp}.review`, `渲染帧数 ${pngs.length} ≠ facts.frames ${shot.frames}`)
       for (const name of ['first.png', 'mid.png', 'last.png']) {
-        if (!fs.existsSync(path.join(outDir, 'S03', shot.id, name))) {
+        if (!fs.existsSync(path.join(outDir, scene, shot.id, name))) {
           push(errors, `${sp}.${name}`, `缺少 ${name}`)
         }
       }
@@ -82,6 +85,33 @@ export function runQc({ outDir }) {
         push(errors, `${sp}.${id}.floor_z`, `脚底不在地面（${v.floor_z}）`)
       }
     }
+
+    // P1：越轴（相机在轴线哪一侧；OTS 前景挡后景不算越轴）
+    if (shot.axis && shot.axis.ok === false) {
+      push(errors, `${sp}.axis`, `相机在轴线的 ${shot.axis.start_side}/${shot.axis.end_side}，期望 ${shot.axis.expected}`)
+    }
+
+    // P1：屏幕方向（只检查显式声明的镜头）
+    if (shot.screen && shot.screen.direction) {
+      if (shot.screen.ok === false) {
+        push(errors, `${sp}.screen`, `屏幕方向 ${shot.screen.direction} 不成立（dx=${shot.screen.dx}, dz=${shot.screen.dz}）`)
+      } else if (shot.screen.ok !== true) {
+        warnings.push({ path: `${sp}.screen`, message: '缺少可判定的屏幕方向数据' })
+      }
+    }
+
+    // P1：遮挡。自身身体/自身道具不算；OTS 的前景演员挡后景标 allowed=true。
+    if (Array.isArray(shot.occlusion)) {
+      for (const o of shot.occlusion) {
+        occlusionChecks++
+        if (o.visible === false && !o.allowed) {
+          occlusionBlocked++
+          push(errors, `${sp}.occlusion`, `主体 ${o.subject} 在帧 ${o.frame} 被 ${o.blocker}（${o.blocker_kind}）挡住`)
+        }
+      }
+    } else {
+      warnings.push({ path: `${sp}.occlusion`, message: '缺少遮挡 facts（重跑构建）' })
+    }
   }
 
   // 总时长/帧数（fixture 是 9s@24fps=216）
@@ -91,6 +121,8 @@ export function runQc({ outDir }) {
   const stats = {
     shots: facts.shots.length,
     frames: totalFrames,
+    occlusion_checks: occlusionChecks,
+    occlusion_blocked: occlusionBlocked,
     animatic: fs.existsSync(animatic) ? animatic : null,
     plan: fs.existsSync(path.join(outDir, 'plan.png')) ? path.join(outDir, 'plan.png') : null,
   }

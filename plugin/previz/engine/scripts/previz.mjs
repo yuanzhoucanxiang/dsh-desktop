@@ -14,9 +14,9 @@
  * 通用参数：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
  */
 import path from 'node:path'
-import { PACKAGE_ROOT, encodeOutputs, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
+import { PACKAGE_ROOT, burnIn, encodeOutputs, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
 
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -75,9 +75,10 @@ try {
   previz plan    [project] --out <dir>
   previz encode  <outDir> [--ffmpeg <path>]
   previz qc      <outDir>
-  previz demo    [project] --out <dir> [--skip-render] [--skip-encode]
+  previz burn-in <outDir> [--font <path>]
+  previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in]
 
-通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
+通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --font <path> --json --quiet
 默认 project=fixtures/boutique  out=demo-out`)
     process.exit(0)
   }
@@ -122,6 +123,12 @@ try {
     process.exit(0)
   }
 
+  if (command === 'burn-in') {
+    const result = burnIn(outDir, { ffmpeg, font: arg('font', undefined), log })
+    if (json) print({ ok: true, outDir, ...result })
+    process.exit(0)
+  }
+
   if (command === 'qc') {
     const qc = runQcReport(outDir)
     if (json) print(qc)
@@ -144,6 +151,8 @@ try {
       ffmpeg,
       skipRender: has('skip-render'),
       skipEncode: has('skip-encode'),
+      burnIn: has('burn-in'),
+      font: arg('font', undefined),
       log,
     })
     if (json) print(result)

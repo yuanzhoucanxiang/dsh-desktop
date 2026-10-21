@@ -190,6 +190,73 @@ export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = fa
   return { encoded: true, animatic, contactSheet: path.join(resolvedOut, 'contact_sheet.png') }
 }
 
+export function findFont(explicit) {
+  const candidates = [
+    explicit,
+    process.env.PREVIZ_FONT,
+    'C:/Windows/Fonts/segoeui.ttf',
+    'C:/Windows/Fonts/arial.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+  ]
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c
+  }
+  return null
+}
+
+export function timecode(seconds, fps) {
+  const total = Math.max(0, Math.round(Number(seconds) * Number(fps)))
+  const f = total % fps
+  const s = Math.floor(total / fps) % 60
+  const m = Math.floor(total / (fps * 60)) % 60
+  const h = Math.floor(total / (fps * 3600))
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(h)}.${pad(m)}.${pad(s)}.${pad(f)}`
+}
+
+/** 烧字：每镜 mp4 上烧镜号/起始时间码/起始帧，再拼成 animatic_burnin.mp4。 */
+export function burnIn(outDir, { ffmpeg, font, log = console.log } = {}) {
+  const resolvedOut = path.resolve(outDir || 'demo-out')
+  const exe = findFfmpeg(ffmpeg)
+  if (!exe) throw new Error('找不到 ffmpeg（烧字需要）')
+  const fontPath = findFont(font)
+  if (!fontPath) throw new Error('找不到字体（设置 PREVIZ_FONT 或安装 Segoe UI / Arial / DejaVu）')
+  const factsPath = path.join(resolvedOut, 'facts.json')
+  if (!fs.existsSync(factsPath)) throw new Error(`缺少 ${factsPath}；先跑 build/render/encode`)
+  const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'))
+  const scene = facts.scene || 'S03'
+  const fps = facts.fps || 24
+  const dir = path.join(resolvedOut, 'burnin')
+  fs.mkdirSync(dir, { recursive: true })
+  const files = []
+  const escFont = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+  for (const shot of facts.shots) {
+    const mp4 = path.join(resolvedOut, scene, shot.id, `${shot.id}.mp4`)
+    if (!fs.existsSync(mp4)) throw new Error(`缺少 ${mp4}；先跑 encode`)
+    const start = shot.start?.frame ?? Math.round(Number(shot.in) * fps) + 1
+    const label = `${shot.id}  TC ${timecode(shot.in, fps)}  F${String(start).padStart(4, '0')}`
+    const burned = path.join(dir, `${shot.id}.mp4`)
+    const vf = [
+      `drawtext=fontfile='${escFont}':text='${label}':x=16:y=16:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.55`,
+      `drawtext=fontfile='${escFont}':text='%{pts\\:hms}':x=16:y=h-36:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.45`,
+      `drawtext=fontfile='${escFont}':text='F %{eif\\:n+${start}\\:d}':x=w-tw-16:y=h-36:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.45`,
+    ].join(',')
+    runCommand(exe, [
+      '-y', '-i', mp4, '-vf', vf,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-an', burned,
+    ])
+    files.push(burned)
+    log(`[previz] burnin ${path.relative(process.cwd(), burned)}`)
+  }
+  const list = path.join(dir, 'concat.txt')
+  fs.writeFileSync(list, files.map((f) => `file '${f.replace(/\\/g, '/')}'`).join('\n') + '\n', 'utf8')
+  const out = path.join(resolvedOut, 'animatic_burnin.mp4')
+  runCommand(exe, ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', out])
+  log(`[previz] burnin animatic -> ${path.relative(process.cwd(), out)}`)
+  return { burned: true, animatic: out, font: fontPath }
+}
+
 /** 跑 QC 并写 qc_report.json；返回 runQc 的结果。 */
 export function runQcReport(outDir) {
   const resolvedOut = path.resolve(outDir || 'demo-out')
@@ -202,7 +269,7 @@ export function runQcReport(outDir) {
  * 一条命令：校验 → Blender 构建/渲染/平面图 → 编码 → QC。
  * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
  */
-export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, log = console.log } = {}) {
+export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, log = console.log } = {}) {
   const resolvedProject = path.resolve(projectDir)
   const resolvedOut = path.resolve(outDir)
   const validation = validateAll(resolvedProject)
@@ -213,9 +280,12 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   if (!skipRender) {
     runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', blender, log })
   }
-  if (!skipEncode) encodeOutputs(resolvedOut, { ffmpeg, log })
+  let encoded = null
+  if (!skipEncode) encoded = encodeOutputs(resolvedOut, { ffmpeg, log })
+  let burned = null
+  if (doBurnIn) burned = burnIn(resolvedOut, { ffmpeg, font, log })
   const qc = runQcReport(resolvedOut)
-  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, qc }
+  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, encoded, burnIn: burned, qc }
 }
 
 export { validateAll, runQc }

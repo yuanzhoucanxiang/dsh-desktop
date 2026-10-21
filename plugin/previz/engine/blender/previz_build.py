@@ -685,9 +685,91 @@ def ndc(sc, cam, p):
     return [round(co.x, 4), round(co.y, 4), round(co.z, 4)]
 
 
+# ---------------------------------------------------------------- P1 checks
+
+SCREEN_DIRECTIONS = ("left_to_right", "right_to_left", "toward_camera", "away_from_camera", "hold")
+
+
+def screen_ok(direction, dx, dz):
+    if direction == "left_to_right":
+        return dx > 0.03
+    if direction == "right_to_left":
+        return dx < -0.03
+    if direction == "toward_camera":
+        return dz < -0.03
+    if direction == "away_from_camera":
+        return dz > 0.03
+    if direction == "hold":
+        return abs(dx) <= 0.02 and abs(dz) <= 0.02
+    return None
+
+
+def axis_side(point, line):
+    """返回有向轴线的右侧/左侧（p0→p1 的右手边为 right）。"""
+    (x0, y0), (x1, y1) = line
+    dx, dy = x1 - x0, y1 - y0
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+        return "on"
+    cross = dx * (point.y - y0) - dy * (point.x - x0)
+    if cross < -1e-6:
+        return "right"
+    if cross > 1e-6:
+        return "left"
+    return "on"
+
+
+def object_owner(name, actors):
+    for aid in actors:
+        if name == f"ACT_{aid}" or name.startswith(f"{aid}_"):
+            return "actor", aid
+    if name.startswith("PROP_"):
+        return "prop", None
+    if name.startswith("SET_"):
+        return "set", None
+    return "other", None
+
+
+def subject_aim(sid, actors, bag_objs):
+    if sid in actors:
+        return actors[sid][1]["head"].matrix_world.translation.copy()
+    ob = bag_objs[sid]
+    corners = [ob.matrix_world @ Vector(c) for c in ob.bound_box]
+    return sum(corners, Vector((0, 0, 0))) / 8
+
+
+def occlusion_at(sc, cam, sid, actors, bag_objs, allowed_actor=False):
+    """相机到主体头/包中心的第一命中；自己的身体不算外部遮挡。"""
+    deps = bpy.context.evaluated_depsgraph_get()
+    origin = cam.evaluated_get(deps).matrix_world.translation.copy()
+    target = subject_aim(sid, actors, bag_objs)
+    delta = target - origin
+    dist = delta.length
+    if dist < 0.05:
+        return {"visible": True, "blocker": None, "blocker_kind": None, "blocker_actor": None, "allowed": False}
+    hit, loc, _normal, _index, ob, _matrix = sc.ray_cast(
+        deps, origin, delta.normalized(), distance=max(dist - 0.02, 0.01)
+    )
+    if not hit or ob is None:
+        return {"visible": True, "blocker": None, "blocker_kind": None, "blocker_actor": None, "allowed": False}
+    kind, owner = object_owner(ob.name, actors)
+    if owner == sid:
+        return {"visible": True, "blocker": None, "blocker_kind": kind, "blocker_actor": owner, "allowed": False}
+    if kind == "prop" and ob.name == f"PROP_{sid}":
+        return {"visible": True, "blocker": None, "blocker_kind": kind, "blocker_actor": None, "allowed": False}
+    allowed = bool(allowed_actor and kind == "actor" and owner and owner != sid)
+    return {
+        "visible": False,
+        "blocker": ob.name,
+        "blocker_kind": kind,
+        "blocker_actor": owner,
+        "allowed": allowed,
+        "distance": round((loc - origin).length, 3),
+    }
+
+
 def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
     sc = bpy.context.scene
-    facts = {"scene": shots["scene"], "fps": fps, "shots": []}
+    facts = {"scene": shots["scene"], "fps": fps, "axis": shots.get("axis"), "shots": []}
     for shot in shots["shots"]:
         cam, tgt, info = cams[shot["id"]]
         sc.camera = cam
@@ -749,6 +831,46 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
         elif sid0 in bag_objs:
             d = entry["start"][sid0]
             entry["head_to_feet_fill"] = round(abs(d["top"][1] - d["bottom"][1]), 4)
+
+        # P1：屏幕方向（只检查显式声明的镜头；不替人做艺术判断）
+        lead = shot.get("framing", {}).get("lead") or sid0
+        a = entry["start"].get(lead, {})
+        b = entry["end"].get(lead, {})
+        pa = a.get("head") or a.get("center")
+        pb = b.get("head") or b.get("center")
+        direction = shot.get("screen_direction")
+        if pa and pb:
+            dx = pb[0] - pa[0]
+            dz = pb[2] - pa[2]
+            entry["screen"] = {"direction": direction, "dx": round(dx, 4), "dz": round(dz, 4), "ok": screen_ok(direction, dx, dz)}
+
+        # P1：越轴（相机在轴线的哪一侧）；INSERT 不参与演员轴线检查
+        axis_cfg = shots.get("axis") or {}
+        line = axis_cfg.get("line")
+        if line and all(s in actors for s in shot["subjects"]):
+            deps = bpy.context.evaluated_depsgraph_get()
+            sc.frame_set(info["start_frame"])
+            bpy.context.view_layer.update()
+            start_side = axis_side(cam.evaluated_get(deps).matrix_world.translation, line)
+            sc.frame_set(info["end_frame"])
+            bpy.context.view_layer.update()
+            end_side = axis_side(cam.evaluated_get(deps).matrix_world.translation, line)
+            expected = axis_cfg.get("side")
+            ok = expected in (None, start_side) and expected in (None, end_side)
+            entry["axis"] = {"expected": expected, "start_side": start_side, "end_side": end_side, "ok": ok}
+
+        # P1：遮挡。OTS 里前景演员挡后景是允许的（allowed=true）；SET/PROP 遮挡一律算问题。
+        entry["occlusion"] = []
+        for tag, frame in (("start", info["start_frame"]), ("mid", info["start_frame"] + (info["end_frame"] - info["start_frame"]) // 2), ("end", info["end_frame"])):
+            sc.frame_set(frame)
+            bpy.context.view_layer.update()
+            for sid in shot["subjects"]:
+                entry["occlusion"].append({
+                    "subject": sid,
+                    "frame": frame,
+                    "tag": tag,
+                    **occlusion_at(sc, cam, sid, actors, bag_objs, allowed_actor=shot["size"] == "OTS"),
+                })
         facts["shots"].append(entry)
     return facts
 

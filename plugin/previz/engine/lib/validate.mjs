@@ -9,6 +9,8 @@ import path from 'node:path'
 
 export const ROLES = new Set(['BODY', 'PROP', 'WOOD', 'DARK', 'WALL', 'RELIEF', 'FLOOR', 'EXTRA', 'SCRN'])
 export const SHOT_SIZES = new Set(['ELS', 'LS', 'FS', 'MLS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'TWO', 'INSERT'])
+export const SCREEN_DIRECTIONS = new Set(['left_to_right', 'right_to_left', 'toward_camera', 'away_from_camera', 'hold'])
+export const AXIS_SIDES = new Set(['left', 'right'])
 export const MOVES = new Set([
   'static', 'pan', 'tilt', 'dolly_in', 'dolly_out', 'truck', 'pedestal', 'crane', 'orbit', 'handheld', 'whip_pan', 'zoom',
 ])
@@ -230,6 +232,21 @@ export function validateShots(shots, { blocking, set, project } = {}) {
   }
   const ids = new Set()
   let total = 0
+  if (shots.axis !== undefined) {
+    if (!isObj(shots.axis)) err(e, 'shots.axis', '必须是对象')
+    else {
+      const line = shots.axis.line
+      if (!Array.isArray(line) || line.length !== 2) err(e, 'shots.axis.line', '必须是两个点 [[x,y],[x,y]]')
+      else {
+        checkPos(e, 'shots.axis.line[0]', line[0])
+        checkPos(e, 'shots.axis.line[1]', line[1])
+      }
+      if (shots.axis.side !== undefined && !AXIS_SIDES.has(shots.axis.side)) err(e, 'shots.axis.side', '必须是 left 或 right')
+      if (shots.axis.screen_direction !== undefined && !SCREEN_DIRECTIONS.has(shots.axis.screen_direction)) {
+        err(e, 'shots.axis.screen_direction', `未知屏幕方向: ${shots.axis.screen_direction}`)
+      }
+    }
+  }
   shots.shots.forEach((s, i) => {
     const p = `shots.shots[${i}]`
     if (!checkObj(e, p, s)) return
@@ -262,6 +279,9 @@ export function validateShots(shots, { blocking, set, project } = {}) {
     }
     if (s.transition !== undefined && !['cut', 'dissolve', 'fade', 'fade_in', 'fade_out'].includes(s.transition)) {
       err(e, `${p}.transition`, `未知转场: ${s.transition}`)
+    }
+    if (s.screen_direction !== undefined && !SCREEN_DIRECTIONS.has(s.screen_direction)) {
+      err(e, `${p}.screen_direction`, `未知屏幕方向: ${s.screen_direction}`)
     }
     if (s.beat !== undefined) checkStr(e, `${p}.beat`, s.beat)
   })
