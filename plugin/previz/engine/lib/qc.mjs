@@ -48,7 +48,7 @@ export function runQc({ outDir }) {
       }
     }
 
-    // P1：脚部接触（走路的骨盆下沉补偿后，最低脚应贴地）
+    // P1：脚部接触 + 脚掌俯仰（heel-to-toe 允许 ±25°，但不能翻到不物理）
     if (Array.isArray(shot.feet)) {
       for (const f of shot.feet) {
         if (!Number.isFinite(f.min_z)) {
@@ -56,8 +56,8 @@ export function runQc({ outDir }) {
         } else if (f.min_z < -0.02 || f.min_z > 0.03) {
           push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 最低脚 z=${f.min_z}，不在 [-0.02, 0.03]`)
         }
-        if (Number.isFinite(f.tilt_deg) && f.tilt_deg > 3) {
-          push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 脚掌倾斜 ${f.tilt_deg}° > 3°`)
+        if (Number.isFinite(f.pitch_deg) && Math.abs(f.pitch_deg) > 25) {
+          push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 脚掌俯仰 ${f.pitch_deg}°，超出 ±25°`)
         }
       }
     } else {

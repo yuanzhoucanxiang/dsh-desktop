@@ -371,6 +371,7 @@ def animate_actors(blocking, actors, fps, total_frames):
             root.rotation_euler = (0, 0, math.radians(-facing))
             pose = actor_pose_at(blocking, actor_id, t)
             swing = 0.0
+            roll = 0.0
             if pose in ("walk", "run"):
                 speed = 1.0
                 m = move_of(blocking, actor_id)
@@ -378,6 +379,8 @@ def animate_actors(blocking, actors, fps, total_frames):
                     speed = m.get("speed", 1.0)
                 phase = t * 2 * math.pi * (1.6 if pose == "walk" else 3.0) * max(0.6, speed)
                 swing = math.sin(phase) * math.radians(30 if pose == "walk" else 45)
+                # heel-to-toe：腿在前（sin>0）脚跟先着地、脚尖上翘；腿在后脚尖离地、脚尖下压。
+                roll = math.sin(phase) * math.radians(12 if pose == "walk" else 18)
             # 先按地面放骨盆；摆腿后按实测最低脚把骨盆抬起，做简易 foot lock。
             root.location = (x, y, 0)
             for name, ob in parts.items():
@@ -385,9 +388,9 @@ def animate_actors(blocking, actors, fps, total_frames):
             if pose in ("walk", "run"):
                 parts["leg_l"].rotation_euler.x = swing
                 parts["leg_r"].rotation_euler.x = -swing
-                # 脚掌反向旋转，保持脚底水平；腿摆动时脚不会跟着“翻”。
-                parts["foot_l"].rotation_euler.x = -swing
-                parts["foot_r"].rotation_euler.x = swing
+                # 脚掌抵消腿摆（保持脚底基准），再叠加 heel-to-toe 俯仰。
+                parts["foot_l"].rotation_euler.x = -swing + roll
+                parts["foot_r"].rotation_euler.x = swing - roll
                 parts["arm_l"].rotation_euler.x = -swing * 0.55
                 parts["arm_r"].rotation_euler.x = swing * 0.55
             elif pose == "reach_r":
@@ -914,19 +917,21 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
                     continue
                 _root, parts, _s = actors[sid]
                 zs = []
-                tilts = []
+                pitches = []
                 for leg in ("leg_l", "leg_r", "foot_l", "foot_r"):
                     ob = parts[leg].evaluated_get(deps)
                     zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
                 for foot in ("foot_l", "foot_r"):
                     ob = parts[foot].evaluated_get(deps)
-                    tilts.append(abs(math.degrees(ob.matrix_world.to_euler().x)))
+                    # 脚掌朝向的仰角：+Y 是脚尖方向；正值=脚尖上翘。
+                    toe = ob.matrix_world.to_3x3() @ Vector((0, 1, 0))
+                    pitches.append(math.degrees(math.atan2(toe.z, math.hypot(toe.x, toe.y))))
                 entry["feet"].append({
                     "subject": sid,
                     "frame": frame,
                     "tag": tag,
                     "min_z": round(min(zs), 4),
-                    "tilt_deg": round(max(tilts), 2),
+                    "pitch_deg": round(max(pitches, key=abs), 2),
                 })
         facts["shots"].append(entry)
     return facts
