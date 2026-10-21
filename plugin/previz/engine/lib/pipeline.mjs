@@ -269,6 +269,76 @@ export function runBlender({ projectDir, outDir, mode = 'all', only = null, blen
   return { ok: true, projectDir: resolvedProject, outDir: resolvedOut, mode, only: only || [], stdout: r.stdout, stderr: r.stderr }
 }
 
+/**
+ * 把 Blender 渲出的亚帧（`<review>/_sub/s_<frame>_<k>.png`）按帧号平均成最终帧。
+ * 这是**真·快门积分**：对曝光窗口内的运动做平均，而不是混合相邻整帧（那会重影）。
+ * 不在 Blender 里操作 image.pixels —— 实测会 EXCEPTION_ACCESS_VIOLATION。
+ */
+export function compositeShutter(outDir, { ffmpeg, log = console.log } = {}) {
+  const exe = findFfmpeg(ffmpeg)
+  const factsPath = path.join(outDir, 'facts.json')
+  if (!fs.existsSync(factsPath)) return { composite: 0, reason: 'no-facts' }
+  const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'))
+  const scene = facts.scene || 'S01'
+  let count = 0
+  for (const shot of facts.shots) {
+    const review = path.join(outDir, scene, shot.id, 'review')
+    const sub = path.join(review, '_sub')
+    if (!fs.existsSync(sub)) continue
+    if (!exe) throw new Error('找不到 ffmpeg：亚帧合成需要它（设置 PREVIZ_FFMPEG）')
+    const files = fs.readdirSync(sub).filter((f) => /^s_\d+_\d+\.png$/.test(f))
+    const byFrame = new Map()
+    for (const f of files) {
+      const m = /^s_(\d+)_(\d+)\.png$/.exec(f)
+      const frame = Number(m[1])
+      if (!byFrame.has(frame)) byFrame.set(frame, [])
+      byFrame.get(frame).push(f)
+    }
+    for (const [frame, list] of [...byFrame.entries()].sort((a, b) => a[0] - b[0])) {
+      list.sort()
+      if (list.length < 2) {
+        fs.copyFileSync(path.join(sub, list[0]), path.join(review, `f_${String(frame).padStart(4, '0')}.png`))
+      } else if (list.length === 2) {
+        runCommand(exe, [
+          '-y', '-v', 'error',
+          '-i', path.join(sub, list[0]),
+          '-i', path.join(sub, list[1]),
+          '-filter_complex', '[0:v][1:v]blend=all_mode=average',
+          '-frames:v', '1',
+          path.join(review, `f_${String(frame).padStart(4, '0')}.png`),
+        ])
+      } else {
+        // 多张：逐级两两平均（简单可靠，避免长 filter 链）
+        let acc = path.join(sub, list[0])
+        for (let i = 1; i < list.length; i++) {
+          const out = i === list.length - 1 ? path.join(review, `f_${String(frame).padStart(4, '0')}.png`) : path.join(sub, `_acc_${frame}_${i}.png`)
+          runCommand(exe, ['-y', '-v', 'error', '-i', acc, '-i', path.join(sub, list[i]), '-filter_complex', '[0:v][1:v]blend=all_mode=average', '-frames:v', '1', out])
+          if (acc.includes('_acc_')) fs.unlinkSync(acc)
+          acc = out
+        }
+      }
+      count++
+    }
+    fs.rmSync(sub, { recursive: true, force: true })
+  }
+  // 亚帧模式下 `f_*.png` 是合成后才出现的，builder 里那次 first/mid/last 复制会落空，
+  // 所以在合成后再补一次静帧（否则 QC 会报缺 first/mid/last）。
+  for (const shot of facts.shots) {
+    const dir = path.join(outDir, scene, shot.id)
+    const review = path.join(dir, 'review')
+    if (!fs.existsSync(review)) continue
+    const pngs = fs.readdirSync(review).filter((f) => /^f_\d+\.png$/.test(f)).sort()
+    if (!pngs.length) continue
+    const mid = pngs[Math.floor(pngs.length / 2)]
+    for (const [src, dst] of [[pngs[0], 'first.png'], [mid, 'mid.png'], [pngs[pngs.length - 1], 'last.png']]) {
+      const target = path.join(dir, dst)
+      if (!fs.existsSync(target)) fs.copyFileSync(path.join(review, src), target)
+    }
+  }
+  if (count) log(`[previz] shutter composite: ${count} frames（亚帧平均）`)
+  return { composite: count }
+}
+
 /** PNG 序列 → 每镜 mp4 → animatic → 3×3 接触表。 */
 /**
  * 运动模糊：Blender 的 Workbench 没有 motion blur，EEVEE 在 `-b` 单帧渲染下实测也不生效
@@ -516,6 +586,9 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
       rendered = dirty.length ? dirty : null
     }
     runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', only: rendered, blender, log })
+    // 若项目开了快门亚帧采样（project.defaults.shutter_samples > 1），
+    // Blender 只会吐出 `_sub/s_<frame>_<k>.png`，这里按帧号平均成最终帧。
+    compositeShutter(resolvedOut, { ffmpeg, log })
   }
   let encoded = null
   if (!skipEncode) encoded = encodeOutputs(resolvedOut, { ffmpeg, log, blurMode, blurFrames })

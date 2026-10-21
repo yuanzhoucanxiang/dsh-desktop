@@ -1072,7 +1072,7 @@ def set_render(project, res):
     sc.display.render_aa = "8"
 
 
-def render_shot(shot, cam, info, out_dir):
+def render_shot(shot, cam, info, out_dir, shutter_samples=1, shutter_angle=0.5):
     sc = bpy.context.scene
     sc.camera = cam
     sc.frame_start = info["start_frame"]
@@ -1080,7 +1080,25 @@ def render_shot(shot, cam, info, out_dir):
     ensure_dir(out_dir)
     sc.render.filepath = os.path.join(out_dir, "f_")
     t = time.time()
-    bpy.ops.render.render(animation=True)
+    samples = max(1, int(shutter_samples or 1))
+    if samples > 1:
+        # 快门窗口：默认 0.5 帧（180°）。在 [t, t+angle) 内均匀取 samples 个亚帧，各渲一张；
+        # 平均由 Node 侧用 ffmpeg 做（不在 Blender 里碰 pixels：实测会 EXCEPTION_ACCESS_VIOLATION）。
+        angle = max(0.05, min(1.0, float(shutter_angle or 0.5)))
+        tmp = os.path.join(out_dir, "_sub")
+        ensure_dir(tmp)
+        for frame in range(info["start_frame"], info["end_frame"] + 1):
+            for k in range(samples):
+                sub = (k / samples) * angle
+                sc.frame_set(frame, subframe=sub)
+                bpy.context.view_layer.update()
+                # 文件名必须带帧号：之前只带 k，每帧互相覆盖，合成出来的是最后几帧
+                sc.render.filepath = os.path.join(tmp, "s_%04d_%02d.png" % (frame, k))
+                bpy.ops.render.render(write_still=True)
+        sc.render.filepath = os.path.join(out_dir, "f_")
+        log(f"shutter: {info['end_frame'] - info['start_frame'] + 1} frames x {samples} subsamples -> {tmp}（待外部合成）")
+    else:
+        bpy.ops.render.render(animation=True)
     frames = [f for f in os.listdir(out_dir) if f.startswith("f_") and f.endswith(".png")]
     frames.sort()
     if frames:
@@ -1088,7 +1106,7 @@ def render_shot(shot, cam, info, out_dir):
         shutil.copyfile(os.path.join(out_dir, frames[0]), os.path.join(os.path.dirname(out_dir), "first.png"))
         shutil.copyfile(os.path.join(out_dir, mid), os.path.join(os.path.dirname(out_dir), "mid.png"))
         shutil.copyfile(os.path.join(out_dir, frames[-1]), os.path.join(os.path.dirname(out_dir), "last.png"))
-    log(f"render {shot['id']}: {len(frames)} frames in {time.time() - t:.1f}s -> {out_dir}")
+    log(f"render {shot['id']}: {len(frames)} frames in {time.time() - t:.1f}s (samples={samples}) -> {out_dir}")
 
 
 def render_plan(project, shots, cams, out_dir, plan_res):
@@ -1507,7 +1525,9 @@ def main():
     if mode in ("all", "render"):
         for shot in target_shots:
             cam, tgt, info = cams[shot["id"]]
-            render_shot(shot, cam, info, os.path.join(out_dir, shots["scene"], shot["id"], "review"))
+            render_shot(shot, cam, info, os.path.join(out_dir, shots["scene"], shot["id"], "review"),
+                        shutter_samples=(project.get("defaults") or {}).get("shutter_samples", 1),
+                        shutter_angle=(project.get("defaults") or {}).get("shutter_angle", 0.5))
     if mode in ("all", "plan"):
         render_plan(project, shots, cams, out_dir, plan_res)
 

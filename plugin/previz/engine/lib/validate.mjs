@@ -100,6 +100,16 @@ export function validateProject(project) {
         err(e, 'project.defaults.review_res', '必须是 [width, height] 两个正整数')
       }
     }
+    // 快门亚帧采样：1 = 关闭（普通渲染）；>1 会在曝光窗口内取多个亚帧并平均。
+    if (project.defaults.shutter_samples !== undefined) {
+      const n = project.defaults.shutter_samples
+      if (!Number.isInteger(n) || n < 1 || n > 32) {
+        err(e, 'project.defaults.shutter_samples', '必须是 1–32 的整数（1 = 关闭）')
+      }
+    }
+    if (project.defaults.shutter_angle !== undefined) {
+      checkNum(e, 'project.defaults.shutter_angle', project.defaults.shutter_angle, 0.05, 1.0)
+    }
   }
   return e
 }
