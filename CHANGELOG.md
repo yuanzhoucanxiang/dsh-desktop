@@ -35,7 +35,8 @@
   **分镜图入库**：把分镜图丢进项目的 `panels/`，`previz panels` 生成草案（标 `status=draft`），
   `previz panels-confirm` 人工确认后才能进 `storyboard.csv`——未确认草案会被 import 直接拒绝。
   **多场景**：项目可用 `scenes.json` + `scenes/<id>/` 组织多个场景，逐场景渲染/QC，最后拼一条跨场景 animatic。
-  — 署名：deepseek-flash
+  **运镜补齐**：`pan/tilt/dolly/truck/pedestal/crane/orbit/zoom/whip_pan/handheld` 全部可用，`ease` 生效；
+  QC 会报“声明了运镜但没动 / 角速度过快 / 甩镜幅度过大”。— 署名：deepseek-flash
 
 - **又查出两件"用起来会懵"的事**（2026-10-19，**只记录，本轮不改代码**）：
   ① **按 `Esc` 能绕过"还有没保存的稿"这道拦截**：工作台在宽窗界面下，按 `Esc` 是直接关掉，

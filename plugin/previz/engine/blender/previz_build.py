@@ -590,6 +590,102 @@ def create_camera(name, lens, sensor_w, coll):
     return cam, target
 
 
+def ease_value(name, u):
+    """把 0..1 的归一化时间映射成缓动后的 0..1。故意只做少量确定曲线，便于复现。"""
+    t = max(0.0, min(1.0, u))
+    if name in (None, "", "linear"):
+        return t
+    if name == "in_out":
+        return t * t * (3.0 - 2.0 * t)  # smoothstep
+    if name == "in":
+        return t * t
+    if name == "out":
+        return 1.0 - (1.0 - t) * (1.0 - t)
+    if name == "hold_in_out":
+        # 前 20% 起势、后 20% 收势，中间匀速——甩镜/快推常用的“顿一下再走”
+        a, b = 0.2, 0.8
+        if t <= a:
+            return (t / a) ** 2 * 0.15
+        if t >= b:
+            return 1.0 - ((1.0 - t) / (1.0 - b)) ** 2 * 0.15
+        return 0.15 + 0.7 * ((t - a) / (b - a))
+    return t
+
+
+def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
+    """
+    通用运镜：以 solve_camera 的起始位为基准，按 move 参数生成随时间变化的机位。
+    支持 pan/tilt/truck/pedestal/crane/zoom/dolly_in/dolly_out/orbit，全部按“角度/倍率/米”表达，
+    不再依赖 follow 才动。返回 (pos, target, dist, span, fill, sensor_h)。
+    """
+    pos0, target, dist0, span, fill, sensor_h = solve_camera(shot, project, blocking, actors, bag_objs, t, fps)
+    move = shot.get("move", {}) or {}
+    kind = move.get("type", "static")
+    if kind == "static":
+        return pos0, target, dist0, span, fill, sensor_h
+
+    e = ease_value(move.get("ease", "in_out"), u)
+    # 机位相对目标的方向与距离
+    offset = pos0 - target
+    if offset.length < 1e-6:
+        offset = Vector((0.0, -1.0, 0.0))
+    yaw0 = math.atan2(offset.y, offset.x)
+    pitch0 = math.asin(max(-1.0, min(1.0, offset.z / max(offset.length, 1e-6))))
+    radius = offset.length
+    cam_height = pos0.z
+
+    if kind in ("dolly_in", "dolly_out"):
+        # from/to 是距离倍率：1.0 = 原距离
+        f = move.get("from", 1.0) + (move.get("to", 1.0) - move.get("from", 1.0)) * e
+        radius *= f
+    elif kind == "zoom":
+        # zoom 不改机位，改焦距；这里返回一个 lens_scale 供上层改相机焦距
+        return pos0, target, dist0, span, fill, sensor_h
+    elif kind == "pan":
+        # 水平摇：绕目标转 degrees 度
+        yaw0 += math.radians(move.get("degrees", 15.0)) * e
+    elif kind == "tilt":
+        # 垂直摇：围绕目标抬高/压低机位（保持半径），首尾朝向会明显变化
+        pitch0 += math.radians(move.get("degrees", 10.0)) * e
+    elif kind == "truck":
+        # 平移：沿画面右方向移动 meters
+        right = Vector((math.cos(yaw0), math.sin(yaw0), 0))
+        pos0 = pos0 + right * move.get("meters", 0.5) * e
+        return pos0, target, (pos0 - target).length, span, fill, sensor_h
+    elif kind == "pedestal":
+        cam_height += move.get("meters", 0.3) * e
+    elif kind == "crane":
+        cam_height += move.get("meters", 1.0) * e
+        radius *= 1.0 + 0.15 * e
+    elif kind == "orbit":
+        # 绕目标转圈，同时可带半径变化
+        yaw0 += math.radians(move.get("degrees", 30.0)) * e
+        radius *= 1.0 + move.get("dolly", 0.0) * e
+    elif kind == "whip_pan":
+        # 甩镜：前 35% 快速甩过，后段稳住。
+        total = math.radians(move.get("degrees", 60.0))
+        if u < 0.35:
+            yaw0 += total * ease_value("out", u / 0.35)
+        else:
+            yaw0 += total
+    elif kind == "handheld":
+        # 手持抖动：高频小幅噪声。用 7.3 / 11.7 个周期（非整数）保证首尾不会恰好抵消。
+        amp = math.radians(move.get("degrees", 0.4))
+        yaw0 += amp * math.sin(u * math.pi * 2.0 * 7.3)
+        pitch0 += amp * 0.7 * math.sin(u * math.pi * 2.0 * 11.7 + 0.7)
+    else:
+        return pos0, target, dist0, span, fill, sensor_h
+
+    pitch0 = max(math.radians(-80.0), min(math.radians(80.0), pitch0))
+    horizontal = radius * math.cos(pitch0)
+    new_pos = Vector((
+        target.x + horizontal * math.cos(yaw0),
+        target.y + horizontal * math.sin(yaw0),
+        target.z + radius * math.sin(pitch0),
+    ))
+    return new_pos, target, (new_pos - target).length, span, fill, sensor_h
+
+
 def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
     cams = {}
     for shot in shots["shots"]:
@@ -624,24 +720,46 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
         cam.location = pos
         tgt.location = target
         follow = shot.get("camera", {}).get("follow")
-        if follow:
-            actor_root = actors[follow["actor"]][0]
-            base = Vector((actor_root.location.x, actor_root.location.y, 0))
-            cam_off = pos - base
-            tgt_off = target - base
-            end = round(shot["out"] * fps)
-            move = shot.get("move", {})
+        move = shot.get("move", {}) or {}
+        move_kind = move.get("type", "static")
+        end = round(shot["out"] * fps)
+        animated = bool(follow) or move_kind != "static"
+        if animated:
+            actor_root = actors[follow["actor"]][0] if follow else None
+            base = Vector((actor_root.location.x, actor_root.location.y, 0)) if actor_root else None
+            cam_off = (pos - base) if base is not None else None
+            tgt_off = (target - base) if base is not None else None
+            base_shot = dict(shot)
+            if follow:
+                # 跟拍：相机以演员为基准整体平移；主主体换成了跟随对象也仍然按主演员取景
+                pass
             for frame in range(start, end + 1):
                 bpy.context.scene.frame_set(frame)
-                base_now = Vector((actor_root.location.x, actor_root.location.y, 0))
                 u = (frame - start) / max(end - start, 1)
-                factor = 1.0
-                if move.get("type") in ("dolly_in", "dolly_out"):
-                    factor = move.get("from", 1.0) + (move.get("to", 1.0) - move.get("from", 1.0)) * u
-                cam.location = base_now + cam_off * factor
-                tgt.location = base_now + tgt_off
+                if follow:
+                    base_now = Vector((actor_root.location.x, actor_root.location.y, 0))
+                    # follow 镜头用演员位置作基准，再叠加通用运镜（dolly 的倍率由 orbit 处理）
+                    local = dict(base_shot)
+                    local["subjects"] = [follow["actor"]] + [s for s in shot["subjects"] if s != follow["actor"]]
+                    solve_shot = local
+                else:
+                    solve_shot = base_shot
+                new_pos, new_target, _dist, _span, _fill, _sh = camera_orbit(
+                    solve_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u
+                )
+                if follow:
+                    # 通用运镜已经按当前演员位置解过；这里只需把相对基准的偏移挪到 actor 上
+                    new_pos = Vector((new_pos.x, new_pos.y, new_pos.z))
+                cam.location = new_pos
+                tgt.location = new_target
                 cam.keyframe_insert("location", frame=frame)
                 tgt.keyframe_insert("location", frame=frame)
+                # zoom：不改机位，改焦距（from/to 单位 mm；缺省用当前镜头值）
+                if move_kind == "zoom":
+                    lens_from = float(move.get("from", shot["lens_mm"]))
+                    lens_to = float(move.get("to", lens_from * 1.5))
+                    cam.data.lens = lens_from + (lens_to - lens_from) * ease_value(move.get("ease", "in_out"), u)
+                    cam.data.keyframe_insert("lens", frame=frame)
             bpy.context.scene.frame_set(start)
         else:
             cam.location = pos
@@ -836,6 +954,30 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
         sc.camera = cam
         sc.frame_start = info["start_frame"]
         sc.frame_end = info["end_frame"]
+        # 运动端点：起始帧与结束帧的相机位置 + 朝向夹角（pan/tilt 主要改角度，位移很小）
+        sc.frame_set(info["end_frame"])
+        bpy.context.view_layer.update()
+        _deps_end = bpy.context.evaluated_depsgraph_get()
+        cam_end = cam.evaluated_get(_deps_end).matrix_world.translation.copy()
+        move_delta = (cam_end - Vector(info["camera_pos"])).length
+        sc.frame_set(info["end_frame"])
+        bpy.context.view_layer.update()
+        lens_end = round(float(cam.data.lens), 2)
+        # 中段位置：ease 改的是过程曲线，首尾相同也必须能看出区别
+        mid_frame = info["start_frame"] + (info["end_frame"] - info["start_frame"]) // 2
+        sc.frame_set(mid_frame)
+        bpy.context.view_layer.update()
+        _deps_mid = bpy.context.evaluated_depsgraph_get()
+        cam_mid = cam.evaluated_get(_deps_mid).matrix_world.translation.copy()
+        sc.frame_set(info["start_frame"])
+        bpy.context.view_layer.update()
+        _deps_start = bpy.context.evaluated_depsgraph_get()
+        fwd_start = (cam.evaluated_get(_deps_start).matrix_world.to_quaternion() @ Vector((0, 0, -1))).normalized()
+        sc.frame_set(info["end_frame"])
+        bpy.context.view_layer.update()
+        _deps_end2 = bpy.context.evaluated_depsgraph_get()
+        fwd_end = (cam.evaluated_get(_deps_end2).matrix_world.to_quaternion() @ Vector((0, 0, -1))).normalized()
+        rot_deg = math.degrees(math.acos(max(-1.0, min(1.0, fwd_start.dot(fwd_end)))))
         entry = {
             "id": shot["id"],
             "beat": shot.get("beat"),
@@ -844,7 +986,17 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
             "frames": info["end_frame"] - info["start_frame"] + 1,
             "size": shot["size"],
             "lens_mm": shot["lens_mm"],
-            "camera": {"pos": info["camera_pos"], "target": info["target_pos"], "distance": round(info["distance"], 3)},
+            "move": (shot.get("move") or {}).get("type", "static"),
+            "camera": {
+                "pos": info["camera_pos"],
+                "end": [round(v, 4) for v in cam_end],
+                "mid": [round(v, 4) for v in cam_mid],
+                "target": info["target_pos"],
+                "distance": round(info["distance"], 3),
+                "travel": round(move_delta, 4),
+                "rotate_deg": round(rot_deg, 3),
+                "lens_end": lens_end,
+            },
             "fill_target": info["fill_target"],
             "framing_mode": info.get("framing_mode", "solve"),
             "fill_check": info.get("framing_mode", "solve") != "custom_ots",

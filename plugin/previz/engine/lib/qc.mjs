@@ -157,6 +157,37 @@ export function runQc({ outDir }) {
       push(errors, `${sp}.axis`, `相机在轴线的 ${shot.axis.start_side}/${shot.axis.end_side}，期望 ${shot.axis.expected}`)
     }
 
+    // 运动 QC：① 声明的运镜必须真的动（静态除外）；② 速度上限；③ 甩镜要有可读帧。
+    if (shot.camera) {
+      const kind = shot.move || 'static'
+      const travel = Number(shot.camera.travel)
+      const rotate = Number(shot.camera.rotate_deg)
+      const lensStart = Number(shot.lens_mm)
+      const lensEnd = Number(shot.camera.lens_end)
+      const duration = Number(shot.out) - Number(shot.in)
+      const moved =
+        (Number.isFinite(travel) && travel > 0.005) ||
+        (Number.isFinite(rotate) && rotate > 0.5) ||
+        (Number.isFinite(lensStart) && Number.isFinite(lensEnd) && Math.abs(lensEnd - lensStart) > 0.5)
+      if (kind !== 'static' && Number.isFinite(travel) && Number.isFinite(rotate) && !moved) {
+        push(errors, `${sp}.move`, `声明了 ${kind} 但相机/焦距没有变化（travel=${travel}, rotate=${rotate}）`)
+      }
+      if (!Number.isFinite(duration) || duration <= 0) {
+        // 缺 in/out 就没法算速度；这本身是 facts 缺陷，不能静默跳过运动检查
+        push(errors, `${sp}.move`, `缺少有效的 in/out，无法计算运动速度`)
+      } else if (Number.isFinite(rotate)) {
+        const degPerSec = rotate / duration
+        if (degPerSec > 120) {
+          push(errors, `${sp}.move`, `${kind} 角速度 ${degPerSec.toFixed(1)}°/s 超过 120°/s，成片会糊/晕`)
+        } else if (degPerSec > 60) {
+          warnings.push({ path: `${sp}.move`, message: `${kind} 角速度 ${degPerSec.toFixed(1)}°/s 偏快，确认可读性` })
+        }
+      }
+      if (kind === 'whip_pan' && Number.isFinite(rotate) && rotate > 90) {
+        warnings.push({ path: `${sp}.move`, message: `甩镜 ${rotate.toFixed(0)}°，确认首尾有可读帧（当前只校验幅度）` })
+      }
+    }
+
     // P1：屏幕方向（只检查显式声明的镜头）
     if (shot.screen && shot.screen.direction) {
       if (shot.screen.ok === false) {
