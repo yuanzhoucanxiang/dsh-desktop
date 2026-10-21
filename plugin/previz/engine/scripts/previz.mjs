@@ -76,9 +76,10 @@ try {
   previz encode  <outDir> [--ffmpeg <path>]
   previz qc      <outDir>
   previz burn-in <outDir> [--font <path>]
-  previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in]
+  previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force]
 
 通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --font <path> --json --quiet
+--force 绕过输入指纹缓存，强制重跑构建/渲染。
 默认 project=fixtures/boutique  out=demo-out`)
     process.exit(0)
   }
@@ -153,6 +154,7 @@ try {
       skipEncode: has('skip-encode'),
       burnIn: has('burn-in'),
       font: arg('font', undefined),
+      force: has('force'),
       log,
     })
     if (json) print(result)

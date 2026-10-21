@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { validateAll } from './validate.mjs'
@@ -17,6 +18,41 @@ import { runQc } from './qc.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const PACKAGE_ROOT = path.dirname(__dirname)
 export const BUILDER = path.join(PACKAGE_ROOT, 'blender', 'previz_build.py')
+export const CACHE_FILE = '.previz-cache.json'
+
+/** 输入 JSON + builder 的 SHA-256；任何一方变了就缓存失效。 */
+export function projectFingerprint(projectDir, extra = '') {
+  const h = crypto.createHash('sha256')
+  for (const name of ['project.json', 'set.json', 'blocking.json', 'shots.json']) {
+    h.update(name)
+    h.update(fs.readFileSync(path.join(projectDir, name)))
+  }
+  h.update(fs.readFileSync(BUILDER))
+  // QC/校验器变了也要重跑，否则“改了检查但命中旧缓存”会假装通过。
+  for (const rel of ['lib/qc.mjs', 'lib/validate.mjs']) h.update(fs.readFileSync(path.join(PACKAGE_ROOT, rel)))
+  h.update(String(extra))
+  return h.digest('hex')
+}
+
+/** 缓存命中前确认全套产物都在；缺帧/缺静帧一律当 miss，交给 QC 前先重跑。 */
+function outputsComplete(outDir) {
+  try {
+    const facts = JSON.parse(fs.readFileSync(path.join(outDir, 'facts.json'), 'utf8'))
+    if (!fs.existsSync(path.join(outDir, 'animatic.mp4'))) return false
+    const scene = facts.scene || 'S03'
+    for (const shot of facts.shots || []) {
+      const review = path.join(outDir, scene, shot.id, 'review')
+      const pngs = fs.existsSync(review) ? fs.readdirSync(review).filter((f) => /^f_\d+\.png$/.test(f)) : []
+      if (pngs.length !== shot.frames) return false
+      for (const name of ['first.png', 'mid.png', 'last.png']) {
+        if (!fs.existsSync(path.join(outDir, scene, shot.id, name))) return false
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 const BLENDER_CANDIDATES = [
   () => process.env.PREVIZ_BLENDER,
@@ -269,7 +305,7 @@ export function runQcReport(outDir) {
  * 一条命令：校验 → Blender 构建/渲染/平面图 → 编码 → QC。
  * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
  */
-export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, log = console.log } = {}) {
+export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, log = console.log } = {}) {
   const resolvedProject = path.resolve(projectDir)
   const resolvedOut = path.resolve(outDir)
   const validation = validateAll(resolvedProject)
@@ -277,6 +313,28 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
     return { ok: false, stage: 'validate', projectDir: resolvedProject, errors: validation.errors }
   }
   log(`[previz] schema OK: ${resolvedProject}`)
+
+  const useCache = !skipRender && !skipEncode && !force
+  const fingerprint = useCache ? projectFingerprint(resolvedProject, doBurnIn ? 'burnin' : '') : null
+  const cachePath = path.join(resolvedOut, CACHE_FILE)
+  let cache = null
+  try {
+    cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
+  } catch {
+    cache = null
+  }
+  const cached = useCache && cache?.fingerprint === fingerprint && cache?.animatic && fs.existsSync(path.join(resolvedOut, 'animatic.mp4')) && outputsComplete(resolvedOut)
+  if (cached) {
+    log(`[previz] cache hit (${fingerprint.slice(0, 12)})`)
+    let burned = null
+    if (doBurnIn && !fs.existsSync(path.join(resolvedOut, 'animatic_burnin.mp4'))) {
+      burned = burnIn(resolvedOut, { ffmpeg, font, log })
+    }
+    const qc = runQcReport(resolvedOut)
+    return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'hit', burnIn: burned, qc }
+  }
+  if (useCache) log(`[previz] cache miss (${fingerprint.slice(0, 12)})`)
+
   if (!skipRender) {
     runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', blender, log })
   }
@@ -285,7 +343,14 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   let burned = null
   if (doBurnIn) burned = burnIn(resolvedOut, { ffmpeg, font, log })
   const qc = runQcReport(resolvedOut)
-  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, encoded, burnIn: burned, qc }
+  if (useCache && qc.ok) {
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({ version: 1, fingerprint, at: new Date().toISOString(), animatic: path.join(resolvedOut, 'animatic.mp4') }, null, 2),
+      'utf8',
+    )
+  }
+  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, cache: 'miss', encoded, burnIn: burned, qc }
 }
 
 export { validateAll, runQc }

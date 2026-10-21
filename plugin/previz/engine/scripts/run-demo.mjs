@@ -14,6 +14,7 @@ try {
     outDir: path.resolve(arg('out', 'demo-out')),
     skipRender: args.includes('--skip-render'),
     skipEncode: args.includes('--skip-encode'),
+    force: args.includes('--force'),
   })
   if (result.stage === 'validate') {
     console.error(`[previz] schema invalid (${result.errors.length} errors)`)
