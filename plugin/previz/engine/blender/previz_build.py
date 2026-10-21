@@ -653,10 +653,27 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u):
         pos0 = pos0 + right * move.get("meters", 0.5) * e
         return pos0, target, (pos0 - target).length, span, fill, sensor_h
     elif kind == "pedestal":
-        cam_height += move.get("meters", 0.3) * e
+        # 升降：直接改机位高度，同时保持水平半径（不走后面的 pitch 重算，否则高度会被覆盖）
+        lift = move.get("meters", 0.3) * e
+        return (
+            Vector((pos0.x, pos0.y, pos0.z + lift)),
+            target,
+            dist0 + abs(lift) * 0.5,
+            span,
+            fill,
+            sensor_h,
+        )
     elif kind == "crane":
-        cam_height += move.get("meters", 1.0) * e
-        radius *= 1.0 + 0.15 * e
+        # 大升降 + 轻微拉远，同样直接返回
+        lift = move.get("meters", 1.0) * e
+        out = 0.15 * e
+        horiz = math.hypot(pos0.x - target.x, pos0.y - target.y) * (1.0 + out)
+        dir_h = Vector((pos0.x - target.x, pos0.y - target.y, 0.0))
+        if dir_h.length < 1e-6:
+            dir_h = Vector((0.0, -1.0, 0.0))
+        dir_h.normalize()
+        new_pos = Vector((target.x + dir_h.x * horiz, target.y + dir_h.y * horiz, pos0.z + lift))
+        return new_pos, target, (new_pos - target).length, span, fill, sensor_h
     elif kind == "orbit":
         # 绕目标转圈，同时可带半径变化
         yaw0 += math.radians(move.get("degrees", 30.0)) * e
