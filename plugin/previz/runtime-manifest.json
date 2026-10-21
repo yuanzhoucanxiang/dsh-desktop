@@ -27,7 +27,8 @@
     "plugin/previz/engine/fixtures/boutique/project.json",
     "plugin/previz/engine/fixtures/boutique/set.json",
     "plugin/previz/engine/fixtures/boutique/blocking.json",
-    "plugin/previz/engine/fixtures/boutique/shots.json"
+    "plugin/previz/engine/fixtures/boutique/shots.json",
+    "plugin/previz/engine/lib/handoff.mjs"
   ],
   "docs": [
     "plugin/previz/README.md"

@@ -19,8 +19,9 @@ import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, 
 import { importStoryboard } from '../lib/storyboard.mjs'
 import { parseAliases, writeScript, writeStoryboard } from '../lib/script.mjs'
 import { confirmPanelDraft, writePanelDraft } from '../lib/panels.mjs'
+import { checkStale, exportHandoff } from '../lib/handoff.mjs'
 import { listProjects, resolveProjectRef, scaffoldProject } from '../lib/projects.mjs'
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking', 'only', 'subject', 'duration', 'by'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking', 'only', 'subject', 'duration', 'by', 'blur', 'blur-frames'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -49,11 +50,14 @@ const fail = (msg, code = 1) => {
 const print = (obj) => {
   if (json) console.log(JSON.stringify(obj, null, 2))
 }
-const projectArg = arg('project', positional[0] || '')
+// 这些命令的第一个位置参数就是 outDir（不接 project 位置参数）
+const OUTDIR_FIRST = new Set(['encode', 'qc', 'export', 'handoff', 'handoff-check'])
+// OUTDIR_FIRST 的命令：位置参数归 outDir；项目只能通过 --project 指定
+const projectArg = arg('project', OUTDIR_FIRST.has(command) ? '' : positional[0] || '')
 const projectDir = projectArg
   ? (resolveProjectRef(projectArg) || path.resolve(projectArg))
   : path.join(PACKAGE_ROOT, 'fixtures/boutique')
-const outDir = path.resolve(arg('out', command === 'encode' || command === 'qc' ? positional[0] || 'demo-out' : positional[1] || 'demo-out'))
+const outDir = path.resolve(arg('out', OUTDIR_FIRST.has(command) ? positional[0] || 'demo-out' : positional[1] || 'demo-out'))
 const blender = arg('blender', undefined)
 const ffmpeg = arg('ffmpeg', undefined)
 
@@ -134,7 +138,7 @@ try {
   }
 
   if (command === 'encode') {
-    const result = encodeOutputs(outDir, { ffmpeg, log, required: true })
+    const result = encodeOutputs(outDir, { ffmpeg, log, required: true, blurMode: arg('blur', 'off'), blurFrames: Number(arg('blur-frames', '3')) })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
   }
@@ -149,6 +153,36 @@ try {
     const result = exportTimeline(outDir, { log })
     if (json) print({ ok: true, outDir, ...result })
     process.exit(0)
+  }
+
+  // 逐镜交接包（handoff）：确定性事实骨架 + 语义占位（方案 C）
+  if (command === 'handoff' || command === 'handoff-check') {
+    try {
+      if (command === 'handoff') {
+        const r = exportHandoff({ projectDir, outDir, log })
+        if (json) print({ ok: true, dir: r.dir, shots: r.manifest.shots.length, pending: r.manifest.pending })
+        else {
+          console.log(`[previz] 交接包目录：${r.dir}`)
+          if (r.manifest.pending.length) {
+            console.log(`[previz] 待补 ${r.manifest.pending.length} 项：`)
+            for (const p of r.manifest.pending.slice(0, 12)) console.log(`  - ${p}`)
+          }
+          console.log('[previz] 语义提示词正文仍需 Agent 按方案 C 补写（当前 semantic: pending）。')
+        }
+        process.exit(0)
+      }
+      const r = checkStale({ projectDir, outDir })
+      if (json) print(r)
+      else if (!r.exists) console.error(`[previz] ${r.reason}`)
+      else if (r.stale) {
+        console.error(`[previz] 交接包已过期：${r.changed.join(', ')} 变了，请重新跑 previz handoff`)
+      } else console.log('[previz] 交接包与当前源数据一致（未过期）')
+      process.exit(r.exists && !r.stale ? 0 : 1)
+    } catch (err) {
+      if (json) print({ ok: false, error: err.message })
+      else console.error(`[previz] ${err.message}`)
+      process.exit(1)
+    }
   }
 
   if (command === 'panels' || command === 'panels-confirm') {
@@ -293,6 +327,8 @@ try {
       font: arg('font', undefined),
       force: has('force'),
       only: (arg('only', '') || '').split(',').map((s) => s.trim()).filter(Boolean),
+      blurMode: arg('blur', 'off'),
+      blurFrames: Number(arg('blur-frames', '3')),
       log,
     })
     if (json) print(result)

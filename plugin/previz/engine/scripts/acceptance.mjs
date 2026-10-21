@@ -80,6 +80,23 @@ const badText = bad.stderr + bad.stdout
 check('遮挡反例报“被 … 挡住”', /被\s*\S+（(?:prop|set|actor)）挡住/.test(badText), badText.split(/\r?\n/).slice(-3).join(' '))
 check('遮挡反例指向 S03-01 主体 LIN', /shots\.S03-01\.occlusion: 主体 LIN/.test(badText))
 
+
+// 逐镜交接包（第一批）：导出 + 过期检查
+const handoffRun = run(['handoff', outDir])
+check('handoff 导出', handoffRun.status === 0, (handoffRun.stderr || '').slice(0, 200))
+const hDir = path.join(outDir, 'handoff')
+check('handoff/index.md 存在', fs.existsSync(path.join(hDir, 'index.md')))
+check('handoff/manifest.json 存在', fs.existsSync(path.join(hDir, 'manifest.json')))
+if (fs.existsSync(path.join(hDir, 'manifest.json'))) {
+  const hm = JSON.parse(fs.readFileSync(path.join(hDir, 'manifest.json'), 'utf8'))
+  check('manifest schema 正确', hm.schema === 'dsh.previz/handoff@1')
+  check('manifest 记录源指纹', !!(hm.sources && hm.sources.shots))
+  check('语义状态为 pending（方案 C 不代写）', hm.shots.every((x) => x.semantic_status === 'pending'))
+  check('每镜都有 handoff.md', hm.shots.every((x) => fs.existsSync(path.join(hDir, x.handoff_path))))
+}
+const stale = run(['handoff-check', outDir])
+check('handoff-check 未过期', stale.status === 0, (stale.stderr || '').slice(0, 200))
+
 const draftDir = tmp('draft')
 copyBase(draftDir)
 fs.mkdirSync(path.join(draftDir, 'panels'))
