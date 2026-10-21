@@ -48,6 +48,19 @@ export function runQc({ outDir }) {
       }
     }
 
+    // P1：脚部接触（走路的骨盆下沉补偿后，最低脚应贴地）
+    if (Array.isArray(shot.feet)) {
+      for (const f of shot.feet) {
+        if (!Number.isFinite(f.min_z)) {
+          push(errors, `${sp}.feet`, `主体 ${f.subject} 的脚部 z 不是数字`)
+        } else if (f.min_z < -0.02 || f.min_z > 0.03) {
+          push(errors, `${sp}.feet`, `主体 ${f.subject} 在帧 ${f.frame} 最低脚 z=${f.min_z}，不在 [-0.02, 0.03]`)
+        }
+      }
+    } else {
+      warnings.push({ path: `${sp}.feet`, message: '缺少脚部接触 facts（重跑构建）' })
+    }
+
     if (!(shot.camera && Number.isFinite(shot.camera.distance) && shot.camera.distance > 0.3)) {
       push(errors, `${sp}.camera.distance`, '相机距离必须 > 0.3m')
     }

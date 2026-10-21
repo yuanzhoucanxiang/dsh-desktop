@@ -18,8 +18,8 @@
   **引擎也可直接调**：`blender-previz/scripts/previz.mjs`（CLI）或 `lib/pipeline.mjs`（Node API），
   不需要开工作台。— 署名：deepseek-flash
 
-- **预演质量检查（P1 首批）**：引擎现在会做**遮挡**（相机到主体头的 ray_cast）、**越轴**（相机在轴线哪一侧）
-  和**屏幕方向**检查；QC 不通过会明确指出哪一镜、哪一帧、被什么挡住。另加 `previz burn-in`：
+- **预演质量检查（P1 首批）**：引擎现在会做**遮挡**（相机到主体头的 ray_cast）、**越轴**（相机在轴线哪一侧）、
+  **屏幕方向**和**脚部接触**检查；QC 不通过会明确指出哪一镜、哪一帧、被什么挡住/哪只脚离地。另加 `previz burn-in`：
   逐镜烧镜号/时码/帧号，输出 `animatic_burnin.mp4`。工作台面板暂未加“烧字”按钮，直接用 CLI 即可。
   — 署名：deepseek-flash
 

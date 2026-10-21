@@ -359,7 +359,6 @@ def animate_actors(blocking, actors, fps, total_frames):
         for actor_id, (root, parts, s) in actors.items():
             x, y = actor_pos_at(blocking, actor_id, t)
             facing = actor_facing_at(blocking, actor_id, t)
-            root.location = (x, y, 0)
             root.rotation_euler = (0, 0, math.radians(-facing))
             pose = actor_pose_at(blocking, actor_id, t)
             swing = 0.0
@@ -370,6 +369,8 @@ def animate_actors(blocking, actors, fps, total_frames):
                     speed = m.get("speed", 1.0)
                 phase = t * 2 * math.pi * (1.6 if pose == "walk" else 3.0) * max(0.6, speed)
                 swing = math.sin(phase) * math.radians(30 if pose == "walk" else 45)
+            # 先按地面放骨盆；摆腿后按实测最低脚把骨盆抬起，做简易 foot lock。
+            root.location = (x, y, 0)
             for name, ob in parts.items():
                 ob.rotation_euler = (0, 0, 0)
             if pose in ("walk", "run"):
@@ -389,6 +390,14 @@ def animate_actors(blocking, actors, fps, total_frames):
                 parts["head"].rotation_euler.z = math.sin(t * 2.0) * math.radians(4)
                 parts["arm_l"].rotation_euler.x = math.radians(-5)
                 parts["arm_r"].rotation_euler.x = math.radians(5)
+            # 腿绕自身中心旋转会把脚抬离/压入地面：按实测最低脚抬骨盆，脚底回到 z=0。
+            bpy.context.view_layer.update()
+            deps = bpy.context.evaluated_depsgraph_get()
+            zs = []
+            for leg in ("leg_l", "leg_r"):
+                ob = parts[leg].evaluated_get(deps)
+                zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
+            root.location = (x, y, -min(zs) if zs else 0.0)
             root.keyframe_insert("location", frame=frame)
             root.keyframe_insert("rotation_euler", frame=frame)
             for ob in parts.values():
@@ -870,6 +879,26 @@ def collect_facts(project, shots, cams, blocking, actors, bag_objs, fps):
                     "frame": frame,
                     "tag": tag,
                     **occlusion_at(sc, cam, sid, actors, bag_objs, allowed_actor=shot["size"] == "OTS"),
+                })
+        # P1：脚部接触。最低脚 z 必须在 [-0.02, 0.03]；走路的骨盆下沉已经补偿了摆腿抬脚。
+        entry["feet"] = []
+        for tag, frame in (("start", info["start_frame"]), ("mid", info["start_frame"] + (info["end_frame"] - info["start_frame"]) // 2), ("end", info["end_frame"])):
+            sc.frame_set(frame)
+            bpy.context.view_layer.update()
+            deps = bpy.context.evaluated_depsgraph_get()
+            for sid in shot["subjects"]:
+                if sid not in actors:
+                    continue
+                _root, parts, _s = actors[sid]
+                zs = []
+                for leg in ("leg_l", "leg_r"):
+                    ob = parts[leg].evaluated_get(deps)
+                    zs.extend((ob.matrix_world @ Vector(c)).z for c in ob.bound_box)
+                entry["feet"].append({
+                    "subject": sid,
+                    "frame": frame,
+                    "tag": tag,
+                    "min_z": round(min(zs), 4),
                 })
         facts["shots"].append(entry)
     return facts
