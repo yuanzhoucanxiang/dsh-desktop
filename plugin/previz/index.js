@@ -58,6 +58,26 @@ export function outDirFor(dir) {
   return path.join(os.tmpdir(), 'dsh-previz-runs', path.basename(dir))
 }
 
+/** 从 boutique 复制一个 starter 项目；返回元数据。 */
+export function createProject(id, title, root = PROJECTS_ROOT) {
+  const pid = String(id || '').trim()
+  if (!/^[A-Za-z0-9._-]+$/.test(pid)) throw new Error('项目 id 只能包含字母/数字/._-')
+  const dest = path.join(root, pid)
+  if (fs.existsSync(dest)) throw new Error(`项目已存在：${pid}`)
+  fs.mkdirSync(dest, { recursive: true })
+  for (const f of ['project.json', 'set.json', 'blocking.json', 'shots.json', 'storyboard.csv', 'script.txt']) {
+    const src = path.join(PROJECT, f)
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dest, f))
+  }
+  const metaPath = path.join(dest, 'project.json')
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'))
+  meta.id = pid
+  meta.title = String(title || meta.title || pid)
+  meta.fixture = false
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8')
+  return { id: pid, title: meta.title, path: dest, fps: Number(meta.fps) || 24, valid: true, missing: [] }
+}
+
 export const OUT = outDirFor(PROJECT)
 
 export const name = 'previz'
@@ -416,6 +436,7 @@ const ROUTE_METHODS = {
   cancel: ['POST'],
   'open-blender': ['POST'],
   project: ['POST'],
+  'project-create': ['POST'],
   artifact: ['GET'],
 }
 
@@ -458,6 +479,16 @@ async function handler(req, res) {
         return writeJson(res, 200, { ok: true, project: { ...hit } })
       } catch {
         return writeJson(res, 400, { ok: false, error: 'bad-json' })
+      }
+    }
+    if (route === 'project-create') {
+      try {
+        const body = raw ? JSON.parse(raw) : {}
+        const created = createProject(body.id, body.title)
+        currentProject = created.path
+        return writeJson(res, 200, { ok: true, project: created, projects: listProjects() })
+      } catch (err) {
+        return writeJson(res, 400, { ok: false, error: 'create-failed', detail: String(err?.message || err) })
       }
     }
   }

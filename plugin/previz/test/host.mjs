@@ -3,7 +3,7 @@
  * 跑法：node plugin/previz/test/host.mjs
  */
 import assert from 'node:assert/strict'
-import { API, apply, cancelJob, listArtifacts, listProjects, probeRuntime, safeResolveOut, state } from '../index.js'
+import { API, apply, cancelJob, createProject, listArtifacts, listProjects, probeRuntime, safeResolveOut, state } from '../index.js'
 
 let passed = 0
 let failed = 0
@@ -72,6 +72,11 @@ test('state：project/projects 一致', () => {
   const s = state()
   assert.ok(s.projects.some((p) => p.id === s.project.id))
   assert.equal(s.project.path.endsWith(s.project.id), true)
+})
+
+test('createProject：非法 id / 已存在要拒绝', () => {
+  assert.throws(() => createProject('bad id!'), /id/)
+  assert.throws(() => createProject('boutique'), /已存在/)
 })
 
 test('cancelJob：没有任务时如实 no-job', () => {

@@ -29,3 +29,8 @@ export function artifactUrl(rel) {
 export function selectProject(id) {
   return api('project', { id })
 }
+
+/** 新建项目（从 boutique starter 复制）。 */
+export function createProject(id, title) {
+  return api('project-create', { id, title })
+}

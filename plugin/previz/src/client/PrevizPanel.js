@@ -1,5 +1,5 @@
 import * as react from 'react'
-import { api, artifactUrl, selectProject } from './api.js'
+import { api, artifactUrl, createProject, selectProject } from './api.js'
 import { refresh, setUi } from './store.js'
 import { useSnapshot, useUiState } from './usePreviz.js'
 
@@ -117,6 +117,9 @@ export function PrevizPanel({ compact = false } = {}) {
   const [busy, setBusy] = react.useState(false)
   const [error, setError] = react.useState('')
   const [notice, setNotice] = react.useState('')
+  const [creating, setCreating] = react.useState(false)
+  const [newId, setNewId] = react.useState('')
+  const [newTitle, setNewTitle] = react.useState('')
 
   const runtime = snap?.runtime || null
   const job = snap?.job || null
@@ -158,6 +161,26 @@ export function PrevizPanel({ compact = false } = {}) {
     if (!id || id === project?.id) return
     void act(() => selectProject(id), `已切到 ${id}`)
   }
+  const newProject = () => {
+    setCreating(true)
+    setNewId('')
+    setNewTitle('')
+    setError('')
+    setNotice('')
+  }
+  const confirmCreate = () => {
+    const id = newId.trim()
+    if (!id) {
+      setError('项目 id 不能为空')
+      return
+    }
+    const title = newTitle.trim() || id
+    void act(async () => {
+      const r = await createProject(id, title)
+      if (r?.ok) setCreating(false)
+      return r
+    }, `已创建 ${id}`)
+  }
 
   const projectPicker = h(
     'select',
@@ -174,11 +197,25 @@ export function PrevizPanel({ compact = false } = {}) {
       : h('option', { value: project?.id || '' }, project?.title || 'boutique'),
   )
 
+  const newProjectBtn = h(
+    'button',
+    {
+      type: 'button',
+      onClick: newProject,
+      disabled: busy || running,
+      title: '从 boutique starter 新建项目',
+      style: S.btn(),
+      'data-previz-new-project': '',
+    },
+    '新建',
+  )
+
   const header = h(
     'div',
     { style: S.header },
     h('span', { style: S.title }, '预演'),
     projectPicker,
+    newProjectBtn,
     h('span', { style: S.pill(runtimeColor(runtime?.state)) }, runtimeText(runtime)),
     h('span', { style: S.pill(running ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)') }, jobText(job)),
     h('span', { style: { flex: 1 } }),
@@ -204,6 +241,29 @@ export function PrevizPanel({ compact = false } = {}) {
           ),
         )
       : null
+
+  const createRow = creating
+    ? h(
+        'div',
+        { style: { ...S.panel, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }, 'data-previz-create-row': '' },
+        h('input', {
+          value: newId,
+          onChange: (e) => setNewId(e.target.value),
+          placeholder: '项目 id（字母/数字/._-）',
+          style: { ...S.btn(), minWidth: 150, cursor: 'text' },
+          'data-previz-new-id': '',
+        }),
+        h('input', {
+          value: newTitle,
+          onChange: (e) => setNewTitle(e.target.value),
+          placeholder: '标题（可空）',
+          style: { ...S.btn(), minWidth: 130, cursor: 'text' },
+          'data-previz-new-title': '',
+        }),
+        h('button', { type: 'button', style: S.btn('primary'), onClick: confirmCreate, disabled: busy }, '创建'),
+        h('button', { type: 'button', style: S.btn(), onClick: () => setCreating(false), disabled: busy }, '取消'),
+      )
+    : null
 
   const feedback =
     error || notice
@@ -260,6 +320,7 @@ export function PrevizPanel({ compact = false } = {}) {
     'div',
     { style: { ...S.root, padding: compact ? 10 : 14 }, 'data-previz-panel': '' },
     header,
+    createRow,
     runtimeBox,
     feedback,
     h(

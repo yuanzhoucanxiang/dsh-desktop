@@ -76,6 +76,9 @@ function artifactUrl(rel) {
 function selectProject(id) {
   return api("project", { id });
 }
+function createProject(id, title) {
+  return api("project-create", { id, title });
+}
 
 // plugin/previz/src/client/store.js
 var last = null;
@@ -384,6 +387,9 @@ function PrevizPanel({ compact = false } = {}) {
   const [busy, setBusy] = react3.useState(false);
   const [error, setError] = react3.useState("");
   const [notice, setNotice] = react3.useState("");
+  const [creating, setCreating] = react3.useState(false);
+  const [newId, setNewId] = react3.useState("");
+  const [newTitle, setNewTitle] = react3.useState("");
   const runtime = snap?.runtime || null;
   const job = snap?.job || null;
   const artifacts = snap?.artifacts || [];
@@ -418,6 +424,26 @@ function PrevizPanel({ compact = false } = {}) {
     if (!id || id === project?.id) return;
     void act(() => selectProject(id), `已切到 ${id}`);
   };
+  const newProject = () => {
+    setCreating(true);
+    setNewId("");
+    setNewTitle("");
+    setError("");
+    setNotice("");
+  };
+  const confirmCreate = () => {
+    const id = newId.trim();
+    if (!id) {
+      setError("项目 id 不能为空");
+      return;
+    }
+    const title = newTitle.trim() || id;
+    void act(async () => {
+      const r = await createProject(id, title);
+      if (r?.ok) setCreating(false);
+      return r;
+    }, `已创建 ${id}`);
+  };
   const projectPicker = h2(
     "select",
     {
@@ -430,11 +456,24 @@ function PrevizPanel({ compact = false } = {}) {
     },
     projects.length ? projects.map((p) => h2("option", { key: p.id, value: p.id, disabled: !p.valid }, `${p.valid ? "" : "（缺文件）"}${p.id} · ${p.title}`)) : h2("option", { value: project?.id || "" }, project?.title || "boutique")
   );
+  const newProjectBtn = h2(
+    "button",
+    {
+      type: "button",
+      onClick: newProject,
+      disabled: busy || running,
+      title: "从 boutique starter 新建项目",
+      style: S.btn(),
+      "data-previz-new-project": ""
+    },
+    "新建"
+  );
   const header = h2(
     "div",
     { style: S.header },
     h2("span", { style: S.title }, "预演"),
     projectPicker,
+    newProjectBtn,
     h2("span", { style: S.pill(runtimeColor(runtime?.state)) }, runtimeText(runtime)),
     h2("span", { style: S.pill(running ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)") }, jobText(job)),
     h2("span", { style: { flex: 1 } }),
@@ -453,6 +492,26 @@ function PrevizPanel({ compact = false } = {}) {
       { style: { ...S.muted, marginTop: 6 } },
       "下一步：设置环境变量 PREVIZ_BLENDER，或安装 Blender 5.2 / 把 ffmpeg 放进 PATH，然后点「重新探测」。"
     )
+  ) : null;
+  const createRow = creating ? h2(
+    "div",
+    { style: { ...S.panel, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }, "data-previz-create-row": "" },
+    h2("input", {
+      value: newId,
+      onChange: (e) => setNewId(e.target.value),
+      placeholder: "项目 id（字母/数字/._-）",
+      style: { ...S.btn(), minWidth: 150, cursor: "text" },
+      "data-previz-new-id": ""
+    }),
+    h2("input", {
+      value: newTitle,
+      onChange: (e) => setNewTitle(e.target.value),
+      placeholder: "标题（可空）",
+      style: { ...S.btn(), minWidth: 130, cursor: "text" },
+      "data-previz-new-title": ""
+    }),
+    h2("button", { type: "button", style: S.btn("primary"), onClick: confirmCreate, disabled: busy }, "创建"),
+    h2("button", { type: "button", style: S.btn(), onClick: () => setCreating(false), disabled: busy }, "取消")
   ) : null;
   const feedback = error || notice ? h2("div", { style: { ...S.muted, color: error ? "var(--dsw-alias-label-danger, #e06c75)" : "var(--dsw-alias-brand-primary)" } }, error || notice) : null;
   const preview = selected ? String(selected.path).endsWith(".mp4") ? h2("video", { key: selected.path, src: artifactUrl(selected.path), controls: true, style: S.video }) : String(selected.path).endsWith(".png") ? h2("img", { key: selected.path, src: artifactUrl(selected.path), alt: selected.title, style: S.img }) : h2(
@@ -491,6 +550,7 @@ function PrevizPanel({ compact = false } = {}) {
     "div",
     { style: { ...S.root, padding: compact ? 10 : 14 }, "data-previz-panel": "" },
     header,
+    createRow,
     runtimeBox,
     feedback,
     h2(

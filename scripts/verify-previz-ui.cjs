@@ -61,7 +61,17 @@ app.whenReady().then(async () => {
       ]
     };
     window.__fetchCalls = [];
-    window.fetch = async (url) => { window.__fetchCalls.push(String(url)); return { ok: true, json: async () => state } };
+    window.__state = state;
+    window.__fetch = async (url) => {
+      window.__fetchCalls.push(String(url));
+      const u = String(url);
+      if (u.includes('route=project-create')) {
+        state.projects = [...state.projects, { id: 'new-film', title: '新片', valid: true }];
+        return { ok: true, json: async () => ({ ok: true, project: { id: 'new-film', title: '新片', valid: true }, projects: state.projects }) };
+      }
+      return { ok: true, json: async () => window.__state };
+    };
+    window.fetch = (url) => window.__fetch(url);
     const mounted = {};
     const slots = {
       inject: (name, fn) => fn(),
@@ -170,8 +180,8 @@ app.whenReady().then(async () => {
   const count = (selector) => evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`)
   const text = (selector) => evaluate(`(document.querySelector(${JSON.stringify(selector)})||{}).textContent||''`)
   const click = (selector) => evaluate(`(() => { const el=document.querySelector(${JSON.stringify(selector)}); if(!el) throw new Error('missing ${selector}'); el.click(); return 0 })()`)
-  async function waitFor(code, label) {
-    const until = Date.now() + 10000
+  async function waitFor(code, label, timeoutMs = 10000) {
+    const until = Date.now() + timeoutMs
     while (Date.now() < until) {
       if (await evaluate(code)) return
       await sleep(60)
@@ -191,6 +201,31 @@ app.whenReady().then(async () => {
     assert.ok((await text('[data-previz-panel]')).includes('最近产物'), '应有产物列表')
     assert.equal(await evaluate(`document.querySelector('[data-previz-project]')?.value`), 'boutique', '项目下拉应显示当前项目')
     assert.equal(await count('[data-previz-project] option'), 2, '应有 2 个项目选项')
+    assert.equal(await count('[data-previz-new-project]'), 1, '应有新建项目按钮')
+
+    // 新建项目：点按钮 -> 内联表单（不用 window.prompt，Electron 里 prompt 不可用）
+    // 换一个新对象，store 才会把它当变更通知给面板（同一引用改了字段不会触发）。
+    await evaluate(`(() => {
+      window.__state = { ...window.__state, job: { id: 'job-ui', state: 'done', progress: 1, logTail: [] } };
+      return 0;
+    })()`)
+    await sleep(2800)
+    await waitFor(`document.querySelector('[data-previz-new-project]') && !document.querySelector('[data-previz-new-project]').disabled`, '等任务结束后新建按钮可用', 8000)
+    await click('[data-previz-new-project]')
+    await waitFor(`document.querySelector('[data-previz-create-row]')!==null`, '点新建应出现内联表单')
+    await evaluate(`(() => {
+      const el = document.querySelector('[data-previz-new-id]');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(el, 'new-film');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      const t = document.querySelector('[data-previz-new-title]');
+      setter.call(t, '新片');
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+      return 0;
+    })()`)
+    await click('[data-previz-create-row] button')
+    await waitFor(`window.__fetchCalls.some((u) => u.includes('route=project-create'))`, '应调用 project-create')
+    await waitFor(`document.querySelector('[data-previz-create-row]')===null`, '创建成功后表单应收起')
 
     // 工作台出现：让出入口、注册完整模式描述；点「进入」时模式自己要有全屏 overlay
     await evaluate(`(() => {

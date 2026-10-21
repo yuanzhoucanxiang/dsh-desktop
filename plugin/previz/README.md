@@ -3,7 +3,7 @@
 把 `blender-previz` 的 P0 引擎包成工作台的一个外部工具型模式。**它只是兼容外壳**：
 引擎本身可直接用 `blender-previz/scripts/previz.mjs` 或 `lib/pipeline.mjs` 调用，不需要工作台。
 
-- **项目**：面板顶部可切项目（host `POST ?route=project`）；每个项目独立输出目录；`fixtures/bad-occlusion` 因 `fixture:true` 不列入。
+- **项目**：面板顶部可切项目 + 「新建」（内联表单，host `POST ?route=project|project-create`）；每个项目独立输出目录；`fixtures/bad-occlusion` 因 `fixture:true` 不列入。
 - **剧本**：引擎 `previz script` / `previz board` 可从 `script.txt` 生成 `script.json` 与分镜草案；工作台面板只做展示/运行。
 - **缓存**：整项目 + 逐镜指纹；只重渲脏镜，`--only S03-02` 可指定。
 - **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
