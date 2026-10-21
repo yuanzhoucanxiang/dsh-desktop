@@ -857,10 +857,12 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
         amp = math.radians(src.get("degrees", 0.4))
         hz = float(src.get("hz", 1.6))
         seed = float(src.get("seed", 1.0))
-        # 步速耦合：走动/奔跑时机器跟着人一起颠，幅度和频率都上去。
-        # 以前只有“放大 degree”这一个旋钮，跑起来还是同一条慢正弦。
-        # 判据是主体真实移动速度（m/s），不依赖姿态标签，避免“写了字段但没读”。
+        # 步速耦合：走动时幅度上去、主频趋近步频，但**不无限漂**。
+        # 校准实测：原来幅度和频率同乘 speed_gain，走路镜头主频被拉到 2.78/3.19Hz，
+        # 而原地只有 1.75Hz——等于“走得越快手抖越急”，不符合人的步态（人约 1.8–2.2 步/秒）。
+        # 现在：幅度按速度放大（最多 2.35 倍），频率只向 stride_hz 靠拢并封顶。
         speed_gain = 1.0
+        stride_hz = float(src.get("stride_hz", 2.0))
         if src.get("follow_speed", True):
             try:
                 sid = shot["subjects"][0]
@@ -873,7 +875,10 @@ def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=
             except Exception:
                 speed_gain = 1.0
         amp *= speed_gain
-        hz *= 1.0 + (speed_gain - 1.0) * 0.6
+        # 频率：从静止 hz 平滑靠向 stride_hz，且不超过 stride_hz 的 1.15 倍
+        blend = min(1.0, max(0.0, (speed_gain - 1.0) / 0.9))
+        hz = hz * (1.0 - blend) + stride_hz * blend
+        hz = min(hz, stride_hz * 1.15)
         yaw0 += amp * handheld_noise(t_sec, hz, seed)
         pitch0 += amp * 0.7 * handheld_noise(t_sec, hz * 1.6, seed + 11.0)
         # 横滚：真实手持几乎不可能完全水平；单独给一个小幅度

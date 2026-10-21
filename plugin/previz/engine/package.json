@@ -28,7 +28,10 @@
     "demo": "node scripts/previz.mjs demo fixtures/boutique --out demo-out",
     "demo:burnin": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --burn-in",
     "demo:force": "node scripts/previz.mjs demo fixtures/boutique --out demo-out --force",
-    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs test/panels.test.mjs test/scenes.test.mjs"
+    "acceptance": "node scripts/acceptance.mjs",
+    "acceptance:quick": "node scripts/acceptance.mjs --quick",
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs test/export.test.mjs test/storyboard.test.mjs test/projects.test.mjs test/script.test.mjs test/panels.test.mjs test/scenes.test.mjs test/multiscene.test.mjs test/panels-csv.test.mjs test/camera-feel.test.mjs test/camera-response.test.mjs test/camera-layering.test.mjs test/shutter.test.mjs test/calibration.test.mjs",
+    "calibrate": "node scripts/calibrate.mjs"
   },
   "engines": {
     "node": ">=22"
