@@ -1,7 +1,10 @@
 # `@dsh-local/previz` —— 白模预演模式（P0 demo）
 
-把 `blender-previz` 的 P0 引擎包成工作台的一个外部工具型模式：
+把 `blender-previz` 的 P0 引擎包成工作台的一个外部工具型模式。**它只是兼容外壳**：
+引擎本身可直接用 `blender-previz/scripts/previz.mjs` 或 `lib/pipeline.mjs` 调用，不需要工作台。
 
+- **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
+  本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
 - **状态**：探测 Blender / ffmpeg（3s 有界、2s 缓存），接缝/瓷砖显示「Blender 未启动 / 渲染中 42%」；
 - **任务**：一个「运行 demo」= 构建 + 渲染 + 编码 + QC；可取消（只杀自己 spawn 的进程树）；
 - **产物**：animatic.mp4、俯视平面图、3×3 接触表、QC 报告、facts、每镜 mp4；

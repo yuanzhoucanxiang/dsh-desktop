@@ -1,0 +1,167 @@
+#!/usr/bin/env node
+/**
+ * 预演引擎的一等公民 CLI（不依赖工作台/Electron）。
+ *
+ *   previz info
+ *   previz validate [project]
+ *   previz build   [project] --out <dir>
+ *   previz render  [project] --out <dir> [--pass review|plan|all]
+ *   previz plan    [project] --out <dir>
+ *   previz encode  <outDir> [--ffmpeg <path>]
+ *   previz qc      <outDir>
+ *   previz demo    [project] --out <dir> [--skip-render] [--skip-encode]
+ *
+ * 通用参数：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
+ */
+import path from 'node:path'
+import { PACKAGE_ROOT, encodeOutputs, probeEnvironment, runBlender, runDemo, runQcReport, validateAll } from '../lib/pipeline.mjs'
+
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg'])
+const raw = process.argv.slice(2)
+const command = raw.shift() || 'help'
+const positional = []
+for (let i = 0; i < raw.length; i++) {
+  const a = raw[i]
+  if (!a.startsWith('--')) {
+    positional.push(a)
+    continue
+  }
+  const name = a.slice(2)
+  if (VALUE_FLAGS.has(name)) i++
+}
+const has = (name) => raw.includes(`--${name}`)
+function arg(name, fallback) {
+  const i = raw.indexOf(`--${name}`)
+  return i >= 0 && raw[i + 1] ? raw[i + 1] : fallback
+}
+const json = has('json')
+const quiet = has('quiet') || json
+const log = quiet ? () => {} : (...a) => console.log(...a)
+const fail = (msg, code = 1) => {
+  if (json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2))
+  else console.error(`[previz] ${msg}`)
+  process.exit(code)
+}
+const print = (obj) => {
+  if (json) console.log(JSON.stringify(obj, null, 2))
+}
+const projectDir = path.resolve(arg('project', positional[0] || path.join(PACKAGE_ROOT, 'fixtures/boutique')))
+const outDir = path.resolve(arg('out', command === 'encode' || command === 'qc' ? positional[0] || 'demo-out' : positional[1] || 'demo-out'))
+const blender = arg('blender', undefined)
+const ffmpeg = arg('ffmpeg', undefined)
+
+function validateOrExit() {
+  const v = validateAll(projectDir)
+  if (!v.ok) {
+    if (json) print({ ok: false, stage: 'validate', projectDir, errors: v.errors })
+    else {
+      console.error(`[previz] schema invalid (${v.errors.length} errors)`)
+      for (const e of v.errors.slice(0, 30)) console.error(`  ${e.path}: ${e.message}`)
+    }
+    process.exit(1)
+  }
+  log(`[previz] schema OK: ${projectDir}`)
+  return v
+}
+
+try {
+  if (command === 'help' || command === '--help' || command === '-h') {
+    console.log(`previz —— Blender 白模预演引擎（直接调用，不需要工作台）
+
+  previz info
+  previz validate [project]
+  previz build   [project] --out <dir>
+  previz render  [project] --out <dir> [--pass review|plan|all]
+  previz plan    [project] --out <dir>
+  previz encode  <outDir> [--ffmpeg <path>]
+  previz qc      <outDir>
+  previz demo    [project] --out <dir> [--skip-render] [--skip-encode]
+
+通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --json --quiet
+默认 project=fixtures/boutique  out=demo-out`)
+    process.exit(0)
+  }
+
+  if (command === 'info') {
+    const info = probeEnvironment({ blender, ffmpeg })
+    if (json) print(info)
+    else {
+      console.log(`Blender : ${info.blender ? `${info.blender.version}  ${info.blender.path}` : '未找到'}`)
+      console.log(`ffmpeg  : ${info.ffmpeg ? `${info.ffmpeg.version}  ${info.ffmpeg.path}` : '未找到'}`)
+      console.log(`Node    : ${info.node}`)
+      console.log(`cwd     : ${info.cwd}`)
+      if (info.missing.length) console.log(`缺少    : ${info.missing.join(', ')}（用 --blender / --ffmpeg 或环境变量指定）`)
+    }
+    process.exit(0)
+  }
+
+  if (command === 'validate') {
+    const v = validateAll(projectDir)
+    if (json) print({ ok: v.ok, projectDir, errors: v.errors })
+    else if (v.ok) console.log(`VALID ${projectDir}`)
+    else {
+      console.error(`INVALID ${projectDir} (${v.errors.length} errors)`)
+      for (const e of v.errors.slice(0, 30)) console.error(`  ${e.path}: ${e.message}`)
+    }
+    process.exit(v.ok ? 0 : 1)
+  }
+
+  if (command === 'build' || command === 'render' || command === 'plan') {
+    validateOrExit()
+    const pass = arg('pass', 'review')
+    const mode = command === 'build' ? 'build' : command === 'plan' ? 'plan' : pass === 'all' ? 'all' : pass === 'plan' ? 'plan' : 'render'
+    const result = runBlender({ projectDir, outDir, mode, blender, log })
+    if (json) print({ ok: true, projectDir, outDir, mode })
+    else console.log(`[previz] done mode=${mode} out=${outDir}`)
+    process.exit(0)
+  }
+
+  if (command === 'encode') {
+    const result = encodeOutputs(outDir, { ffmpeg, log, required: true })
+    if (json) print({ ok: true, outDir, ...result })
+    process.exit(0)
+  }
+
+  if (command === 'qc') {
+    const qc = runQcReport(outDir)
+    if (json) print(qc)
+    else {
+      if (qc.ok) console.log(`QC OK · shots=${qc.stats?.shots ?? '?'} frames=${qc.stats?.frames ?? '?'}`)
+      else {
+        console.error(`QC FAILED (${qc.errors.length} errors)`)
+        for (const e of qc.errors.slice(0, 30)) console.error(`  ${e.path}: ${e.message}`)
+      }
+      for (const w of qc.warnings || []) console.warn(`  WARN ${w.path}: ${w.message}`)
+    }
+    process.exit(qc.ok ? 0 : 1)
+  }
+
+  if (command === 'demo') {
+    const result = runDemo({
+      projectDir,
+      outDir,
+      blender,
+      ffmpeg,
+      skipRender: has('skip-render'),
+      skipEncode: has('skip-encode'),
+      log,
+    })
+    if (json) print(result)
+    else if (result.stage === 'validate') {
+      console.error(`[previz] schema invalid (${result.errors.length} errors)`)
+      for (const e of result.errors.slice(0, 30)) console.error(`  ${e.path}: ${e.message}`)
+    } else if (!result.ok) {
+      console.error(`[previz] QC FAILED (${result.qc.errors.length} errors)`)
+      for (const e of result.qc.errors.slice(0, 30)) console.error(`  ${e.path}: ${e.message}`)
+    } else {
+      console.log(`[previz] QC OK · shots=${result.qc.stats.shots} frames=${result.qc.stats.frames}`)
+      for (const w of result.qc.warnings) console.warn(`  WARN ${w.path}: ${w.message}`)
+      console.log(`[previz] out: ${result.outDir}`)
+    }
+    process.exit(result.ok ? 0 : 1)
+  }
+
+  fail(`unknown command: ${command}（用 previz help）`, 2)
+} catch (err) {
+  fail(err?.message || String(err), 1)
+}

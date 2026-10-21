@@ -1,0 +1,221 @@
+/**
+ * 预演引擎的共享 pipeline —— CLI / Node API / 工作台 host 都走这一份，避免三套逻辑。
+ *
+ * 直接调用示例：
+ *   import { runDemo, runBlender, encodeOutputs, runQcReport, probeEnvironment } from './lib/pipeline.mjs'
+ *   await runDemo({ projectDir, outDir })
+ *
+ * 不依赖 Electron / 工作台；只依赖 Blender、ffmpeg 与本地文件。
+ */
+import fs from 'node:fs'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { validateAll } from './validate.mjs'
+import { runQc } from './qc.mjs'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+export const PACKAGE_ROOT = path.dirname(__dirname)
+export const BUILDER = path.join(PACKAGE_ROOT, 'blender', 'previz_build.py')
+
+const BLENDER_CANDIDATES = [
+  () => process.env.PREVIZ_BLENDER,
+  () => 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe',
+  () => 'C:/Program Files/Blender Foundation/Blender 5.3/blender.exe',
+  () => 'blender',
+]
+
+const FFMPEG_CANDIDATES = [() => process.env.PREVIZ_FFMPEG, () => 'ffmpeg']
+
+function commandWorks(cmd, argv) {
+  try {
+    const r = spawnSync(cmd, argv, { encoding: 'utf8', timeout: 3000, windowsHide: true })
+    return r.status === 0 ? String(r.stdout || '') : null
+  } catch {
+    return null
+  }
+}
+
+export function findBlender(explicit) {
+  const candidates = [() => explicit, ...BLENDER_CANDIDATES].filter(Boolean)
+  for (const get of candidates) {
+    let c = null
+    try {
+      c = get()
+    } catch {
+      c = null
+    }
+    if (!c) continue
+    if (c === 'blender') {
+      if (commandWorks('blender', ['--version']) !== null) return 'blender'
+      continue
+    }
+    if (fs.existsSync(c)) return c
+  }
+  return null
+}
+
+export function findFfmpeg(explicit) {
+  const candidates = [() => explicit, ...FFMPEG_CANDIDATES].filter(Boolean)
+  for (const get of candidates) {
+    let c = null
+    try {
+      c = get()
+    } catch {
+      c = null
+    }
+    if (!c) continue
+    if (commandWorks(c, ['-version']) !== null) return c
+  }
+  return null
+}
+
+export function versionOf(cmd, args, regex) {
+  const out = commandWorks(cmd, args)
+  if (out === null) return null
+  const m = regex.exec(out)
+  return m ? m[1] : 'unknown'
+}
+
+export function probeEnvironment({ blender, ffmpeg } = {}) {
+  const b = findBlender(blender)
+  const f = findFfmpeg(ffmpeg)
+  return {
+    ok: !!b && !!f,
+    node: process.version,
+    cwd: process.cwd(),
+    blender: b ? { path: b, version: versionOf(b, ['--version'], /Blender\s+([^\s]+)/) } : null,
+    ffmpeg: f ? { path: f, version: versionOf(f, ['-version'], /ffmpeg version\s+([^\s]+)/) } : null,
+    missing: [!b ? 'blender' : null, !f ? 'ffmpeg' : null].filter(Boolean),
+  }
+}
+
+export function runCommand(cmd, argv, opts = {}) {
+  const r = spawnSync(cmd, argv, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, windowsHide: true, ...opts })
+  if (r.error) throw r.error
+  if (r.status !== 0) {
+    const tail = String(r.stderr || r.stdout || '').split(/\r?\n/).slice(-40).join('\n')
+    throw new Error(`${path.basename(cmd)} exited ${r.status}\n${tail}`)
+  }
+  return r
+}
+
+/** 构建 / 渲染 / 平面图：直接调 Blender headless。 */
+export function runBlender({ projectDir, outDir, mode = 'all', blender, log = console.log } = {}) {
+  const resolvedProject = path.resolve(projectDir || path.join(PACKAGE_ROOT, 'fixtures/boutique'))
+  const resolvedOut = path.resolve(outDir || 'demo-out')
+  if (!['build', 'render', 'plan', 'all'].includes(mode)) throw new Error(`unknown mode: ${mode}`)
+  const exe = findBlender(blender)
+  if (!exe) throw new Error('找不到 Blender（设置 PREVIZ_BLENDER 或安装 Blender 5.2）')
+  fs.mkdirSync(resolvedOut, { recursive: true })
+  log(`[previz] blender: ${exe}`)
+  const args = [
+    '-b', '--factory-startup',
+    '--python', BUILDER,
+    '--python-exit-code', '2',
+    '--',
+    '--project', resolvedProject,
+    '--out', resolvedOut,
+    '--mode', mode,
+  ]
+  const r = runCommand(exe, args, { cwd: PACKAGE_ROOT })
+  const lines = String(r.stdout || '').split(/\r?\n/).filter(Boolean)
+  for (const line of lines.slice(-10)) log(`[blender] ${line}`)
+  return { ok: true, projectDir: resolvedProject, outDir: resolvedOut, mode, stdout: r.stdout, stderr: r.stderr }
+}
+
+/** PNG 序列 → 每镜 mp4 → animatic → 3×3 接触表。 */
+export function encodeOutputs(outDir, { ffmpeg, log = console.log, required = false } = {}) {
+  const resolvedOut = path.resolve(outDir || 'demo-out')
+  const exe = findFfmpeg(ffmpeg)
+  if (!exe) {
+    if (required) throw new Error('找不到 ffmpeg（设置 PREVIZ_FFMPEG 或放进 PATH）')
+    log('[previz] ffmpeg 不在 PATH 上：跳过编码，PNG 序列仍可用')
+    return { encoded: false, reason: 'ffmpeg-not-found' }
+  }
+  const factsPath = path.join(resolvedOut, 'facts.json')
+  if (!fs.existsSync(factsPath)) throw new Error(`缺少 ${factsPath}；先跑 build/render`)
+  const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8'))
+  const scene = facts.scene || 'S03'
+  const files = []
+  for (const shot of facts.shots) {
+    const dir = path.join(resolvedOut, scene, shot.id, 'review')
+    const mp4 = path.join(resolvedOut, scene, shot.id, `${shot.id}.mp4`)
+    const start = shot.start.frame
+    const firstFrame = path.join(dir, `f_${String(start).padStart(4, '0')}.png`)
+    if (!fs.existsSync(firstFrame)) {
+      throw new Error(`缺少渲染帧：${firstFrame}（先跑 previz render --pass review，或 previz demo）`)
+    }
+    runCommand(exe, [
+      '-y',
+      '-framerate', String(facts.fps),
+      '-start_number', String(start),
+      '-i', path.join(dir, 'f_%04d.png'),
+      '-frames:v', String(shot.frames),
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      mp4,
+    ])
+    files.push(mp4)
+    log(`[previz] encoded ${path.relative(process.cwd(), mp4)}`)
+  }
+  const list = path.join(resolvedOut, 'concat.txt')
+  fs.writeFileSync(list, files.map((f) => `file '${f.replace(/\\/g, '/')}'`).join('\n') + '\n', 'utf8')
+  const animatic = path.join(resolvedOut, 'animatic.mp4')
+  runCommand(exe, ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', animatic])
+  log(`[previz] animatic -> ${path.relative(process.cwd(), animatic)}`)
+
+  const stills = []
+  for (const shot of facts.shots) {
+    const dir = path.join(resolvedOut, scene, shot.id)
+    stills.push(path.join(dir, 'first.png'), path.join(dir, 'mid.png'), path.join(dir, 'last.png'))
+  }
+  if (stills.every((f) => fs.existsSync(f))) {
+    const sheet = path.join(resolvedOut, 'contact_sheet.png')
+    const args = ['-y']
+    for (const f of stills) args.push('-i', f)
+    args.push(
+      '-filter_complex',
+      '[0:v][1:v][2:v]hstack=inputs=3[r0];[3:v][4:v][5:v]hstack=inputs=3[r1];[6:v][7:v][8:v]hstack=inputs=3[r2];[r0][r1][r2]vstack=inputs=3[out]',
+      '-map', '[out]', '-frames:v', '1', sheet,
+    )
+    runCommand(exe, args)
+    log(`[previz] contact sheet -> ${path.relative(process.cwd(), sheet)}`)
+  } else {
+    log('[previz] 缺少 first/mid/last 静帧，跳过接触表')
+  }
+  return { encoded: true, animatic, contactSheet: path.join(resolvedOut, 'contact_sheet.png') }
+}
+
+/** 跑 QC 并写 qc_report.json；返回 runQc 的结果。 */
+export function runQcReport(outDir) {
+  const resolvedOut = path.resolve(outDir || 'demo-out')
+  const qc = runQc({ outDir: resolvedOut })
+  fs.writeFileSync(path.join(resolvedOut, 'qc_report.json'), JSON.stringify(qc, null, 2), 'utf8')
+  return qc
+}
+
+/**
+ * 一条命令：校验 → Blender 构建/渲染/平面图 → 编码 → QC。
+ * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
+ */
+export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, log = console.log } = {}) {
+  const resolvedProject = path.resolve(projectDir)
+  const resolvedOut = path.resolve(outDir)
+  const validation = validateAll(resolvedProject)
+  if (!validation.ok) {
+    return { ok: false, stage: 'validate', projectDir: resolvedProject, errors: validation.errors }
+  }
+  log(`[previz] schema OK: ${resolvedProject}`)
+  if (!skipRender) {
+    runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', blender, log })
+  }
+  if (!skipEncode) encodeOutputs(resolvedOut, { ffmpeg, log })
+  const qc = runQcReport(resolvedOut)
+  return { ok: qc.ok, stage: qc.ok ? 'done' : 'qc', projectDir: resolvedProject, outDir: resolvedOut, qc }
+}
+
+export { validateAll, runQc }

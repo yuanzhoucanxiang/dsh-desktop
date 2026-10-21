@@ -2,12 +2,24 @@
   "name": "blender-previz",
   "version": "0.1.0",
   "private": true,
-  "description": "Blender 白模预演引擎（schema / builder / render / QC）",
+  "description": "Blender 白模预演引擎（schema / builder / render / QC / CLI / Node API）",
   "type": "module",
+  "main": "lib/pipeline.mjs",
+  "exports": {
+    ".": "./lib/pipeline.mjs"
+  },
+  "bin": {
+    "previz": "scripts/previz.mjs"
+  },
   "scripts": {
-    "validate": "node scripts/validate.mjs fixtures/boutique",
-    "demo": "node scripts/run-demo.mjs",
-    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs"
+    "previz": "node scripts/previz.mjs",
+    "validate": "node scripts/previz.mjs validate fixtures/boutique",
+    "build:scene": "node scripts/previz.mjs build fixtures/boutique --out demo-out",
+    "render:scene": "node scripts/previz.mjs render fixtures/boutique --out demo-out",
+    "encode": "node scripts/previz.mjs encode demo-out",
+    "qc": "node scripts/previz.mjs qc demo-out",
+    "demo": "node scripts/previz.mjs demo fixtures/boutique --out demo-out",
+    "test": "node --test test/framing.test.mjs test/validate.test.mjs test/qc.test.mjs test/pipeline.test.mjs test/cli.test.mjs"
   },
   "engines": {
     "node": ">=22"
