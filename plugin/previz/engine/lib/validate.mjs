@@ -12,6 +12,8 @@ export const ROLES = new Set(['BODY', 'PROP', 'WOOD', 'DARK', 'WALL', 'RELIEF', 
 export const SHOT_SIZES = new Set(['ELS', 'LS', 'FS', 'MLS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'TWO', 'INSERT'])
 export const SCREEN_DIRECTIONS = new Set(['left_to_right', 'right_to_left', 'toward_camera', 'away_from_camera', 'hold'])
 export const AXIS_SIDES = new Set(['left', 'right'])
+export const RESPONSE_PRESETS = new Set(['steadicam', 'handheld_quiet', 'handheld_walk', 'handheld_run'])
+
 export const MOVES = new Set([
   'static', 'pan', 'tilt', 'dolly_in', 'dolly_out', 'truck', 'pedestal', 'crane', 'orbit', 'handheld', 'whip_pan', 'zoom', 'steadicam',
 ])
@@ -279,6 +281,30 @@ export function validateShots(shots, { blocking, set, project } = {}) {
       if (!['solve', 'explicit'].includes(s.camera.mode)) err(e, `${p}.camera.mode`, '必须是 solve 或 explicit')
       if (s.camera.azimuth_deg !== undefined) checkNum(e, `${p}.camera.azimuth_deg`, s.camera.azimuth_deg, -360, 360)
       if (s.camera.height !== undefined) checkNum(e, `${p}.camera.height`, s.camera.height, 0, 50)
+      // 操作响应层：位置与朝向各自的滞后/平滑/限速。全部可选，写错要报错而不是静默忽略。
+      if (s.camera.response !== undefined) {
+        const r = s.camera.response
+        if (!isObj(r)) err(e, `${p}.camera.response`, '必须是对象')
+        else {
+          if (r.preset !== undefined && !RESPONSE_PRESETS.has(r.preset)) {
+            err(e, `${p}.camera.response.preset`, `未知响应预设: ${r.preset}（可选 ${[...RESPONSE_PRESETS].join('/')}）`)
+          }
+          const nonNeg = ['pos_lag', 'aim_lag', 'max_speed', 'max_accel', 'max_aim_speed']
+          for (const k of nonNeg) {
+            if (r[k] !== undefined) checkNum(e, `${p}.camera.response.${k}`, r[k], 0, 1000)
+          }
+          for (const k of ['pos_smooth', 'aim_smooth']) {
+            if (r[k] !== undefined) checkNum(e, `${p}.camera.response.${k}`, r[k], 0, 0.99)
+          }
+        }
+      }
+      if (s.camera.follow !== undefined) {
+        if (!isObj(s.camera.follow) || !isStr(s.camera.follow.actor)) {
+          err(e, `${p}.camera.follow`, '需要 actor 字段')
+        } else if (s.camera.follow.lag !== undefined) {
+          checkNum(e, `${p}.camera.follow.lag`, s.camera.follow.lag, 0, 10)
+        }
+      }
     }
     if (s.move !== undefined) {
       if (!isObj(s.move) || !MOVES.has(s.move.type)) err(e, `${p}.move.type`, `未知运镜: ${s.move?.type}`)

@@ -631,6 +631,116 @@ def handheld_noise(t_sec, freq_hz, seed, octaves=2):
     return total / max(norm, 1e-6)
 
 
+def resolve_response(shot):
+    """
+    响应预设 → 具体参数。让“稳定器跟拍/行走手持”能一行启用，而不是每次手调六个数字。
+
+    预设值是按物理量级估的（不是实拍标定）：稳定器越重、越稳，滞后与加速度限制越大；
+    手持越轻，反应越快、抖动越直接。真实观感仍需实拍参照校准，这里只保证量级合理、可复现。
+    """
+    preset = ((shot.get("camera") or {}).get("response") or {}).get("preset")
+    explicit = dict(((shot.get("camera") or {}).get("response") or {}))
+    explicit.pop("preset", None)
+    table = {
+        # 稳定器：机身重、操作者跟得慢，但一旦动起来很顺
+        "steadicam": {"pos_lag": 0.42, "aim_lag": 0.22, "pos_smooth": 0.55, "aim_smooth": 0.35,
+                      "max_speed": 3.6, "max_accel": 5.5, "max_aim_speed": 4.0},
+        # 安静手持：几乎不滞后，但加速度受限（人手的启停比机器干脆）
+        "handheld_quiet": {"pos_lag": 0.05, "aim_lag": 0.04, "pos_smooth": 0.12, "aim_smooth": 0.10,
+                           "max_speed": 6.0, "max_accel": 45.0, "max_aim_speed": 7.0},
+        # 行走手持：位置跟着人走、瞄准略慢，有明显上下起伏
+        "handheld_walk": {"pos_lag": 0.12, "aim_lag": 0.09, "pos_smooth": 0.25, "aim_smooth": 0.20,
+                          "max_speed": 5.0, "max_accel": 28.0, "max_aim_speed": 6.0},
+        # 奔跑手持：反应最快但抖动大，加速度限制放宽
+        "handheld_run": {"pos_lag": 0.06, "aim_lag": 0.05, "pos_smooth": 0.10, "aim_smooth": 0.08,
+                         "max_speed": 8.0, "max_accel": 70.0, "max_aim_speed": 9.0},
+    }
+    if not preset:
+        return explicit
+    base = dict(table.get(preset, {}))
+    base.update(explicit)  # 显式参数覆盖预设
+    return base
+
+
+def make_operator_state():
+    """操作响应层的状态：位置与朝向各自独立，各有上一帧值与上一帧速度。"""
+    return {
+        "pos": None,      # 上一帧相机位置（Vector）
+        "pos_vel": None,  # 上一帧位置速度（Vector, m/s）
+        "aim": None,      # 上一帧瞄准点（Vector）
+        "aim_vel": None,  # 上一帧瞄准速度（Vector, m/s）
+    }
+
+
+def _smooth_toward(current, target, max_step):
+    """把 current 朝 target 移动，单帧最多 max_step。"""
+    delta = target - current
+    dist = delta.length
+    if dist <= max_step or dist < 1e-9:
+        return target.copy(), delta / max(dist, 1e-9) * dist
+    return current + delta.normalized() * max_step, delta.normalized() * max_step
+
+
+def operator_response(ideal_pos, ideal_aim, state, resp, dt):
+    """
+    操作响应层的核心：把“理想机位/理想瞄准”变成“操作者实际能做到的机位/瞄准”。
+
+    参数（都放在 shot.camera.response 下，全部可缺省）：
+      pos_lag    位置滞后（秒）—— 带机身的重量感
+      aim_lag    瞄准滞后（秒）—— 摄影师眼睛先到、机器后到
+      pos_smooth 位置平滑 0..1（越大越黏）
+      aim_smooth 瞄准平滑 0..1
+      max_speed  位置速度上限（m/s）
+      max_accel  位置加速度上限（m/s²）
+      max_aim_speed 瞄准速度上限（m/s）
+
+    位置和朝向分开处理是关键：真实跟拍里“人到了但构图还没跟上”和
+    “构图先追上、机器还在滑行”是不同的观感，共用一个 lag 表达不了。
+
+    返回 (pos, aim, state)。
+    """
+    resp = resp or {}
+    dt = max(float(dt), 1e-6)
+
+    def one(key, ideal, state_key, vel_key, lag_key, smooth_key, speed_key, accel_key=None):
+        prev = state[state_key]
+        if prev is None:
+            state[state_key] = ideal.copy()
+            state[vel_key] = Vector((0.0, 0.0, 0.0))
+            return ideal.copy()
+        # 滞后：用一阶近似把目标往“上一帧位置”拉
+        lag = float(resp.get(lag_key, 0.0) or 0.0)
+        target = ideal.copy()
+        if lag > 0.0:
+            alpha = min(1.0, dt / max(lag, 1e-6))
+            target = prev + (ideal - prev) * alpha
+        # 平滑：指数插值
+        smooth = float(resp.get(smooth_key, 0.0) or 0.0)
+        if smooth > 0.0:
+            k = 1.0 - max(0.0, min(0.99, smooth))
+            target = prev + (target - prev) * k
+        # 速度上限
+        max_speed = resp.get(speed_key)
+        new_pos, step = _smooth_toward(prev, target, float(max_speed) * dt if max_speed else 1e9)
+        # 加速度上限：限制本帧速度相对上一帧速度的变化
+        if accel_key and resp.get(accel_key):
+            prev_v = state[vel_key]
+            want_v = step / dt
+            max_dv = float(resp[accel_key]) * dt
+            dv = want_v - prev_v
+            if dv.length > max_dv and dv.length > 1e-9:
+                want_v = prev_v + dv.normalized() * max_dv
+                new_pos = prev + want_v * dt
+                step = new_pos - prev
+        state[state_key] = new_pos.copy()
+        state[vel_key] = step / dt
+        return new_pos
+
+    new_pos = one("pos", ideal_pos, "pos", "pos_vel", "pos_lag", "pos_smooth", "max_speed", "max_accel")
+    new_aim = one("aim", ideal_aim, "aim", "aim_vel", "aim_lag", "aim_smooth", "max_aim_speed")
+    return new_pos, new_aim, state
+
+
 def camera_orbit(shot, project, blocking, actors, bag_objs, t, fps, u, duration=None, t_sec=None):
     """
     通用运镜：以 solve_camera 的起始位为基准，按 move 参数生成随时间变化的机位。
@@ -809,6 +919,9 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
             # 记录人物历史位置，用于按 lag 回溯
             actor_history = {}
             shot_seconds = (end - start) / max(fps, 1)
+            op_state = make_operator_state()
+            # 预设/显式参数先解析一次（不随帧变化）
+            response = resolve_response(shot)
             for frame in range(start, end + 1):
                 bpy.context.scene.frame_set(frame)
                 u = (frame - start) / max(end - start, 1)
@@ -833,6 +946,12 @@ def build_cameras(project, shots, blocking, actors, bag_objs, fps, coll):
                     new_pos, new_target, _dist, _span, _fill, _sh, _roll2 = camera_orbit(
                         base_shot, project, blocking, actors, bag_objs, (frame - 1) / fps, fps, u,
                         duration=shot_seconds, t_sec=t_sec,
+                    )
+                # 操作响应层：把“理想机位/理想瞄准”变成“操作者实际能做到的”。
+                # 支持只写 preset（如 steadicam），也支持显式参数覆盖。
+                if response:
+                    new_pos, new_target, op_state = operator_response(
+                        Vector(new_pos), Vector(new_target), op_state, response, 1.0 / max(fps, 1)
                     )
                 cam.location = new_pos
                 tgt.location = new_target
