@@ -46,6 +46,7 @@ def parse_args():
         "mode": "all",  # build | render | plan | all
         "res": "640x360",
         "plan_res": "1280x720",
+        "only": "",  # 逗号分隔的镜号；空 = 全部
     }
     i = 0
     while i < len(argv):
@@ -1013,14 +1014,18 @@ def main():
     log(f"facts -> {os.path.join(out_dir, 'facts.json')}")
 
     mode = opts["mode"]
+    only = {s.strip() for s in str(opts.get("only", "")).split(",") if s.strip()}
+    target_shots = [s for s in shots["shots"] if not only or s["id"] in only]
+    if only and not target_shots:
+        raise SystemExit(f"--only 没有匹配到镜头：{sorted(only)}")
     if mode in ("all", "render"):
-        for shot in shots["shots"]:
+        for shot in target_shots:
             cam, tgt, info = cams[shot["id"]]
             render_shot(shot, cam, info, os.path.join(out_dir, "S03", shot["id"], "review"))
     if mode in ("all", "plan"):
         render_plan(project, shots, cams, out_dir, plan_res)
 
-    print("PREVIZ_DONE " + json.dumps({"out": out_dir, "shots": len(shots["shots"]), "frames": total_frames}, ensure_ascii=False), flush=True)
+    print("PREVIZ_DONE " + json.dumps({"out": out_dir, "shots": len(shots["shots"]), "rendered": [s["id"] for s in target_shots], "frames": total_frames}, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

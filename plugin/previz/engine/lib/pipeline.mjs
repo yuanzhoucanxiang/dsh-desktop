@@ -55,6 +55,77 @@ function outputsComplete(outDir) {
   }
 }
 
+/**
+ * 逐镜指纹：只把这一镜“能看到/受影响”的输入算进去——
+ * 镜头定义、它引用的演员 keys/moves、相关的 props、set、builder。
+ * 其它镜头的改动不影响本镜，从而可以只重渲脏镜。
+ */
+export function shotFingerprints(projectDir) {
+  const read = (n) => JSON.parse(fs.readFileSync(path.join(projectDir, n), 'utf8'))
+  const set = read('set.json')
+  const blocking = read('blocking.json')
+  const shots = read('shots.json')
+  const builderHash = crypto.createHash('sha256').update(fs.readFileSync(BUILDER)).digest('hex')
+  const shared = { set, duration: blocking.duration, builder: builderHash }
+  const out = {}
+  for (const shot of shots.shots || []) {
+    const h = crypto.createHash('sha256')
+    h.update(JSON.stringify(shared))
+    h.update(JSON.stringify(shot))
+    const actors = {}
+    for (const id of shot.subjects || []) {
+      if (blocking.actors?.[id]) actors[id] = blocking.actors[id]
+    }
+    h.update(JSON.stringify(actors))
+    h.update(JSON.stringify((blocking.moves || []).filter((m) => actors[m.actor])))
+    h.update(
+      JSON.stringify(
+        (blocking.props || []).filter((p) => (shot.subjects || []).includes(p.id) || actors[p.attach?.actor]),
+      ),
+    )
+    out[shot.id] = h.digest('hex')
+  }
+  return out
+}
+
+function readShotCache(outDir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(outDir, '.previz-shots.json'), 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function shotOutputsComplete(outDir, facts, shotId) {
+  try {
+    const shot = (facts.shots || []).find((s) => s.id === shotId)
+    if (!shot) return false
+    const scene = facts.scene || 'S03'
+    const review = path.join(outDir, scene, shotId, 'review')
+    const pngs = fs.existsSync(review) ? fs.readdirSync(review).filter((f) => /^f_\d+\.png$/.test(f)) : []
+    return pngs.length === shot.frames
+  } catch {
+    return false
+  }
+}
+
+/** 对比逐镜指纹，返回需要重渲的镜号。 */
+export function dirtyShots(projectDir, outDir) {
+  const current = shotFingerprints(projectDir)
+  const cache = readShotCache(outDir)
+  let facts = null
+  try {
+    facts = JSON.parse(fs.readFileSync(path.join(outDir, 'facts.json'), 'utf8'))
+  } catch {
+    facts = null
+  }
+  const dirty = []
+  for (const [id, fp] of Object.entries(current)) {
+    if (cache[id] !== fp || !facts || !shotOutputsComplete(outDir, facts, id)) dirty.push(id)
+  }
+  return { current, dirty, cache, facts }
+}
+
 const BLENDER_CANDIDATES = [
   () => process.env.PREVIZ_BLENDER,
   () => 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe',
@@ -137,8 +208,8 @@ export function runCommand(cmd, argv, opts = {}) {
   return r
 }
 
-/** 构建 / 渲染 / 平面图：直接调 Blender headless。 */
-export function runBlender({ projectDir, outDir, mode = 'all', blender, log = console.log } = {}) {
+/** 构建 / 渲染 / 平面图：直接调 Blender headless。only=只渲这些镜号。 */
+export function runBlender({ projectDir, outDir, mode = 'all', only = null, blender, log = console.log } = {}) {
   const resolvedProject = path.resolve(projectDir || path.join(PACKAGE_ROOT, 'fixtures/boutique'))
   const resolvedOut = path.resolve(outDir || 'demo-out')
   if (!['build', 'render', 'plan', 'all'].includes(mode)) throw new Error(`unknown mode: ${mode}`)
@@ -155,10 +226,11 @@ export function runBlender({ projectDir, outDir, mode = 'all', blender, log = co
     '--out', resolvedOut,
     '--mode', mode,
   ]
+  if (only && only.length) args.push('--only', only.join(','))
   const r = runCommand(exe, args, { cwd: PACKAGE_ROOT })
   const lines = String(r.stdout || '').split(/\r?\n/).filter(Boolean)
   for (const line of lines.slice(-10)) log(`[blender] ${line}`)
-  return { ok: true, projectDir: resolvedProject, outDir: resolvedOut, mode, stdout: r.stdout, stderr: r.stderr }
+  return { ok: true, projectDir: resolvedProject, outDir: resolvedOut, mode, only: only || [], stdout: r.stdout, stderr: r.stderr }
 }
 
 /** PNG 序列 → 每镜 mp4 → animatic → 3×3 接触表。 */
@@ -333,7 +405,7 @@ export function runQcReport(outDir) {
  * 一条命令：校验 → Blender 构建/渲染/平面图 → 编码 → QC。
  * 不抛异常给“业务失败”（validate/qc），由调用方决定退出码；只有环境/进程错误才抛。
  */
-export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, log = console.log } = {}) {
+export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutique'), outDir = 'demo-out', blender, ffmpeg, skipRender = false, skipEncode = false, burnIn: doBurnIn = false, font, force = false, only = null, log = console.log } = {}) {
   const resolvedProject = path.resolve(projectDir)
   const resolvedOut = path.resolve(outDir)
   const validation = validateAll(resolvedProject)
@@ -342,7 +414,7 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   }
   log(`[previz] schema OK: ${resolvedProject}`)
 
-  const useCache = !skipRender && !skipEncode && !force
+  const useCache = !skipRender && !skipEncode && !force && !(only && only.length)
   const fingerprint = useCache ? projectFingerprint(resolvedProject, doBurnIn ? 'burnin' : '') : null
   const cachePath = path.join(resolvedOut, CACHE_FILE)
   let cache = null
@@ -363,8 +435,21 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   }
   if (useCache) log(`[previz] cache miss (${fingerprint.slice(0, 12)})`)
 
+  let rendered = null
+  let dirty = null
   if (!skipRender) {
-    runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', blender, log })
+    if (only && only.length) {
+      rendered = only
+      log(`[previz] render only: ${only.join(', ')}`)
+    } else {
+      const plan = dirtyShots(resolvedProject, resolvedOut)
+      dirty = plan.dirty
+      if (dirty.length && dirty.length < Object.keys(plan.current).length) {
+        log(`[previz] dirty shots: ${dirty.join(', ')}（其余复用已有帧）`)
+      }
+      rendered = dirty.length ? dirty : null
+    }
+    runBlender({ projectDir: resolvedProject, outDir: resolvedOut, mode: 'all', only: rendered, blender, log })
   }
   let encoded = null
   if (!skipEncode) encoded = encodeOutputs(resolvedOut, { ffmpeg, log })
@@ -372,6 +457,8 @@ export function runDemo({ projectDir = path.join(PACKAGE_ROOT, 'fixtures/boutiqu
   if (doBurnIn) burned = burnIn(resolvedOut, { ffmpeg, font, log })
   const qc = runQcReport(resolvedOut)
   if (useCache && qc.ok) {
+    const fps = JSON.parse(fs.readFileSync(path.join(resolvedOut, 'facts.json'), 'utf8')).fps || 24
+    fs.writeFileSync(path.join(resolvedOut, '.previz-shots.json'), JSON.stringify(shotFingerprints(resolvedProject), null, 2), 'utf8')
     fs.writeFileSync(
       cachePath,
       JSON.stringify({ version: 1, fingerprint, at: new Date().toISOString(), animatic: path.join(resolvedOut, 'animatic.mp4') }, null, 2),

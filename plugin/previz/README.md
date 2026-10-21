@@ -5,6 +5,7 @@
 
 - **项目**：面板顶部可切项目（host `POST ?route=project`）；每个项目独立输出目录；`fixtures/bad-occlusion` 因 `fixture:true` 不列入。
 - **剧本**：引擎 `previz script` / `previz board` 可从 `script.txt` 生成 `script.json` 与分镜草案；工作台面板只做展示/运行。
+- **缓存**：整项目 + 逐镜指纹；只重渲脏镜，`--only S03-02` 可指定。
 - **直接调用**：`node scripts/previz.mjs demo fixtures/boutique --out demo-out`（在 `blender-previz` 下）；
   也可先 `previz import storyboard.csv` 生成 `shots.json` 再跑。本插件 host 也调 vendored 的 `engine/scripts/run-demo.mjs`。
 - **状态**：探测 Blender / ffmpeg（3s 有界、2s 缓存），接缝/瓷砖显示「Blender 未启动 / 渲染中 42%」；

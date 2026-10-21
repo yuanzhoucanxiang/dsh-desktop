@@ -19,7 +19,7 @@ import { PACKAGE_ROOT, burnIn, encodeOutputs, exportTimeline, probeEnvironment, 
 import { importStoryboard } from '../lib/storyboard.mjs'
 import { parseAliases, writeScript, writeStoryboard } from '../lib/script.mjs'
 import { listProjects, resolveProjectRef, scaffoldProject } from '../lib/projects.mjs'
-const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking'])
+const VALUE_FLAGS = new Set(['project', 'out', 'pass', 'blender', 'ffmpeg', 'font', 'file', 'scene', 'fps', 'title', 'root', 'alias', 'beat', 'size', 'angle', 'lens', 'move', 'fit-blocking', 'only'])
 const raw = process.argv.slice(2)
 const command = raw.shift() || 'help'
 const positional = []
@@ -88,7 +88,7 @@ try {
   previz projects [--json]
   previz project new <id> [--title <标题>] [--root <root>]
   previz burn-in <outDir> [--font <path>]
-  previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force]
+  previz demo    [project] --out <dir> [--skip-render] [--skip-encode] [--burn-in] [--force] [--only S03-02]
 
 通用：--project <dir> --out <dir> --blender <path> --ffmpeg <path> --font <path> --json --quiet
 --force 绕过输入指纹缓存，强制重跑构建/渲染。
@@ -124,7 +124,7 @@ try {
     validateOrExit()
     const pass = arg('pass', 'review')
     const mode = command === 'build' ? 'build' : command === 'plan' ? 'plan' : pass === 'all' ? 'all' : pass === 'plan' ? 'plan' : 'render'
-    const result = runBlender({ projectDir, outDir, mode, blender, log })
+    const result = runBlender({ projectDir, outDir, mode, only: (arg('only', '') || '').split(',').map((s) => s.trim()).filter(Boolean), blender, log })
     if (json) print({ ok: true, projectDir, outDir, mode })
     else console.log(`[previz] done mode=${mode} out=${outDir}`)
     process.exit(0)
@@ -262,6 +262,7 @@ try {
       burnIn: has('burn-in'),
       font: arg('font', undefined),
       force: has('force'),
+      only: (arg('only', '') || '').split(',').map((s) => s.trim()).filter(Boolean),
       log,
     })
     if (json) print(result)
