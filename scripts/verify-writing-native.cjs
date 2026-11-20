@@ -1,5 +1,6 @@
 // Real pinned Harness + hidden Electron; fresh home, no keys, no model requests.
 // Owns only the kernel process it starts. Never attaches to a user's desktop.
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

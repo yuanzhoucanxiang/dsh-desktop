@@ -1,5 +1,6 @@
 // Isolated, hidden Electron renderer. Never connects to or closes a user app.
 // 导出成书（compile）UI 端到端：项目头「成书」入口 → 面板候选/勾选 → 导出落盘 → 编辑器打开成片。
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

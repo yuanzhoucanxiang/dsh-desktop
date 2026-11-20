@@ -21,6 +21,7 @@
 //   · 根本找不到 client.js；
 //   · 找到了，但那棵树**没有接入工具台**（没有 `__workbenchBridge`）—— 那种树下 W1/W2 必然红，
 //     报红只会制造假警报。
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

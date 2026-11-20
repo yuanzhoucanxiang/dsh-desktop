@@ -10,6 +10,7 @@
 // 说明：W3 用入口导出的 `__setCloseGuard` 装一个"拒绝"守卫来验**接线**
 // （工具台 → canDeactivate → 守卫）；真实守卫（未保存内容 → editor.close）的语义由
 // 写作模式自己的门禁（verify:writing-ui / native）覆盖，不在本探针重复。
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow, screen } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

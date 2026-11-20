@@ -1,5 +1,6 @@
 // previz 客户端真实渲染验收：隔离、隐藏的 Electron 窗口 + 假内核页。
 // 验两件事：① 没工作台时独立入口/overlay 可用；② 工作台出现后让出入口并注册完整模式描述。
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow, screen } = require('electron')
 const fs = require('node:fs')
 const http = require('node:http')

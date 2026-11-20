@@ -34,6 +34,8 @@ const opt = {
     : path.join(os.tmpdir(), 'dsh-builtin-plugins', 'packages'),
   json: args.includes('--json') ? args[args.indexOf('--json') + 1] : '',
   keep: args.includes('--keep'),
+  // `--require`：前置条件不满足时**按失败处理**（CI 用）。默认只 SKIP，见 precheck()。
+  require: args.includes('--require'),
   timeout: args.includes('--timeout') ? Number(args[args.indexOf('--timeout') + 1]) : 150,
 }
 
@@ -85,8 +87,10 @@ function pluginEntries() {
 
 async function main() {
   const rt = resolveRuntime()
-  if (!rt) return report('未找到可用运行时')
-  if (!fs.existsSync(opt.plugins)) return report(`插件树不存在：${opt.plugins}（先 node scripts/prepare-builtin-plugins.mjs）`)
+  if (!rt) return precheck('未找到可用运行时（--runtime <目录>，或 dsh-desktop/runtime 不在）')
+  if (!fs.existsSync(opt.plugins)) {
+    return precheck(`插件树不存在：${opt.plugins}（先跑 node scripts/prepare-builtin-plugins.mjs，或用 --plugins 指到 stage 树的 packages）`)
+  }
 
   const kernelVersion = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(rt.dir, 'runtime.json'), 'utf8')).dsh } catch { return '?' }
@@ -249,6 +253,22 @@ async function main() {
     record('ui', 'skip', '未找到 Chrome')
   }
   return report()
+}
+
+/**
+ * 前置条件不满足（没造插件树 / 没找到运行时）：**不算"插件不兼容"**。
+ *
+ * 为什么单独一类（2026-11-20 实测误判一轮）：这条门禁要先
+ * `node scripts/prepare-builtin-plugins.mjs` 造 stage 树（默认在 `%TEMP%/dsh-builtin-plugins`），
+ * 没造过就跑，以前报 `[FAIL] env 插件树不存在` + `PLUGIN_COMPAT_FAIL env` ——
+ * 红得像是插件跟内核不兼容，其实只是没准备输入。现在默认 **SKIP + exit 0** 并说清楚怎么准备；
+ * 要强校验（CI）加 `--require`，那时仍按 FAIL 处理。
+ */
+function precheck(reason) {
+  if (opt.require) return report(reason)
+  console.log(`  [SKIP] env       ${reason}`)
+  console.log('\nPLUGIN_COMPAT_SKIP 前置未准备（要按失败处理请加 --require）')
+  process.exit(0)
 }
 
 function report(fatal) {

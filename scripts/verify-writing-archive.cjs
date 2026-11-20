@@ -1,6 +1,7 @@
 // Isolated, hidden Electron renderer. Never connects to or closes a user app.
 // 作品档案（只读投影）UI 端到端：项目行「档案」入口 → 设定/进度/时间与伏笔/资料四区 →
 // 已确认设定成卡、候选不入卡 → 资料展开渲染 markdown → 点章节跳回编辑器 → 单区读失败自己说话。
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

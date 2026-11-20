@@ -1,4 +1,5 @@
 // Isolated, hidden Electron renderer. Never connects to or closes a user app.
+require('./lib/electron-gate.cjs').assertElectronGate()
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
