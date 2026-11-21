@@ -53,6 +53,7 @@ V1–V9 / G1–G4 hunt 与逐一修复完成：**13 项缺陷全部实锤复现�
 
 | 日期 | 文件 | 摘要 | 署名 |
 |---|---|---|---|
+| 2026-11-21 | [`logs/2026-11-21.md`](logs/2026-11-21.md) | deepseek-v4.1-flash：**预览版三份通知最终版**（`590daf4`）——三轮"全新 home 首次运行"实测把前两版判据推翻：`did-finish-load` 太早（3 份照旧）→ 页内轮询有效但 `owner===win` 抓不到 strip 可见窗（0 份）→ 改按窗口类型只收模块窗（`#dsh-wb-module=`）。机制已证、守卫已证，"恰好保留 1 份"仍未证 | deepseek-v4.1-flash |
 | 2026-11-21 | [logs/2026-11-21.md](logs/2026-11-21.md) | deepseek-v4.1-flash：**预览版三份通知**最终版（90daf4）——三轮首次运行实测把前两版判据推翻：did-finish-load 太早（3 份照旧）→ 页内轮询有效但 owner===win 抓不到 strip 可见窗（0 份）→ 改按窗口类型只收模块窗（#dsh-wb-module=）。**仍未证**：恰好保留 1 份 | deepseek-v4.1-flash |
 | 2026-11-21 | [`logs/2026-11-21.md`](logs/2026-11-21.md) | deepseek-v4.1-flash：**「三份通知」修复**（`bba5d00`）——内核的一次性「预览版说明」在每个窗口各渲染一份（同源 storage 但互不通知），外壳改在非主窗口 `did-finish-load` 时按文案点掉，主窗口保留一份；`node --check main.js` + `npm run smoke` 通过。**未证**：真·首次启动下"恰好剩 1 份"需全新 home 实例（本机 home 都已点过） | deepseek-v4.1-flash |
 | 2026-11-21 | [`logs/2026-11-21.md`](logs/2026-11-21.md) | deepseek-v4.1-flash：**前端自检两修**（插件 `392ccf5`，指针 `87e2377`）——① 配置损坏被渲染成「还没有库根」：宿主早给 `configError`/`configBackup`，客户端零引用；现在显示「配置读不出来」+ 备份路径 + 「重新读取」。② 空态文案在 ~249px 面板被裁（`padding:40px` → `clamp()`）。验收：插件 `npm test` 37/37、`verify:writing-quick` exit=0。**未做**：①的渲染分支没截到图（CDP 选择器不稳）；坑：改完插件源码要在**外壳**跑 `build:writing`（两个构建脚本差 79 字节，门禁认壳侧那份） | deepseek-v4.1-flash |
