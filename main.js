@@ -1085,6 +1085,35 @@ function isAppFileUrl(url) {
   }
 }
 
+/**
+ * 一次性「预览版说明」：内核 Web 应用在**每个窗口**里都会渲染一份（同源共享 storage，但各窗口
+ * 挂载时都还没人点过「继续」）⇒ 外壳开三个窗口就弹三份（2026-11-21 用户实报"居然会出现三份通知"）。
+ * 内核零修改：这里在**非主窗口**上把它收掉——主窗口保留一份，作者真正会读到的地方在那。
+ * 用 `web-contents-created` 一处挂钩即可覆盖模块窗口 / 档案窗口 / 额外窗口，不必逐处改创建代码。
+ * 选中方式不依赖内核的类名：按文案「预览版说明」找最内层容器，再点它里面的「继续」；找不到就什么也不做。
+ */
+const PREVIEW_NOTICE_DISMISS_JS = `(() => {
+  const nodes = [...document.querySelectorAll('div,section,dialog')]
+    .filter((e) => /预览版说明/.test(e.textContent || ''))
+  if (!nodes.length) return 'none'
+  const box = nodes[nodes.length - 1]
+  const btn = [...box.querySelectorAll('button,[role="button"]')].find((b) => /继续/.test(b.textContent || ''))
+  if (btn) { btn.click(); return 'clicked' }
+  return 'none'
+})()`
+
+function quietPreviewNotice(contents) {
+  try {
+    const owner = BrowserWindow.fromWebContents(contents)
+    if (!owner || owner === win || owner.isDestroyed()) return // 主窗口保留
+    contents.executeJavaScript(PREVIEW_NOTICE_DISMISS_JS, true).catch(() => {})
+  } catch {}
+}
+
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('did-finish-load', () => quietPreviewNotice(contents))
+})
+
 function hardenWindow(w, opts) {
   const allowLocal = !!(opts && opts.allowLocal)
   w.webContents.setWindowOpenHandler(({ url }) => {
