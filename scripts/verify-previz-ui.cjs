@@ -1,3 +1,6 @@
+// 2026-11-21：门禁崩溃不弹到作者屏幕上——Electron 默认会给主进程未捕获异常弹**系统模态框**。
+// 必须在任何 require 之前注册：加载期崩溃（如模板重编译后相对路径找不到模块）也要兜住。
+process.on('uncaughtException', (e) => { console.error('[gate] uncaught: ' + ((e && e.stack) || e)); process.exit(1) })
 // previz 客户端真实渲染验收：隔离、隐藏的 Electron 窗口 + 假内核页。
 // 验两件事：① 没工作台时独立入口/overlay 可用；② 工作台出现后让出入口并注册完整模式描述。
 require(require('node:path').join(process.cwd(), 'scripts/lib/electron-gate.cjs')).assertElectronGate()

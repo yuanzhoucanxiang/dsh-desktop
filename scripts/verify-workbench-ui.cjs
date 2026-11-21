@@ -1,3 +1,6 @@
+// 2026-11-21：门禁崩溃不弹到作者屏幕上——Electron 默认会给主进程未捕获异常弹**系统模态框**。
+// 必须在任何 require 之前注册：加载期崩溃（如模板重编译后相对路径找不到模块）也要兜住。
+process.on('uncaughtException', (e) => { console.error('[gate] uncaught: ' + ((e && e.stack) || e)); process.exit(1) })
 // 工具台 P0 的真实渲染验收：隔离、隐藏的 Electron 窗口，不连也不碰用户正在用的应用。
 //
 // 做法（与 verify-writing-ui.cjs 同一套路）：本地 http 起一个"假内核宿主页"，

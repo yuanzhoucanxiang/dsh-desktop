@@ -1,3 +1,6 @@
+// 2026-11-21：门禁崩溃不弹到作者屏幕上——Electron 默认会给主进程未捕获异常弹**系统模态框**。
+// 必须在任何 require 之前注册：加载期崩溃（如模板重编译后相对路径找不到模块）也要兜住。
+process.on('uncaughtException', (e) => { console.error('[gate] uncaught: ' + ((e && e.stack) || e)); process.exit(1) })
 // Actual shipped client.js + React + production HTTP host in a hidden test window.
 // Reuse only test bootstrapping; no copied production state machine.
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module')

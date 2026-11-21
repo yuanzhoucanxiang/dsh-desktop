@@ -1,3 +1,6 @@
+// 2026-11-21：门禁崩溃不弹到作者屏幕上——Electron 默认会给主进程未捕获异常弹**系统模态框**。
+// 必须在任何 require 之前注册：加载期崩溃（如模板重编译后相对路径找不到模块）也要兜住。
+process.on('uncaughtException', (e) => { console.error('[gate] uncaught: ' + ((e && e.stack) || e)); process.exit(1) })
 // Isolated, hidden Electron renderer. Never connects to or closes a user app.
 require(require('node:path').join(process.cwd(), 'scripts/lib/electron-gate.cjs')).assertElectronGate()
 // ↑ 2026-11-21：不依赖模块位置——被当模板重编译时 __dirname 会指向使用者目录，相对 require 会落空。

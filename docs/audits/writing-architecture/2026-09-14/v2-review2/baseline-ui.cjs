@@ -1,3 +1,6 @@
+// 2026-11-21：门禁崩溃不弹到作者屏幕上——Electron 默认会给主进程未捕获异常弹**系统模态框**。
+// 必须在任何 require 之前注册：加载期崩溃（如模板重编译后相对路径找不到模块）也要兜住。
+process.on('uncaughtException', (e) => { console.error('[gate] uncaught: ' + ((e && e.stack) || e)); process.exit(1) })
 // Preserve the 32 old positive assertions; only relocate harness/output and label HEAD.
 // 2026-09-14 追加：v2 §4.2（复核 B04）把"备忘读取失败后仍照发"改成了"等作者在重试/不参考发送之间选"，
 // 因此那一条的**业务预期**必须更新；数据保护要求（正文/引用保留、不清稿、不静默）一条不动。
