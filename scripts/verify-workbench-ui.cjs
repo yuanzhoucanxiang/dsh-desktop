@@ -6,7 +6,9 @@
 //
 // 验的是 P0 契约：没有模式就不留死按钮；注册后入口出现；点一下进模式；多模式时切换器列出全部；
 // 关闭守卫拒绝时不切换、且工具台不自造提示；切换写进 host 状态文件；设置段如实显示。
-require('./lib/electron-gate.cjs').assertElectronGate()
+require(require('node:path').join(process.cwd(), 'scripts/lib/electron-gate.cjs')).assertElectronGate()
+// ↑ 2026-11-21：不依赖模块位置——被当模板重编译时 __dirname 会指向使用者目录，相对 require 会落空。
+//   所有门禁的 spawnSync 都以仓库根为 cwd（npm scripts 亦然），失败也会明确报找不到。
 const { app, BrowserWindow, screen } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

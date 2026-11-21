@@ -1,5 +1,7 @@
 // Isolated, hidden Electron renderer. Never connects to or closes a user app.
-require('./lib/electron-gate.cjs').assertElectronGate()
+require(require('node:path').join(process.cwd(), 'scripts/lib/electron-gate.cjs')).assertElectronGate()
+// ↑ 2026-11-21：不依赖模块位置——被当模板重编译时 __dirname 会指向使用者目录，相对 require 会落空。
+//   所有门禁的 spawnSync 都以仓库根为 cwd（npm scripts 亦然），失败也会明确报找不到。
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')

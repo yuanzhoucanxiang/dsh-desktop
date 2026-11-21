@@ -66,7 +66,14 @@ fixture=fixture.slice(0,cut)+String.raw`
   if(results.some(r=>r.status==='FAIL'))process.exitCode=1
 }).catch(err=>{console.error(err);process.exitCode=1}).finally(async()=>{
   if(win&&!win.isDestroyed())win.destroy()
-  if(server)await new Promise(resolve=>server.close(resolve))
+  // 2026-11-20：server.close() 只在**所有连接关闭后**回调；浏览器留着 keep-alive 或渲染进程
+  // 还没退时它永不回调 → 探针明明打印了 PASS，父进程（run-review-ui-probes.mjs 的 600s timeout）
+  // 却按超时判失败，整条 verify:writing-quick 因此偶发转红。这里先掐掉存活连接，再给关闭加个
+  // 上限：宁可 2 秒后直接退出，也不要挂到超时。
+  if(server){
+    try{ server.closeAllConnections?.() }catch{}
+    await Promise.race([new Promise(resolve=>server.close(resolve)), sleep(2000)])
+  }
   app.exit(process.exitCode||0)
 })
 `
