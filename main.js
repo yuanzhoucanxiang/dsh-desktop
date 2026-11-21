@@ -1093,24 +1093,44 @@ function isAppFileUrl(url) {
  * 选中方式不依赖内核的类名：按文案「预览版说明」找最内层容器，再点它里面的「继续」；找不到就什么也不做。
  */
 const PREVIEW_NOTICE_DISMISS_JS = `(() => {
-  const nodes = [...document.querySelectorAll('div,section,dialog')]
-    .filter((e) => /预览版说明/.test(e.textContent || ''))
-  if (!nodes.length) return 'none'
-  const box = nodes[nodes.length - 1]
-  const btn = [...box.querySelectorAll('button,[role="button"]')].find((b) => /继续/.test(b.textContent || ''))
-  if (btn) { btn.click(); return 'clicked' }
-  return 'none'
+  if (window.__dshNoticeGuard) return 'already'
+  window.__dshNoticeGuard = true
+  let tries = 0
+  const tick = () => {
+    tries++
+    const nodes = [...document.querySelectorAll('div,section,dialog')]
+      .filter((e) => /预览版说明/.test(e.textContent || ''))
+    if (nodes.length) {
+      const box = nodes[nodes.length - 1]
+      const btn = [...box.querySelectorAll('button,[role="button"]')].find((b) => /继续/.test(b.textContent || ''))
+      if (btn) { btn.click(); return }
+    }
+    if (tries < 60) setTimeout(tick, 250)
+  }
+  tick()
+  return 'armed'
 })()`
 
+/**
+ * 2026-11-21 三次修正（前两版都被实测推翻）：
+ * ① 只在 `did-finish-load` 跑一次 → 通知是 React 后渲染的，那时 DOM 里还没有（三份照旧）；
+ * ② 改成页内轮询有效，但"主窗口"判据（`owner === win`）在 strip 形态下抓不到可见窗口
+ *    —— 收完之后三窗**一份都没有**（用户就再也看不到这份说明）。
+ * 现在按**窗口类型**判：只收「模块窗口」（URL 带 `#dsh-wb-module=`，即写作伙伴 / 写作台 / 档案 /
+ * 工具台这类拼出来的面），对话主窗/长条那一份保留。这样"开 N 个模块窗"不会再变成 N 份。
+ */
 function quietPreviewNotice(contents) {
   try {
     const owner = BrowserWindow.fromWebContents(contents)
-    if (!owner || owner === win || owner.isDestroyed()) return // 主窗口保留
+    if (!owner || owner.isDestroyed()) return
+    const url = String(owner.webContents.getURL() || '')
+    if (!url.includes('dsh-wb-module=')) return // 主窗/长条保留一份
     contents.executeJavaScript(PREVIEW_NOTICE_DISMISS_JS, true).catch(() => {})
   } catch {}
 }
 
 app.on('web-contents-created', (_event, contents) => {
+  contents.on('dom-ready', () => quietPreviewNotice(contents))
   contents.on('did-finish-load', () => quietPreviewNotice(contents))
 })
 
